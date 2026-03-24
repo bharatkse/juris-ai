@@ -1,0 +1,41 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+      - id: check-json
+      - id: check-toml
+      - id: detect-private-key
+
+  # Ruff: Linting + auto-fix
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.4.10
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+
+      # Ruff formatter (Black replacement)
+      - id: ruff-format
+
+  # mypy: static typing
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.9.0
+    hooks:
+      - id: mypy
+        args:
+          - --ignore-missing-imports
+
+  # ----------------------------------------
+  # Spelling checker
+  # ----------------------------------------
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.3.0
+    hooks:
+      - id: codespell
+        args:
+          - --check-filenames
+          - --check-hidden
+          - --skip=*.lock,*.svg,*.png,*.jpg,*.jpeg,node_modules,.venv,dist,build

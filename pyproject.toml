@@ -1,0 +1,130 @@
+# -------------------------------------------------
+# Project metadata (PEP 621)
+# -------------------------------------------------
+[project]
+name = "juris-ai"
+version = "0.1.0"
+description = "Legal research assistant powered by hybrid RAG"
+authors = [{ name = "Bharat Kumar", email = "kumar.bhart28@gmail.com" }]
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11,<4.0"
+dynamic = ["dependencies"]
+
+# -------------------------------------------------
+# Poetry configuration
+# -------------------------------------------------
+[tool.poetry]
+package-mode = false
+
+# -------------------------------------------------
+# Root project has NO runtime dependencies
+# -------------------------------------------------
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "^0.111.0"
+uvicorn = { extras = ["standard"], version = "^0.29.0" }
+python-multipart = "^0.0.9"
+pdfplumber = "^0.11.0"
+python-docx = "^1.1.0"
+sentence-transformers = "^3.0.0"
+chromadb = "^0.5.0"
+rank-bm25 = "^0.2.2"
+groq = "^0.9.0"
+numpy = "^1.26.0"
+pydantic-settings = "^2.2.0"
+
+# -------------------------------------------------
+# Dev tooling (shared across repo)
+# -------------------------------------------------
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.0"
+pytest-asyncio = "^0.24.0"
+pytest-cov = "^6.0.0"
+ruff = "^0.8.0"
+mypy = "^1.13.0"
+pre-commit = "^4.0.0"
+httpx = "^0.28.0"
+
+# -------------------------------------------------
+# Ruff (lint + format) — repo-wide
+# -------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+exclude = [
+  ".git",
+  ".mypy_cache",
+  ".ruff_cache",
+  ".tox",
+  ".venv",
+  "build",
+  "dist",
+  "node_modules",
+]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "C4", "B", "UP"]
+ignore = ["E501", "B008"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+
+# -------------------------------------------------
+# mypy — repo-wide
+# -------------------------------------------------
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+strict_equality = true
+
+# Fix for multiple 'src' modules
+explicit_package_bases = true
+namespace_packages = true
+
+# Exclude paths to avoid duplicate module conflicts
+exclude = [
+  "src/.*/__pycache__",
+  "src/__pycache__",
+  ".venv",
+  "venv",
+  "env",
+]
+
+# -------------------------------------------------
+# pytest — repo-wide
+# -------------------------------------------------
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -q --strict-markers"
+asyncio_mode = "auto"
+testpaths = ["services", "stockify_core"]
+
+
+# -------------------------------------------------
+# coverage
+# -------------------------------------------------
+[tool.coverage.run]
+source = ["services", "stockify_core"]
+omit = ["*/tests/*"]
+
+# -------------------------------------------------
+# build system
+# -------------------------------------------------
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
