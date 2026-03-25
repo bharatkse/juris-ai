@@ -1,31 +1,31 @@
 FROM python:3.11-slim
 
-# System deps for pdfplumber + sentence-transformers
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    libpoppler-cpp-dev \
-    poppler-utils \
-    curl \
+# Project root inside container
+WORKDIR /juris_ai
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/juris_ai
+
+# System deps (psycopg)
+RUN apt-get update && apt-get install -y \
+    gcc \
+    libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Poetry
-RUN curl -sSL https://install.python-poetry.org | python3 - \
-    && ln -s /root/.local/bin/poetry /usr/local/bin/poetry
-
-WORKDIR /src
-
-# Copy dependency files first (layer cache)
+# Copy dependency files first (cache-friendly)
 COPY pyproject.toml poetry.lock* ./
 
-# Install deps — no virtualenv inside container, no dev deps
-RUN poetry config virtualenvs.create false \
-    && poetry install --only main --no-interaction --no-ansi
+RUN pip install --no-cache-dir poetry \
+    && poetry config virtualenvs.create false \
+    && poetry install --no-interaction --no-ansi
 
-# Copy source
-COPY . .
+# Copy application code
+COPY src /juris_ai/src
+COPY alembic.ini /juris_ai/alembic.ini
 
 # Create directories used at runtime
-RUN mkdir -p /src/uploads /src/chroma_db
+RUN mkdir -p /juris_ai/uploads /juris_ai/chroma_db
 
 # Pre-download the embedding model so first request isn't slow
 RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
