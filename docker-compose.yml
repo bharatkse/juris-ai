@@ -1,5 +1,30 @@
 services:
 
+  db:
+    image: postgres:15-alpine
+    container_name: juris_ai_db
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # Pass APPlication DB credentials as env vars so init script can read them from .env
+      APP_DB_USER: ${DB_USER}
+      APP_DB_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "${DB_PORT}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sh:/docker-entrypoint-initdb.d/00-init.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - juris_ai_network
+
   api:
     build:
       context: .
@@ -30,27 +55,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
-
-  db:
-    image: postgres:15-alpine
-    container_name: juris-ai-db
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    networks:
-      - juris_ai_network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
 
   ollama:
     image: ollama/ollama:latest

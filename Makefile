@@ -11,15 +11,20 @@ RESET  := $(shell tput -Txterm sgr0)
 # ============================================
 # Variables
 # ============================================
+PROJECT_NAME := juris-ai
 DOCKER_COMPOSE_FILE := docker-compose.yml
 DOCKER_COMPOSE := docker compose
+POETRY := poetry
+
 APP_CONTAINER := api
 DB_CONTAINER := db
+ALEMBIC := alembic
 
 # ============================================
 # Help
 # ============================================
 .DEFAULT_GOAL := help
+SHELL := /bin/bash
 
 help: ## Show this help message
 	@echo ''
@@ -36,9 +41,9 @@ help: ## Show this help message
 	@echo ''
 
 
-# ============================================================================
-## Docker
-# ============================================================================
+# ============================================
+# Docker
+# ============================================
 
 docker-build: ## Build Docker images without starting containers
 	@$(DOCKER_COMPOSE) -f $(DOCKER_COMPOSE_FILE) up -d --build
@@ -73,9 +78,33 @@ docker-clean: ## Remove all stopped containers and dangling images
 	@docker volume prune -f
 	@docker network prune -f
 
-# ============================================================================
+# ============================================
+# Poetry / Python
+# ============================================
+poetry-install: ## Install Python dependencies via Poetry
+	@$(POETRY) install
+
+poetry-update: ## Update Python dependencies via Poetry
+	@$(POETRY) update
+
+poetry-lock: ## Generate poetry.lock from pyproject.toml
+	@poetry lock
+
+poetry-check: ## Validate pyproject.toml configuration
+	@poetry check
+
+poetry-show: ## Show dependency tree
+	@poetry show --tree
+
+poetry-activate: ## Activate Poetry virtual environment in current shell
+	@VENV="$$(poetry env info --path)"; \
+	echo "Activating $$VENV"; \
+	exec bash --rcfile <(echo "source $$VENV/bin/activate")
+
+
+# ============================================
 ## Code Quality
-# ============================================================================
+# ============================================
 lint: ## Run ruff linter
 	@echo '${CYAN}Running linter...${RESET}'
 	@poetry run ruff check .
@@ -108,6 +137,39 @@ install-hooks: ## Install pre-commit git hooks
 	@poetry run pre-commit install
 	@echo '${GREEN}✓ Git hooks installed${RESET}'
 
+# ============================================
+# Alembic / Database Migrations
+# ============================================
+
+alembic-upgrade: ## Apply all Alembic migrations
+	@$(POETRY) run $(ALEMBIC) upgrade head
+
+alembic-downgrade: ## Rollback last Alembic migration
+	@read -p "⚠️  Downgrade database? [y/N] " and; \
+	[ "$$and" = "y" ] || exit 1
+	@$(POETRY) run $(ALEMBIC) downgrade -1
+
+alembic-current: ## Show current Alembic revision
+	@$(POETRY) run $(ALEMBIC) current
+
+alembic-history: ## Show Alembic migration history
+	@$(POETRY) run $(ALEMBIC) history
+
+alembic-heads: ## Show current Alembic heads (detect branches)
+	@$(POETRY) run $(ALEMBIC) heads
+
+alembic-stamp: ## Stamp database with a revision without running migrations (rev=...)
+ifndef rev
+	$(error Please provide a revision: make alembic-stamp rev=head)
+endif
+	@$(POETRY) run $(ALEMBIC) stamp $(rev)
+
+alembic-revision: ## Create new Alembic revision (msg="...")
+ifndef msg
+	$(error Please provide a message: make alembic-revision msg="add stations table")
+endif
+	@$(POETRY) run $(ALEMBIC) revision --autogenerate -m "$(msg)"
+
 
 # ============================================================================
 ## Docs
@@ -136,7 +198,24 @@ docs: ## Show quick start guide
 	@echo '   ${GREEN}make docker-exec-app${RESET}     Open shell in app container'
 	@echo '   ${GREEN}make docker-exec-db${RESET}      Open shell in db container'
 	@echo '   ${GREEN}make docker-clean${RESET}       Clean up Docker environment'
-	@echo '
+	@echo ''
+	@echo '   ${YELLOW}8. Alembic / Database Migrations:${RESET}'
+	@echo '   ${GREEN}make alembic-upgrade${RESET}     Apply all migrations'
+	@echo '   ${GREEN}make alembic-downgrade${RESET}   Rollback last migration'
+	@echo '   ${GREEN}make alembic	current${RESET}     Show current migration'
+	@echo '   ${GREEN}make alembic-history${RESET}     Show migration history'
+	@echo '   ${GREEN}make alembic-heads${RESET}       Show current heads'
+	@echo '   ${GREEN}make alembic-stamp${RESET}       Stamp database'
+	@echo '   ${GREEN}make alembic-revision${RESET}    Create new migration'
+	@echo ''
+	@echo '   ${YELLOW}9. Poetry / Python:${RESET}'
+	@echo '   ${GREEN}make poetry-install${RESET}      Install Python dependencies'
+	@echo '   ${GREEN}make poetry-update${RESET}       Update Python dependencies'
+	@echo '   ${GREEN}make poetry-lock${RESET}         Generate poetry.lock'
+	@echo '   ${GREEN}make poetry-check${RESET}        Validate pyproject.toml'
+	@echo '   ${GREEN}make poetry-show${RESET}         Show dependency tree'
+	@echo '   ${GREEN}make poetry-activate${RESET}     Activate virtual environment'
+	@echo ''
 	@echo '${YELLOW}All targets:${RESET}  ${GREEN}make help${RESET}'
 	@echo ''
 
@@ -144,4 +223,7 @@ docs: ## Show quick start guide
 .PHONY: help \
 	lint format type-check pre-commit ci install-hooks docs \
 	docker-up docker-down docker-restart docker-app-logs docker-db-logs \
-	docker-ps docker-exec-app docker-exec-db docker-clean
+	docker-ps docker-exec-app docker-exec-db docker-clean \
+	alembic-upgrade alembic-downgrade alembic-current \
+	alembic-history alembic-heads alembic-stamp alembic-revision \
+	poetry-install poetry-update poetry-check poetry-show poetry-activate poetry-lock
