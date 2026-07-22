@@ -1,17 +1,30 @@
+"""
+All enumerations used across the application.
+Using str-based enums keeps JSON serialisation automatic.
+"""
+
 from enum import StrEnum
 
 
-class ConnectivityStatus(StrEnum):
-    online = "online"
-    offline = "offline"
+class Environment(StrEnum):
+    DEVELOPMENT = "development"
+    STAGING = "staging"
+    PRODUCTION = "production"
+    TESTING = "testing"
 
 
-class StationSortField(StrEnum):
-    score = "score"
-    created = "created"
-    updated = "updated"
+class CacheBackend(StrEnum):
+    MEMORY = "memory"
+    REDIS = "redis"
+
+
+class DocumentStatus(StrEnum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    INDEXED = "indexed"
+    FAILED = "failed"
 
 
 class SortOrder(StrEnum):
-    asc = "asc"
-    desc = "desc"
+    ASC = "asc"
+    DESC = "desc"

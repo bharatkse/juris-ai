@@ -1,0 +1,169 @@
+"""
+Shared request and response schemas.
+
+This module contains reusable Pydantic models used across the application.
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from typing import Any, Generic, TypeVar
+
+from pydantic import BaseModel, ConfigDict, Field
+
+DataT = TypeVar("DataT")
+
+
+# ==============================================================================
+# Request Models
+# ==============================================================================
+
+
+class PaginationParams(BaseModel):
+    """Query parameters for paginated endpoints."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    skip: int = Field(
+        default=0,
+        ge=0,
+        description="Number of records to skip.",
+    )
+
+    limit: int = Field(
+        default=10,
+        ge=1,
+        le=100,
+        description="Maximum number of records to return.",
+    )
+
+
+# ==============================================================================
+# Response Models
+# ==============================================================================
+
+
+class Pagination(BaseModel):
+    """Pagination information."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    total: int
+
+    skip: int
+
+    limit: int
+
+    has_more: bool
+
+
+class ListData(BaseModel, Generic[DataT]):
+    """
+    Generic paginated data payload.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[DataT]
+
+    pagination: Pagination
+
+
+# ==============================================================================
+# Metadata
+# ==============================================================================
+
+
+class AIInfoModel(BaseModel):
+    """AI execution metadata."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    provider: str | None = None
+    model: str | None = None
+    agent: str | None = None  # e.g. legal-assistant
+    workflow: str | None = None  # e.g. legal_qa_graph
+
+    latency_ms: int | None = None
+
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
+
+    tool_calls: int | None = None
+
+
+class MetadataModel(BaseModel):
+    """
+    Response metadata.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    request_id: str | None = None
+
+    trace_id: str | None = None
+
+    conversation_id: str | None = None
+
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    ai: AIInfoModel | None = None
+
+
+# ==============================================================================
+# Error
+# ==============================================================================
+
+
+class ErrorDetailModel(BaseModel):
+    """
+    Standard error payload.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    code: str
+
+    message: str
+
+    details: dict[str, Any] | None = None
+
+
+# ==============================================================================
+# API Response
+# ==============================================================================
+
+
+class ApiResponseModel(BaseModel, Generic[DataT]):
+    """
+    Standard API response envelope.
+
+    Success response:
+
+    {
+        "success": true,
+        "data": {...},
+        "metadata": {...}
+    }
+
+    Error response:
+
+    {
+        "success": false,
+        "error": {...},
+        "metadata": {...}
+    }
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    success: bool
+
+    data: DataT | None = None
+
+    error: ErrorDetailModel | None = None
+
+    metadata: MetadataModel
+
+    message: str | None = None

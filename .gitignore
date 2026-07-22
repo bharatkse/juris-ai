@@ -205,3 +205,13 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# LocalStack
+.localstack/
+localstack-data/
+postgres-init/
+localstack-init/
+
+# SAM CLI
+.sam/
+.aws-sam/
