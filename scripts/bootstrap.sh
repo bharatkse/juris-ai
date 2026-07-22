@@ -11,7 +11,7 @@ set -Eeuo pipefail
 # ============================================================================
 
 
-PYTHON_VERSION="3.11.12"
+PYTHON_VERSION="3.11.9"
 
 SKIP_PYTHON=false
 SKIP_DOCKER=false
@@ -265,6 +265,28 @@ create_env_file() {
 }
 
 # ============================================================================
+# AWS CLI v2
+# ============================================================================
+install_aws_cli() {
+  command -v aws >/dev/null 2>&1 && {
+    log "AWS CLI already installed ($(aws --version 2>&1))"
+    return
+  }
+
+  $CI_MODE && { warn "Skipping AWS CLI install in CI"; return; }
+
+  log "Installing AWS CLI v2"
+  tmp_dir="$(mktemp -d)"
+
+  curl -fsSL https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip \
+    -o "$tmp_dir/awscliv2.zip"
+
+  unzip -q "$tmp_dir/awscliv2.zip" -d "$tmp_dir"
+  sudo "$tmp_dir/aws/install"
+  rm -rf "$tmp_dir"
+}
+
+# ============================================================================
 # Main
 # ============================================================================
 main() {
@@ -276,6 +298,7 @@ main() {
   install_python
   write_python_version_file
   install_docker
+  install_aws_cli
   install_poetry
   install_dependencies
   # setup_precommit

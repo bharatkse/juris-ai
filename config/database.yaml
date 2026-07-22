@@ -1,0 +1,55 @@
+# Database configuration reference.
+# Actual values come from .env / environment variables (DATABASE_URL etc.)
+# This file documents all available options and their defaults.
+
+# ── Connection ────
+connection:
+  # SQLite (development / single-node)
+  sqlite:
+    url_format:    "sqlite:///./data/db/legal.db"
+    connect_args:  {check_same_thread: false}
+    pragmas:
+      - "PRAGMA journal_mode=WAL"
+      - "PRAGMA synchronous=NORMAL"
+
+  # PostgreSQL (staging / production)
+  postgresql:
+    url_format:    "postgresql://{user}:{password}@{host}:{port}/{database}"
+    pool_size:     10
+    max_overflow:  20
+    pool_pre_ping: true
+    pool_recycle:  3600
+
+# ── Pool settings (SQLAlchemy) ───
+pool:
+  pool_size:      10      # number of persistent connections in the pool
+  max_overflow:   20      # extra connections allowed above pool_size
+  pool_timeout:   30      # seconds to wait for a connection
+  pool_recycle:   3600    # seconds before recycling a connection (avoids stale)
+  pool_pre_ping:  true    # verify connection before use (avoids "gone away" errors)
+
+# ── Session ──
+session:
+  autocommit:       false
+  autoflush:        false
+  expire_on_commit: false   # avoids lazy-load errors after commit in async code
+
+# ── Migrations (Alembic) ────
+migrations:
+  script_location: "migrations"
+  file_template:   "%%(year)d_%%(month).2d_%%(day).2d_%%(hour).2d%%(minute).2d-%%(rev)s_%%(slug)s"
+  truncate_slug_length: 40
+  timezone: UTC
+
+# ── Backup strategy ─
+backup:
+  sqlite:
+    method:    "file copy"
+    schedule:  "daily"
+    retention: 7             # days
+
+  postgresql:
+    method:    "pg_dump"
+    schedule:  "daily"
+    retention: 30            # days
+    command:   "pg_dump -Fc -U {user} {database} > backup_{date}.dump"

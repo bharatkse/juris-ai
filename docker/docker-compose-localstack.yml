@@ -1,0 +1,136 @@
+services:
+
+  # -----------------------------------------------------
+  # PostgreSQL — replaces LocalStack RDS (not supported)
+  # Accessible inside the network as: postgres:5432
+  # Accessible from host as:          localhost:5432
+  # -----------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: juris_ai_postgres
+    restart: unless-stopped
+    env_file:
+      - ../.env
+
+    environment:
+      POSTGRES_USER: ${DB_USER:-juris}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-jurispassword}
+      POSTGRES_DB: ${DB_NAME:-jurisai}
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Drop any *.sql / *.sh init scripts here — runs on first boot only
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-juris} -d ${DB_NAME:-jurisai}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+    networks:
+      - juris_ai_network
+
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
+
+  # -----------------------------------------------------
+  # LocalStack — simulates AWS services (no RDS)
+  # RDS removed from SERVICES; DB handled by postgres above
+  # -----------------------------------------------------
+  localstack:
+    image: localstack/localstack:4.12.0
+    container_name: juris_ai_localstack
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    ports:
+      - "4566:4566"       # edge port for AWS SDK
+      - "4510-4559:4510-4559"  # service ports
+
+    environment:
+      # --------------------
+      # Core LocalStack
+      # --------------------
+      DEBUG: "0"
+      PERSISTENCE: "1"
+      LOCALSTACK_VOLUME_DIR: /var/lib/localstack
+      DOCKER_HOST: unix:///var/run/docker.sock
+
+      # --------------------
+      # AWS SDK visibility (CRITICAL)
+      # Visible to Lambda containers
+      # --------------------
+      AWS_ENDPOINT_URL: http://localstack:4566
+      AWS_REGION: us-east-1
+      AWS_DEFAULT_REGION: us-east-1
+
+      # --------------------
+      # Enabled services
+      # --------------------
+      SERVICES: s3,apigateway,cloudformation,logs,iam,sts,cloudwatch,secretsmanager,ssm,cognito-idp,ecs,elasticache,ec2
+
+      # --------------------
+      # Seed the DB connection string into Secrets Manager
+      # so the app reads it exactly as it would in AWS.
+      # The bootstrap script below fires after LocalStack is healthy.
+      # --------------------
+      DB_USER: ${DB_USER:-juris}
+      DB_PASSWORD: ${DB_PASSWORD:-jurispassword}
+      DB_NAME: ${DB_NAME:-jurisai}
+      DB_HOST: postgres
+      DB_PORT: 5432
+
+      # --------------------
+      # Misc
+      # --------------------
+      AWS_SUPPRESS_XDG_RUNTIME_DIR: "true"
+      PYTHONUNBUFFERED: "1"
+      ENFORCE_IAM_POLICIES: "false"
+
+    volumes:
+      - ./localstack-data:/var/lib/localstack
+      - /var/run/docker.sock:/var/run/docker.sock:z
+      # Bootstrap script — seeds SSM params + Secrets Manager on startup
+      - ./localstack-init:/etc/localstack/init/ready.d:ro
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+    networks:
+      - juris_ai_network
+    # Resource limits to prevent starvation
+    deploy:
+      resources:
+        limits:
+          cpus: '2.5'
+          memory: 2.5G
+        reservations:
+          cpus: '1.5'
+          memory: 1.5G
+
+
+volumes:
+  localstack_data:
+  postgres_data:          # named volume — survives container restarts
+
+networks:
+  juris_ai_network:
+    external: true

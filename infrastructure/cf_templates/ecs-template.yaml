@@ -1,0 +1,281 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Juris-AI ECS / App Template
+
+Parameters:
+  Stage:
+    Type: String
+    Default: dev
+    AllowedValues: [snd, dev, uat, prod]
+    Description: Deployment stage
+
+  ServiceName:
+    Type: String
+    Default: juris-ai
+    Description: Service name prefix
+
+  DockerImage:
+    Type: String
+    Default: juris-ai:latest
+    Description: Docker image for ECS task
+
+  ECSCpu:
+    Type: String
+    Default: "256"
+    Description: ECS task CPU units
+
+  ECSMemory:
+    Type: String
+    Default: "512"
+    Description: ECS task memory (MB)
+
+  DesiredCount:
+    Type: Number
+    Default: 1
+    Description: Number of ECS task instances to run
+
+  # ----------------------------------------------------------
+  # LocalStack flag — set to true for local development runs.
+  # When true, DB_HOST is set to LocalDBHost instead of SSM.
+  # ----------------------------------------------------------
+  IsLocalStack:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Set to true when deploying against LocalStack
+
+  LocalDBHost:
+    Type: String
+    Default: host.docker.internal
+    Description: DB host used when IsLocalStack=true
+
+  DBSecretArnSSM:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /juris-ai/rds-db-secret-arn
+    Description: SSM path to DB Secret ARN
+
+  DBHostSSM:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /juris-ai/rds-db-host
+    Description: SSM path to DB host
+
+  PrivateSubnetsSSM:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /juris-ai/private-subnets
+    Description: SSM path to comma-separated private subnet IDs
+
+  AppSecurityGroupSSM:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /juris-ai/app-security-group
+    Description: SSM path to App Security Group ID
+
+  TargetGroupArnSSM:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: /juris-ai/alb-target-group
+    Description: SSM path to ALB Target Group ARN
+
+# -------------------------------------------------------
+# Conditions
+# -------------------------------------------------------
+Conditions:
+  IsLocal: !Equals [!Ref IsLocalStack, "true"]
+
+# -------------------------------------------------------
+# Resources
+# -------------------------------------------------------
+Resources:
+
+  # ---------------------------------------------
+  # CloudWatch Log Group
+  # Retains logs for 30 days; adjust per stage.
+  # ---------------------------------------------
+  JurisAILogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/ecs/${ServiceName}-${Stage}"
+      RetentionInDays: 30
+
+  # ---------------------------------------------
+  # ECS Execution Role
+  # Used by the ECS agent to pull images and push
+  # logs. Separate from the Task Role.
+  # ---------------------------------------------
+  ECSExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ServiceName}-execution-role-${Stage}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: PullSecretForExecution
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !Ref DBSecretArnSSM
+
+  # ---------------------------------------------
+  # ECS Task Role
+  # Runtime permissions for application code.
+  # Scoped down to what the app actually needs.
+  # ---------------------------------------------
+  ECSTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ServiceName}-task-role-${Stage}"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: AppS3Access
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub "arn:aws:s3:::${ServiceName}-${Stage}-*"
+                  - !Sub "arn:aws:s3:::${ServiceName}-${Stage}-*/*"
+        - PolicyName: AppSecretsAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:DescribeSecret
+                Resource: !Ref DBSecretArnSSM
+        - PolicyName: AppRDSConnect
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - rds-db:connect
+                Resource: !Sub "arn:aws:rds-db:${AWS::Region}:${AWS::AccountId}:dbuser:*/${ServiceName}"
+
+  # ---------------------------------------------
+  # ECS Cluster
+  # ---------------------------------------------
+  JurisAICluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub "${ServiceName}-ecs-cluster-${Stage}"
+
+  # ---------------------------------------------
+  # ECS Task Definition
+  # DB_HOST switches between LocalStack and SSM
+  # depending on the IsLocalStack condition.
+  # ---------------------------------------------
+  JurisAITaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "${ServiceName}-task-${Stage}"
+      Cpu: !Ref ECSCpu
+      Memory: !Ref ECSMemory
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      TaskRoleArn: !GetAtt ECSTaskRole.Arn
+      ExecutionRoleArn: !GetAtt ECSExecutionRole.Arn
+      ContainerDefinitions:
+        - Name: !Sub "${ServiceName}-container-${Stage}"
+          Image: !Ref DockerImage
+          PortMappings:
+            - ContainerPort: 8000
+              Protocol: tcp
+          Environment:
+            - Name: DB_SECRET_ARN
+              Value: !Ref DBSecretArnSSM
+            - Name: DB_HOST
+              # Use local host when running against LocalStack,
+              # otherwise use the value resolved from SSM.
+              Value: !If [IsLocal, !Ref LocalDBHost, !Ref DBHostSSM]
+            - Name: STAGE
+              Value: !Ref Stage
+            - Name: IS_LOCAL
+              Value: !Ref IsLocalStack
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref JurisAILogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: !Sub "${ServiceName}-${Stage}"
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - "curl -f http://localhost:8000/health || exit 1"
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 60
+
+  # ---------------------------------------------
+  # ECS Service
+  # ---------------------------------------------
+  JurisAIService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub "${ServiceName}-service-${Stage}"
+      Cluster: !Ref JurisAICluster
+      DesiredCount: !Ref DesiredCount
+      LaunchType: FARGATE
+      TaskDefinition: !Ref JurisAITaskDefinition
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 50
+        MaximumPercent: 200
+      HealthCheckGracePeriodSeconds: 60
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets: !Split [",", !Ref PrivateSubnetsSSM]
+          SecurityGroups:
+            - !Ref AppSecurityGroupSSM
+          AssignPublicIp: DISABLED
+      LoadBalancers:
+        - TargetGroupArn: !Ref TargetGroupArnSSM
+          ContainerName: !Sub "${ServiceName}-container-${Stage}"
+          ContainerPort: 8000
+
+# -------------------------------------------------------
+# Outputs
+# -------------------------------------------------------
+Outputs:
+  ECSClusterName:
+    Description: ECS cluster name
+    Value: !Ref JurisAICluster
+    Export:
+      Name: !Sub "${ServiceName}-cluster-name-${Stage}"
+
+  ECSServiceName:
+    Description: ECS service name
+    Value: !GetAtt JurisAIService.Name
+    Export:
+      Name: !Sub "${ServiceName}-service-name-${Stage}"
+
+  TaskRoleArn:
+    Description: ARN of the ECS Task Role
+    Value: !GetAtt ECSTaskRole.Arn
+
+  ExecutionRoleArn:
+    Description: ARN of the ECS Execution Role
+    Value: !GetAtt ECSExecutionRole.Arn
+
+  LogGroupName:
+    Description: CloudWatch Log Group for ECS tasks
+    Value: !Ref JurisAILogGroup
