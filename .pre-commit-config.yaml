@@ -10,7 +10,72 @@ repos:
       - id: check-added-large-files
       - id: check-json
       - id: check-toml
+      - id: check-yaml
+        exclude: ^infrastructure/cf_templates/
       - id: detect-private-key
+
+
+  # ----------------------------------------
+  # Ruff: linting + formatting (Ruff ≥ 0.6)
+  # ----------------------------------------
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.0
+    hooks:
+      # Lint only (CI / pre-push friendly)
+      - id: ruff
+        name: Ruff Lint
+        exclude: ^(\.aws-sam|localstack-data)/
+
+      # Strict lint on push / CI
+      - id: ruff
+        name: ruff-check
+        args: [--no-fix]
+        stages: [pre-push]
+
+      # Lint + autofix (commit only)
+      - id: ruff
+        name: Ruff Lint (Fix)
+        args: [--fix]
+        stages: [pre-commit]
+        exclude: ^(\.aws-sam|localstack-data)/
+
+      # Format check
+      - id: ruff-format
+        name: Ruff Format
+        args: [--check]
+        exclude: ^(\.aws-sam|localstack-data)/
+
+      # Format autofix (commit only)
+      - id: ruff-format
+        name: Ruff Format (Fix)
+        stages: [pre-commit]
+        exclude: ^(\.aws-sam|localstack-data)/
+
+  # ----------------------------------------
+  # mypy: static typing
+  # ----------------------------------------
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.10.0
+    hooks:
+      - id: mypy
+        stages: [pre-push]
+        exclude: ^(\.aws-sam|localstack-data)/
+        additional_dependencies:
+          - types-requests
+          - types-redis
+
+  # ----------------------------------------
+  # codespell: spelling mistakes
+  # ----------------------------------------
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.3.0
+    hooks:
+      - id: codespell
+        args:
+          - --write-changes
+          - --check-filenames
+          - --check-hidden
+          - --skip=*.lock,*.svg,*.png,*.jpg,*.jpeg,node_modules,.venv,dist,build,.aws-sam,localstack-data
 
   # ----------------------------------------
   # CloudFormation / SAM linting
@@ -40,58 +105,3 @@ repos:
                 comments: {min-spaces-from-content: 1}
               }
             }
-
-  # ----------------------------------------
-  # Ruff: linting + formatting (Ruff ≥ 0.6)
-  # ----------------------------------------
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.6.0
-    hooks:
-      # Lint only (CI / pre-push friendly)
-      - id: ruff
-        name: Ruff Lint
-        exclude: ^(\.aws-sam|localstack-data)/
-
-      # Lint + autofix (commit only)
-      - id: ruff
-        name: Ruff Lint (Fix)
-        args: [--fix]
-        stages: [pre-commit]
-        exclude: ^(\.aws-sam|localstack-data)/
-
-      # Format check
-      - id: ruff-format
-        name: Ruff Format
-        args: [--check]
-        exclude: ^(\.aws-sam|localstack-data)/
-
-      # Format autofix (commit only)
-      - id: ruff-format
-        name: Ruff Format (Fix)
-        stages: [pre-commit]
-        exclude: ^(\.aws-sam|localstack-data)/
-
-  # ----------------------------------------
-  # mypy: static typing (Python 3.10)
-  # ----------------------------------------
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.9.0
-    hooks:
-      - id: mypy
-        exclude: ^(\.aws-sam|localstack-data)/
-        additional_dependencies:
-          - types-requests
-          - types-redis
-
-  # ----------------------------------------
-  # codespell: spelling mistakes
-  # ----------------------------------------
-  - repo: https://github.com/codespell-project/codespell
-    rev: v2.3.0
-    hooks:
-      - id: codespell
-        args:
-          - --write-changes
-          - --check-filenames
-          - --check-hidden
-          - --skip=*.lock,*.svg,*.png,*.jpg,*.jpeg,node_modules,.venv,dist,build,.aws-sam,localstack-data

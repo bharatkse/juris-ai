@@ -1,0 +1,51 @@
+name: Setup Python & Poetry
+description: Setup Python and Poetry with caching and virtual environment
+
+inputs:
+  python-version:
+    description: Python version
+    required: true
+  poetry-groups:
+    description: Poetry groups to install
+    required: false
+    default: "--with=dev"
+  cache-key-suffix:
+    description: Additional cache key suffix for poetry cache
+    required: false
+    default: ""
+  working-directory:
+    required: false
+    description: Working directory for the action
+    default: .
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install Poetry
+      uses: snok/install-poetry@v1
+      with:
+        virtualenvs-create: true # Always use isolated virtualenv
+        virtualenvs-in-project: true # Keeps .venv inside the project
+
+    - name: Cache Poetry dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pypoetry
+        key: poetry-${{ runner.os }}-${{ inputs.python-version }}-${{ hashFiles('**/poetry.lock') }}${{ inputs.cache-key-suffix }}
+        restore-keys: |
+          poetry-${{ runner.os }}-${{ inputs.python-version }}-
+
+    - name: Install dependencies
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        POETRY_VIRTUALENVS_CREATE: true
+        POETRY_VIRTUALENVS_IN_PROJECT: true
+      run: |
+        echo "Installing dependencies for poetry groups: ${{ inputs.poetry-groups }}"
+        poetry install ${{ inputs.poetry-groups }} --no-interaction

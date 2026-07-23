@@ -1,0 +1,40 @@
+name: "Set CI Environment Variables"
+description: "Hardcoded CI env vars for FastAPI app (temporary; replace with secrets later)"
+
+inputs:
+  debug:
+    description: "FastAPI debug mode"
+    required: true
+  environment:
+    description: "Environment type (e.g., development, testing, production)"
+    required: true
+  container-init-script:
+    description: "Container startup script name"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Export CI environment variables
+      shell: bash
+      run: |
+        echo "Setting environment variables for CI..."
+
+        # Environment variables and startup script name
+        echo "APP_ENVIRONMENT=${{ inputs.environment }}" >> $GITHUB_ENV
+        echo "CONTAINER_INIT_SCRIPT=${{ inputs.container-init-script }}" >> $GITHUB_ENV
+
+        # General FastAPI Settings
+        echo "DEBUG=${{ inputs.debug }}" >> $GITHUB_ENV
+        echo "SECRET_KEY=yk+f@%@apa_@*jw$3-dtocg&2e%yi9%rg^f0f*_a-r9gqnn@h#" >> $GITHUB_ENV
+        echo "ALLOWED_HOSTS=localhost,127.0.0.1,web" >> $GITHUB_ENV
+        echo "CORS_ALLOW_ALL_ORIGINS=True" >> $GITHUB_ENV
+
+        # PostgreSQL (Docker-based)
+        echo "DB_USER=db_user" >> $GITHUB_ENV
+        echo "DB_PASSWORD=db_pass" >> $GITHUB_ENV
+        echo "DB_HOST=localhost" >> $GITHUB_ENV
+        echo "DB_PORT=5432" >> $GITHUB_ENV
+        echo "DB_NAME=db_test" >> $GITHUB_ENV
+
+        echo "CI environment variables configured"
