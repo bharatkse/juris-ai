@@ -60,7 +60,7 @@ DEFAULT_APP_VERSION = "1.0.0"
 # ── API ───────────────────────────────────────────────────────────────────────
 API_VERSION: str = "v1"
 API_TITLE: str = "Legal AI API"
-API_DESCRIPTION: str = "Retrieval-Augmented Generation for legal documents"
+API_DESCRIPTION: str = "Juris AI is a modern backend service for AI-powered legal assistance"
 HEALTH_ENDPOINT: str = "/health"
 
 # ── Logging ───────────────────────────────────────────────────────────────────

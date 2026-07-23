@@ -14,11 +14,6 @@ from pydantic import BaseModel, ConfigDict, Field
 DataT = TypeVar("DataT")
 
 
-# ==============================================================================
-# Request Models
-# ==============================================================================
-
-
 class PaginationParams(BaseModel):
     """Query parameters for paginated endpoints."""
 
@@ -36,11 +31,6 @@ class PaginationParams(BaseModel):
         le=100,
         description="Maximum number of records to return.",
     )
-
-
-# ==============================================================================
-# Response Models
-# ==============================================================================
 
 
 class Pagination(BaseModel):

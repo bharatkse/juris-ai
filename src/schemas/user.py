@@ -11,10 +11,6 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 from src.core.enums import Gender
 from src.core.types import UserId
 
-# =============================================================================
-# Request Schemas
-# =============================================================================
-
 
 class CreateUserRequest(BaseModel):
     """
@@ -99,11 +95,6 @@ class UpdateUserRequest(BaseModel):
     )
 
     date_of_birth: date | None = None
-
-
-# =============================================================================
-# Response Schemas
-# =============================================================================
 
 
 class UserResponse(BaseModel):
