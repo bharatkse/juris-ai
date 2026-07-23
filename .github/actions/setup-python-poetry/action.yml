@@ -37,13 +37,15 @@ runs:
         virtualenvs-create: true # Always use isolated virtualenv
         virtualenvs-in-project: true # Keeps .venv inside the project
 
-    - name: Cache Poetry dependencies
+    - name: Cache virtualenv
       uses: actions/cache@v4
       with:
-        path: ~/.cache/pypoetry
-        key: poetry-${{ runner.os }}-${{ inputs.python-version }}-${{ hashFiles('**/poetry.lock') }}${{ inputs.cache-key-suffix }}
+        path: |
+          .venv
+          ~/.cache/pypoetry
+        key: venv-${{ runner.os }}-${{ inputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
         restore-keys: |
-          poetry-${{ runner.os }}-${{ inputs.python-version }}-
+          venv-${{ runner.os }}-${{ inputs.python-version }}-
 
     - name: Install dependencies
       shell: bash
