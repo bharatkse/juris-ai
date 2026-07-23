@@ -5,12 +5,15 @@ from src.core.config import get_settings
 from src.core.context import RequestContext
 from src.core.response import ApiResponse
 
-router = APIRouter()
+router = APIRouter(
+    prefix="/health",
+    tags=["Health"],
+)
 
 settings = get_settings()
 
 
-@router.get("/health", summary="Health check endpoint")
+@router.get("", summary="Health check endpoint")
 async def health(
     context: RequestContext = Depends(get_request_context),
 ):

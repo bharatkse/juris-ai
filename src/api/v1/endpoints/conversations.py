@@ -4,13 +4,12 @@ Conversation API routes.
 
 from __future__ import annotations
 
-from uuid import UUID
-
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from src.api.dependencies.conversation import get_conversation_service
 from src.core.response import ApiResponse
-from src.schemas.conversation import ConversationResponse
+from src.core.types import ConversationId
+from src.schemas.conversation import ConversationResponse, CreateConversationRequest
 from src.services.conversation import ConversationService
 
 router = APIRouter(
@@ -26,13 +25,14 @@ router = APIRouter(
     summary="Create a new conversation",
 )
 async def create_conversation(
+    request: CreateConversationRequest,
     service: ConversationService = Depends(get_conversation_service),
 ) -> ApiResponse:
     """
     Create a new conversation.
     """
 
-    conversation = await service.create()
+    conversation = await service.create(request)
 
     return ApiResponse(
         data=ConversationResponse.model_validate(
@@ -50,7 +50,7 @@ async def create_conversation(
     summary="Retrieve a conversation",
 )
 async def get_conversation(
-    conversation_id: UUID,
+    conversation_id: ConversationId,
     service: ConversationService = Depends(get_conversation_service),
 ) -> ApiResponse:
     """
@@ -81,7 +81,7 @@ async def get_conversation(
     summary="Archive a conversation",
 )
 async def archive_conversation(
-    conversation_id: UUID,
+    conversation_id: ConversationId,
     service: ConversationService = Depends(get_conversation_service),
 ) -> ApiResponse:
     """

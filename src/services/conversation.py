@@ -9,8 +9,11 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.constants import DEFAULT_CONVERSATION_TITLE
+from src.core.exceptions import UserNotFoundError
 from src.db.models.conversation import Conversation
 from src.repositories.conversation import ConversationRepository
+from src.repositories.user import UserRepository
+from src.schemas.conversation import CreateConversationRequest
 from src.services.base import BaseService
 
 
@@ -23,19 +26,29 @@ class ConversationService(BaseService):
         self,
         session: AsyncSession,
         repository: ConversationRepository,
+        user_repository: UserRepository,
     ) -> None:
         super().__init__(session)
 
         self._repository = repository
+        self._user_repository = user_repository
 
-    async def create(self) -> Conversation:
+    async def create(self, request: CreateConversationRequest) -> Conversation:
         """
         Create a new conversation.
         """
+        user_id = request.user_id
+        user = await self._user_repository.get(user_id)
+
+        if user is None:
+            raise UserNotFoundError("User not found.")
 
         try:
             conversation = await self._repository.create(
-                title=DEFAULT_CONVERSATION_TITLE,
+                Conversation(
+                    title=request.title or DEFAULT_CONVERSATION_TITLE,
+                    user_id=request.user_id,
+                ),
             )
 
             await self.commit()

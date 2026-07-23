@@ -22,20 +22,11 @@ class UserRepository(BaseRepository):
 
     async def create(
         self,
-        *,
-        email: str,
-        full_name: str,
-        password_hash: str,
+        user: User,
     ) -> User:
         """
         Create a new user.
         """
-
-        user = self._model(
-            email=email,
-            full_name=full_name,
-            password_hash=password_hash,
-        )
 
         self._session.add(user)
 
