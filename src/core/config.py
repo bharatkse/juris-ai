@@ -8,11 +8,11 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Any, Literal
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from src.core.constants import DEFAULT_APP_NAME, DEFAULT_APP_VERSION
-from src.core.enums import CacheBackend, Environment
+from src.core.enums import CacheBackend, Environment, GroqModel
 
 
 class Settings(BaseSettings):
@@ -107,6 +107,12 @@ class Settings(BaseSettings):
     ENABLE_DOCS: bool = True
 
     CORS_ORIGINS: list[str] = ["*"]
+
+    # --------------------------------------------------------------------------
+    # External Services
+    # --------------------------------------------------------------------------
+    GROQ_API_KEY: SecretStr | None = None
+    GROQ_MODEL: GroqModel = GroqModel.LLAMA_3_3_70B
 
     # --------------------------------------------------------------------------
     # Pydantic Configuration
@@ -205,6 +211,7 @@ class Settings(BaseSettings):
                 "DB_NAME": self.DB_NAME,
                 "DB_USER": self.DB_USER,
                 "DB_PASSWORD": self.DB_PASSWORD,
+                "GROQ_API_KEY": self.GROQ_API_KEY,
             },
             Environment.STAGING: {
                 "SECRET_KEY": self.SECRET_KEY,

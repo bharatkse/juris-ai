@@ -24,13 +24,45 @@ class Gender(StrEnum):
     OTHER = "other"
 
 
-class DocumentStatus(StrEnum):
-    PENDING = "pending"
-    PROCESSING = "processing"
-    INDEXED = "indexed"
-    FAILED = "failed"
+class MessageRole(StrEnum):
+    """
+    Supported chat message roles.
+    """
+
+    USER = "user"
+
+    ASSISTANT = "assistant"
+
+    SYSTEM = "system"
+
+    TOOL = "tool"
+
+
+class EventType(StrEnum):
+    USER = "user"
+
+    ASSISTANT = "assistant"
+
+    SYSTEM = "system"
+
+    TOOL_CALL = "tool_call"
+
+    TOOL_RESULT = "tool_result"
+
+    RETRIEVAL = "retrieval"
+
+    RERANK = "rerank"
+
+    PLANNER = "planner"
 
 
 class SortOrder(StrEnum):
     ASC = "asc"
     DESC = "desc"
+
+
+class GroqModel(StrEnum):
+    LLAMA_3_1_8B = "llama-3.1-8b-instant"
+    LLAMA_3_3_70B = "llama-3.3-70b-versatile"
+    GPT_OSS_120B = "openai/gpt-oss-120b"
+    GPT_OSS_20B = "openai/gpt-oss-20b"

@@ -13,6 +13,7 @@ from src.db.base import Base
 from src.db.mixins import PrimaryKeyMixin, SoftDeleteMixin, TimestampMixin
 
 if TYPE_CHECKING:
+    from .conversation_event import ConversationEvent
     from .user import User
 
 
@@ -43,6 +44,11 @@ class Conversation(
 
     user: Mapped["User"] = relationship(
         back_populates="conversations",
+    )
+
+    events: Mapped[list["ConversationEvent"]] = relationship(
+        back_populates="conversation",
+        order_by="ConversationEvent.created_at",
     )
 
     def __repr__(self) -> str:
