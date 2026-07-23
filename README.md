@@ -1,88 +1,141 @@
-# Legal AI Agent System
+# ⚖️ Juris AI
 
-Retrieval-Augmented Generation for legal documents.
-Upload PDFs → ask questions in plain English → get grounded answers with citations.
+Juris AI is a modern backend service for AI-powered legal assistance.
 
----
-
-## Features
-
-- **PDF ingestion** — upload any PDF; automatic text extraction, chunking, deduplication
-- **Semantic search** — FAISS vector search with cosine similarity
-- **Grounded answers** — LLM answers cite your actual documents
-- **Streaming** — token-by-token SSE streaming responses
-- **Multiple LLMs** — OpenAI (GPT-3.5/4/4o) or Anthropic (Claude 3)
-- **Pluggable storage** — local filesystem or AWS S3
-- **Pluggable cache** — in-memory or Redis
-- **REST API** — FastAPI with auto-generated OpenAPI docs
+Built with FastAPI and PostgreSQL, it provides secure authentication, conversation management, AI integration, and a modular architecture that supports future feature expansion while maintaining clean separation of concerns.
 
 ---
 
-## Quick Start
+# ✨ Features
+
+- 🤖 AI-powered legal assistant
+- 👤 User registration and authentication
+- 💬 Conversation management
+- ⚡ FastAPI REST APIs with OpenAPI documentation
+- 🔒 Secure password hashing using Argon2 (`pwdlib`)
+- 🗄️ PostgreSQL with SQLAlchemy 2.x ORM
+- 🚀 Alembic database migrations
+- ⚙️ Environment-based configuration using Pydantic Settings
+- ⚡ Redis or in-memory caching
+- 🐳 Docker & Docker Compose support
+- 🧪 Automated testing, linting, formatting, and CI/CD
+
+---
+
+# 🚀 Quick Start
+
+## Clone the repository
 
 ```bash
-git clone <repo> && cd juris-ai
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env           # set SECRET_KEY + LLM API key
-python scripts/seed_database.py
-uvicorn main:app --reload
-# Open http://localhost:8000/docs
+git clone <repository-url>
+cd juris-ai
 ```
+
+## Create a virtual environment
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+```
+
+## Install dependencies
+
+```bash
+poetry install
+```
+
+## Configure environment
+
+```bash
+cp .env.example .env
+```
+
+Update the required values in `.env`.
+
+## Start the application
+
+```bash
+make dev-deploy
+```
+
+## Run database migrations
+
+```bash
+make alembic-upgrade
+```
+
+Open:
+
+- Swagger UI: http://localhost:8001/docs
+- ReDoc: http://localhost:8001/redoc
 
 ---
 
-## Project Layout
+# 📂 Project Structure
 
-```
+```text
 src/
-├── core/          Config, logging, exceptions, enums
-├── models/        Pydantic domain models
-├── db/            SQLAlchemy ORM + session
-├── repository/    Data access (Repository pattern)
-├── storage/       File storage abstraction (local / S3)
-├── ingestion/     PDF → chunks → embeddings → index
-├── embeddings/    Text → vector (local / OpenAI)
-├── vector_store/  FAISS search + reranking
-├── cache/         In-memory / Redis cache
-├── llm/           OpenAI / Claude provider
-├── rag/           Retrieve + generate orchestration
-├── api/           FastAPI routes + middleware
-└── schemas/       HTTP request/response schemas
+├── api/                # FastAPI routes and dependencies
+├── core/               # Configuration, logging, constants, exceptions
+├── db/
+│   ├── migrations/     # Alembic migrations
+│   ├── models/         # SQLAlchemy ORM models
+│   ├── session.py      # Database session
+│   └── base.py
+├── repositories/       # Repository layer
+├── schemas/            # Request & response schemas
+├── security/           # Password hashing & authentication
+├── services/           # Business logic
+├── agent/                # AI provider integrations
+├── cache/              # Redis / Memory cache
+└── main.py             # Application entry point
 ```
 
 ---
 
-## Documentation
+# 📚 Documentation
 
-|                                        |                              |
-| -------------------------------------- | ---------------------------- |
-| [Getting Started](docs/README.md)      | Installation, first document |
-| [API Reference](docs/API.md)           | All endpoints                |
-| [Architecture](docs/ARCHITECTURE.md)   | System design + data flow    |
-| [Ingestion Guide](docs/INGESTION.md)   | PDF processing pipeline      |
-| [RAG Guide](docs/RAG.md)               | Retrieval + generation       |
-| [Deployment Guide](docs/DEPLOYMENT.md) | Production deployment        |
+| Document               | Description           |
+| ---------------------- | --------------------- |
+| `docs/README.md`       | Getting Started Guide |
+| `docs/API.md`          | REST API Reference    |
+| `docs/ARCHITECTURE.md` | System Architecture   |
+| `docs/DEPLOYMENT.md`   | Deployment Guide      |
 
 ---
 
-## Stack
+# 🛠 Technology Stack
 
-| Layer      | Technology                       |
-| ---------- | -------------------------------- |
-| API        | FastAPI + Uvicorn                |
-| Database   | SQLite (dev) / PostgreSQL (prod) |
-| ORM        | SQLAlchemy 2.0                   |
-| Vector DB  | FAISS (local)                    |
-| Embeddings | sentence-transformers / OpenAI   |
-| LLM        | OpenAI GPT / Anthropic Claude    |
-| Cache      | In-memory / Redis                |
-| Storage    | Filesystem / AWS S3              |
-| Migrations | Alembic                          |
-| Container  | Docker + Compose                 |
+| Layer              | Technology              |
+| ------------------ | ----------------------- |
+| Language           | Python 3.11+            |
+| Framework          | FastAPI                 |
+| ASGI Server        | Uvicorn                 |
+| Database           | PostgreSQL              |
+| ORM                | SQLAlchemy 2.x          |
+| Database Migration | Alembic                 |
+| Validation         | Pydantic v2             |
+| Authentication     | pwdlib (Argon2)         |
+| Cache              | Redis / In-Memory       |
+| AI Provider        | Groq (Pluggable)        |
+| Containerization   | Docker & Docker Compose |
+| Code Quality       | Ruff, MyPy, Pre-commit  |
+| Testing            | Pytest                  |
 
 ---
 
-## License
+# 👨‍💻 Maintainer
 
-MIT
+**Bharat Kumar**
+
+Senior Software Engineer | Backend & Cloud
+
+📧 kumar.bhart28@gmail.com
+
+🔗 LinkedIn: https://www.linkedin.com/in/bharat-kumar28
+
+---
+
+# 📄 License
+
+This project is licensed under the MIT License. See the `LICENSE` file for details.
