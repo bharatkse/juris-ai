@@ -1,0 +1,47 @@
+name: ActionLint
+
+on:
+  workflow_call:
+
+jobs:
+  actionlint:
+    name: Lint GitHub Actions
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Cache actionlint
+        uses: actions/cache@v4
+        with:
+          path: ./actionlint
+          key: actionlint-${{ runner.os }}-v1.7.7
+
+      - name: Download actionlint
+        id: get_actionlint
+        shell: bash
+        run: |
+          if [ ! -f ./actionlint ]; then
+            echo "Downloading actionlint v1.7.7..."
+            curl -L -o actionlint.tar.gz "https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_amd64.tar.gz"
+            tar -xzf actionlint.tar.gz
+            chmod +x actionlint
+            rm actionlint.tar.gz
+          fi
+          echo "executable=./actionlint" >> "$GITHUB_OUTPUT"
+
+      - name: Check workflow files
+        shell: bash
+        run: |
+          ${{ steps.get_actionlint.outputs.executable }} \
+            -color \
+            -ignore "SC2086" \
+            -ignore "SC2155" \
+            -ignore "SC2002" \
+            -ignore "SC2129" \
+            -ignore "SC2046" \
+            -ignore "SC2016" \
+            -ignore "SC2034" \
+            -ignore "SC2005"

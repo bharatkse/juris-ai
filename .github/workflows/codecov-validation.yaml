@@ -1,0 +1,51 @@
+name: Codecov Config Validation
+
+on:
+  workflow_call:
+
+jobs:
+  validate-codecov-config:
+    name: Validate .codecov.yml
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check if .codecov.yml exists
+        run: |
+          if [ ! -f .codecov.yml ]; then
+            echo ".codecov.yml not found. Skipping validation."
+            exit 0
+          fi
+
+      - name: Validate .codecov.yml with Codecov API
+        run: |
+          echo "Validating .codecov.yml..."
+
+          # Try to validate with timeout and proper error handling
+          if ! result=$(curl --silent --fail --connect-timeout 10 --max-time 30 \
+            --data-binary @.codecov.yml https://codecov.io/validate 2>&1); then
+            echo "Failed to connect to Codecov API"
+            echo "Error: $result"
+            echo "Skipping validation (API might be down)"
+            exit 0
+          fi
+
+          echo "API Response: $result"
+
+          if echo "$result" | grep -q '"status": "error"'; then
+            echo "Codecov config validation failed!"
+            # Try to extract error message if possible
+            if command -v jq >/dev/null 2>&1; then
+              echo "Error details:"
+              echo "$result" | jq '.error' 2>/dev/null || echo "Could not parse error details"
+            fi
+            exit 1
+          else
+            echo "Codecov config is valid"
+          fi

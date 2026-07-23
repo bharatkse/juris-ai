@@ -324,6 +324,11 @@ ci: ## Full CI pipeline: lint → type-check → test
 	@$(MAKE) test
 	@echo '$(GREEN) CI pipeline passed$(RESET)'
 
+pre-commit: ## Run pre-commit hooks on all files
+	@echo '$(CYAN)Running pre-commit hooks...$(RESET)'
+	@poetry run pre-commit run --all-files
+	@echo '$(GREEN) Pre-commit hooks passed$(RESET)'
+
 install-hooks: ## Install pre-commit git hooks
 	@echo '$(CYAN)Installing git hooks...$(RESET)'
 	@poetry run pre-commit install

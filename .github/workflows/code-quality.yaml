@@ -1,0 +1,44 @@
+name: Code Quality
+
+# This workflow runs code quality checks on the repository, including pre-commit hooks, Ruff linter, and Ruff formatter checks.
+# It is intended to ensure code style and formatting standards are maintained for all code in the repository (not just Python).
+
+on:
+  workflow_call:
+    inputs:
+      python-version:
+        required: true
+        type: string
+
+jobs:
+  code-quality:
+    name: Code Quality Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python and Poetry
+        uses: ./.github/actions/setup-python-poetry
+        with:
+          python-version: ${{ inputs.python-version }}
+          poetry-groups: "--only=dev"
+
+      - name: Cache pre-commit hooks
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+          restore-keys: |
+            pre-commit-${{ runner.os }}-
+
+      - name: Run Pre-commit Hooks (All Languages)
+        uses: pre-commit/action@v3.0.1
+
+      - name: Run Ruff Linter (Python Only)
+        run: poetry run ruff check . --output-format=github
+
+      - name: Run Ruff Formatter Check (Python Only)
+        run: poetry run ruff format --check .
