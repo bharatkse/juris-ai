@@ -18,6 +18,12 @@ class CacheBackend(StrEnum):
     REDIS = "redis"
 
 
+class Gender(StrEnum):
+    MALE = "male"
+    FEMALE = "female"
+    OTHER = "other"
+
+
 class DocumentStatus(StrEnum):
     PENDING = "pending"
     PROCESSING = "processing"

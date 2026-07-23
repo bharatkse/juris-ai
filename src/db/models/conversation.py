@@ -32,7 +32,7 @@ class Conversation(
     title: Mapped[str] = mapped_column(
         String(255),
         nullable=False,
-        default=DEFAULT_CONVERSATION_TITLE,
+        default=lambda: DEFAULT_CONVERSATION_TITLE,
     )
 
     user_id: Mapped[str] = mapped_column(

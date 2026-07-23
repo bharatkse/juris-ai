@@ -5,13 +5,10 @@ Conversation request and response schemas.
 from __future__ import annotations
 
 from datetime import datetime
-from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-# =============================================================================
-# Request Schemas
-# =============================================================================
+from src.core.types import ConversationId, UserId
 
 
 class CreateConversationRequest(BaseModel):
@@ -26,11 +23,15 @@ class CreateConversationRequest(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
+    user_id: UserId = Field(
+        ...,
+        description="Identifier of the user creating the conversation.",
+    )
 
-
-# =============================================================================
-# Response Schemas
-# =============================================================================
+    title: str | None = Field(
+        default=None,
+        description="Optional title for the conversation.",
+    )
 
 
 class ConversationResponse(BaseModel):
@@ -43,20 +44,10 @@ class ConversationResponse(BaseModel):
         extra="forbid",
     )
 
-    id: UUID
-
+    id: ConversationId
+    user_id: UserId
     title: str
 
     created_at: datetime
 
     updated_at: datetime
-
-
-class ConversationCreatedResponse(BaseModel):
-    """
-    Response returned after creating a conversation.
-    """
-
-    conversation_id: UUID = Field(
-        description="Conversation identifier.",
-    )

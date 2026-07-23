@@ -4,12 +4,11 @@ User API routes.
 
 from __future__ import annotations
 
-from uuid import UUID
-
 from fastapi import APIRouter, Depends, status
 
 from src.api.dependencies.user import get_user_service
 from src.core.response import ApiResponse
+from src.core.types import UserId
 from src.schemas.user import CreateUserRequest, UpdateUserRequest, UserResponse
 from src.services.user import UserService
 
@@ -49,7 +48,7 @@ async def create_user(
     summary="Get user details",
 )
 async def get_user(
-    user_id: UUID,
+    user_id: UserId,
     service: UserService = Depends(get_user_service),
 ) -> ApiResponse:
     """
@@ -72,7 +71,7 @@ async def get_user(
     summary="Update user profile",
 )
 async def update_user(
-    user_id: UUID,
+    user_id: UserId,
     request: UpdateUserRequest,
     service: UserService = Depends(get_user_service),
 ) -> ApiResponse:

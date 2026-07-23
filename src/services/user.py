@@ -40,24 +40,26 @@ class UserService(BaseService):
         Create a new user.
         """
 
-        email = request.email.strip().lower()
+        password_hash = self._password_service.hash(request.password)
 
-        if await self._repository.exists_by_email(email):
-            raise UserAlreadyExistsError("Email is already registered.")
-
-        password_hash = self._password_service.hash(
-            request.password,
+        data = request.model_dump(
+            exclude={
+                "password",
+                "confirm_password",
+            }
         )
 
+        data["email"] = data["email"].strip().lower()
+
+        if await self._repository.exists_by_email(data["email"]):
+            raise UserAlreadyExistsError("Email is already registered.")
+
+        data["hashed_password"] = password_hash
+        user = User(**data)
+
         try:
-            user = await self._repository.create(
-                email=email,
-                full_name=request.full_name.strip(),
-                password_hash=password_hash,
-            )
-
+            user = await self._repository.create(user)
             await self.commit()
-
             return user
 
         except BaseException:
@@ -82,23 +84,22 @@ class UserService(BaseService):
         """
         Update a user's profile.
         """
-
         user = await self._repository.get(user_id)
 
         if user is None:
             raise UserNotFoundError("User not found.")
 
-        if request.full_name is not None:
-            user.full_name = request.full_name.strip()
+        updates = request.model_dump(exclude_unset=True)
 
-        if request.email is not None:
-            email = request.email.strip().lower()
+        for field, value in updates.items():
+            if field == "email":
+                value = value.strip().lower()
 
-            if email != user.email:
-                if await self._repository.exists_by_email(email):
-                    raise UserAlreadyExistsError("Email is already registered.")
+                if value != user.email:
+                    if await self._repository.exists_by_email(value):
+                        raise UserAlreadyExistsError("Email is already registered.")
 
-                user.email = email
+            setattr(user, field, value)
 
         try:
             await self._repository.update(user)

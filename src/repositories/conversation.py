@@ -20,15 +20,7 @@ class ConversationRepository(BaseRepository):
 
     _model = Conversation
 
-    async def create(
-        self,
-        *,
-        title: str,
-    ) -> Conversation:
-        conversation = Conversation(
-            title=title,
-        )
-
+    async def create(self, conversation: Conversation) -> Conversation:
         self._session.add(conversation)
 
         await self.flush()
