@@ -48,7 +48,7 @@ jobs:
       - name: Setup variables
         id: setup-vars
         run: |
-          PYTHON_VERSION="3.11.09"
+          PYTHON_VERSION="3.11.9"
           echo "PYTHON_VERSION=$PYTHON_VERSION" >> "$GITHUB_OUTPUT"
           echo "✅ Python Version: $PYTHON_VERSION"
           echo "✅ Environment: ${{ inputs.environment }}"
