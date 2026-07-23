@@ -17,6 +17,10 @@ inputs:
     required: false
     description: Working directory for the action
     default: .
+  poetry-version:
+    description: Poetry version to install
+    required: false
+    default: "2.2.1"
 
 runs:
   using: "composite"
@@ -29,6 +33,7 @@ runs:
     - name: Install Poetry
       uses: snok/install-poetry@v1
       with:
+        version: ${{ inputs.poetry-version }}
         virtualenvs-create: true # Always use isolated virtualenv
         virtualenvs-in-project: true # Keeps .venv inside the project
 
