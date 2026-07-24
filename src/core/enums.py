@@ -61,6 +61,13 @@ class SortOrder(StrEnum):
     DESC = "desc"
 
 
+class LLMProvider(StrEnum):
+    GROQ = "groq"
+    OPENAI = "openai"
+    ANTHROPIC = "anthropic"
+    OLLAMA = "ollama"
+
+
 class GroqModel(StrEnum):
     LLAMA_3_1_8B = "llama-3.1-8b-instant"
     LLAMA_3_3_70B = "llama-3.3-70b-versatile"

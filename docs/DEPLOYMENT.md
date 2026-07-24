@@ -10,12 +10,6 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env          # fill in SECRET_KEY and OPENAI_API_KEY
 
-# Initialise
-python scripts/seed_database.py
-
-# Run
-uvicorn main:app --reload
-# API: http://localhost:8000    Docs: http://localhost:8000/docs
 ```
 
 ---
@@ -40,12 +34,12 @@ docker run -p 8000:8000 \
 
 ### Required
 
-| Variable | Description |
-|----------|-------------|
-| `SECRET_KEY` | Random 32+ char secret. Generate: `python -c "import secrets; print(secrets.token_hex(32))"` |
-| `DATABASE_URL` | `sqlite:///./data/db/legal.db` or `postgresql://user:pass@host/db` |
-| `OPENAI_API_KEY` | Required when `LLM_PROVIDER=openai` |
-| `ANTHROPIC_API_KEY` | Required when `LLM_PROVIDER=claude` |
+| Variable            | Description                                                                                  |
+| ------------------- | -------------------------------------------------------------------------------------------- |
+| `SECRET_KEY`        | Random 32+ char secret. Generate: `python -c "import secrets; print(secrets.token_hex(32))"` |
+| `DATABASE_URL`      | `sqlite:///./data/db/legal.db` or `postgresql://user:pass@host/db`                           |
+| `OPENAI_API_KEY`    | Required when `LLM_PROVIDER=openai`                                                          |
+| `ANTHROPIC_API_KEY` | Required when `LLM_PROVIDER=claude`                                                          |
 
 ### Production Settings
 
@@ -100,6 +94,7 @@ alembic current
 ## Production Checklist
 
 **Security**
+
 - [ ] `SECRET_KEY` is unique and random (32+ chars)
 - [ ] `DEBUG=false` and `ENABLE_DOCS=false`
 - [ ] `CORS_ORIGINS` restricted to your domain
@@ -108,18 +103,21 @@ alembic current
 - [ ] Running as non-root user in container
 
 **Performance**
+
 - [ ] `WORKERS` set to CPU core count
 - [ ] `CACHE_BACKEND=redis` enabled
 - [ ] PostgreSQL connection pool tuned (`DATABASE_POOL_SIZE=20`)
 - [ ] GPU enabled if embedding throughput is needed
 
 **Reliability**
+
 - [ ] Database backups scheduled
 - [ ] FAISS index backed up (`data/vector_db/`)
 - [ ] Health check endpoint monitored (`GET /api/v1/health`)
 - [ ] Logs shipped to centralised log system
 
 **Scaling**
+
 - [ ] Load balancer in front of multiple API instances
 - [ ] Redis shared across all instances (`CACHE_BACKEND=redis`)
 - [ ] Database on dedicated host
@@ -130,32 +128,7 @@ alembic current
 
 ```bash
 # Basic health check
-curl http://localhost:8000/api/v1/health
-
-# Detailed stats
-curl http://localhost:8000/api/v1/stats
-
-# Script-based check (exits 0=healthy, 1=unhealthy)
-python scripts/health_check.py --skip-llm
-```
-
----
-
-## Useful Operations
-
-```bash
-# Batch ingest new documents
-python scripts/run_ingestion.py --dir ./new_documents
-
-# Rebuild vector index (after model change)
-python scripts/build_index.py --full
-
-# Clear RAG cache
-python scripts/cleanup_cache.py
-
-# Reset everything (DEV ONLY)
-python scripts/seed_database.py --reset
-python scripts/build_index.py --full
+curl http://localhost:8001/api/v1/health
 ```
 
 ---

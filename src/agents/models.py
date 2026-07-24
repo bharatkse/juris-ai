@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from src.clients.models import LLMTokenUsage
+from src.core.enums import MessageRole
 
 
 @dataclass(slots=True, frozen=True)
@@ -34,4 +35,45 @@ class AgentResponse:
 
     metadata: dict[str, Any] = field(
         default_factory=dict,
+    )
+
+
+@dataclass(slots=True, frozen=True)
+class AgentChunk:
+    """
+    Streamed chunk produced by an AI agent.
+    """
+
+    content: str = ""
+
+    is_final: bool = False
+
+    finish_reason: str | None = None
+
+    metadata: dict[str, Any] = field(
+        default_factory=dict,
+    )
+
+
+@dataclass(slots=True, frozen=True)
+class AgentMessage:
+    """
+    Conversation message understood by the Agent layer.
+    """
+
+    role: MessageRole
+
+    content: str
+
+
+@dataclass(slots=True, frozen=True)
+class AgentRequest:
+    """
+    Request sent to an AI agent.
+    """
+
+    question: str
+
+    history: list[AgentMessage] = field(
+        default_factory=list,
     )
