@@ -3,7 +3,7 @@
                                          |      React UI        |
                                          +----------+-----------+
                                                     |
-                                           REST / WebSocket
+                                                REST HTTP Stream
                                                     |
                                                     ▼
                                     +-------------------------------+

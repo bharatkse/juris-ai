@@ -11,6 +11,7 @@ from src.agents.base import BaseAgent
 from src.agents.legal import LegalAgent
 from src.clients.groq import GroqClient
 from src.db.session import get_db_session
+from src.prompts.legal import LEGAL_SYSTEM_PROMPT
 from src.repositories.conversation import ConversationRepository
 from src.repositories.conversation_event import ConversationEventRepository
 from src.services.chat import ChatService
@@ -36,6 +37,7 @@ def get_groq_client() -> GroqClient:
 
 _legal_agent = LegalAgent(
     client=_groq_client,
+    system_prompt=LEGAL_SYSTEM_PROMPT,
 )
 
 

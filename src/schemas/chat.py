@@ -74,3 +74,21 @@ class ChatResponse(BaseModel):
     user_event: ConversationEventResponse
 
     assistant_event: ConversationEventResponse
+
+
+class ChatStreamResponse(BaseModel):
+    """
+    Streamed chat response.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
+    content: str
+
+    is_final: bool = False
+
+    metadata: dict[str, Any] = Field(
+        default_factory=dict,
+    )

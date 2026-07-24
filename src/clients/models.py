@@ -53,3 +53,37 @@ class LLMResponse:
     metadata: dict[str, Any] = field(
         default_factory=dict,
     )
+
+
+@dataclass(slots=True, frozen=True)
+class LLMChunk:
+    """
+    A streamed chunk returned by an LLM provider.
+    """
+
+    content: str = ""
+
+    is_final: bool = False
+
+    finish_reason: str | None = None
+
+    metadata: dict[str, Any] = field(
+        default_factory=dict,
+    )
+
+
+@dataclass(slots=True, frozen=True)
+class LLMStreamResponse:
+    """
+    Final information collected after a streaming response completes.
+    """
+
+    provider: str
+
+    model: str
+
+    usage: LLMTokenUsage | None = None
+
+    metadata: dict[str, Any] = field(
+        default_factory=dict,
+    )

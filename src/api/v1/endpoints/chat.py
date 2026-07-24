@@ -4,12 +4,25 @@ Chat API routes.
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import AsyncIterator
+
 from fastapi import APIRouter, Depends, status
+from fastapi.responses import StreamingResponse
 
 from src.api.dependencies.chat import get_chat_service
+from src.api.streaming import encode_sse_event
+from src.core.logger import get_logger
 from src.core.response import ApiResponse
-from src.schemas.chat import ChatRequest, ChatResponse, ConversationEventResponse
+from src.schemas.chat import (
+    ChatRequest,
+    ChatResponse,
+    ChatStreamResponse,
+    ConversationEventResponse,
+)
 from src.services.chat import ChatService
+
+logger = get_logger(__name__)
 
 router = APIRouter(
     prefix="/chat",
@@ -53,4 +66,46 @@ async def chat(
             ),
         ),
         status_code=status.HTTP_200_OK,
+    )
+
+
+@router.post(
+    "/stream",
+    response_class=StreamingResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def stream_chat(
+    request: ChatRequest,
+    service: ChatService = Depends(get_chat_service),
+) -> StreamingResponse:
+    """
+    Stream a chat response.
+    """
+
+    async def event_generator() -> AsyncIterator[str]:
+        try:
+            async for chunk in service.stream_chat(
+                conversation_id=request.conversation_id,
+                message=request.message,
+            ):
+                yield encode_sse_event(
+                    ChatStreamResponse(
+                        content=chunk.content,
+                        is_final=chunk.is_final,
+                        metadata=chunk.metadata,
+                    )
+                )
+
+        except asyncio.CancelledError:
+            logger.error("Client disconnected from chat stream.")
+            raise
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )
