@@ -22,6 +22,12 @@ on:
       CODECOV_TOKEN:
         required: true
 
+      SECRET_KEY:
+        required: true
+
+      GROQ_API_KEY:
+        required: true
+
 # Default shell to be used for all run steps
 defaults:
   run:
