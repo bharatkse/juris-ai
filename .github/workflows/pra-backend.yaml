@@ -1,0 +1,116 @@
+name: Backend Unit Test Workflow
+
+# This workflow is triggered via 'workflow_call' from another workflow.
+on:
+  workflow_call:
+    inputs:
+      python-version:
+        description: "Python version to be used for setting up the environment."
+        required: true
+        type: string
+      working-directory:
+        description: "Project root directory (default: src)."
+        required: false
+        type: string
+        default: src
+
+# Default shell to be used for all run steps
+defaults:
+  run:
+    shell: bash -eo pipefail {0}
+
+jobs:
+  unit-tests:
+    name: Backend Unit Tests with Coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref || github.sha }}
+
+      - name: Setup Python and Poetry
+        uses: ./.github/actions/setup-python-poetry
+        with:
+          python-version: ${{ inputs.python-version }}
+          poetry-groups: "--only=dev"
+
+
+      - name: Validate required secrets for Codecov
+        run: |
+          missing_secrets=()
+
+          if [ -z "${{ secrets.CODECOV_TOKEN }}" ]; then
+            missing_secrets+=("CODECOV_TOKEN")
+          fi
+
+          if [ ${#missing_secrets[@]} -gt 0 ]; then
+            echo "Missing required secrets: ${missing_secrets[*]}"
+            echo "Coverage upload will fail without these secrets"
+            exit 1
+          fi
+          echo "All required secrets are present"
+
+      - name: Install extra test dependencies
+        run: |
+          poetry run pip install keyring pytest-xdist pytest-rerunfailures
+
+      - name: Run unit tests and collect coverage
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          poetry run pytest \
+            tests/unit \
+            --cov=src \
+            --cov-config=.coveragerc \
+            --cov-branch \
+            --cov-report=term-missing \
+            --cov-report=xml:coverage.xml \
+            -v \
+            --tb=long \
+            | tee /tmp/pytest.log
+
+      - name: Verify if coverage.xml was generated
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          echo "Listing workspace directory:"
+          ls -la
+          echo "Displaying beginning of coverage.xml (if present):"
+          head -n 20 coverage.xml || echo "coverage.xml not found"
+
+      - name: Validate coverage report integrity
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          if [ ! -f coverage.xml ]; then
+            echo "ERROR: coverage.xml not found!"
+            echo "Listing current directory contents:"
+            ls -la
+            exit 1
+          fi
+
+          if [ ! -s coverage.xml ]; then
+            echo "ERROR: coverage.xml is empty!"
+            exit 1
+          fi
+
+          # Check for well-formed XML
+          if command -v xmllint >/dev/null 2>&1; then
+            if ! xmllint --noout coverage.xml 2>/dev/null; then
+              echo "ERROR: coverage.xml is not valid XML!"
+              head -n 10 coverage.xml
+              exit 1
+            fi
+          fi
+
+          echo "Coverage report validation passed"
+
+      - name: Upload coverage report to Codecov
+        if: always() # Always run even if previous steps fail
+        uses: codecov/codecov-action@v4
+        with:
+          file: ${{ inputs.working-directory }}/coverage.xml
+          flags: unittests
+          name: codecov-coverage-report
+          fail_ci_if_error: true
+          token: ${{ secrets.CODECOV_TOKEN }}

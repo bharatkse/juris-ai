@@ -22,8 +22,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.api.errors import register_exception_handlers
-from src.api.v1.routes import api_router
+from src.api.exception_handlers import register_exception_handlers
+from src.api.v1.routers import api_router
 from src.core.config import settings
 from src.core.constants import API_DESCRIPTION, API_TITLE
 from src.core.logger import get_logger, setup_logging

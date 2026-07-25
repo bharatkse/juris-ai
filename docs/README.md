@@ -299,6 +299,58 @@ make ci
 
 ---
 
+# Run Test Suit
+
+Run everything:
+
+```
+make test
+```
+
+Run all unit tests:
+
+```
+make test-unit
+```
+
+Run a package:
+
+```
+make test-unit TARGET=services
+```
+
+Run a sub-package:
+
+```
+make test-unit TARGET=services/chat
+```
+
+Run a single file:
+
+```
+make test-unit TARGET=tests/unit/services/test_user.py
+```
+
+or
+
+```
+make test-unit TARGET=services/test_user.py
+```
+
+Run a single test:
+
+```
+make test-path TARGET="tests/unit/services/test_user.py::test_create_user"
+```
+
+Run by keyword:
+
+```
+poetry run pytest tests/unit -k create_user -v
+```
+
+---
+
 # Poetry Commands
 
 Install Dependencies

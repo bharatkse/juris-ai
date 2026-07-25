@@ -4,12 +4,11 @@ Conversation service.
 
 from __future__ import annotations
 
-from uuid import UUID
-
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.constants import DEFAULT_CONVERSATION_TITLE
 from src.core.exceptions import UserNotFoundError
+from src.core.types import ConversationId
 from src.db.models.conversation import Conversation
 from src.repositories.conversation import ConversationRepository
 from src.repositories.user import UserRepository
@@ -37,8 +36,7 @@ class ConversationService(BaseService):
         """
         Create a new conversation.
         """
-        user_id = request.user_id
-        user = await self._user_repository.get(user_id)
+        user = await self._user_repository.get(request.user_id)
 
         if user is None:
             raise UserNotFoundError("User not found.")
@@ -55,13 +53,13 @@ class ConversationService(BaseService):
 
             return conversation
 
-        except BaseException:
+        except Exception:
             await self.rollback()
             raise
 
     async def get(
         self,
-        conversation_id: UUID,
+        conversation_id: ConversationId,
     ) -> Conversation | None:
         """
         Retrieve a conversation.
@@ -86,6 +84,6 @@ class ConversationService(BaseService):
 
             await self.commit()
 
-        except BaseException:
+        except Exception:
             await self.rollback()
             raise

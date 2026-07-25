@@ -1,6 +1,7 @@
 from typing import cast
 
 from pwdlib import PasswordHash
+from pwdlib.exceptions import UnknownHashError
 
 _password_hasher = PasswordHash.recommended()
 
@@ -25,21 +26,27 @@ class PasswordService:
         return cast(str, _password_hasher.hash(password))
 
     @staticmethod
-    def verify(password: str, password_hash: str) -> bool:
+    def verify(
+        password: str,
+        password_hash: str,
+    ) -> bool:
         """
         Verify a plaintext password against a stored hash.
 
         Returns:
             True if the password matches, otherwise False.
         """
-        try:
-            return cast(bool, _password_hasher.verify(password, password_hash))
-        except Exception:
-            return False
 
-    @staticmethod
-    def needs_rehash(password_hash: str) -> bool:
-        """
-        Check whether the stored hash should be upgraded.
-        """
-        return cast(bool, _password_hasher.needs_rehash(password_hash))
+        try:
+            return cast(
+                bool,
+                _password_hasher.verify(
+                    password,
+                    password_hash,
+                ),
+            )
+        except UnknownHashError:
+            # pwdlib raises different exceptions for malformed hashes
+            # depending on the configured hasher. Treat invalid hashes
+            # as verification failures.
+            return False

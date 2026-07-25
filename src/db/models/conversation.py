@@ -63,7 +63,11 @@ class Conversation(
 
     def archive(self) -> None:
         """
-        Mark the conversation as archived.
+        Archive the conversation.
+
+        The operation is idempotent: once archived, the original
+        deletion timestamp is preserved.
         """
 
-        self.deleted_at = utcnow()
+        if self.deleted_at is None:
+            self.deleted_at = utcnow()

@@ -33,7 +33,14 @@ class LegalAgentStream(AgentStream):
 
         self._response: AgentResponse | None = None
 
-    async def __aiter__(self) -> AsyncIterator[AgentChunk]:
+    def __aiter__(self) -> AsyncIterator[AgentChunk]:
+        """
+        Return the async iterator.
+        """
+
+        return self._stream()
+
+    async def _stream(self) -> AsyncIterator[AgentChunk]:
         """
         Stream the response from the LLM.
         """
@@ -47,22 +54,18 @@ class LegalAgentStream(AgentStream):
             temperature=0.2,
         ):
             if chunk.content:
-                self._content.append(
-                    chunk.content,
-                )
+                self._content.append(chunk.content)
 
             if chunk.finish_reason:
                 finish_reason = chunk.finish_reason
 
-            metadata.update(
-                chunk.metadata,
-            )
+            metadata.update(chunk.metadata or {})
 
             yield AgentChunk(
                 content=chunk.content,
                 is_final=chunk.is_final,
                 finish_reason=chunk.finish_reason,
-                metadata=chunk.metadata,
+                metadata=chunk.metadata or {},
             )
 
         latency_ms = int(

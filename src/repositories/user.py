@@ -5,10 +5,10 @@ User repository.
 from __future__ import annotations
 
 from typing import cast
-from uuid import UUID
 
 from sqlalchemy import exists, select
 
+from src.core.types import UserId
 from src.db.models.user import User
 from src.repositories.base import BaseRepository
 
@@ -37,7 +37,7 @@ class UserRepository(BaseRepository):
 
     async def get(
         self,
-        user_id: UUID,
+        user_id: UserId,
     ) -> User | None:
         """
         Retrieve a user by identifier.

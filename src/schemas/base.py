@@ -59,11 +59,6 @@ class ListData(BaseModel, Generic[DataT]):
     pagination: Pagination
 
 
-# ==============================================================================
-# Metadata
-# ==============================================================================
-
-
 class AIInfoModel(BaseModel):
     """AI execution metadata."""
 
@@ -101,11 +96,6 @@ class MetadataModel(BaseModel):
     ai: AIInfoModel | None = None
 
 
-# ==============================================================================
-# Error
-# ==============================================================================
-
-
 class ErrorDetailModel(BaseModel):
     """
     Standard error payload.
@@ -118,11 +108,6 @@ class ErrorDetailModel(BaseModel):
     message: str
 
     details: dict[str, Any] | None = None
-
-
-# ==============================================================================
-# API Response
-# ==============================================================================
 
 
 class ApiResponseModel(BaseModel, Generic[DataT]):

@@ -81,35 +81,8 @@ jobs:
     needs: ci-setup
     uses: ./.github/workflows/codecov-validation.yaml
 
-  # ============================================================================
-  # CI Status Summary
-  # ============================================================================
-
-  ci-summary:
-    name: CI Summary
-    needs: [ci-setup, actionlint, code-quality, codecov-validation]
-    runs-on: ubuntu-latest
-    if: always()
-
-    steps:
-      - name: Check CI Status
-        run: |
-          echo "📊 CI Pipeline Summary"
-          echo "======================"
-          echo ""
-          echo "✅ Setup:                    PASSED"
-          echo "${{ needs.actionlint.result == 'success' && '✅' || '❌' }} Actionlint:                ${{ needs.actionlint.result }}"
-          echo "${{ needs.code-quality.result == 'success' && '✅' || '❌' }} Code Quality:             ${{ needs.code-quality.result }}"
-          echo "${{ needs.codecov-validation.result == 'success' && '✅' || '❌' }} Coverage Validation:      ${{ needs.codecov-validation.result }}"
-          echo ""
-
-      - name: Fail if any job failed
-        if: contains(needs.*.result, 'failure')
-        run: |
-          echo "❌ CI Pipeline failed - one or more jobs did not pass"
-          exit 1
-
-      - name: Success message
-        if: success()
-        run: |
-          echo "✅ All CI checks passed successfully!"
+  # Unit Test Cases
+  pra-backend:
+    name: PRA Backend Unit Test Workflow
+    needs: ci-setup
+    uses: ./.github/workflows/pra-backend.yaml

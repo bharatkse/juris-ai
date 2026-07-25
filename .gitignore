@@ -215,3 +215,7 @@ localstack-init/
 # SAM CLI
 .sam/
 .aws-sam/
+
+
+# TEST DB
+pytests.db

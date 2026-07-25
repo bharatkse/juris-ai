@@ -37,29 +37,23 @@ class LegalAgent(BaseAgent):
         Build the prompt sent to the LLM.
         """
 
-        messages = [
+        return [
             LLMMessage(
                 role=MessageRole.SYSTEM,
                 content=self._system_prompt,
             ),
-        ]
-
-        messages.extend(
-            LLMMessage(
-                role=message.role,
-                content=message.content,
-            )
-            for message in request.history
-        )
-
-        messages.append(
+            *[
+                LLMMessage(
+                    role=message.role,
+                    content=message.content,
+                )
+                for message in request.history
+            ],
             LLMMessage(
                 role=MessageRole.USER,
                 content=request.question,
-            )
-        )
-
-        return messages
+            ),
+        ]
 
     async def answer(
         self,
@@ -73,7 +67,9 @@ class LegalAgent(BaseAgent):
         started_at = time.perf_counter()
 
         response = await self._client.generate(
-            messages=self._build_messages(request),
+            messages=self._build_messages(
+                request=request,
+            ),
             temperature=0.2,
         )
 
@@ -101,5 +97,7 @@ class LegalAgent(BaseAgent):
 
         return LegalAgentStream(
             client=self._client,
-            messages=self._build_messages(request=request),
+            messages=self._build_messages(
+                request=request,
+            ),
         )
