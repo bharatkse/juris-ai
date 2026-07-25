@@ -4,11 +4,10 @@ User service.
 
 from __future__ import annotations
 
-from uuid import UUID
-
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.exceptions import UserAlreadyExistsError, UserNotFoundError
+from src.core.types import UserId
 from src.db.models.user import User
 from src.repositories.user import UserRepository
 from src.schemas.user import CreateUserRequest, UpdateUserRequest
@@ -32,6 +31,12 @@ class UserService(BaseService):
         self._repository = repository
         self._password_service = password_service
 
+    @staticmethod
+    def _normalize_field_value(
+        field_value: str,
+    ) -> str:
+        return field_value.strip().lower()
+
     async def create(
         self,
         request: CreateUserRequest,
@@ -49,7 +54,7 @@ class UserService(BaseService):
             }
         )
 
-        data["email"] = data["email"].strip().lower()
+        data["email"] = self._normalize_field_value(data["email"])
 
         if await self._repository.exists_by_email(data["email"]):
             raise UserAlreadyExistsError("Email is already registered.")
@@ -62,13 +67,13 @@ class UserService(BaseService):
             await self.commit()
             return user
 
-        except BaseException:
+        except Exception:
             await self.rollback()
             raise
 
     async def get(
         self,
-        user_id: UUID,
+        user_id: UserId,
     ) -> User | None:
         """
         Retrieve a user by identifier.
@@ -78,7 +83,7 @@ class UserService(BaseService):
 
     async def update(
         self,
-        user_id: UUID,
+        user_id: UserId,
         request: UpdateUserRequest,
     ) -> User | None:
         """
@@ -92,12 +97,12 @@ class UserService(BaseService):
         updates = request.model_dump(exclude_unset=True)
 
         for field, value in updates.items():
-            if field == "email":
-                value = value.strip().lower()
+            # if field == "email":
+            #     value = value.strip().lower()
 
-                if value != user.email:
-                    if await self._repository.exists_by_email(value):
-                        raise UserAlreadyExistsError("Email is already registered.")
+            #     if value != user.email:
+            #         if await self._repository.exists_by_email(value):
+            #             raise UserAlreadyExistsError("Email is already registered.")
 
             setattr(user, field, value)
 
@@ -108,6 +113,6 @@ class UserService(BaseService):
 
             return user
 
-        except BaseException:
+        except Exception:
             await self.rollback()
             raise

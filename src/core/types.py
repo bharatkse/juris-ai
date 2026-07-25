@@ -2,12 +2,12 @@
 Reusable application type aliases.
 """
 
-from typing import Annotated
+from typing import Annotated, Any
 
 from pydantic import Field
 
 
-def PrefixedId(prefix: str):
+def PrefixedId(prefix: str) -> type[Annotated[str, Any]]:
     """
     Return a reusable annotated string type for prefixed UUID identifiers.
 
@@ -26,3 +26,4 @@ def PrefixedId(prefix: str):
 
 UserId = PrefixedId("user")
 ConversationId = PrefixedId("conv")
+ConversationEventId = PrefixedId("event")

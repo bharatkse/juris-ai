@@ -437,6 +437,67 @@ cf-delete: ## Delete CloudFormation stack and clean up
 	@$(MAKE) docker-clean || true
 	@$(MAKE) clean-local  || true
 
+# ============================================
+# Testing
+# ============================================
+.PHONY: test test-unit test-integration test-e2e \
+        test-cov test-failed test-path test-watch
+
+PYTEST := poetry run pytest
+
+# Optional path/module selector
+TARGET ?=
+
+test: ## Run all tests (make test TARGET=tests/unit/services)
+	@$(PYTEST) $(TARGET) -v
+
+test-unit: ## Run unit tests (make test-unit TARGET=services or TARGET=tests/unit/services/test_user.py)
+	@if [ -z "$(TARGET)" ]; then \
+		$(PYTEST) tests/unit -v; \
+	elif [ -e "$(TARGET)" ]; then \
+		$(PYTEST) $(TARGET) -v; \
+	else \
+		$(PYTEST) tests/unit/$(TARGET) -v; \
+	fi
+
+test-integration: ## Run integration tests (TARGET optional)
+	@if [ -z "$(TARGET)" ]; then \
+		$(PYTEST) tests/integration -v; \
+	elif [ -e "$(TARGET)" ]; then \
+		$(PYTEST) $(TARGET) -v; \
+	else \
+		$(PYTEST) tests/integration/$(TARGET) -v; \
+	fi
+
+test-e2e: ## Run e2e tests (TARGET optional)
+	@if [ -z "$(TARGET)" ]; then \
+		$(PYTEST) tests/e2e -v; \
+	elif [ -e "$(TARGET)" ]; then \
+		$(PYTEST) $(TARGET) -v; \
+	else \
+		$(PYTEST) tests/e2e/$(TARGET) -v; \
+	fi
+
+test-cov: ## Run unit tests with coverage (TARGET optional)
+	@$(PYTEST) tests/unit$(if $(TARGET),/$(TARGET),) \
+		-v \
+		--cov=src \
+		--cov-report=term-missing \
+		--cov-report=html \
+		--cov-report=xml
+
+test-failed: ## Re-run previously failed tests
+	@$(PYTEST) --lf -v
+
+test-path: ## Run any path/module (make test-path TARGET=tests/unit/services/test_user.py)
+ifndef TARGET
+	$(error Usage: make test-path TARGET=<path>)
+endif
+	@$(PYTEST) $(TARGET) -v
+
+test-watch: ## Watch unit tests (TARGET optional)
+	@poetry run ptw $(if $(TARGET),$(TARGET),tests/unit)
+
 # ============================================================================
 # Convenience
 # ============================================================================

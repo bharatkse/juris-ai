@@ -16,6 +16,8 @@ class ConversationEventRepository(BaseRepository):
     Repository responsible for ConversationEvent persistence.
     """
 
+    _model = ConversationEvent
+
     async def create(
         self,
         *,
@@ -29,7 +31,7 @@ class ConversationEventRepository(BaseRepository):
         Create a conversation event.
         """
 
-        event = ConversationEvent(
+        event = self._model(
             conversation_id=conversation_id,
             parent_event_id=parent_event_id,
             role=role,
@@ -52,8 +54,8 @@ class ConversationEventRepository(BaseRepository):
         Retrieve an event by identifier.
         """
 
-        statement = select(ConversationEvent).where(
-            ConversationEvent.id == event_id,
+        statement = select(self._model).where(
+            self._model.id == event_id,
         )
 
         result = await self._session.execute(statement)
@@ -69,12 +71,12 @@ class ConversationEventRepository(BaseRepository):
         """
 
         statement = (
-            select(ConversationEvent)
+            select(self._model)
             .where(
-                ConversationEvent.conversation_id == conversation_id,
+                self._model.conversation_id == conversation_id,
             )
             .order_by(
-                ConversationEvent.created_at.asc(),
+                self._model.created_at.asc(),
             )
         )
 
@@ -95,12 +97,12 @@ class ConversationEventRepository(BaseRepository):
         """
 
         statement = (
-            select(ConversationEvent)
+            select(self._model)
             .where(
-                ConversationEvent.conversation_id == conversation_id,
+                self._model.conversation_id == conversation_id,
             )
             .order_by(
-                ConversationEvent.created_at.desc(),
+                self._model.created_at.desc(),
             )
             .limit(limit)
         )

@@ -5,10 +5,10 @@ Conversation repository.
 from __future__ import annotations
 
 from typing import cast
-from uuid import UUID
 
 from sqlalchemy import exists, select
 
+from src.core.types import ConversationId
 from src.db.models.conversation import Conversation
 from src.repositories.base import BaseRepository
 
@@ -30,7 +30,7 @@ class ConversationRepository(BaseRepository):
 
     async def get(
         self,
-        conversation_id: UUID,
+        conversation_id: ConversationId,
     ) -> Conversation | None:
         statement = select(Conversation).where(
             Conversation.id == conversation_id,
@@ -43,7 +43,7 @@ class ConversationRepository(BaseRepository):
 
     async def exists(
         self,
-        conversation_id: UUID,
+        conversation_id: ConversationId,
     ) -> bool:
         statement = select(
             exists().where(

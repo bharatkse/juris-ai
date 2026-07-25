@@ -11,7 +11,7 @@ from typing import Any, Literal
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from src.core.constants import DEFAULT_APP_NAME, DEFAULT_APP_VERSION
+from src.core.constants import DEFAULT_APP_NAME, DEFAULT_APP_VERSION, TEST_DB_URL
 from src.core.enums import CacheBackend, Environment, GroqModel
 
 
@@ -66,7 +66,7 @@ class Settings(BaseSettings):
     DATABASE_POOL_TIMEOUT: int = 30
     DATABASE_POOL_RECYCLE: int = 1800
 
-    TEST_DATABASE_URL: str = "sqlite:///./data/test.db"
+    TEST_DATABASE_URL: str = TEST_DB_URL
 
     # --------------------------------------------------------------------------
     # Cache / Redis

@@ -8,7 +8,7 @@ on:
     inputs:
       environment:
         description: "Environment to deploy to (development, testing, staging, production)"
-        required: true
+        required: false
         type: string
 
   # Run CI on pushes to main development branches
@@ -30,6 +30,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  PYTHON_VERSION: "3.11.9"
+  DEFAULT_ENVIRONMENT: "testing"
+
+
 jobs:
   # ============================================================================
   # Setup & Configuration
@@ -38,26 +43,31 @@ jobs:
   ci-setup:
     name: CI Setup
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+
     outputs:
-      PYTHON_VERSION: ${{ steps.setup-vars.outputs.PYTHON_VERSION }}
+      python-version: ${{ steps.config.outputs.python-version }}
+      app-environment: ${{ steps.config.outputs.app-environment }}
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup variables
-        id: setup-vars
+      - name: Configure CI
+        id: config
+        shell: bash
         run: |
-          PYTHON_VERSION="3.11.9"
-          echo "PYTHON_VERSION=$PYTHON_VERSION" >> "$GITHUB_OUTPUT"
-          echo "✅ Python Version: $PYTHON_VERSION"
-          echo "✅ Environment: ${{ inputs.environment }}"
+          APP_ENVIRONMENT="${{ inputs.environment || env.DEFAULT_ENVIRONMENT }}"
+
+          {
+            echo "python-version=${{ env.PYTHON_VERSION }}"
+            echo "app-environment=${APP_ENVIRONMENT}"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Python Version : ${{ env.PYTHON_VERSION }}"
+          echo "Environment    : ${APP_ENVIRONMENT}"
 
   # ============================================================================
-  # Configuration File Validation
+  #GitHub Actions Validation
   # ============================================================================
 
-  # Validate GitHub Actions workflows using Actionlint
   actionlint:
     needs: ci-setup
     name: Lint GitHub Actions
@@ -72,44 +82,27 @@ jobs:
     name: Code Quality Checks
     uses: ./.github/workflows/code-quality.yaml
     with:
-      python-version: ${{ needs.ci-setup.outputs.PYTHON_VERSION }}
+      python-version: ${{ needs.ci-setup.outputs.python-version }}
 
 
-  # Coverage validation
+  # ===========================================================================
+  # Backend Tests
+  # ===========================================================================
+
+  backend-tests:
+    name: Backend Unit Tests
+    needs: ci-setup
+    uses: ./.github/workflows/pra-backend.yaml
+    with:
+      python-version: ${{ needs.ci-setup.outputs.python-version }}
+      app-environment: ${{ needs.ci-setup.outputs.app-environment }}
+      working-directory: .
+    secrets: inherit
+
+  # ===========================================================================
+  # Coverage Validation
+  # ===========================================================================
   codecov-validation:
     name: Coverage Validation
-    needs: ci-setup
+    needs: backend-tests
     uses: ./.github/workflows/codecov-validation.yaml
-
-  # ============================================================================
-  # CI Status Summary
-  # ============================================================================
-
-  ci-summary:
-    name: CI Summary
-    needs: [ci-setup, actionlint, code-quality, codecov-validation]
-    runs-on: ubuntu-latest
-    if: always()
-
-    steps:
-      - name: Check CI Status
-        run: |
-          echo "📊 CI Pipeline Summary"
-          echo "======================"
-          echo ""
-          echo "✅ Setup:                    PASSED"
-          echo "${{ needs.actionlint.result == 'success' && '✅' || '❌' }} Actionlint:                ${{ needs.actionlint.result }}"
-          echo "${{ needs.code-quality.result == 'success' && '✅' || '❌' }} Code Quality:             ${{ needs.code-quality.result }}"
-          echo "${{ needs.codecov-validation.result == 'success' && '✅' || '❌' }} Coverage Validation:      ${{ needs.codecov-validation.result }}"
-          echo ""
-
-      - name: Fail if any job failed
-        if: contains(needs.*.result, 'failure')
-        run: |
-          echo "❌ CI Pipeline failed - one or more jobs did not pass"
-          exit 1
-
-      - name: Success message
-        if: success()
-        run: |
-          echo "✅ All CI checks passed successfully!"

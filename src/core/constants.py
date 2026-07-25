@@ -74,3 +74,6 @@ CACHE_PREFIX_EMBEDDING: str = "embedding:"
 CACHE_PREFIX_DOCUMENT: str = "document:"
 
 DEFAULT_CONVERSATION_TITLE: str = "New Conversation"
+
+# Test DB Configuration
+TEST_DB_URL = "sqlite+aiosqlite:///./pytests.db"

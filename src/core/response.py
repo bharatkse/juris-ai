@@ -3,7 +3,7 @@ from typing import Any
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
-from src.schemas.response import ApiResponseModel, ErrorDetailModel, MetadataModel
+from src.schemas.base import ApiResponseModel, ErrorDetailModel, MetadataModel
 
 
 class ApiResponse(JSONResponse):

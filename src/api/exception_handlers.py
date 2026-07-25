@@ -21,7 +21,7 @@ from src.core.constants import (
 from src.core.exceptions import AppError, DomainError, PersistenceError
 from src.core.logger import get_logger
 from src.core.response import ApiResponse
-from src.schemas.response import ErrorDetailModel
+from src.schemas.base import ErrorDetailModel
 
 logger = get_logger(__name__)
 

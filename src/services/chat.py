@@ -5,6 +5,7 @@ Chat service.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +13,7 @@ from src.agents.base import BaseAgent
 from src.agents.models import AgentMessage, AgentRequest, AgentResponse
 from src.core.enums import MessageRole
 from src.core.exceptions import NotFoundError
+from src.core.types import ConversationId
 from src.db.models.conversation import Conversation
 from src.db.models.conversation_event import ConversationEvent
 from src.repositories.conversation import ConversationRepository
@@ -48,30 +50,35 @@ class ChatService(BaseService):
         """
         Process a chat request.
         """
+        try:
+            conversation = await self._get_conversation(
+                conversation_id,
+            )
 
-        conversation = await self._get_conversation(
-            conversation_id,
-        )
+            user_event = await self._create_user_event(
+                conversation=conversation,
+                message=message,
+            )
 
-        user_event = await self._create_user_event(
-            conversation=conversation,
-            message=message,
-        )
+            request = await self._build_agent_request(
+                conversation=conversation,
+                message=message,
+            )
 
-        request = AgentRequest(
-            question=message,
-            history=[],
-        )
+            agent_response = await self._agent.answer(
+                request=request,
+            )
 
-        agent_response = await self._agent.answer(request)
+            assistant_event = await self._create_assistant_event(
+                conversation=conversation,
+                parent_event=user_event,
+                response=agent_response,
+            )
 
-        assistant_event = await self._create_assistant_event(
-            conversation=conversation,
-            parent_event=user_event,
-            response=agent_response,
-        )
-
-        await self.commit()
+            await self.commit()
+        except Exception:
+            await self.rollback()
+            raise
 
         return ChatResult(
             conversation=conversation,
@@ -82,50 +89,57 @@ class ChatService(BaseService):
     async def stream_chat(
         self,
         *,
-        conversation_id: str,
+        conversation_id: ConversationId,
         message: str,
     ) -> AsyncIterator[ChatStreamChunk]:
         """
         Stream a chat response.
         """
-
-        conversation = await self._get_conversation(
-            conversation_id,
-        )
-
-        user_event = await self._create_user_event(
-            conversation=conversation,
-            message=message,
-        )
-
-        #
-        # Persist the user's message immediately.
-        #
-        await self.commit()
-
-        request = await self._build_agent_request(
-            conversation=conversation,
-            message=message,
-        )
-
-        stream = self._agent.stream_answer(
-            request=request,
-        )
-
-        async for chunk in stream:
-            yield ChatStreamChunk(
-                content=chunk.content,
-                is_final=chunk.is_final,
-                metadata=chunk.metadata,
+        try:
+            conversation = await self._get_conversation(
+                conversation_id,
             )
 
-        await self._create_assistant_event(
-            conversation=conversation,
-            parent_event=user_event,
-            response=stream.response,
-        )
+            user_event = await self._create_user_event(
+                conversation=conversation,
+                message=message,
+            )
 
-        await self.commit()
+            #
+            # Persist the user's message immediately.
+            #
+            await self.commit()
+        except Exception:
+            await self.rollback()
+            raise
+
+        try:
+            request = await self._build_agent_request(
+                conversation=conversation,
+                message=message,
+            )
+
+            stream = self._agent.stream_answer(
+                request=request,
+            )
+
+            async for chunk in stream:
+                yield ChatStreamChunk(
+                    content=chunk.content,
+                    is_final=chunk.is_final,
+                    metadata=chunk.metadata,
+                )
+
+            await self._create_assistant_event(
+                conversation=conversation,
+                parent_event=user_event,
+                response=stream.response,
+            )
+
+            await self.commit()
+        except Exception:
+            await self.rollback()
+            raise
 
     async def _build_agent_request(
         self,
@@ -139,8 +153,8 @@ class ChatService(BaseService):
 
         #
         # TODO:
-        # Load recent conversation events and convert them
-        # into AgentMessage instances.
+        # Load recent conversation events ordered by creation time and
+        # convert them into AgentMessage instances for conversational context.
         #
         history: list[AgentMessage] = []
 
@@ -151,7 +165,7 @@ class ChatService(BaseService):
 
     async def _get_conversation(
         self,
-        conversation_id: str,
+        conversation_id: ConversationId,
     ) -> Conversation:
         """
         Retrieve an active conversation.
@@ -162,10 +176,10 @@ class ChatService(BaseService):
         )
 
         if conversation is None:
-            raise NotFoundError("Conversation not found.")
+            raise NotFoundError(message="Conversation not found.")
 
         if not conversation.is_active:
-            raise NotFoundError("Conversation is inactive.")
+            raise NotFoundError(message="Conversation is inactive.")
 
         return conversation
 
@@ -201,20 +215,31 @@ class ChatService(BaseService):
             parent_event_id=parent_event.id,
             role=MessageRole.ASSISTANT,
             content=response.content,
-            metadata={
-                "provider": response.provider,
-                "model": response.model,
-                "finish_reason": response.finish_reason,
-                "latency_ms": response.latency_ms,
-                "usage": (
-                    {
-                        "prompt_tokens": response.usage.prompt_tokens,
-                        "completion_tokens": response.usage.completion_tokens,
-                        "total_tokens": response.usage.total_tokens,
-                    }
-                    if response.usage
-                    else None
-                ),
-                **response.metadata,
-            },
+            metadata=self._build_response_metadata(
+                response,
+            ),
         )
+
+    def _build_response_metadata(
+        self,
+        response: AgentResponse,
+    ) -> dict[str, Any]:
+        """
+        Build metadata persisted with the assistant response.
+        """
+        return {
+            "provider": response.provider,
+            "model": response.model,
+            "finish_reason": response.finish_reason,
+            "latency_ms": response.latency_ms,
+            "usage": (
+                {
+                    "prompt_tokens": response.usage.prompt_tokens,
+                    "completion_tokens": response.usage.completion_tokens,
+                    "total_tokens": response.usage.total_tokens,
+                }
+                if response.usage
+                else None
+            ),
+            **response.metadata,
+        }
