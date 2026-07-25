@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+from src.core.constants import TEST_DB_URL
 from src.db.base import Base
 
 
@@ -26,7 +27,7 @@ async def engine() -> AsyncGenerator[AsyncEngine, None]:
     """
 
     engine = create_async_engine(
-        "sqlite+aiosqlite:///./pytests.db",
+        TEST_DB_URL,
         future=True,
     )
 
