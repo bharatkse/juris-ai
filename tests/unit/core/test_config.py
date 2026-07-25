@@ -263,10 +263,11 @@ def test_validate_configuration_requires_database_configuration() -> None:
         )
 
 
-def test_validate_configuration_requires_groq_api_key() -> None:
+def test_validate_configuration_requires_groq_api_key(monkeypatch) -> None:
     """
     It should require a Groq API key in the development environment.
     """
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
 
     with pytest.raises(
         ValidationError,
