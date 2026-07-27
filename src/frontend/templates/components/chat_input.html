@@ -1,0 +1,47 @@
+<footer
+    class="border-t border-gray-200 bg-white px-6 py-4">
+
+    {% if current_conversation %}
+
+        <form
+            class="flex items-end gap-4"
+
+            hx-post="/ui/conversations/{{ current_conversation.id }}/messages"
+
+            hx-target="#message-list"
+
+            hx-swap="outerHTML">
+
+            <textarea
+                id="message"
+                name="message"
+                rows="1"
+                required
+
+                placeholder="Ask a legal question..."
+
+                class="max-h-48 min-h-[48px] flex-1 resize-none rounded-xl border border-gray-300 px-4 py-3 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"></textarea>
+
+            <button
+                type="submit"
+
+                class="rounded-xl bg-blue-600 px-6 py-3 font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">
+
+                Send
+
+            </button>
+
+        </form>
+
+    {% else %}
+
+        <div
+            class="rounded-xl border border-dashed border-gray-300 p-4 text-center text-sm text-gray-500">
+
+            Create a conversation to start chatting.
+
+        </div>
+
+    {% endif %}
+
+</footer>

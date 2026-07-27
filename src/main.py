@@ -21,6 +21,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from src.api.exception_handlers import register_exception_handlers
 from src.api.v1.routers import api_router
@@ -28,6 +29,7 @@ from src.core.config import settings
 from src.core.constants import API_DESCRIPTION, API_TITLE
 from src.core.logger import get_logger, setup_logging
 from src.core.utils.file_utils import ensure_dir
+from src.frontend.router import router as frontend_router
 from src.middleware.request_context import RequestContextMiddleware
 
 log = get_logger(__name__)
@@ -112,8 +114,18 @@ def create_app() -> FastAPI:
     # Configured Exception handlers
     register_exception_handlers(app)
 
-    # Routers
+    # API Routers
     app.include_router(api_router)
+
+    # Mount Frontend Static Dir
+    app.mount(
+        "/static",
+        StaticFiles(directory="src/frontend/static"),
+        name="static",
+    )
+
+    # Frontend Routers
+    app.include_router(frontend_router)
 
     # Root endpoint
     @app.get("/", include_in_schema=False)

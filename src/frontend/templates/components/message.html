@@ -1,0 +1,21 @@
+<div
+    class="flex {% if message.role == 'user' %}justify-end{% else %}justify-start{% endif %}">
+
+    <div
+        class="max-w-3xl rounded-2xl px-5 py-4 shadow-sm
+        {% if message.role == 'user' %}
+            bg-blue-600 text-white
+        {% else %}
+            border border-gray-200 bg-white text-gray-900
+        {% endif %}">
+
+        <div
+            class="prose prose-sm max-w-none">
+
+            {{ message.content }}
+
+        </div>
+
+    </div>
+
+</div>

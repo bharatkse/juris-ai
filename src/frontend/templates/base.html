@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0">
+
+    <title>{% block title %}Juris AI{% endblock %}</title>
+
+    <!-- Tailwind -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- HTMX -->
+    <script
+        src="https://unpkg.com/htmx.org@2.0.4">
+    </script>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', path='css/app.css') }}">
+
+    {% block head %}
+    {% endblock %}
+
+</head>
+
+<body class="h-screen bg-gray-100">
+
+{% block content %}
+{% endblock %}
+
+<script src="{{ url_for('static', path='js/chat.js') }}"></script>
+
+{% block scripts %}
+{% endblock %}
+
+</body>
+
+</html>

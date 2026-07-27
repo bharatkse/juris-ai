@@ -8,7 +8,7 @@ from typing import cast
 
 from sqlalchemy import exists, select
 
-from src.core.types import ConversationId
+from src.core.types import ConversationId, UserId
 from src.db.models.conversation import Conversation
 from src.repositories.base import BaseRepository
 
@@ -31,9 +31,11 @@ class ConversationRepository(BaseRepository):
     async def get(
         self,
         conversation_id: ConversationId,
+        user_id: UserId,
     ) -> Conversation | None:
         statement = select(Conversation).where(
             Conversation.id == conversation_id,
+            Conversation.user_id == user_id,
             Conversation.deleted_at.is_(None),
         )
 
@@ -57,16 +59,22 @@ class ConversationRepository(BaseRepository):
     async def list(
         self,
         *,
+        user_id: UserId,
         offset: int = 0,
         limit: int = 20,
     ) -> list[Conversation]:
+        """
+        Return conversations belonging to a user.
+        """
+
         statement = (
             select(Conversation)
             .where(
+                Conversation.user_id == user_id,
                 Conversation.deleted_at.is_(None),
             )
             .order_by(
-                Conversation.created_at.desc(),
+                Conversation.updated_at.desc(),
             )
             .offset(offset)
             .limit(limit)
