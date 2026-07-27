@@ -1,0 +1,42 @@
+<header
+    class="flex items-center justify-between border-b border-gray-200 bg-white px-6 py-4">
+
+    <div class="min-w-0">
+
+        {% if current_conversation %}
+
+            <h1
+                class="truncate text-lg font-semibold text-gray-900">
+
+                {{ current_conversation.title }}
+
+            </h1>
+
+        {% else %}
+
+            <h1
+                class="text-lg font-semibold text-gray-900">
+
+                New Conversation
+
+            </h1>
+
+        {% endif %}
+
+    </div>
+
+    {% if current_conversation %}
+
+        <div
+            class="flex items-center gap-2">
+
+            <!-- Future Actions -->
+            <!-- Rename -->
+            <!-- Archive -->
+            <!-- Delete -->
+
+        </div>
+
+    {% endif %}
+
+</header>

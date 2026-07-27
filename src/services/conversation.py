@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.constants import DEFAULT_CONVERSATION_TITLE
 from src.core.exceptions import UserNotFoundError
-from src.core.types import ConversationId
+from src.core.types import ConversationId, UserId
 from src.db.models.conversation import Conversation
 from src.repositories.conversation import ConversationRepository
 from src.repositories.user import UserRepository
@@ -67,6 +67,23 @@ class ConversationService(BaseService):
 
         return await self._repository.get(
             conversation_id,
+        )
+
+    async def list(
+        self,
+        *,
+        user_id: UserId,
+        offset: int = 0,
+        limit: int = 20,
+    ) -> list[Conversation]:
+        """
+        Return conversations for a user.
+        """
+
+        return await self._repository.list(
+            user_id=user_id,
+            offset=offset,
+            limit=limit,
         )
 
     async def archive(

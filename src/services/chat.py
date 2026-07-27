@@ -13,7 +13,7 @@ from src.agents.base import BaseAgent
 from src.agents.models import AgentMessage, AgentRequest, AgentResponse
 from src.core.enums import MessageRole
 from src.core.exceptions import NotFoundError
-from src.core.types import ConversationId
+from src.core.types import ConversationId, UserId
 from src.db.models.conversation import Conversation
 from src.db.models.conversation_event import ConversationEvent
 from src.repositories.conversation import ConversationRepository
@@ -243,3 +243,32 @@ class ChatService(BaseService):
             ),
             **response.metadata,
         }
+
+    async def history(
+        self,
+        *,
+        conversation_id: ConversationId,
+        user_id: UserId,
+    ) -> list[ConversationEvent]:
+        """
+        Return the chat history for a conversation.
+        """
+
+        conversation = await self._conversation_repository.get(
+            conversation_id=conversation_id,
+            user_id=user_id,
+        )
+
+        if conversation is None:
+            raise NotFoundError(
+                message="Conversation not found.",
+            )
+
+        if not conversation.is_active:
+            raise NotFoundError(
+                message="Conversation is inactive.",
+            )
+
+        return await self._event_repository.list(
+            conversation_id=conversation.id,
+        )
