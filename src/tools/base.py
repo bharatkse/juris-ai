@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from core.models.tool import ToolMetadata, ToolRequest, ToolResponse
+from src.core.models.tool import ToolMetadata, ToolRequest, ToolResponse
 
 
 class BaseTool(ABC):

@@ -7,85 +7,119 @@ from __future__ import annotations
 import pytest
 
 from src.core.enums import MessageRole
+from src.db.models.conversation_event import ConversationEvent
 from tests.factories.conversation import ConversationFactory
 from tests.factories.user import UserFactory
 from tests.helpers.identifiers import unknown_conversation_event_id
 
 
-async def _create_conversation(user_repository, conversation_repository):
+async def _create_conversation(
+    user_repository,
+    conversation_repository,
+):
     user = await user_repository.create(
         UserFactory.build(),
     )
 
-    conversation = await conversation_repository.create(
+    return await conversation_repository.create(
         ConversationFactory.build(
             user=user,
         ),
     )
 
-    return conversation
-
 
 @pytest.mark.asyncio
 async def test_create_user_event(
-    conversation_event_repository, user_repository, conversation_repository
+    conversation_event_repository,
+    user_repository,
+    conversation_repository,
 ) -> None:
     """
     It should create a user event.
     """
 
-    conversation = await _create_conversation(user_repository, conversation_repository)
+    conversation = await _create_conversation(
+        user_repository,
+        conversation_repository,
+    )
 
-    event = await conversation_event_repository.create(
+    event = ConversationEvent(
         conversation_id=conversation.id,
         role=MessageRole.USER,
         content="Hello",
+        event_metadata={},
     )
 
-    assert event.id is not None
-    assert event.role == MessageRole.USER
-    assert event.content == "Hello"
+    created = await conversation_event_repository.create(
+        event,
+    )
+
+    assert created.id is not None
+    assert created.role == MessageRole.USER
+    assert created.content == "Hello"
 
 
 @pytest.mark.asyncio
 async def test_create_assistant_event(
-    conversation_event_repository, user_repository, conversation_repository
-):
+    conversation_event_repository,
+    user_repository,
+    conversation_repository,
+) -> None:
     """
     It should create an assistant event.
     """
-    conversation = await _create_conversation(user_repository, conversation_repository)
 
-    event = await conversation_event_repository.create(
+    conversation = await _create_conversation(
+        user_repository,
+        conversation_repository,
+    )
+
+    event = ConversationEvent(
         conversation_id=conversation.id,
         role=MessageRole.ASSISTANT,
         content="Hi!",
+        event_metadata={},
     )
 
-    assert event.role == MessageRole.ASSISTANT
+    created = await conversation_event_repository.create(
+        event,
+    )
+
+    assert created.role == MessageRole.ASSISTANT
 
 
 @pytest.mark.asyncio
 async def test_create_sets_parent_event(
-    conversation_event_repository, user_repository, conversation_repository
-):
+    conversation_event_repository,
+    user_repository,
+    conversation_repository,
+) -> None:
     """
     It should create a child event.
     """
 
-    conversation = await _create_conversation(user_repository, conversation_repository)
+    conversation = await _create_conversation(
+        user_repository,
+        conversation_repository,
+    )
 
     parent = await conversation_event_repository.create(
-        conversation_id=conversation.id,
-        role=MessageRole.USER,
-        content="Question",
+        ConversationEvent(
+            conversation_id=conversation.id,
+            role=MessageRole.USER,
+            content="Question",
+            event_metadata={},
+        ),
     )
 
     child = await conversation_event_repository.create(
-        conversation_id=conversation.id,
-        parent_event_id=parent.id,
-        role=MessageRole.ASSISTANT,
-        content="Answer",
+        ConversationEvent(
+            conversation_id=conversation.id,
+            parent_event_id=parent.id,
+            role=MessageRole.ASSISTANT,
+            content="Answer",
+            event_metadata={},
+        ),
     )
 
     assert child.parent_event_id == parent.id
@@ -93,13 +127,18 @@ async def test_create_sets_parent_event(
 
 @pytest.mark.asyncio
 async def test_create_persists_metadata(
-    conversation_event_repository, user_repository, conversation_repository
-):
+    conversation_event_repository,
+    user_repository,
+    conversation_repository,
+) -> None:
     """
     It should persist metadata.
     """
 
-    conversation = await _create_conversation(user_repository, conversation_repository)
+    conversation = await _create_conversation(
+        user_repository,
+        conversation_repository,
+    )
 
     metadata = {
         "provider": "groq",
@@ -107,10 +146,12 @@ async def test_create_persists_metadata(
     }
 
     event = await conversation_event_repository.create(
-        conversation_id=conversation.id,
-        role=MessageRole.USER,
-        content="Hello",
-        metadata=metadata,
+        ConversationEvent(
+            conversation_id=conversation.id,
+            role=MessageRole.USER,
+            content="Hello",
+            event_metadata=metadata,
+        ),
     )
 
     assert event.event_metadata == metadata
@@ -118,22 +159,31 @@ async def test_create_persists_metadata(
 
 @pytest.mark.asyncio
 async def test_get_returns_existing_event(
-    conversation_event_repository, user_repository, conversation_repository
-):
+    conversation_event_repository,
+    user_repository,
+    conversation_repository,
+) -> None:
     """
     It should retrieve an existing event.
     """
 
-    conversation = await _create_conversation(user_repository, conversation_repository)
+    conversation = await _create_conversation(
+        user_repository,
+        conversation_repository,
+    )
 
     event = await conversation_event_repository.create(
-        conversation_id=conversation.id,
-        role=MessageRole.USER,
-        content="Hello",
+        ConversationEvent(
+            conversation_id=conversation.id,
+            role=MessageRole.USER,
+            content="Hello",
+            event_metadata={},
+        ),
     )
 
     found = await conversation_event_repository.get(
-        event.id,
+        conversation_id=conversation.id,
+        event_id=event.id,
     )
 
     assert found is not None
@@ -142,70 +192,102 @@ async def test_get_returns_existing_event(
 
 @pytest.mark.asyncio
 async def test_get_returns_none_for_unknown_event(
-    conversation_event_repository, user_repository, conversation_repository
-):
+    conversation_event_repository,
+    user_repository,
+    conversation_repository,
+) -> None:
     """
     It should return None for an unknown event.
     """
-    await _create_conversation(user_repository, conversation_repository)
-    found = await conversation_event_repository.get(unknown_conversation_event_id())
+
+    conversation = await _create_conversation(
+        user_repository,
+        conversation_repository,
+    )
+
+    found = await conversation_event_repository.get(
+        conversation_id=conversation.id,
+        event_id=unknown_conversation_event_id(),
+    )
 
     assert found is None
 
 
 @pytest.mark.asyncio
-async def test_list_by_conversation_returns_all_events(
-    conversation_event_repository, user_repository, conversation_repository
-):
+async def test_list_returns_all_events(
+    conversation_event_repository,
+    user_repository,
+    conversation_repository,
+) -> None:
     """
     It should return all events.
     """
 
-    conversation = await _create_conversation(user_repository, conversation_repository)
-
-    await conversation_event_repository.create(
-        conversation_id=conversation.id,
-        role=MessageRole.USER,
-        content="One",
+    conversation = await _create_conversation(
+        user_repository,
+        conversation_repository,
     )
 
     await conversation_event_repository.create(
-        conversation_id=conversation.id,
-        role=MessageRole.ASSISTANT,
-        content="Two",
+        ConversationEvent(
+            conversation_id=conversation.id,
+            role=MessageRole.USER,
+            content="One",
+            event_metadata={},
+        ),
     )
 
-    events = await conversation_event_repository.list_by_conversation(
-        conversation.id,
+    await conversation_event_repository.create(
+        ConversationEvent(
+            conversation_id=conversation.id,
+            role=MessageRole.ASSISTANT,
+            content="Two",
+            event_metadata={},
+        ),
+    )
+
+    events = await conversation_event_repository.list(
+        conversation_id=conversation.id,
     )
 
     assert len(events) == 2
 
 
 @pytest.mark.asyncio
-async def test_list_by_conversation_orders_by_created_at(
-    conversation_event_repository, user_repository, conversation_repository
-):
+async def test_list_orders_by_created_at(
+    conversation_event_repository,
+    user_repository,
+    conversation_repository,
+) -> None:
     """
     It should return events chronologically.
     """
 
-    conversation = await _create_conversation(user_repository, conversation_repository)
+    conversation = await _create_conversation(
+        user_repository,
+        conversation_repository,
+    )
 
     first = await conversation_event_repository.create(
-        conversation_id=conversation.id,
-        role=MessageRole.USER,
-        content="One",
+        ConversationEvent(
+            conversation_id=conversation.id,
+            role=MessageRole.USER,
+            content="One",
+            event_metadata={},
+        ),
     )
 
     second = await conversation_event_repository.create(
-        conversation_id=conversation.id,
-        role=MessageRole.ASSISTANT,
-        content="Two",
+        ConversationEvent(
+            conversation_id=conversation.id,
+            role=MessageRole.ASSISTANT,
+            content="Two",
+            event_metadata={},
+        ),
     )
 
-    events = await conversation_event_repository.list_by_conversation(
-        conversation.id,
+    events = await conversation_event_repository.list(
+        conversation_id=conversation.id,
     )
 
     assert events[0].id == first.id
@@ -213,23 +295,31 @@ async def test_list_by_conversation_orders_by_created_at(
 
 
 @pytest.mark.asyncio
-async def test_get_recent_events_respects_limit(
-    conversation_event_repository, user_repository, conversation_repository
-):
+async def test_list_respects_limit(
+    conversation_event_repository,
+    user_repository,
+    conversation_repository,
+) -> None:
     """
     It should respect the requested limit.
     """
 
-    conversation = await _create_conversation(user_repository, conversation_repository)
+    conversation = await _create_conversation(
+        user_repository,
+        conversation_repository,
+    )
 
     for index in range(5):
         await conversation_event_repository.create(
-            conversation_id=conversation.id,
-            role=MessageRole.USER,
-            content=f"Message {index}",
+            ConversationEvent(
+                conversation_id=conversation.id,
+                role=MessageRole.USER,
+                content=f"Message {index}",
+                event_metadata={},
+            ),
         )
 
-    events = await conversation_event_repository.get_recent_events(
+    events = await conversation_event_repository.list(
         conversation_id=conversation.id,
         limit=2,
     )
@@ -238,27 +328,36 @@ async def test_get_recent_events_respects_limit(
 
 
 @pytest.mark.asyncio
-async def test_get_recent_events_returns_chronological_order(
-    conversation_event_repository, user_repository, conversation_repository
-):
+async def test_list_returns_recent_events_in_chronological_order(
+    conversation_event_repository,
+    user_repository,
+    conversation_repository,
+) -> None:
     """
-    Recent events should be returned oldest-to-newest.
+    Limited results should still be returned oldest-to-newest.
     """
 
-    conversation = await _create_conversation(user_repository, conversation_repository)
+    conversation = await _create_conversation(
+        user_repository,
+        conversation_repository,
+    )
 
     for index in range(5):
         await conversation_event_repository.create(
-            conversation_id=conversation.id,
-            role=MessageRole.USER,
-            content=f"Message {index}",
+            ConversationEvent(
+                conversation_id=conversation.id,
+                role=MessageRole.USER,
+                content=f"Message {index}",
+                event_metadata={},
+            ),
         )
 
-    events = await conversation_event_repository.get_recent_events(
+    events = await conversation_event_repository.list(
         conversation_id=conversation.id,
         limit=3,
     )
 
+    assert len(events) == 3
     assert events[0].content == "Message 2"
     assert events[1].content == "Message 3"
     assert events[2].content == "Message 4"

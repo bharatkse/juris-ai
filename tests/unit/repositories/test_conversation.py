@@ -8,6 +8,7 @@ import pytest
 
 from src.core.constants import DEFAULT_CONVERSATION_TITLE
 from tests.factories.conversation import ConversationFactory
+from tests.factories.user import UserFactory
 from tests.helpers.identifiers import unknown_conversation_id
 
 
@@ -60,7 +61,8 @@ async def test_get_returns_existing_conversation(
     )
 
     found = await conversation_repository.get(
-        conversation.id,
+        conversation_id=conversation.id,
+        user_id=conversation.user_id,
     )
 
     assert found is not None
@@ -76,8 +78,11 @@ async def test_get_returns_none_when_conversation_does_not_exist(
     It should return None for an unknown conversation.
     """
 
+    conversation = ConversationFactory.build()
+
     found = await conversation_repository.get(
-        unknown_conversation_id(),
+        conversation_id=unknown_conversation_id(),
+        user_id=conversation.user_id,
     )
 
     assert found is None
@@ -95,12 +100,15 @@ async def test_get_returns_none_for_archived_conversation(
         ConversationFactory.build(),
     )
 
-    await conversation_repository.archive(
+    conversation.archive()
+
+    await conversation_repository.update(
         conversation,
     )
 
     found = await conversation_repository.get(
-        conversation.id,
+        conversation_id=conversation.id,
+        user_id=conversation.user_id,
     )
 
     assert found is None
@@ -119,7 +127,8 @@ async def test_exists_returns_true(
     )
 
     exists = await conversation_repository.exists(
-        conversation.id,
+        conversation_id=conversation.id,
+        user_id=conversation.user_id,
     )
 
     assert exists is True
@@ -133,8 +142,11 @@ async def test_exists_returns_false(
     It should return False for an unknown conversation.
     """
 
+    conversation = ConversationFactory.build()
+
     exists = await conversation_repository.exists(
-        "conv_unknown",
+        conversation_id="conv_unknown",
+        user_id=conversation.user_id,
     )
 
     assert exists is False
@@ -152,12 +164,15 @@ async def test_exists_returns_false_for_archived_conversation(
         ConversationFactory.build(),
     )
 
-    await conversation_repository.archive(
+    conversation.archive()
+
+    await conversation_repository.update(
         conversation,
     )
 
     exists = await conversation_repository.exists(
-        conversation.id,
+        conversation_id=conversation.id,
+        user_id=conversation.user_id,
     )
 
     assert exists is False
@@ -171,7 +186,11 @@ async def test_list_returns_empty_list_when_no_conversations_exist(
     It should return an empty list.
     """
 
-    conversations = await conversation_repository.list()
+    conversation = ConversationFactory.build()
+
+    conversations = await conversation_repository.list(
+        user_id=conversation.user_id,
+    )
 
     assert conversations == []
 
@@ -184,17 +203,30 @@ async def test_list_returns_conversations(
     It should return all active conversations.
     """
 
-    await conversation_repository.create(
-        ConversationFactory.build(),
+    user = UserFactory.build()
+
+    first = await conversation_repository.create(
+        ConversationFactory.build(
+            user=user,
+        ),
     )
 
-    await conversation_repository.create(
-        ConversationFactory.build(),
+    second = await conversation_repository.create(
+        ConversationFactory.build(
+            user=user,
+        ),
     )
 
-    conversations = await conversation_repository.list()
+    conversations = await conversation_repository.list(
+        user_id=user.id,
+    )
 
     assert len(conversations) == 2
+
+    assert {conversation.id for conversation in conversations} == {
+        first.id,
+        second.id,
+    }
 
 
 @pytest.mark.asyncio
@@ -210,14 +242,20 @@ async def test_list_excludes_archived_conversations(
     )
 
     archived = await conversation_repository.create(
-        ConversationFactory.build(),
+        ConversationFactory.build(
+            user_id=active.user_id,
+        ),
     )
 
-    await conversation_repository.archive(
+    archived.archive()
+
+    await conversation_repository.update(
         archived,
     )
 
-    conversations = await conversation_repository.list()
+    conversations = await conversation_repository.list(
+        user_id=active.user_id,
+    )
 
     assert len(conversations) == 1
     assert conversations[0].id == active.id
@@ -231,12 +269,17 @@ async def test_list_respects_limit(
     It should respect the requested limit.
     """
 
+    user = UserFactory.build()
+
     for _ in range(5):
         await conversation_repository.create(
-            ConversationFactory.build(),
+            ConversationFactory.build(
+                user=user,
+            ),
         )
 
     conversations = await conversation_repository.list(
+        user_id=user.id,
         limit=2,
     )
 
@@ -244,19 +287,21 @@ async def test_list_respects_limit(
 
 
 @pytest.mark.asyncio
-async def test_archive_marks_conversation_as_deleted(
+async def test_update_persists_archived_conversation(
     conversation_repository,
 ) -> None:
     """
-    It should archive the conversation.
+    It should persist archived conversation updates.
     """
 
     conversation = await conversation_repository.create(
         ConversationFactory.build(),
     )
 
-    await conversation_repository.archive(
+    conversation.archive()
+
+    updated = await conversation_repository.update(
         conversation,
     )
 
-    assert conversation.deleted_at is not None
+    assert updated.deleted_at is not None

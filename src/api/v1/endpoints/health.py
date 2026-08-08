@@ -1,27 +1,56 @@
-from fastapi import APIRouter, Depends
+"""
+Health API routes.
+"""
+
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends, status
 
 from src.api.dependencies.context import get_request_context
 from src.core.config import get_settings
 from src.core.context import RequestContext
+from src.core.logger import get_logger
 from src.core.response import ApiResponse
+
+logger = get_logger(__name__)
+
+settings = get_settings()
 
 router = APIRouter(
     prefix="/health",
     tags=["Health"],
 )
 
-settings = get_settings()
 
-
-@router.get("", summary="Health check endpoint")
+@router.get(
+    "",
+    summary="Health check endpoint",
+    status_code=status.HTTP_200_OK,
+)
 async def health(
-    context: RequestContext = Depends(get_request_context),
-):
-    data = {
-        "status": "healthy",
-        "service": settings.APP_NAME,
-        "version": settings.APP_VERSION,
-        "environment": settings.ENVIRONMENT,
-    }
+    context: RequestContext = Depends(
+        get_request_context,
+    ),
+) -> ApiResponse:
+    """
+    Return the application health status.
+    """
 
-    return ApiResponse(success=True, data=data, status_code=200, metadata=context.to_metadata())
+    logger.info(
+        "Health check requested.",
+        extra={
+            "operation": "health_check",
+        },
+    )
+
+    return ApiResponse(
+        success=True,
+        status_code=status.HTTP_200_OK,
+        data={
+            "status": "healthy",
+            "service": settings.APP_NAME,
+            "version": settings.APP_VERSION,
+            "environment": settings.ENVIRONMENT,
+        },
+        metadata=context.to_metadata(),
+    )

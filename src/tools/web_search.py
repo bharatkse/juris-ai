@@ -4,9 +4,9 @@ Web search tool.
 
 from __future__ import annotations
 
-from core.models.tool import ToolMetadata, ToolRequest, ToolResponse
 from src.clients.web_search.base import WebSearchClient
 from src.clients.web_search.models import WebSearchRequest
+from src.core.models.tool import ToolMetadata, ToolRequest, ToolResponse
 from src.tools.base import BaseTool
 
 

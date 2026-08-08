@@ -7,9 +7,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from core.models.agent import AgentRequest
 from core.models.planning import Intent, PlanningRequest
 from core.models.tool import RetrievedContent
-from src.agents.models import AgentRequest
 
 
 @dataclass(slots=True, frozen=True)

@@ -4,8 +4,8 @@ LLM-backed execution plan generator.
 
 from __future__ import annotations
 
-from core.models.planning import ExecutionPlan, Intent, PlanningRequest
 from src.clients.llm.base import LLMClient
+from src.core.models.planning import ExecutionPlan, Intent, PlanningRequest
 from src.planning.prompts.planning import PlanningPromptBuilder
 
 

@@ -22,22 +22,32 @@ def get_password_service() -> PasswordService:
 
 
 def get_user_repository(
-    session: AsyncSession = Depends(get_db_session),
+    session: AsyncSession = Depends(
+        get_db_session,
+    ),
 ) -> UserRepository:
     """
-    Create a user repository.
+    Create a UserRepository.
     """
 
-    return UserRepository(session)
+    return UserRepository(
+        session=session,
+    )
 
 
 def get_user_service(
-    session: AsyncSession = Depends(get_db_session),
-    repository: UserRepository = Depends(get_user_repository),
-    password_service: PasswordService = Depends(get_password_service),
+    session: AsyncSession = Depends(
+        get_db_session,
+    ),
+    repository: UserRepository = Depends(
+        get_user_repository,
+    ),
+    password_service: PasswordService = Depends(
+        get_password_service,
+    ),
 ) -> UserService:
     """
-    Create a user service.
+    Create a UserService.
     """
 
     return UserService(

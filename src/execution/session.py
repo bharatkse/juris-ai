@@ -9,8 +9,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from src.agents.models import AgentContext, AgentRequest
 from src.core.exceptions.execution import ExecutionError
+from src.core.models.agent import AgentContext, AgentRequest
 from src.core.models.conversation import Conversation
 from src.core.models.planning import ExecutionMode, ExecutionPlan, ExecutionStep
 from src.execution.bus import CollaborationBus

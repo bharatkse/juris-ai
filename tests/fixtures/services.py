@@ -10,6 +10,7 @@ import pytest
 
 from src.services.chat import ChatService
 from src.services.conversation import ConversationService
+from src.services.conversation_event import ConversationEventService
 from src.services.document import DocumentService
 from src.services.user import UserService
 
@@ -35,7 +36,6 @@ def user_service(
 def conversation_service(
     mock_async_session: AsyncMock,
     mock_conversation_repository: MagicMock,
-    mock_user_repository: MagicMock,
 ) -> ConversationService:
     """
     Return a conversation service.
@@ -44,16 +44,15 @@ def conversation_service(
     return ConversationService(
         session=mock_async_session,
         repository=mock_conversation_repository,
-        user_repository=mock_user_repository,
     )
 
 
 @pytest.fixture
 def chat_service(
     mock_async_session: AsyncMock,
-    mock_conversation_repository: MagicMock,
-    mock_conversation_event_repository: MagicMock,
-    mock_agent: MagicMock,
+    mock_conversation_service: MagicMock,
+    mock_conversation_event_service: MagicMock,
+    mock_orchestrator: MagicMock,
 ) -> ChatService:
     """
     Return a chat service.
@@ -61,9 +60,9 @@ def chat_service(
 
     return ChatService(
         session=mock_async_session,
-        conversation_repository=mock_conversation_repository,
-        event_repository=mock_conversation_event_repository,
-        agent=mock_agent,
+        conversation_service=mock_conversation_service,
+        conversation_event_service=mock_conversation_event_service,
+        orchestrator=mock_orchestrator,
     )
 
 
@@ -81,4 +80,26 @@ def document_service(
         session=mock_async_session,
         repository=mock_document_repository,
         storage=mock_storage_client,
+    )
+
+
+@pytest.fixture
+def mock_conversation_service() -> MagicMock:
+    """
+    Return a mocked conversation service.
+    """
+
+    return MagicMock(
+        spec=ConversationService,
+    )
+
+
+@pytest.fixture
+def mock_conversation_event_service() -> MagicMock:
+    """
+    Return a mocked conversation event service.
+    """
+
+    return MagicMock(
+        spec=ConversationEventService,
     )

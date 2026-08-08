@@ -4,8 +4,9 @@ Unit tests for ChatResult & ChatStreamChunk.
 
 from __future__ import annotations
 
-from src.services.results.chat import ChatResult
-from src.services.results.stream import ChatStreamChunk
+from src.services.models.chat import ChatResult
+from src.services.models.stream import ChatStreamChunk
+from tests.builders.orchestrator import build_orchestrator_response
 from tests.factories.conversation import ConversationFactory
 from tests.factories.conversation_event import ConversationEventFactory
 
@@ -25,15 +26,22 @@ def test_chat_result_stores_values() -> None:
         conversation_id=conversation.id,
     )
 
+    response = build_orchestrator_response(
+        conversation_id=conversation.id,
+        content="Legal answer",
+    )
+
     result = ChatResult(
         conversation=conversation,
         user_event=user_event,
         assistant_event=assistant_event,
+        response=response,
     )
 
     assert result.conversation is conversation
     assert result.user_event is user_event
     assert result.assistant_event is assistant_event
+    assert result.response is response
 
 
 def test_chat_stream_chunk_stores_values() -> None:

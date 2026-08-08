@@ -4,117 +4,57 @@ Fixtures for AI agent tests.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from src.agents.legal import LegalAgent
-from src.agents.legal_stream import LegalAgentStream
 from src.clients.llm.base import LLMClient
-from src.clients.models import LLMMessage, LLMStreamChunk
 from src.core.config import settings
 from src.core.enums import LLMProvider
-from src.prompts.legal import LEGAL_SYSTEM_PROMPT
-from tests.builders.groq import build_groq_stream
-from tests.builders.llm import build_llm_chunk, build_llm_messages
+from src.tools.retrieval import RetrieverTool
 
 
 @pytest.fixture
 def mock_llm_client() -> LLMClient:
     """
-    Mock LLM client.
+    Return a mocked LLM client for agent tests.
     """
 
-    client = MagicMock(spec=LLMClient)
+    client = MagicMock(
+        spec=LLMClient,
+    )
 
     client.provider = LLMProvider.GROQ.value
     client.model = settings.GROQ_MODEL
 
     client.generate = AsyncMock()
-
-    #
-    # stream() returns an async iterator, not a coroutine.
-    #
     client.stream = MagicMock()
 
     return client
 
 
 @pytest.fixture
-def llm_messages() -> list[LLMMessage]:
+def mock_retriever() -> RetrieverTool:
     """
-    Build default LLM messages.
-    """
-
-    return build_llm_messages()
-
-
-@pytest.fixture
-def llm_stream() -> AsyncIterator[LLMStreamChunk]:
-    """
-    Build a default streamed LLM response.
+    Return a mocked retriever tool for agent tests.
     """
 
-    return build_groq_stream(
-        build_llm_chunk(
-            content="Hello",
-        ),
-        build_llm_chunk(
-            content=" World",
-        ),
-        build_llm_chunk(
-            content="",
-            is_final=True,
-            finish_reason="stop",
-        ),
+    return MagicMock(
+        spec=RetrieverTool,
     )
-
-
-@pytest.fixture
-def empty_llm_stream() -> AsyncIterator[LLMStreamChunk]:
-    """
-    Return an empty LLM stream.
-    """
-
-    return build_groq_stream()
 
 
 @pytest.fixture
 def legal_agent(
     mock_llm_client: LLMClient,
+    mock_retriever: RetrieverTool,
 ) -> LegalAgent:
     """
-    Return a legal AI agent.
+    Return a LegalAgent with mocked dependencies.
     """
 
     return LegalAgent(
-        client=mock_llm_client,
-        system_prompt=LEGAL_SYSTEM_PROMPT,
-    )
-
-
-@pytest.fixture
-def legal_agent_stream(
-    mock_llm_client: LLMClient,
-    llm_messages: list[LLMMessage],
-) -> LegalAgentStream:
-    """
-    Create a LegalAgentStream.
-    """
-
-    return LegalAgentStream(
-        client=mock_llm_client,
-        messages=llm_messages,
-    )
-
-
-@pytest.fixture
-def mock_agent() -> MagicMock:
-    """
-    Return a mocked conversation repository.
-    """
-
-    return MagicMock(
-        spec=LegalAgent,
+        llm_client=mock_llm_client,
+        retriever=mock_retriever,
     )

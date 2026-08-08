@@ -5,14 +5,11 @@ Incoming request models for the AI orchestrator.
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.core.enums import MessageRole
-
-if TYPE_CHECKING:
-    from src.core.types import ConversationId, UserId
+from src.core.types import ConversationId, UserId
 
 
 class AttachmentType(StrEnum):

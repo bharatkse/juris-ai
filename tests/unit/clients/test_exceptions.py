@@ -10,7 +10,7 @@ from src.core.exceptions.client import (
     ClientRateLimitError,
     ClientTimeoutError,
 )
-from tests.builders.groq import build_groq_messages
+from tests.builders.clients.groq import build_groq_messages
 from tests.unit.clients.exeption_builder import (
     build_authentication_error,
     build_rate_limit_error,

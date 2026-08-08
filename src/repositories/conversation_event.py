@@ -4,14 +4,18 @@ Conversation event repository.
 
 from __future__ import annotations
 
-from sqlalchemy import select
+from typing import TYPE_CHECKING, cast
 
-from src.core.enums import MessageRole
 from src.db.models.conversation_event import ConversationEvent
 from src.repositories.base import BaseRepository
 
+if TYPE_CHECKING:
+    from src.core.types import ConversationEventId, ConversationId
 
-class ConversationEventRepository(BaseRepository):
+
+class ConversationEventRepository(
+    BaseRepository[ConversationEvent],
+):
     """
     Repository responsible for ConversationEvent persistence.
     """
@@ -20,97 +24,93 @@ class ConversationEventRepository(BaseRepository):
 
     async def create(
         self,
-        *,
-        conversation_id: str,
-        role: MessageRole,
-        content: str,
-        parent_event_id: str | None = None,
-        metadata: dict | None = None,
+        event: ConversationEvent,
     ) -> ConversationEvent:
         """
-        Create a conversation event.
+        Persist a conversation event.
         """
 
-        event = self._model(
-            conversation_id=conversation_id,
-            parent_event_id=parent_event_id,
-            role=role,
-            content=content,
-            event_metadata=metadata,
+        return await self.persist(
+            event,
         )
-
-        self._session.add(event)
-
-        await self.flush()
-        await self.refresh(event)
-
-        return event
 
     async def get(
         self,
-        event_id: str,
+        *,
+        conversation_id: ConversationId,
+        event_id: ConversationEventId,
     ) -> ConversationEvent | None:
         """
-        Retrieve an event by identifier.
+        Retrieve a conversation event.
         """
 
-        statement = select(self._model).where(
+        statement = self.select().where(
             self._model.id == event_id,
+            self._model.conversation_id == conversation_id,
         )
 
-        result = await self._session.execute(statement)
-
-        return result.scalar_one_or_none()
-
-    async def list_by_conversation(
-        self,
-        conversation_id: str,
-    ) -> list[ConversationEvent]:
-        """
-        Retrieve all events for a conversation.
-        """
-
-        statement = (
-            select(self._model)
-            .where(
-                self._model.conversation_id == conversation_id,
-            )
-            .order_by(
-                self._model.created_at.asc(),
-            )
+        result = await self._session.execute(
+            statement,
         )
 
-        result = await self._session.execute(statement)
+        return cast(
+            ConversationEvent | None,
+            result.scalar_one_or_none(),
+        )
 
-        return list(result.scalars().all())
-
-    async def get_recent_events(
+    async def list(
         self,
         *,
-        conversation_id: str,
-        limit: int = 20,
+        conversation_id: ConversationId,
+        limit: int | None = None,
     ) -> list[ConversationEvent]:
         """
-        Retrieve the most recent events for a conversation.
+        Retrieve conversation events.
 
-        Events are returned in chronological order.
+        Events are always returned in chronological order.
         """
 
-        statement = (
-            select(self._model)
-            .where(
-                self._model.conversation_id == conversation_id,
-            )
-            .order_by(
-                self._model.created_at.desc(),
-            )
-            .limit(limit)
+        statement = self.select().where(
+            self._model.conversation_id == conversation_id,
         )
 
-        result = await self._session.execute(statement)
+        if limit is None:
+            statement = statement.order_by(
+                self._model.created_at.asc(),
+            )
 
-        events = list(result.scalars().all())
+        else:
+            statement = statement.order_by(
+                self._model.created_at.desc(),
+            ).limit(
+                limit,
+            )
 
-        events.reverse()
+        result = await self._session.execute(
+            statement,
+        )
+
+        events = list(
+            result.scalars().all(),
+        )
+
+        if limit is not None:
+            events.reverse()
 
         return events
+
+    async def update(
+        self,
+        event: ConversationEvent,
+    ) -> ConversationEvent:
+        """
+        Persist updates to a conversation event.
+        """
+
+        await self.flush()
+
+        await self.refresh(
+            event,
+        )
+
+        return event

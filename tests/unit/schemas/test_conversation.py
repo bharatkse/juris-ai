@@ -21,7 +21,10 @@ def test_create_conversation_request_accepts_valid_request() -> None:
 
     request = build_create_conversation_request()
 
-    assert request.user_id is not None
+    assert isinstance(
+        request,
+        CreateConversationRequest,
+    )
 
 
 def test_create_conversation_request_accepts_title() -> None:
@@ -48,17 +51,6 @@ def test_create_conversation_request_accepts_none_title() -> None:
     assert request.title is None
 
 
-def test_create_conversation_request_requires_user_id() -> None:
-    """
-    It should require a user identifier.
-    """
-
-    with pytest.raises(
-        ValidationError,
-    ):
-        CreateConversationRequest()
-
-
 def test_create_conversation_request_rejects_extra_fields() -> None:
     """
     It should reject unexpected fields.
@@ -68,7 +60,7 @@ def test_create_conversation_request_rejects_extra_fields() -> None:
         ValidationError,
     ):
         CreateConversationRequest(
-            user_id="user_123",
+            title="Legal",
             unknown="value",
         )
 
@@ -87,6 +79,7 @@ def test_conversation_response_can_be_created_from_conversation() -> None:
     assert response.id == conversation.id
     assert response.user_id == conversation.user_id
     assert response.title == conversation.title
+    assert response.is_active == conversation.is_active
     assert response.created_at == conversation.created_at
     assert response.updated_at == conversation.updated_at
 
@@ -107,6 +100,7 @@ def test_conversation_response_model_dump() -> None:
     assert data["id"] == conversation.id
     assert data["user_id"] == conversation.user_id
     assert data["title"] == conversation.title
+    assert data["is_active"] == conversation.is_active
 
 
 def test_conversation_response_rejects_extra_fields() -> None:
@@ -121,6 +115,7 @@ def test_conversation_response_rejects_extra_fields() -> None:
             id="conv_123",
             user_id="user_123",
             title="Legal",
+            is_active=True,
             created_at=datetime.now(),
             updated_at=datetime.now(),
             unknown="value",

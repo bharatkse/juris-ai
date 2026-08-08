@@ -4,86 +4,235 @@ Conversation service.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.constants import DEFAULT_CONVERSATION_TITLE
-from src.core.exceptions.httpx import UserNotFoundError
-from src.core.types import ConversationId
+from src.core.exceptions.database import DatabaseError
+from src.core.exceptions.httpx import ConversationInactiveError
+from src.core.exceptions.httpx import NotFoundError as ConversationNotFoundError
+from src.core.logger import get_logger
 from src.db.models.conversation import Conversation
 from src.repositories.conversation import ConversationRepository
-from src.repositories.user import UserRepository
 from src.schemas.conversation import CreateConversationRequest
 from src.services.base import BaseService
+
+if TYPE_CHECKING:
+    from src.core.types import ConversationId, UserId
+
+logger = get_logger(__name__)
 
 
 class ConversationService(BaseService):
     """
-    Business logic for conversations.
+    Business logic for conversation management.
     """
 
     def __init__(
         self,
+        *,
         session: AsyncSession,
         repository: ConversationRepository,
-        user_repository: UserRepository,
     ) -> None:
-        super().__init__(session)
+        super().__init__(
+            session=session,
+        )
 
         self._repository = repository
-        self._user_repository = user_repository
 
-    async def create(self, request: CreateConversationRequest) -> Conversation:
+    async def create(
+        self,
+        *,
+        user_id: UserId,
+        request: CreateConversationRequest,
+    ) -> Conversation:
         """
         Create a new conversation.
         """
-        user = await self._user_repository.get(request.user_id)
 
-        if user is None:
-            raise UserNotFoundError("User not found.")
+        conversation = Conversation(
+            title=request.title or DEFAULT_CONVERSATION_TITLE,
+            user_id=user_id,
+        )
 
         try:
             conversation = await self._repository.create(
-                Conversation(
-                    title=request.title or DEFAULT_CONVERSATION_TITLE,
-                    user_id=request.user_id,
-                ),
+                conversation,
             )
 
             await self.commit()
 
+            logger.info(
+                "Conversation created.",
+                extra={
+                    "operation": "create_conversation",
+                    "conversation_id": str(conversation.id),
+                    "user_id": str(conversation.user_id),
+                },
+            )
+
             return conversation
 
-        except Exception:
+        except IntegrityError as exc:
             await self.rollback()
-            raise
+
+            logger.exception(
+                "Failed to create conversation due to integrity constraint.",
+                extra={
+                    "operation": "create_conversation",
+                    "user_id": user_id,
+                },
+            )
+
+            raise DatabaseError(
+                "Failed to create conversation.",
+            ) from exc
+
+        except SQLAlchemyError as exc:
+            await self.rollback()
+
+            logger.exception(
+                "Database error while creating conversation.",
+                extra={
+                    "operation": "create_conversation",
+                    "user_id": user_id,
+                },
+            )
+
+            raise DatabaseError(
+                "Failed to create conversation.",
+            ) from exc
 
     async def get(
         self,
+        *,
         conversation_id: ConversationId,
+        user_id: UserId,
     ) -> Conversation | None:
         """
         Retrieve a conversation.
         """
 
         return await self._repository.get(
-            conversation_id,
+            conversation_id=conversation_id,
+            user_id=user_id,
+        )
+
+    async def get_or_raise(
+        self,
+        *,
+        conversation_id: ConversationId,
+        user_id: UserId,
+    ) -> Conversation:
+        """
+        Retrieve an active conversation.
+
+        Raises:
+            ConversationNotFoundError
+            ConversationInactiveError
+        """
+
+        conversation = await self.get(
+            conversation_id=conversation_id,
+            user_id=user_id,
+        )
+
+        if conversation is None:
+            logger.warning(
+                "Conversation not found.",
+                extra={
+                    "operation": "get_conversation",
+                    "conversation_id": str(conversation_id),
+                    "user_id": str(user_id),
+                },
+            )
+
+            raise ConversationNotFoundError(
+                "Conversation not found.",
+            )
+
+        if not conversation.is_active:
+            logger.warning(
+                "Conversation is inactive.",
+                extra={
+                    "operation": "get_conversation",
+                    "conversation_id": str(conversation.id),
+                    "user_id": str(user_id),
+                },
+            )
+
+            raise ConversationInactiveError(
+                "Conversation is inactive.",
+            )
+
+        return conversation
+
+    async def list(
+        self,
+        *,
+        user_id: UserId,
+        offset: int = 0,
+        limit: int = 20,
+    ) -> list[Conversation]:
+        """
+        Retrieve conversations for a user.
+        """
+
+        return await self._repository.list(
+            user_id=user_id,
+            offset=offset,
+            limit=limit,
         )
 
     async def archive(
         self,
-        conversation: Conversation,
-    ) -> None:
+        *,
+        conversation_id: ConversationId,
+        user_id: UserId,
+    ) -> Conversation:
         """
         Archive a conversation.
         """
 
+        conversation = await self.get_or_raise(
+            conversation_id=conversation_id,
+            user_id=user_id,
+        )
+
+        conversation.archive()
+
         try:
-            await self._repository.archive(
+            conversation = await self._repository.update(
                 conversation,
             )
 
             await self.commit()
 
-        except Exception:
+            logger.info(
+                "Conversation archived.",
+                extra={
+                    "operation": "archive_conversation",
+                    "conversation_id": str(conversation.id),
+                    "user_id": str(user_id),
+                },
+            )
+
+            return conversation
+
+        except SQLAlchemyError as exc:
             await self.rollback()
-            raise
+
+            logger.exception(
+                "Database error while archiving conversation.",
+                extra={
+                    "operation": "archive_conversation",
+                    "conversation_id": str(conversation_id),
+                    "user_id": str(user_id),
+                },
+            )
+
+            raise DatabaseError(
+                "Failed to archive conversation.",
+            ) from exc

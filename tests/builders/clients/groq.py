@@ -1,8 +1,5 @@
 """
 Builders for Groq SDK response objects.
-
-These builders produce lightweight mock objects that mimic the
-structure returned by the official Groq SDK.
 """
 
 from __future__ import annotations
@@ -11,7 +8,7 @@ from collections.abc import AsyncIterator
 from unittest.mock import MagicMock
 
 from src.clients.models import LLMMessage
-from tests.builders.llm import build_llm_message
+from tests.builders.clients.llm import build_llm_message
 from tests.helpers.async_iterator import async_iterator
 
 DEFAULT_MODEL = "llama-3.3-70b-versatile"
@@ -59,6 +56,7 @@ def build_groq_response(
     finish_reason: str | None = "stop",
     model: str = DEFAULT_MODEL,
     usage: MagicMock | None = None,
+    response_id: str = "chatcmpl-test",
 ) -> MagicMock:
     """
     Build a Groq chat completion response.
@@ -66,15 +64,14 @@ def build_groq_response(
 
     response = MagicMock()
 
+    response.id = response_id
     response.model = model
-
     response.choices = [
         build_groq_choice(
             content=content,
             finish_reason=finish_reason,
         ),
     ]
-
     response.usage = usage
 
     return response
@@ -120,13 +117,10 @@ def build_groq_stream_chunk(
 
 def build_groq_empty_chunk() -> MagicMock:
     """
-    Build an empty streaming chunk.
-
-    Used to verify chunks without choices are ignored.
+    Build a streaming chunk without choices.
     """
 
     chunk = MagicMock()
-
     chunk.choices = []
 
     return chunk
@@ -134,7 +128,7 @@ def build_groq_empty_chunk() -> MagicMock:
 
 def build_groq_chunk_without_delta() -> MagicMock:
     """
-    Build a chunk with a missing delta.
+    Build a streaming chunk without a delta.
     """
 
     chunk = MagicMock()
@@ -163,7 +157,7 @@ def build_groq_messages(
     *messages: LLMMessage,
 ) -> list[LLMMessage]:
     """
-    Build Groq request messages.
+    Build LLM messages for Groq tests.
     """
 
     if messages:
@@ -178,7 +172,7 @@ def build_groq_chat_messages(
     messages: list[LLMMessage],
 ) -> list[dict[str, str]]:
     """
-    Convert LLM messages into the format expected by the Groq SDK.
+    Convert LLM messages to Groq SDK format.
     """
 
     return [

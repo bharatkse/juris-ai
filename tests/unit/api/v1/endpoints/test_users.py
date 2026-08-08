@@ -50,7 +50,7 @@ async def test_create_user(
     assert response.status_code == status.HTTP_201_CREATED
 
     service.create.assert_awaited_once_with(
-        request,
+        request=request,
     )
 
     mock_model_validate.assert_called_once_with(
@@ -75,7 +75,7 @@ async def test_get_user(
     mock_model_validate.return_value = response_model
 
     service = MagicMock()
-    service.get = AsyncMock(
+    service.get_or_raise = AsyncMock(
         return_value=user,
     )
 
@@ -91,8 +91,8 @@ async def test_get_user(
 
     assert response.status_code == status.HTTP_200_OK
 
-    service.get.assert_awaited_once_with(
-        user.id,
+    service.get_or_raise.assert_awaited_once_with(
+        user_id=user.id,
     )
 
     mock_model_validate.assert_called_once_with(

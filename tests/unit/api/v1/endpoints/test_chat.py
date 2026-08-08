@@ -16,6 +16,7 @@ from src.core.response import ApiResponse
 from src.schemas.chat import ChatStreamResponse, ConversationEventResponse
 from tests.builders.chat import build_chat_result, build_chat_stream_chunk
 from tests.builders.schemas import build_chat_request
+from tests.helpers.identifiers import unknown_user_id
 
 
 @pytest.mark.asyncio
@@ -31,8 +32,10 @@ async def test_chat(
     """
 
     result = build_chat_result()
-
     request = build_chat_request()
+
+    current_user = MagicMock()
+    current_user.id = result.conversation.user_id
 
     service = MagicMock()
     service.chat = AsyncMock(
@@ -41,6 +44,7 @@ async def test_chat(
 
     response = await chat(
         request=request,
+        current_user=current_user,
         service=service,
     )
 
@@ -52,6 +56,7 @@ async def test_chat(
     assert response.status_code == status.HTTP_200_OK
 
     service.chat.assert_awaited_once_with(
+        user_id=current_user.id,
         conversation_id=request.conversation_id,
         message=request.message,
     )
@@ -77,6 +82,9 @@ async def test_stream_chat_returns_streaming_response() -> None:
 
     request = build_chat_request()
 
+    current_user = MagicMock()
+    current_user.id = "user_test"
+
     async def stream():
         yield build_chat_stream_chunk()
 
@@ -85,6 +93,7 @@ async def test_stream_chat_returns_streaming_response() -> None:
 
     response = await stream_chat(
         request=request,
+        current_user=current_user,
         service=service,
     )
 
@@ -111,6 +120,9 @@ async def test_stream_chat_streams_events(
 
     request = build_chat_request()
 
+    current_user = MagicMock()
+    current_user.id = "user_test"
+
     chunk = build_chat_stream_chunk()
 
     async def stream():
@@ -123,6 +135,7 @@ async def test_stream_chat_streams_events(
 
     response = await stream_chat(
         request=request,
+        current_user=current_user,
         service=service,
     )
 
@@ -134,6 +147,7 @@ async def test_stream_chat_streams_events(
     assert body == ["data: test\n\n"]
 
     service.stream_chat.assert_called_once_with(
+        user_id=current_user.id,
         conversation_id=request.conversation_id,
         message=request.message,
     )
@@ -163,9 +177,11 @@ async def test_stream_chat_propagates_cancelled_error(
 
     request = build_chat_request()
 
+    current_user = MagicMock()
+    current_user.id = unknown_user_id()
+
     async def stream():
         raise asyncio.CancelledError
-
         yield
 
     service = MagicMock()
@@ -173,6 +189,7 @@ async def test_stream_chat_propagates_cancelled_error(
 
     response = await stream_chat(
         request=request,
+        current_user=current_user,
         service=service,
     )
 
@@ -182,6 +199,11 @@ async def test_stream_chat_propagates_cancelled_error(
         async for _ in response.body_iterator:
             pass
 
-    mock_logger.error.assert_called_once_with(
+    mock_logger.info.assert_any_call(
         "Client disconnected from chat stream.",
+        extra={
+            "operation": "stream_chat",
+            "conversation_id": str(request.conversation_id),
+            "user_id": str(current_user.id),
+        },
     )

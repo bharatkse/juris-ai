@@ -7,7 +7,7 @@ well-known intents.
 
 from __future__ import annotations
 
-from core.models.planning import (
+from src.core.models.planning import (
     AgentType,
     ExecutionMode,
     ExecutionPlan,

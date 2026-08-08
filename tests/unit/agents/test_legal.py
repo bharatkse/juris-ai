@@ -9,11 +9,10 @@ from unittest.mock import AsyncMock
 import pytest
 
 from src.agents.legal import LegalAgent
-from src.agents.legal_stream import LegalAgentStream
-from src.clients.models import LLMMessage
 from src.core.enums import MessageRole
-from tests.builders.agent import build_agent_request
-from tests.builders.llm import build_llm_response
+from src.core.models.message import Message
+from tests.builders.agent import build_agent_request, build_agent_response
+from tests.builders.clients.llm import build_llm_response
 
 
 def test_init_sets_dependencies(
@@ -21,15 +20,16 @@ def test_init_sets_dependencies(
     mock_llm_client,
 ) -> None:
     """
-    It should initialize the agent.
+    It should initialize the agent dependencies.
     """
 
-    assert legal_agent._client is mock_llm_client
-    assert legal_agent._system_prompt
+    assert legal_agent.llm is mock_llm_client
+    assert legal_agent._prompt_builder is not None
+    assert legal_agent._retriever is not None
 
 
 @pytest.mark.asyncio
-async def test_answer_calls_generate(
+async def test_run_calls_generate(
     legal_agent: LegalAgent,
     mock_llm_client,
 ) -> None:
@@ -38,10 +38,10 @@ async def test_answer_calls_generate(
     """
 
     mock_llm_client.generate = AsyncMock(
-        return_value=build_llm_response(),
+        return_value=build_agent_response(),
     )
 
-    await legal_agent.answer(
+    await legal_agent.run(
         request=build_agent_request(),
     )
 
@@ -49,43 +49,41 @@ async def test_answer_calls_generate(
 
 
 @pytest.mark.asyncio
-async def test_answer_passes_expected_messages(
+async def test_run_passes_expected_messages(
     legal_agent: LegalAgent,
     mock_llm_client,
 ) -> None:
     """
-    It should build the expected prompt.
+    It should build the expected LLM messages.
     """
 
     request = build_agent_request()
 
     mock_llm_client.generate = AsyncMock(
-        return_value=build_llm_response(),
+        return_value=build_agent_response(),
     )
 
-    await legal_agent.answer(
+    await legal_agent.run(
         request=request,
     )
 
-    kwargs = mock_llm_client.generate.await_args.kwargs
+    llm_request = mock_llm_client.generate.await_args.kwargs["request"]
 
-    messages = kwargs["messages"]
+    messages = llm_request.messages
 
-    assert len(messages) == 2
-
-    assert messages[0] == LLMMessage(
+    assert messages[0] == Message(
         role=MessageRole.SYSTEM,
-        content=legal_agent._system_prompt,
+        content=legal_agent._prompt_builder._system_prompt,
     )
 
-    assert messages[-1] == LLMMessage(
+    assert messages[-1] == Message(
         role=MessageRole.USER,
-        content=request.question,
+        content="Hello",
     )
 
 
 @pytest.mark.asyncio
-async def test_answer_includes_history(
+async def test_run_includes_history(
     legal_agent: LegalAgent,
     mock_llm_client,
 ) -> None:
@@ -94,63 +92,54 @@ async def test_answer_includes_history(
     """
 
     request = build_agent_request(
-        history=[
-            LLMMessage(
+        messages=[
+            Message(
                 role=MessageRole.USER,
                 content="Old question",
             ),
-            LLMMessage(
+            Message(
                 role=MessageRole.ASSISTANT,
                 content="Old answer",
             ),
-        ],
+            Message(
+                role=MessageRole.USER,
+                content="Current question",
+            ),
+        ]
     )
+
+    assert [message.content for message in request.conversation.messages] == [
+        "Old question",
+        "Old answer",
+        "Current question",
+    ]
 
     mock_llm_client.generate = AsyncMock(
         return_value=build_llm_response(),
     )
 
-    await legal_agent.answer(
+    await legal_agent.run(
         request=request,
     )
 
-    messages = mock_llm_client.generate.await_args.kwargs["messages"]
+    llm_request = mock_llm_client.generate.await_args.kwargs["request"]
 
-    assert len(messages) == 4
+    messages = llm_request.messages
 
-    assert messages[1].content == "Old question"
-    assert messages[2].content == "Old answer"
+    contents = [message.content for message in messages]
+
+    assert "Old question" in contents
+    assert "Old answer" in contents
+    assert "Current question" in contents
 
 
 @pytest.mark.asyncio
-async def test_answer_uses_temperature(
+async def test_run_returns_agent_response(
     legal_agent: LegalAgent,
     mock_llm_client,
 ) -> None:
     """
-    It should use the configured temperature.
-    """
-
-    mock_llm_client.generate = AsyncMock(
-        return_value=build_llm_response(),
-    )
-
-    await legal_agent.answer(
-        request=build_agent_request(),
-    )
-
-    kwargs = mock_llm_client.generate.await_args.kwargs
-
-    assert kwargs["temperature"] == 0.2
-
-
-@pytest.mark.asyncio
-async def test_answer_returns_agent_response(
-    legal_agent: LegalAgent,
-    mock_llm_client,
-) -> None:
-    """
-    It should map the LLM response.
+    It should map the LLM response to an agent response.
     """
 
     mock_llm_client.generate = AsyncMock(
@@ -159,62 +148,8 @@ async def test_answer_returns_agent_response(
         ),
     )
 
-    response = await legal_agent.answer(
+    response = await legal_agent.run(
         request=build_agent_request(),
     )
 
     assert response.content == "Legal answer"
-    assert response.provider == mock_llm_client.provider
-    assert response.model == mock_llm_client.model
-    assert response.latency_ms >= 0
-
-
-def test_stream_answer_returns_legal_agent_stream(
-    legal_agent: LegalAgent,
-) -> None:
-    """
-    It should create a LegalAgentStream.
-    """
-
-    stream = legal_agent.stream_answer(
-        build_agent_request(),
-    )
-
-    assert isinstance(
-        stream,
-        LegalAgentStream,
-    )
-
-
-def test_stream_answer_uses_same_client(
-    legal_agent: LegalAgent,
-    mock_llm_client,
-) -> None:
-    """
-    It should reuse the configured client.
-    """
-
-    stream = legal_agent.stream_answer(
-        build_agent_request(),
-    )
-
-    assert stream._client is mock_llm_client
-
-
-def test_stream_answer_builds_messages(
-    legal_agent: LegalAgent,
-) -> None:
-    """
-    It should build the expected messages.
-    """
-
-    request = build_agent_request()
-
-    stream = legal_agent.stream_answer(
-        request,
-    )
-
-    assert len(stream._messages) == 2
-
-    assert stream._messages[0].role == MessageRole.SYSTEM
-    assert stream._messages[-1].role == MessageRole.USER

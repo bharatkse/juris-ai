@@ -1,7 +1,5 @@
 """
 Shared request and response schemas.
-
-This module contains reusable Pydantic models used across the application.
 """
 
 from __future__ import annotations
@@ -15,64 +13,83 @@ DataT = TypeVar("DataT")
 
 
 class PaginationParams(BaseModel):
-    """Query parameters for paginated endpoints."""
+    """
+    Query parameters for paginated endpoints.
+    """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+    )
 
-    skip: int = Field(
+    offset: int = Field(
         default=0,
         ge=0,
         description="Number of records to skip.",
     )
 
     limit: int = Field(
-        default=10,
+        default=20,
         ge=1,
         le=100,
         description="Maximum number of records to return.",
     )
 
 
-class Pagination(BaseModel):
-    """Pagination information."""
+class PaginationModel(BaseModel):
+    """
+    Pagination metadata.
+    """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+    )
 
     total: int
 
-    skip: int
+    offset: int
 
     limit: int
 
     has_more: bool
 
 
-class ListData(BaseModel, Generic[DataT]):
+class Page(BaseModel, Generic[DataT]):
     """
-    Generic paginated data payload.
+    Generic paginated payload.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+    )
 
     items: list[DataT]
 
-    pagination: Pagination
+    pagination: PaginationModel
 
 
-class AIInfoModel(BaseModel):
-    """AI execution metadata."""
+class AIUsageModel(BaseModel):
+    """
+    AI execution information.
+    """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+    )
 
     provider: str | None = None
+
     model: str | None = None
-    agent: str | None = None  # e.g. legal-assistant
-    workflow: str | None = None  # e.g. legal_qa_graph
+
+    agent: str | None = None
+
+    workflow: str | None = None
 
     latency_ms: int | None = None
 
     prompt_tokens: int | None = None
+
     completion_tokens: int | None = None
+
     total_tokens: int | None = None
 
     tool_calls: int | None = None
@@ -83,25 +100,29 @@ class MetadataModel(BaseModel):
     Response metadata.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+    )
 
     request_id: str | None = None
 
     trace_id: str | None = None
 
-    conversation_id: str | None = None
+    timestamp: datetime = Field(
+        default_factory=lambda: datetime.now(UTC),
+    )
 
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
-
-    ai: AIInfoModel | None = None
+    ai: AIUsageModel | None = None
 
 
 class ErrorDetailModel(BaseModel):
     """
-    Standard error payload.
+    Standard API error.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+    )
 
     code: str
 
@@ -113,25 +134,11 @@ class ErrorDetailModel(BaseModel):
 class ApiResponseModel(BaseModel, Generic[DataT]):
     """
     Standard API response envelope.
-
-    Success response:
-
-    {
-        "success": true,
-        "data": {...},
-        "metadata": {...}
-    }
-
-    Error response:
-
-    {
-        "success": false,
-        "error": {...},
-        "metadata": {...}
-    }
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+    )
 
     success: bool
 

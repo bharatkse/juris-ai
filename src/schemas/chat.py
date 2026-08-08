@@ -10,6 +10,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.core.enums import MessageRole
+from src.core.types import ConversationEventId, ConversationId
 
 
 class ChatRequest(BaseModel):
@@ -21,9 +22,7 @@ class ChatRequest(BaseModel):
         extra="forbid",
     )
 
-    conversation_id: str = Field(
-        description="Conversation identifier.",
-    )
+    conversation_id: ConversationId
 
     message: str = Field(
         min_length=1,
@@ -34,30 +33,46 @@ class ChatRequest(BaseModel):
 
 class ConversationEventResponse(BaseModel):
     """
-    Conversation event response.
+    Conversation event.
     """
 
     model_config = ConfigDict(
         from_attributes=True,
         extra="forbid",
-        populate_by_name=True,
     )
 
-    id: str
+    id: ConversationEventId
 
-    conversation_id: str
+    conversation_id: ConversationId
 
-    parent_event_id: str | None
+    parent_event_id: ConversationEventId | None
 
     role: MessageRole
 
     content: str
 
-    event_metadata: dict[str, Any] | None = Field(
-        serialization_alias="metadata",
+    metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        alias="event_metadata",
     )
 
     created_at: datetime
+
+
+class AIResponse(BaseModel):
+    """
+    Assistant response.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
+    message: str
+
+    metadata: dict[str, Any] = Field(
+        default_factory=dict,
+    )
 
 
 class ChatResponse(BaseModel):
@@ -69,7 +84,9 @@ class ChatResponse(BaseModel):
         extra="forbid",
     )
 
-    conversation_id: str
+    conversation_id: ConversationId
+
+    response: AIResponse
 
     user_event: ConversationEventResponse
 

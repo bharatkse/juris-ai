@@ -1,10 +1,18 @@
 """
-Builders for LLM domain models.
+Builders for provider-independent LLM models.
 """
 
 from __future__ import annotations
 
-from src.clients.models import LLMMessage, LLMResponse, LLMStreamChunk, LLMTokenUsage
+from typing import Any
+
+from src.clients.models import (
+    LLMMessage,
+    LLMRequest,
+    LLMResponse,
+    LLMStreamChunk,
+    LLMTokenUsage,
+)
 from src.core.enums import MessageRole
 
 
@@ -25,7 +33,7 @@ def build_llm_message(
 
 def build_llm_messages() -> list[LLMMessage]:
     """
-    Build a simple conversation.
+    Build a simple LLM conversation.
     """
 
     return [
@@ -40,6 +48,28 @@ def build_llm_messages() -> list[LLMMessage]:
     ]
 
 
+def build_llm_request(
+    *,
+    messages: tuple[LLMMessage, ...] | None = None,
+    temperature: float = 0.2,
+    max_tokens: int | None = None,
+    metadata: dict[str, object] | None = None,
+) -> LLMRequest:
+    """
+    Build an LLM request.
+    """
+
+    return LLMRequest(
+        messages=messages
+        or tuple(
+            build_llm_messages(),
+        ),
+        temperature=temperature,
+        max_tokens=max_tokens,
+        metadata=metadata or {},
+    )
+
+
 def build_llm_token_usage(
     *,
     prompt_tokens: int = 10,
@@ -47,7 +77,7 @@ def build_llm_token_usage(
     total_tokens: int = 30,
 ) -> LLMTokenUsage:
     """
-    Build token usage.
+    Build LLM token usage.
     """
 
     return LLMTokenUsage(
@@ -62,9 +92,9 @@ def build_llm_response(
     content: str = "Hello!",
     provider: str = "groq",
     model: str = "llama-3.3-70b-versatile",
-    finish_reason: str = "stop",
+    finish_reason: str | None = "stop",
     usage: LLMTokenUsage | None = None,
-    metadata: dict | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> LLMResponse:
     """
     Build an LLM response.
@@ -76,24 +106,24 @@ def build_llm_response(
         model=model,
         finish_reason=finish_reason,
         usage=usage or build_llm_token_usage(),
-        metadata=metadata,
+        metadata=metadata or {},
     )
 
 
-def build_llm_chunk(
+def build_llm_stream_chunk(
     *,
     content: str = "Hello",
     is_final: bool = False,
     finish_reason: str | None = None,
-    metadata: dict | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> LLMStreamChunk:
     """
-    Build a streamed LLM chunk.
+    Build an LLM stream chunk.
     """
 
     return LLMStreamChunk(
         content=content,
         is_final=is_final,
         finish_reason=finish_reason,
-        metadata=metadata,
+        metadata=metadata or {},
     )

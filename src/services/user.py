@@ -4,15 +4,21 @@ User service.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.exceptions.httpx import UserAlreadyExistsError, UserNotFoundError
-from src.core.types import UserId
 from src.db.models.user import User
 from src.repositories.user import UserRepository
 from src.schemas.user import CreateUserRequest, UpdateUserRequest
 from src.security.password import PasswordService
 from src.services.base import BaseService
+
+if TYPE_CHECKING:
+    from src.core.types import UserId
+    from src.repositories.user import UserRepository
+    from src.security.password import PasswordService
 
 
 class UserService(BaseService):
@@ -22,20 +28,27 @@ class UserService(BaseService):
 
     def __init__(
         self,
+        *,
         session: AsyncSession,
         repository: UserRepository,
         password_service: PasswordService,
     ) -> None:
-        super().__init__(session)
+        super().__init__(
+            session=session,
+        )
 
         self._repository = repository
         self._password_service = password_service
 
     @staticmethod
-    def _normalize_field_value(
-        field_value: str,
+    def _normalize_email(
+        email: str,
     ) -> str:
-        return field_value.strip().lower()
+        """
+        Normalize an email address.
+        """
+
+        return email.strip().lower()
 
     async def create(
         self,
@@ -45,26 +58,38 @@ class UserService(BaseService):
         Create a new user.
         """
 
-        password_hash = self._password_service.hash(request.password)
-
         data = request.model_dump(
             exclude={
                 "password",
                 "confirm_password",
-            }
+            },
         )
 
-        data["email"] = self._normalize_field_value(data["email"])
+        data["email"] = self._normalize_email(
+            data["email"],
+        )
 
-        if await self._repository.exists_by_email(data["email"]):
-            raise UserAlreadyExistsError("Email is already registered.")
+        if await self._repository.exists_by_email(
+            data["email"],
+        ):
+            raise UserAlreadyExistsError(
+                "Email is already registered.",
+            )
 
-        data["hashed_password"] = password_hash
-        user = User(**data)
+        user = User(
+            **data,
+            hashed_password=self._password_service.hash(
+                request.password,
+            ),
+        )
 
         try:
-            user = await self._repository.create(user)
+            user = await self._repository.create(
+                user,
+            )
+
             await self.commit()
+
             return user
 
         except Exception:
@@ -79,35 +104,75 @@ class UserService(BaseService):
         Retrieve a user by identifier.
         """
 
-        return await self._repository.get(user_id)
+        return await self._repository.get(
+            user_id,
+        )
+
+    async def get_or_raise(
+        self,
+        user_id: UserId,
+    ) -> User:
+        """
+        Retrieve a user.
+
+        Raises:
+            UserNotFoundError:
+                If the user does not exist.
+        """
+
+        user = await self.get(
+            user_id,
+        )
+
+        if user is None:
+            raise UserNotFoundError(
+                "User not found.",
+            )
+
+        return user
 
     async def update(
         self,
         user_id: UserId,
         request: UpdateUserRequest,
-    ) -> User | None:
+    ) -> User:
         """
         Update a user's profile.
         """
-        user = await self._repository.get(user_id)
 
-        if user is None:
-            raise UserNotFoundError("User not found.")
+        user = await self.get_or_raise(
+            user_id,
+        )
 
-        updates = request.model_dump(exclude_unset=True)
+        updates = request.model_dump(
+            exclude_unset=True,
+        )
+
+        if "email" in updates:
+            email = self._normalize_email(
+                updates["email"],
+            )
+
+            if email != user.email and await self._repository.exists_by_email(
+                email,
+            ):
+                raise UserAlreadyExistsError(
+                    "Email is already registered.",
+                )
+
+            updates["email"] = email
 
         for field, value in updates.items():
-            # if field == "email":
-            #     value = value.strip().lower()
-
-            #     if value != user.email:
-            #         if await self._repository.exists_by_email(value):
-            #             raise UserAlreadyExistsError("Email is already registered.")
-
-            setattr(user, field, value)
+            setattr(
+                user,
+                field,
+                value,
+            )
 
         try:
-            await self._repository.update(user)
+            user = await self._repository.update(
+                user,
+            )
 
             await self.commit()
 

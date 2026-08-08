@@ -7,9 +7,10 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from sqlalchemy.exc import SQLAlchemyError
 
 from src.core.constants import DEFAULT_CONVERSATION_TITLE
-from src.core.exceptions.httpx import UserNotFoundError
+from src.core.exceptions.database import DatabaseError
 from src.services.conversation import ConversationService
 from tests.builders.schemas import build_create_conversation_request
 from tests.factories.conversation import ConversationFactory
@@ -20,44 +21,40 @@ from tests.factories.user import UserFactory
 async def test_create_creates_conversation(
     conversation_service: ConversationService,
     mock_conversation_repository: MagicMock,
-    mock_user_repository: MagicMock,
 ) -> None:
     """
     It should create a conversation.
     """
 
     user = UserFactory.build()
+
     conversation = ConversationFactory.build(
         user_id=user.id,
+        title="Legal",
     )
-
-    request = build_create_conversation_request(
-        user_id=user.id,
-        title=conversation.title,
-    )
-
-    mock_user_repository.get.return_value = user
 
     mock_conversation_repository.create.return_value = conversation
 
     conversation_service.commit = AsyncMock()
     conversation_service.rollback = AsyncMock()
 
-    created = await conversation_service.create(
-        request,
+    request = build_create_conversation_request(
+        title="Legal",
     )
+
+    created = await conversation_service.create(
+        user_id=user.id,
+        request=request,
+    )
+
     assert created is conversation
 
     mock_conversation_repository.create.assert_awaited_once()
 
-    mock_user_repository.get.assert_awaited_once_with(
-        user.id,
-    )
-
     created_conversation = mock_conversation_repository.create.await_args.args[0]
 
     assert created_conversation.title == request.title
-    assert created_conversation.user_id == request.user_id
+    assert created_conversation.user_id == user.id
 
     conversation_service.commit.assert_awaited_once_with()
     conversation_service.rollback.assert_not_awaited()
@@ -83,12 +80,12 @@ async def test_create_uses_default_title(
     conversation_service.rollback = AsyncMock()
 
     request = build_create_conversation_request(
-        user_id=user.id,
         title=None,
     )
 
     conversation = await conversation_service.create(
-        request,
+        request=request,
+        user_id=user.id,
     )
 
     assert conversation.title == DEFAULT_CONVERSATION_TITLE
@@ -122,12 +119,12 @@ async def test_create_uses_custom_title(
     conversation_service.rollback = AsyncMock()
 
     request = build_create_conversation_request(
-        user_id=user.id,
         title="Legal Advice",
     )
 
     conversation = await conversation_service.create(
-        request,
+        request=request,
+        user_id=user.id,
     )
 
     assert conversation.title == "Legal Advice"
@@ -142,37 +139,9 @@ async def test_create_uses_custom_title(
 
 
 @pytest.mark.asyncio
-async def test_create_raises_when_user_does_not_exist(
-    conversation_service: ConversationService,
-    mock_conversation_repository: MagicMock,
-    mock_user_repository: MagicMock,
-) -> None:
-    """
-    It should fail when the user does not exist.
-    """
-
-    mock_user_repository.get.return_value = None
-    conversation_service.commit = AsyncMock()
-    conversation_service.rollback = AsyncMock()
-
-    with pytest.raises(
-        UserNotFoundError,
-    ):
-        await conversation_service.create(
-            build_create_conversation_request(),
-        )
-
-    mock_conversation_repository.create.assert_not_called()
-
-    conversation_service.commit.assert_not_awaited()
-    conversation_service.rollback.assert_not_awaited()
-
-
-@pytest.mark.asyncio
 async def test_create_rolls_back_when_repository_fails(
     conversation_service: ConversationService,
     mock_conversation_repository: MagicMock,
-    mock_user_repository: MagicMock,
 ) -> None:
     """
     It should roll back when conversation creation fails.
@@ -180,23 +149,24 @@ async def test_create_rolls_back_when_repository_fails(
 
     user = UserFactory.build()
 
-    mock_user_repository.get.return_value = user
-
-    mock_conversation_repository.create.side_effect = RuntimeError(
+    mock_conversation_repository.create.side_effect = SQLAlchemyError(
         "Database error",
     )
 
     conversation_service.commit = AsyncMock()
     conversation_service.rollback = AsyncMock()
 
-    with pytest.raises(
-        RuntimeError,
-    ):
+    request = build_create_conversation_request(
+        title="Legal",
+    )
+
+    with pytest.raises(DatabaseError):
         await conversation_service.create(
-            build_create_conversation_request(
-                user_id=user.id,
-            ),
+            user_id=user.id,
+            request=request,
         )
+
+    mock_conversation_repository.create.assert_awaited_once()
 
     conversation_service.rollback.assert_awaited_once_with()
     conversation_service.commit.assert_not_awaited()
@@ -206,34 +176,38 @@ async def test_create_rolls_back_when_repository_fails(
 async def test_create_rolls_back_when_commit_fails(
     conversation_service: ConversationService,
     mock_conversation_repository: MagicMock,
-    mock_user_repository: MagicMock,
 ) -> None:
     """
-    It should roll back when committing fails.
+    It should roll back when committing the conversation fails.
     """
 
     user = UserFactory.build()
 
-    mock_user_repository.get.return_value = user
+    conversation = ConversationFactory.build(
+        user_id=user.id,
+    )
 
-    mock_conversation_repository.create.side_effect = lambda conversation: conversation
+    mock_conversation_repository.create.return_value = conversation
 
     conversation_service.commit = AsyncMock(
-        side_effect=RuntimeError(
+        side_effect=SQLAlchemyError(
             "Commit failed",
         ),
     )
 
     conversation_service.rollback = AsyncMock()
 
-    with pytest.raises(
-        RuntimeError,
-    ):
+    request = build_create_conversation_request(
+        title="Legal",
+    )
+
+    with pytest.raises(DatabaseError):
         await conversation_service.create(
-            build_create_conversation_request(
-                user_id=user.id,
-            ),
+            user_id=user.id,
+            request=request,
         )
+
+    mock_conversation_repository.create.assert_awaited_once()
 
     conversation_service.commit.assert_awaited_once_with()
     conversation_service.rollback.assert_awaited_once_with()
@@ -253,13 +227,15 @@ async def test_get_returns_conversation(
     mock_conversation_repository.get.return_value = conversation
 
     found = await conversation_service.get(
-        conversation.id,
+        conversation_id=conversation.id,
+        user_id=conversation.user_id,
     )
 
     assert found is conversation
 
     mock_conversation_repository.get.assert_awaited_once_with(
-        conversation.id,
+        conversation_id=conversation.id,
+        user_id=conversation.user_id,
     )
 
 
@@ -274,16 +250,26 @@ async def test_archive_archives_conversation(
 
     conversation = ConversationFactory.build()
 
-    mock_conversation_repository.archive.return_value = None
+    mock_conversation_repository.get.return_value = conversation
+    mock_conversation_repository.update.return_value = conversation
 
     conversation_service.commit = AsyncMock()
     conversation_service.rollback = AsyncMock()
 
-    await conversation_service.archive(
-        conversation,
+    result = await conversation_service.archive(
+        conversation_id=conversation.id,
+        user_id=conversation.user_id,
     )
 
-    mock_conversation_repository.archive.assert_awaited_once_with(
+    assert result is conversation
+    assert conversation.is_active is False
+
+    mock_conversation_repository.get.assert_awaited_once_with(
+        conversation_id=conversation.id,
+        user_id=conversation.user_id,
+    )
+
+    mock_conversation_repository.update.assert_awaited_once_with(
         conversation,
     )
 
@@ -302,19 +288,29 @@ async def test_archive_rolls_back_when_repository_fails(
 
     conversation = ConversationFactory.build()
 
-    mock_conversation_repository.archive.side_effect = RuntimeError(
+    mock_conversation_repository.get.return_value = conversation
+
+    mock_conversation_repository.update.side_effect = SQLAlchemyError(
         "Archive failed",
     )
 
     conversation_service.commit = AsyncMock()
     conversation_service.rollback = AsyncMock()
 
-    with pytest.raises(
-        RuntimeError,
-    ):
+    with pytest.raises(DatabaseError):
         await conversation_service.archive(
-            conversation,
+            conversation_id=conversation.id,
+            user_id=conversation.user_id,
         )
+
+    mock_conversation_repository.get.assert_awaited_once_with(
+        conversation_id=conversation.id,
+        user_id=conversation.user_id,
+    )
+
+    mock_conversation_repository.update.assert_awaited_once_with(
+        conversation,
+    )
 
     conversation_service.rollback.assert_awaited_once_with()
     conversation_service.commit.assert_not_awaited()
@@ -326,27 +322,31 @@ async def test_archive_rolls_back_when_commit_fails(
     mock_conversation_repository: MagicMock,
 ) -> None:
     """
-    It should roll back when commit fails during archive.
+    It should roll back when committing the archive fails.
     """
 
     conversation = ConversationFactory.build()
 
-    mock_conversation_repository.archive.return_value = None
+    mock_conversation_repository.get.return_value = conversation
+    mock_conversation_repository.update.return_value = conversation
 
     conversation_service.commit = AsyncMock(
-        side_effect=RuntimeError(
+        side_effect=SQLAlchemyError(
             "Commit failed",
         ),
     )
 
     conversation_service.rollback = AsyncMock()
 
-    with pytest.raises(
-        RuntimeError,
-    ):
+    with pytest.raises(DatabaseError):
         await conversation_service.archive(
-            conversation,
+            conversation_id=conversation.id,
+            user_id=conversation.user_id,
         )
+
+    mock_conversation_repository.update.assert_awaited_once_with(
+        conversation,
+    )
 
     conversation_service.commit.assert_awaited_once_with()
     conversation_service.rollback.assert_awaited_once_with()

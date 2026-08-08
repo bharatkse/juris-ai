@@ -1,51 +1,61 @@
 """
-Builders for chat service tests.
+Builders for chat service models.
 """
 
 from __future__ import annotations
 
-from src.services.results.chat import ChatResult
-from src.services.results.stream import ChatStreamChunk
+from typing import Any
+
+from src.services.models.chat import ChatResult
+from src.services.models.stream import ChatStreamChunk
+from tests.builders.schemas import build_ai_response
+from tests.factories.conversation import ConversationFactory
+from tests.factories.conversation_event import ConversationEventFactory
+
+
+def build_chat_result(
+    **kwargs: Any,
+) -> ChatResult:
+    """
+    Build a ChatResult.
+    """
+
+    conversation = ConversationFactory.build()
+
+    data: dict[str, Any] = {
+        "conversation": conversation,
+        "user_event": ConversationEventFactory.build(
+            conversation_id=conversation.id,
+        ),
+        "assistant_event": ConversationEventFactory.build(
+            conversation_id=conversation.id,
+        ),
+        "response": build_ai_response(),
+    }
+
+    data.update(kwargs)
+
+    return ChatResult(
+        **data,
+    )
 
 
 def build_chat_stream_chunk(
-    **kwargs,
+    **kwargs: Any,
 ) -> ChatStreamChunk:
     """
     Build a ChatStreamChunk.
     """
 
-    data = {
+    data: dict[str, Any] = {
         "content": "Hello",
         "is_final": False,
+        "response": None,
         "metadata": {},
     }
 
     data.update(kwargs)
 
     return ChatStreamChunk(
-        **data,
-    )
-
-
-def build_chat_result(
-    **kwargs,
-) -> ChatResult:
-    """
-    Build a ChatResult.
-    """
-
-    from tests.factories.conversation import ConversationFactory
-    from tests.factories.conversation_event import ConversationEventFactory
-
-    data = {
-        "conversation": ConversationFactory.build(),
-        "user_event": ConversationEventFactory.build(),
-        "assistant_event": ConversationEventFactory.build(),
-    }
-
-    data.update(kwargs)
-
-    return ChatResult(
         **data,
     )

@@ -4,8 +4,8 @@ Intent analyzer.
 
 from __future__ import annotations
 
-from core.models.planning import Intent, PlanningRequest
 from src.clients.llm.base import LLMClient
+from src.core.models.planning import Intent, PlanningRequest
 from src.planning.prompts.intent import IntentPromptBuilder
 
 

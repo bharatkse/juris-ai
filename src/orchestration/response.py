@@ -7,12 +7,9 @@ orchestrator after planning, execution, validation, and aggregation.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from pydantic import BaseModel, ConfigDict, Field
 
-if TYPE_CHECKING:
-    from src.core.types import ConversationId
+from src.core.types import ConversationId
 
 
 class Citation(BaseModel):

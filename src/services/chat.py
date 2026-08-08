@@ -5,241 +5,201 @@ Chat service.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from typing import Any
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.agents.base import BaseAgent
-from src.agents.models import AgentMessage, AgentRequest, AgentResponse
 from src.core.enums import MessageRole
-from src.core.exceptions.httpx import NotFoundError
-from src.core.types import ConversationId
-from src.db.models.conversation import Conversation
-from src.db.models.conversation_event import ConversationEvent
-from src.repositories.conversation import ConversationRepository
-from src.repositories.conversation_event import ConversationEventRepository
+from src.core.logger import get_logger
+from src.core.types import ConversationId, UserId
+from src.orchestration.orchestrator import AIOrchestrator
+from src.orchestration.request import OrchestratorRequest
+from src.orchestration.response import AgentResponse
 from src.services.base import BaseService
-from src.services.results.chat import ChatResult
-from src.services.results.stream import ChatStreamChunk
+from src.services.conversation import ConversationService
+from src.services.conversation_event import ConversationEventService
+from src.services.models.chat import ChatResult
+from src.services.models.stream import ChatStreamChunk
+
+logger = get_logger(__name__)
 
 
 class ChatService(BaseService):
     """
-    Business logic for chat interactions.
+    Coordinates chat interactions.
     """
 
     def __init__(
         self,
+        *,
         session: AsyncSession,
-        conversation_repository: ConversationRepository,
-        event_repository: ConversationEventRepository,
-        agent: BaseAgent,
+        conversation_service: ConversationService,
+        conversation_event_service: ConversationEventService,
+        orchestrator: AIOrchestrator,
     ) -> None:
-        super().__init__(session)
+        super().__init__(
+            session=session,
+        )
 
-        self._conversation_repository = conversation_repository
-        self._event_repository = event_repository
-        self._agent = agent
+        self._conversation_service = conversation_service
+        self._conversation_event_service = conversation_event_service
+        self._orchestrator = orchestrator
 
     async def chat(
         self,
         *,
-        conversation_id: str,
+        user_id: UserId,
+        conversation_id: ConversationId,
         message: str,
     ) -> ChatResult:
         """
         Process a chat request.
         """
+
+        logger.info(
+            "Processing chat request.",
+            extra={
+                "operation": "chat",
+                "conversation_id": str(conversation_id),
+                "user_id": str(user_id),
+            },
+        )
+
+        conversation = await self._conversation_service.get_or_raise(
+            conversation_id=conversation_id,
+            user_id=user_id,
+        )
+
         try:
-            conversation = await self._get_conversation(
-                conversation_id,
+            user_event = await self._conversation_event_service.create(
+                conversation_id=conversation.id,
+                role=MessageRole.USER,
+                content=message,
             )
 
-            user_event = await self._create_user_event(
+            request = await self._build_chat_request(
                 conversation=conversation,
                 message=message,
             )
 
-            request = await self._build_agent_request(
-                conversation=conversation,
-                message=message,
-            )
-
-            agent_response = await self._agent.answer(
+            response = await self._orchestrator.handle(
                 request=request,
             )
 
-            assistant_event = await self._create_assistant_event(
-                conversation=conversation,
-                parent_event=user_event,
-                response=agent_response,
+            assistant_event = await self._conversation_event_service.create(
+                conversation_id=conversation.id,
+                parent_event_id=user_event.id,
+                role=MessageRole.ASSISTANT,
+                content=response.content,
+                metadata=response.metadata,
             )
 
             await self.commit()
-        except Exception:
+
+            logger.info(
+                "Chat request completed.",
+                extra={
+                    "operation": "chat",
+                    "conversation_id": str(conversation.id),
+                    "user_id": str(user_id),
+                },
+            )
+
+            return ChatResult(
+                conversation=conversation,
+                user_event=user_event,
+                assistant_event=assistant_event,
+                response=response,
+            )
+
+        except SQLAlchemyError:
             await self.rollback()
             raise
-
-        return ChatResult(
-            conversation=conversation,
-            user_event=user_event,
-            assistant_event=assistant_event,
-        )
 
     async def stream_chat(
         self,
         *,
+        user_id: UserId,
         conversation_id: ConversationId,
         message: str,
     ) -> AsyncIterator[ChatStreamChunk]:
         """
         Stream a chat response.
         """
+
+        conversation = await self._conversation_service.get_or_raise(
+            conversation_id=conversation_id,
+            user_id=user_id,
+        )
+
         try:
-            conversation = await self._get_conversation(
-                conversation_id,
+            user_event = await self._conversation_event_service.create(
+                conversation_id=conversation.id,
+                role=MessageRole.USER,
+                content=message,
             )
 
-            user_event = await self._create_user_event(
+            request = await self._build_chat_request(
                 conversation=conversation,
                 message=message,
             )
 
-            #
-            # Persist the user's message immediately.
-            #
-            await self.commit()
-        except Exception:
-            await self.rollback()
-            raise
-
-        try:
-            request = await self._build_agent_request(
-                conversation=conversation,
-                message=message,
-            )
-
-            stream = self._agent.stream_answer(
+            stream = self._orchestrator.stream(
                 request=request,
             )
 
+            response: AgentResponse | None = None
+
             async for chunk in stream:
-                yield ChatStreamChunk(
-                    content=chunk.content,
-                    is_final=chunk.is_final,
-                    metadata=chunk.metadata,
+                if chunk.is_complete:
+                    response = chunk.response
+
+                yield chunk
+
+            if response is None:
+                raise RuntimeError(
+                    "Streaming completed without a final response.",
                 )
 
-            await self._create_assistant_event(
-                conversation=conversation,
-                parent_event=user_event,
-                response=stream.response,
+            await self._conversation_event_service.create(
+                conversation_id=conversation.id,
+                parent_event_id=user_event.id,
+                role=MessageRole.ASSISTANT,
+                content=response.content,
+                metadata=response.metadata,
             )
 
             await self.commit()
-        except Exception:
+
+        except SQLAlchemyError:
             await self.rollback()
             raise
 
-    async def _build_agent_request(
+    async def _build_chat_request(
         self,
         *,
-        conversation: Conversation,
+        conversation,
         message: str,
-    ) -> AgentRequest:
+    ) -> OrchestratorRequest:
         """
-        Build the request sent to the AI agent.
+        Build the orchestration request.
         """
 
-        #
-        # TODO:
-        # Load recent conversation events ordered by creation time and
-        # convert them into AgentMessage instances for conversational context.
-        #
-        history: list[AgentMessage] = []
+        history = await self._conversation_event_service.list(
+            conversation_id=conversation.id,
+        )
 
-        return AgentRequest(
-            question=message,
+        #
+        # TODO
+        #
+        # User profile
+        # Uploaded files
+        # Runtime context
+        #
+
+        return OrchestratorRequest(
+            conversation_id=conversation.id,
+            user_id=conversation.user_id,
+            message=message,
             history=history,
         )
-
-    async def _get_conversation(
-        self,
-        conversation_id: ConversationId,
-    ) -> Conversation:
-        """
-        Retrieve an active conversation.
-        """
-
-        conversation = await self._conversation_repository.get(
-            conversation_id,
-        )
-
-        if conversation is None:
-            raise NotFoundError(message="Conversation not found.")
-
-        if not conversation.is_active:
-            raise NotFoundError(message="Conversation is inactive.")
-
-        return conversation
-
-    async def _create_user_event(
-        self,
-        *,
-        conversation: Conversation,
-        message: str,
-    ) -> ConversationEvent:
-        """
-        Persist the user's event.
-        """
-
-        return await self._event_repository.create(
-            conversation_id=conversation.id,
-            role=MessageRole.USER,
-            content=message,
-        )
-
-    async def _create_assistant_event(
-        self,
-        *,
-        conversation: Conversation,
-        parent_event: ConversationEvent,
-        response: AgentResponse,
-    ) -> ConversationEvent:
-        """
-        Persist the assistant event.
-        """
-
-        return await self._event_repository.create(
-            conversation_id=conversation.id,
-            parent_event_id=parent_event.id,
-            role=MessageRole.ASSISTANT,
-            content=response.content,
-            metadata=self._build_response_metadata(
-                response,
-            ),
-        )
-
-    def _build_response_metadata(
-        self,
-        response: AgentResponse,
-    ) -> dict[str, Any]:
-        """
-        Build metadata persisted with the assistant response.
-        """
-        return {
-            "provider": response.provider,
-            "model": response.model,
-            "finish_reason": response.finish_reason,
-            "latency_ms": response.latency_ms,
-            "usage": (
-                {
-                    "prompt_tokens": response.usage.prompt_tokens,
-                    "completion_tokens": response.usage.completion_tokens,
-                    "total_tokens": response.usage.total_tokens,
-                }
-                if response.usage
-                else None
-            ),
-            **response.metadata,
-        }

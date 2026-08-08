@@ -94,6 +94,8 @@ class Settings(BaseSettings):
     LOG_FORMAT: Literal["json", "text"] = "json"
 
     LOG_FILE: str = "./logs/app.log"
+    DATA_DIRECTORY: str = "./data"
+    LOG_DIRECTORY: str = "./logs"
 
     LOG_MAX_MB: int = 100
     LOG_BACKUP_COUNT: int = 5

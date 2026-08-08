@@ -4,7 +4,6 @@ Unit tests for GroqClient.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
 import pytest
@@ -18,23 +17,19 @@ from src.core.exceptions.client import (
     ClientRateLimitError,
     ClientTimeoutError,
 )
-from tests.builders.groq import (
-    build_groq_chat_messages,
+from tests.builders.clients.groq import (
     build_groq_chunk_without_delta,
     build_groq_empty_chunk,
     build_groq_messages,
     build_groq_response,
     build_groq_stream,
     build_groq_stream_chunk,
-    build_groq_usage,
 )
+from tests.builders.clients.llm import build_llm_request
 from tests.unit.clients.exeption_builder import (
     build_authentication_error,
     build_rate_limit_error,
 )
-
-if TYPE_CHECKING:
-    from src.clients.models import LLMRequest
 
 TEST_MESSAGES = build_groq_messages()
 
@@ -43,39 +38,32 @@ TEST_MESSAGES = build_groq_messages()
 async def test_generate_returns_llm_response(
     groq_client,
     mock_chat_completion,
-    llm_request: LLMRequest,
+    llm_request,
 ) -> None:
     """
-    It should map a Groq completion into an LLMResponse.
+    It should return an LLM response.
     """
 
-    response = build_groq_response(
-        content="Hello from Groq.",
-        finish_reason="stop",
-        usage=build_groq_usage(),
-    )
+    mock_chat_completion.return_value = build_groq_response()
 
-    mock_chat_completion.return_value = response
-
-    result = await groq_client.generate(
+    response = await groq_client.generate(
         request=llm_request,
     )
 
-    assert result.content == "Hello from Groq."
-    assert result.provider == groq_client.provider
-    assert result.model == "llama-3.3-70b-versatile"
-    assert result.finish_reason == "stop"
-
-    assert result.usage is not None
-    assert result.usage.prompt_tokens == 10
-    assert result.usage.completion_tokens == 20
-    assert result.usage.total_tokens == 30
+    assert response.content == "Hello!"
+    assert response.provider == "groq"
+    assert response.model == groq_client.model
+    assert response.finish_reason == "stop"
 
     mock_chat_completion.assert_awaited_once_with(
         model=groq_client.model,
-        messages=build_groq_chat_messages(
-            TEST_MESSAGES,
-        ),
+        messages=[
+            {
+                "role": message.role.value,
+                "content": message.content,
+            }
+            for message in llm_request.messages
+        ],
         temperature=llm_request.temperature,
         max_tokens=llm_request.max_tokens,
     )
@@ -129,30 +117,35 @@ async def test_generate_returns_none_usage_when_provider_does_not_return_usage(
 
 @pytest.mark.asyncio
 async def test_generate_passes_request_parameters(
-    groq_client, mock_chat_completion, llm_request
+    groq_client,
+    mock_chat_completion,
 ) -> None:
     """
-    It should forward request parameters to the Groq SDK.
+    It should pass request parameters to the provider.
     """
-    response = build_groq_response(
-        content="Hello",
-        finish_reason="stop",
-        usage=None,
+
+    request = build_llm_request(
+        temperature=0.7,
+        max_tokens=500,
     )
 
-    mock_chat_completion.return_value = response
+    mock_chat_completion.return_value = build_groq_response()
 
     await groq_client.generate(
-        request=llm_request,
+        request=request,
     )
 
     mock_chat_completion.assert_awaited_once_with(
         model=groq_client.model,
-        messages=build_groq_chat_messages(
-            TEST_MESSAGES,
-        ),
-        temperature=0.8,
-        max_tokens=512,
+        messages=[
+            {
+                "role": message.role.value,
+                "content": message.content,
+            }
+            for message in request.messages
+        ],
+        temperature=request.temperature,
+        max_tokens=request.max_tokens,
     )
 
 

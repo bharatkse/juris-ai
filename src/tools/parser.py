@@ -11,15 +11,15 @@ from types import MappingProxyType
 from docx import Document
 from pypdf import PdfReader
 
-from core.models.tool import (
+from src.core.enums import RetrievalSource
+from src.core.exceptions.tool import ToolValidationError
+from src.core.models.tool import (
     RetrievedContent,
     ToolFile,
     ToolMetadata,
     ToolRequest,
     ToolResponse,
 )
-from src.core.enums import RetrievalSource
-from src.core.exceptions.tool import ToolValidationError
 from src.tools.base import BaseTool
 from src.tools.constants import (
     DOCX_CONTENT_TYPE,

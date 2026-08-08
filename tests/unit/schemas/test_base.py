@@ -10,12 +10,12 @@ import pytest
 from pydantic import ValidationError
 
 from src.schemas.base import (
-    AIInfoModel,
+    AIUsageModel,
     ApiResponseModel,
     ErrorDetailModel,
-    ListData,
     MetadataModel,
-    Pagination,
+    Page,
+    PaginationModel,
     PaginationParams,
 )
 
@@ -27,8 +27,8 @@ def test_pagination_params_uses_defaults() -> None:
 
     params = PaginationParams()
 
-    assert params.skip == 0
-    assert params.limit == 10
+    assert params.offset == 0
+    assert params.limit == 20
 
 
 def test_pagination_params_accepts_custom_values() -> None:
@@ -37,24 +37,24 @@ def test_pagination_params_accepts_custom_values() -> None:
     """
 
     params = PaginationParams(
-        skip=20,
+        offset=20,
         limit=50,
     )
 
-    assert params.skip == 20
+    assert params.offset == 20
     assert params.limit == 50
 
 
-def test_pagination_params_rejects_negative_skip() -> None:
+def test_pagination_params_rejects_negative_offset() -> None:
     """
-    It should reject a negative skip value.
+    It should reject a negative offset value.
     """
 
     with pytest.raises(
         ValidationError,
     ):
         PaginationParams(
-            skip=-1,
+            offset=-1,
         )
 
 
@@ -97,25 +97,25 @@ def test_pagination_params_rejects_extra_fields() -> None:
         )
 
 
-def test_pagination_accepts_valid_values() -> None:
+def test_pagination_model_accepts_valid_values() -> None:
     """
     It should accept pagination information.
     """
 
-    pagination = Pagination(
+    pagination = PaginationModel(
         total=100,
-        skip=10,
+        offset=10,
         limit=20,
         has_more=True,
     )
 
     assert pagination.total == 100
-    assert pagination.skip == 10
+    assert pagination.offset == 10
     assert pagination.limit == 20
     assert pagination.has_more is True
 
 
-def test_pagination_rejects_extra_fields() -> None:
+def test_pagination_model_rejects_extra_fields() -> None:
     """
     It should reject unexpected fields.
     """
@@ -123,51 +123,50 @@ def test_pagination_rejects_extra_fields() -> None:
     with pytest.raises(
         ValidationError,
     ):
-        Pagination(
+        PaginationModel(
             total=1,
-            skip=0,
+            offset=0,
             limit=10,
             has_more=False,
             unknown="value",
         )
 
 
-def test_list_data_accepts_items() -> None:
+def test_page_accepts_items() -> None:
     """
-    It should store a paginated list.
+    It should accept paginated items.
     """
 
-    pagination = Pagination(
-        total=2,
-        skip=0,
-        limit=10,
-        has_more=False,
-    )
-
-    data = ListData[str](
+    page = Page[str](
         items=[
-            "A",
-            "B",
+            "a",
+            "b",
         ],
-        pagination=pagination,
+        pagination=PaginationModel(
+            total=2,
+            offset=0,
+            limit=20,
+            has_more=False,
+        ),
     )
 
-    assert data.items == [
-        "A",
-        "B",
+    assert page.items == [
+        "a",
+        "b",
     ]
+    assert page.pagination.total == 2
 
-    assert data.pagination is pagination
 
-
-def test_ai_info_model_accepts_values() -> None:
+def test_ai_usage_model_accepts_values() -> None:
     """
     It should store AI execution metadata.
     """
 
-    info = AIInfoModel(
+    info = AIUsageModel(
         provider="groq",
         model="llama-3",
+        agent="legal",
+        workflow="qa",
         latency_ms=120,
         prompt_tokens=10,
         completion_tokens=20,
@@ -177,18 +176,22 @@ def test_ai_info_model_accepts_values() -> None:
 
     assert info.provider == "groq"
     assert info.model == "llama-3"
+    assert info.agent == "legal"
+    assert info.workflow == "qa"
     assert info.total_tokens == 30
 
 
-def test_ai_info_model_uses_defaults() -> None:
+def test_ai_usage_model_uses_defaults() -> None:
     """
     It should default all fields to None.
     """
 
-    info = AIInfoModel()
+    info = AIUsageModel()
 
     assert info.provider is None
     assert info.model is None
+    assert info.agent is None
+    assert info.workflow is None
     assert info.total_tokens is None
 
 
@@ -212,16 +215,18 @@ def test_metadata_model_accepts_ai_metadata() -> None:
     It should store AI metadata.
     """
 
-    ai = AIInfoModel(
+    ai = AIUsageModel(
         provider="groq",
     )
 
     metadata = MetadataModel(
         request_id="req_123",
+        trace_id="trace_123",
         ai=ai,
     )
 
     assert metadata.request_id == "req_123"
+    assert metadata.trace_id == "trace_123"
     assert metadata.ai is ai
 
 
@@ -259,6 +264,7 @@ def test_api_response_model_accepts_success_response() -> None:
     assert response.success is True
     assert response.data == "Hello"
     assert response.error is None
+    assert response.message is None
 
 
 def test_api_response_model_accepts_error_response() -> None:
@@ -275,11 +281,13 @@ def test_api_response_model_accepts_error_response() -> None:
         success=False,
         error=error,
         metadata=MetadataModel(),
+        message="Failed",
     )
 
     assert response.success is False
     assert response.data is None
     assert response.error is error
+    assert response.message == "Failed"
 
 
 def test_api_response_model_rejects_extra_fields() -> None:

@@ -10,9 +10,9 @@ LLM client.
 
 from __future__ import annotations
 
-from clients.llm.base import LLMClient
-from core.exceptions.client import ClientConfigurationError
+from src.clients.llm.base import LLMClient
 from src.core.enums import LLMProvider
+from src.core.exceptions.client import ClientConfigurationError
 from src.core.logger import get_logger
 
 log = get_logger(__name__)

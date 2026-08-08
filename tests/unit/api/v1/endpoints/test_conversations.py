@@ -7,20 +7,23 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi import HTTPException, status
+from fastapi import status
 
 from src.api.v1.endpoints.conversations import (
     archive_conversation,
     create_conversation,
     get_conversation,
 )
+from src.core.exceptions.httpx import NotFoundError as ConversationNotFoundError
 from src.core.response import ApiResponse
 from tests.builders.schemas import build_create_conversation_request
 from tests.factories.conversation import ConversationFactory
 
 
 @pytest.mark.asyncio
-@patch("src.api.v1.endpoints.conversations.ConversationResponse.model_validate")
+@patch(
+    "src.api.v1.endpoints.conversations.ConversationResponse.model_validate",
+)
 async def test_create_conversation(
     mock_model_validate: MagicMock,
 ) -> None:
@@ -29,11 +32,12 @@ async def test_create_conversation(
     """
 
     conversation = ConversationFactory.build()
-
     request = build_create_conversation_request()
 
-    response_model = MagicMock()
+    current_user = MagicMock()
+    current_user.id = conversation.user_id
 
+    response_model = MagicMock()
     mock_model_validate.return_value = response_model
 
     service = MagicMock()
@@ -43,6 +47,7 @@ async def test_create_conversation(
 
     response = await create_conversation(
         request=request,
+        current_user=current_user,
         service=service,
     )
 
@@ -53,9 +58,12 @@ async def test_create_conversation(
 
     assert response.status_code == status.HTTP_201_CREATED
 
-    service.create.assert_awaited_once_with(
-        request,
-    )
+    service.create.assert_awaited_once()
+
+    created_request = service.create.await_args.args[0]
+
+    assert created_request.title == request.title
+    assert created_request.user_id == current_user.id
 
     mock_model_validate.assert_called_once_with(
         conversation,
@@ -64,7 +72,9 @@ async def test_create_conversation(
 
 
 @pytest.mark.asyncio
-@patch("src.api.v1.endpoints.conversations.ConversationResponse.model_validate")
+@patch(
+    "src.api.v1.endpoints.conversations.ConversationResponse.model_validate",
+)
 async def test_get_conversation(
     mock_model_validate: MagicMock,
 ) -> None:
@@ -74,17 +84,20 @@ async def test_get_conversation(
 
     conversation = ConversationFactory.build()
 
-    response_model = MagicMock()
+    current_user = MagicMock()
+    current_user.id = conversation.user_id
 
+    response_model = MagicMock()
     mock_model_validate.return_value = response_model
 
     service = MagicMock()
-    service.get = AsyncMock(
+    service.get_or_raise = AsyncMock(
         return_value=conversation,
     )
 
     response = await get_conversation(
         conversation_id=conversation.id,
+        current_user=current_user,
         service=service,
     )
 
@@ -95,8 +108,9 @@ async def test_get_conversation(
 
     assert response.status_code == status.HTTP_200_OK
 
-    service.get.assert_awaited_once_with(
-        conversation.id,
+    service.get_or_raise.assert_awaited_once_with(
+        conversation_id=conversation.id,
+        user_id=current_user.id,
     )
 
     mock_model_validate.assert_called_once_with(
@@ -108,26 +122,34 @@ async def test_get_conversation(
 @pytest.mark.asyncio
 async def test_get_conversation_raises_when_not_found() -> None:
     """
-    It should raise when the conversation does not exist.
+    It should propagate when the conversation does not exist.
     """
 
+    conversation_id = "conv_1234567890abcdef1234567890abcdef"
+
+    current_user = MagicMock()
+    current_user.id = "user_1234567890abcdef1234567890abcdef"
+
     service = MagicMock()
-    service.get = AsyncMock(
-        return_value=None,
+    service.get_or_raise = AsyncMock(
+        side_effect=ConversationNotFoundError(
+            message="Conversation not found.",
+        ),
     )
 
     with pytest.raises(
-        HTTPException,
-    ) as exc:
+        ConversationNotFoundError,
+    ):
         await get_conversation(
-            conversation_id="conv_1234567890abcdef1234567890abcdef",
+            conversation_id=conversation_id,
+            current_user=current_user,
             service=service,
         )
 
-    assert exc.value.status_code == status.HTTP_404_NOT_FOUND
-    assert exc.value.detail == "Conversation not found."
-
-    service.get.assert_awaited_once()
+    service.get_or_raise.assert_awaited_once_with(
+        conversation_id=conversation_id,
+        user_id=current_user.id,
+    )
 
 
 @pytest.mark.asyncio
@@ -138,14 +160,17 @@ async def test_archive_conversation() -> None:
 
     conversation = ConversationFactory.build()
 
+    current_user = MagicMock()
+    current_user.id = conversation.user_id
+
     service = MagicMock()
-    service.get = AsyncMock(
+    service.archive = AsyncMock(
         return_value=conversation,
     )
-    service.archive = AsyncMock()
 
     response = await archive_conversation(
         conversation_id=conversation.id,
+        current_user=current_user,
         service=service,
     )
 
@@ -156,37 +181,40 @@ async def test_archive_conversation() -> None:
 
     assert response.status_code == status.HTTP_204_NO_CONTENT
 
-    service.get.assert_awaited_once_with(
-        conversation.id,
-    )
-
     service.archive.assert_awaited_once_with(
-        conversation,
+        conversation_id=conversation.id,
+        user_id=current_user.id,
     )
 
 
 @pytest.mark.asyncio
 async def test_archive_conversation_raises_when_not_found() -> None:
     """
-    It should raise when attempting to archive a missing conversation.
+    It should propagate when attempting to archive a missing conversation.
     """
 
+    conversation_id = "conv_1234567890abcdef1234567890abcdef"
+
+    current_user = MagicMock()
+    current_user.id = "user_1234567890abcdef1234567890abcdef"
+
     service = MagicMock()
-    service.get = AsyncMock(
-        return_value=None,
+    service.archive = AsyncMock(
+        side_effect=ConversationNotFoundError(
+            message="Conversation not found.",
+        ),
     )
-    service.archive = AsyncMock()
 
     with pytest.raises(
-        HTTPException,
-    ) as exc:
+        ConversationNotFoundError,
+    ):
         await archive_conversation(
-            conversation_id="conv_1234567890abcdef1234567890abcdef",
+            conversation_id=conversation_id,
+            current_user=current_user,
             service=service,
         )
 
-    assert exc.value.status_code == status.HTTP_404_NOT_FOUND
-    assert exc.value.detail == "Conversation not found."
-
-    service.get.assert_awaited_once()
-    service.archive.assert_not_awaited()
+    service.archive.assert_awaited_once_with(
+        conversation_id=conversation_id,
+        user_id=current_user.id,
+    )

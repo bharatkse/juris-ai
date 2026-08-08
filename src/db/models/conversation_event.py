@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import JSON, ForeignKey, String
+from sqlalchemy import JSON, Enum, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.enums import MessageRole
@@ -57,7 +57,11 @@ class ConversationEvent(
     )
 
     role: Mapped[MessageRole] = mapped_column(
-        String(20),
+        Enum(
+            MessageRole,
+            native_enum=False,
+            length=20,
+        ),
         nullable=False,
     )
 

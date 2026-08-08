@@ -9,7 +9,7 @@ from typing import Any, Final, NoReturn
 
 import httpx
 
-from core.exceptions.client import (
+from src.core.exceptions.client import (
     ClientAuthenticationError,
     ClientAuthorizationError,
     ClientConnectionError,

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import asyncio
 
-from core.models.tool import ToolMetadata, ToolRequest, ToolResponse
+from src.core.models.tool import ToolMetadata, ToolRequest, ToolResponse
 from src.tools.base import BaseTool
 from src.tools.parser import ParserTool
 from src.tools.web_search import WebSearchTool
