@@ -13,7 +13,7 @@ from typing import TypeVar
 from pydantic import BaseModel, ValidationError
 
 from src.clients.models import LLMRequest, LLMResponse, LLMStreamChunk
-from src.core.custom_exceptions.client import ClientProviderError
+from src.core.exceptions.client import ClientProviderError
 from src.core.logger import get_logger
 
 log = get_logger(__name__)

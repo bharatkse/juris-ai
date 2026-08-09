@@ -16,7 +16,7 @@ from src.clients.web_search.models import (
     WebSearchResponse,
     WebSearchResult,
 )
-from src.core.custom_exceptions.client import (
+from src.core.exceptions.client import (
     ClientConnectionError,
     ClientProviderError,
     ClientRateLimitError,

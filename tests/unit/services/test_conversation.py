@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from src.core.constants import DEFAULT_CONVERSATION_TITLE
-from src.core.exceptions import UserNotFoundError
+from src.core.exceptions.httpx import UserNotFoundError
 from src.services.conversation import ConversationService
 from tests.builders.schemas import build_create_conversation_request
 from tests.factories.conversation import ConversationFactory

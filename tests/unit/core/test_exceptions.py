@@ -20,23 +20,23 @@ from src.core.constants import (
     HTTP_409_CONFLICT,
     HTTP_500_INTERNAL_SERVER_ERROR,
 )
-from src.core.exceptions import (
-    AppError,
+from src.core.exceptions.base import AppError, DomainError
+from src.core.exceptions.database import DatabaseError
+from src.core.exceptions.httpx import (
     BadRequestError,
-    CacheError,
-    ConfigurationError,
     ConflictError,
-    DatabaseError,
-    DomainError,
     ForbiddenError,
-    InternalServerError,
     NotFoundError,
-    PersistenceError,
     UnauthorizedError,
     UserAlreadyExistsError,
     UserNotFoundError,
-    ValidationError,
 )
+from src.core.exceptions.infrastructure import (
+    CacheError,
+    ConfigurationError,
+    PersistenceError,
+)
+from src.core.exceptions.validation import ValidationError
 
 
 def test_app_error_uses_defaults() -> None:
@@ -80,7 +80,7 @@ def test_app_error_repr() -> None:
         message="Boom",
     )
 
-    assert repr(error) == "AppError('Boom')"
+    assert repr(error) == "AppError(message='Boom', error_code='INTERNAL_SERVER_ERROR')"
 
 
 def test_bad_request_error() -> None:
@@ -147,18 +147,6 @@ def test_forbidden_error() -> None:
     assert error.status_code == HTTP_403_FORBIDDEN
     assert error.error_code == ERROR_FORBIDDEN
     assert error.message == "Forbidden."
-
-
-def test_internal_server_error() -> None:
-    """
-    It should create an internal server error.
-    """
-
-    error = InternalServerError()
-
-    assert error.status_code == HTTP_500_INTERNAL_SERVER_ERROR
-    assert error.error_code == ERROR_INTERNAL_SERVER_ERROR
-    assert error.message == "Internal server error."
 
 
 def test_domain_error_defaults() -> None:

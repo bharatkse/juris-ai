@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, call
 import pytest
 
 from src.core.enums import MessageRole
-from src.core.exceptions import NotFoundError
+from src.core.exceptions.httpx import NotFoundError
 from src.services.chat import ChatService
 from src.services.results.chat import ChatResult
 from tests.builders.agent import (

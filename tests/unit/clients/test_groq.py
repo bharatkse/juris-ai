@@ -11,13 +11,13 @@ import pytest
 from groq import APIConnectionError, APIStatusError, APITimeoutError
 
 from src.core.config import settings
-from src.core.custom_exceptions.client import (
+from src.core.enums import LLMProvider
+from src.core.exceptions.client import (
     ClientAuthenticationError,
     ClientError,
     ClientRateLimitError,
     ClientTimeoutError,
 )
-from src.core.enums import LLMProvider
 from tests.builders.groq import (
     build_groq_chat_messages,
     build_groq_chunk_without_delta,
@@ -28,10 +28,7 @@ from tests.builders.groq import (
     build_groq_stream_chunk,
     build_groq_usage,
 )
-from tests.unit.clients.exeption_builder import (
-    build_authentication_error,
-    build_rate_limit_error,
-)
+from tests.unit.clients.exeption_builder import build_authentication_error, build_rate_limit_error
 
 if TYPE_CHECKING:
     from src.clients.models import LLMRequest

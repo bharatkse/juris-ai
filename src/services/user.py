@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.exceptions import UserAlreadyExistsError, UserNotFoundError
+from src.core.exceptions.httpx import UserAlreadyExistsError, UserNotFoundError
 from src.core.types import UserId
 from src.db.models.user import User
 from src.repositories.user import UserRepository
