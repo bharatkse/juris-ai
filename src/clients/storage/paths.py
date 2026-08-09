@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from src.core.custom_exceptions.client import ClientProviderError
+from src.core.exceptions.client import ClientProviderError
 from src.core.logger import get_logger
 
 log = get_logger(__name__)

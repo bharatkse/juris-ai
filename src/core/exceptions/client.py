@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from http import HTTPStatus
 
-from src.core.custom_exceptions.base import AppError
+from src.core.exceptions.base import AppError
 
 
 class ClientError(AppError):

@@ -7,7 +7,7 @@ from __future__ import annotations
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.constants import DEFAULT_CONVERSATION_TITLE
-from src.core.exceptions import UserNotFoundError
+from src.core.exceptions.httpx import UserNotFoundError
 from src.core.types import ConversationId
 from src.db.models.conversation import Conversation
 from src.repositories.conversation import ConversationRepository

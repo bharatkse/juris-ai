@@ -24,7 +24,7 @@ from src.clients.models import (
     LLMStreamChunk,
     LLMTokenUsage,
 )
-from src.core.custom_exceptions.client import (
+from src.core.exceptions.client import (
     ClientAuthenticationError,
     ClientConnectionError,
     ClientProviderError,

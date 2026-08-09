@@ -13,58 +13,16 @@ to HTTP responses via global FastAPI exception handlers.
 from src.core.constants import (
     ERROR_BAD_REQUEST,
     ERROR_CONFLICT,
-    ERROR_DOMAIN,
     ERROR_FORBIDDEN,
-    ERROR_INTERNAL_SERVER_ERROR,
     ERROR_NOT_FOUND,
-    ERROR_PERSISTENCE,
     ERROR_UNAUTHORIZED,
     HTTP_400_BAD_REQUEST,
     HTTP_401_UNAUTHORIZED,
     HTTP_403_FORBIDDEN,
     HTTP_404_NOT_FOUND,
     HTTP_409_CONFLICT,
-    HTTP_500_INTERNAL_SERVER_ERROR,
 )
-
-
-class AppError(Exception):
-    """
-    Base application exception.
-
-    All custom exceptions in the application should inherit from this class.
-    It provides a common structure for error handling while remaining
-    decoupled from FastAPI and transport-level concerns.
-
-    Attributes:
-        status_code: HTTP status code associated with the error
-        error_code: Stable, application-specific error identifier
-    """
-
-    status_code: int = HTTP_500_INTERNAL_SERVER_ERROR
-    error_code: str = ERROR_INTERNAL_SERVER_ERROR
-    default_message: str = "An unexpected error occurred."
-
-    def __init__(
-        self,
-        message: str,
-        status_code: int | None = None,
-        error_code: str | None = None,
-        detail: str | None = None,
-    ):
-        super().__init__(message)
-
-        if status_code is not None:
-            self.status_code = status_code
-
-        if error_code is not None:
-            self.error_code = error_code
-
-        self.message = message or self.default_message
-        self.detail = detail or self.message
-
-    def __repr__(self) -> str:
-        return f"{self.__class__.__name__}({self.message!r})"
+from src.core.exceptions.base import AppError
 
 
 class BadRequestError(AppError):
@@ -157,65 +115,6 @@ class ForbiddenError(AppError):
         )
 
 
-class InternalServerError(AppError):
-    """
-    HTTP 500 Internal Server Error.
-    """
-
-    def __init__(
-        self,
-        *,
-        message: str = "Internal server error.",
-        error_code: str = ERROR_INTERNAL_SERVER_ERROR,
-    ) -> None:
-        super().__init__(
-            message=message,
-            error_code=error_code,
-            status_code=HTTP_500_INTERNAL_SERVER_ERROR,
-        )
-
-
-class DomainError(AppError):
-    """
-    Base class for domain-level business rule violations.
-
-    Domain errors represent expected, client-visible failures such as
-    validation issues or missing resources. These errors typically map
-    to 4xx HTTP status codes.
-    """
-
-    status_code: int = HTTP_400_BAD_REQUEST
-    error_code: str = ERROR_DOMAIN
-
-
-class PersistenceError(AppError):
-    """
-    Raised when a database or persistence operation fails.
-
-    This error indicates an internal system failure and should never
-    expose implementation details to API clients.
-    """
-
-    status_code = HTTP_500_INTERNAL_SERVER_ERROR
-    error_code = ERROR_PERSISTENCE
-
-
-class ConfigurationError(AppError):
-    """Bad or missing configuration."""
-
-
-class DatabaseError(AppError):
-    """Any database operation failure."""
-
-
-class CacheError(AppError):
-    """Cache backend failure."""
-
-
-class ValidationError(AppError):
-    """Input validation failure."""
-
-
 class UserAlreadyExistsError(ConflictError):
     """
     Raised when a user with the same email already exists.
@@ -237,4 +136,16 @@ class UserNotFoundError(NotFoundError):
         super().__init__(
             message=message,
             error_code="USER_NOT_FOUND",
+        )
+
+
+class ConversationInactiveError(ForbiddenError):
+    """
+    Raised when a conversation is inactive.
+    """
+
+    def __init__(self, message: str = "Conversation is inactive.") -> None:
+        super().__init__(
+            message=message,
+            error_code="CONVERSATION_INACTIVE",
         )

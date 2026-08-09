@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.core.exceptions import UserAlreadyExistsError, UserNotFoundError
+from src.core.exceptions.httpx import UserAlreadyExistsError, UserNotFoundError
 from src.services.user import UserService
 from tests.builders.schemas import build_create_user_request, build_update_user_request
 from tests.factories.user import UserFactory

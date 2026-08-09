@@ -43,10 +43,12 @@ class AppError(Exception):
         message: str | None = None,
         *,
         detail: str | None = None,
+        status_code: int | None = None,
         error_code: str | None = None,
     ) -> None:
         self.message = message or self.default_message
         self.detail = detail or self.message
+        self.status_code = status_code or self.status_code
 
         if error_code is not None:
             self.error_code = error_code

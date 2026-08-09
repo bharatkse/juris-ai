@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 import pytest
 from groq import APIConnectionError, APIStatusError, APITimeoutError
 
-from src.core.custom_exceptions.client import (
+from src.core.exceptions.client import (
     ClientAuthenticationError,
     ClientConnectionError,
     ClientProviderError,

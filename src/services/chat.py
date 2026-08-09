@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.agents.base import BaseAgent
 from src.agents.models import AgentMessage, AgentRequest, AgentResponse
 from src.core.enums import MessageRole
-from src.core.exceptions import NotFoundError
+from src.core.exceptions.httpx import NotFoundError
 from src.core.types import ConversationId
 from src.db.models.conversation import Conversation
 from src.db.models.conversation_event import ConversationEvent
