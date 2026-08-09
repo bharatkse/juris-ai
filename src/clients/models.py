@@ -4,7 +4,9 @@ Provider-independent LLM models.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import Any
 
 from src.core.enums import MessageRole
@@ -13,12 +15,29 @@ from src.core.enums import MessageRole
 @dataclass(slots=True, frozen=True)
 class LLMMessage:
     """
-    Message sent to an LLM.
+    Message exchanged with an LLM provider.
     """
 
     role: MessageRole
 
     content: str
+
+
+@dataclass(slots=True, frozen=True)
+class LLMRequest:
+    """
+    Provider-independent LLM request.
+    """
+
+    messages: tuple[LLMMessage, ...]
+
+    temperature: float = 0.2
+
+    max_tokens: int | None = None
+
+    metadata: Mapping[str, Any] = field(
+        default_factory=lambda: MappingProxyType({}),
+    )
 
 
 @dataclass(slots=True, frozen=True)
@@ -50,15 +69,15 @@ class LLMResponse:
 
     usage: LLMTokenUsage | None = None
 
-    metadata: dict[str, Any] = field(
-        default_factory=dict,
+    metadata: Mapping[str, Any] = field(
+        default_factory=lambda: MappingProxyType({}),
     )
 
 
 @dataclass(slots=True, frozen=True)
-class LLMChunk:
+class LLMStreamChunk:
     """
-    A streamed chunk returned by an LLM provider.
+    Chunk produced while streaming an LLM response.
     """
 
     content: str = ""
@@ -67,23 +86,6 @@ class LLMChunk:
 
     finish_reason: str | None = None
 
-    metadata: dict[str, Any] = field(
-        default_factory=dict,
-    )
-
-
-@dataclass(slots=True, frozen=True)
-class LLMStreamResponse:
-    """
-    Final information collected after a streaming response completes.
-    """
-
-    provider: str
-
-    model: str
-
-    usage: LLMTokenUsage | None = None
-
-    metadata: dict[str, Any] = field(
-        default_factory=dict,
+    metadata: Mapping[str, Any] = field(
+        default_factory=lambda: MappingProxyType({}),
     )

@@ -16,4 +16,5 @@ pytest_plugins = [
     "tests.fixtures.groq",
     "tests.fixtures.security",
     "tests.fixtures.environment",
+    "tests.fixtures.llm",
 ]

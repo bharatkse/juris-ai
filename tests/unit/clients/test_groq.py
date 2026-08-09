@@ -4,22 +4,19 @@ Unit tests for GroqClient.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
 import pytest
-from groq import (
-    APIConnectionError,
-    APIStatusError,
-    APITimeoutError,
-)
+from groq import APIConnectionError, APIStatusError, APITimeoutError
 
-from src.clients.exceptions import (
-    LLMAuthenticationError,
-    LLMProviderError,
-    LLMRateLimitError,
-    LLMTimeoutError,
-)
 from src.core.config import settings
+from src.core.custom_exceptions.client import (
+    ClientAuthenticationError,
+    ClientError,
+    ClientRateLimitError,
+    ClientTimeoutError,
+)
 from src.core.enums import LLMProvider
 from tests.builders.groq import (
     build_groq_chat_messages,
@@ -36,6 +33,9 @@ from tests.unit.clients.exeption_builder import (
     build_rate_limit_error,
 )
 
+if TYPE_CHECKING:
+    from src.clients.models import LLMRequest
+
 TEST_MESSAGES = build_groq_messages()
 
 
@@ -43,6 +43,7 @@ TEST_MESSAGES = build_groq_messages()
 async def test_generate_returns_llm_response(
     groq_client,
     mock_chat_completion,
+    llm_request: LLMRequest,
 ) -> None:
     """
     It should map a Groq completion into an LLMResponse.
@@ -56,7 +57,9 @@ async def test_generate_returns_llm_response(
 
     mock_chat_completion.return_value = response
 
-    result = await groq_client.generate(messages=TEST_MESSAGES)
+    result = await groq_client.generate(
+        request=llm_request,
+    )
 
     assert result.content == "Hello from Groq."
     assert result.provider == groq_client.provider
@@ -73,15 +76,14 @@ async def test_generate_returns_llm_response(
         messages=build_groq_chat_messages(
             TEST_MESSAGES,
         ),
-        temperature=0.2,
-        max_tokens=None,
+        temperature=llm_request.temperature,
+        max_tokens=llm_request.max_tokens,
     )
 
 
 @pytest.mark.asyncio
 async def test_generate_returns_empty_content_when_missing(
-    groq_client,
-    mock_chat_completion,
+    groq_client, mock_chat_completion, llm_request
 ) -> None:
     """
     It should return an empty string when the provider returns no content.
@@ -95,7 +97,7 @@ async def test_generate_returns_empty_content_when_missing(
     mock_chat_completion.return_value = response
 
     result = await groq_client.generate(
-        messages=TEST_MESSAGES,
+        request=llm_request,
     )
 
     assert result.content == ""
@@ -104,8 +106,7 @@ async def test_generate_returns_empty_content_when_missing(
 
 @pytest.mark.asyncio
 async def test_generate_returns_none_usage_when_provider_does_not_return_usage(
-    groq_client,
-    mock_chat_completion,
+    groq_client, mock_chat_completion, llm_request
 ) -> None:
     """
     It should return None when token usage is unavailable.
@@ -120,7 +121,7 @@ async def test_generate_returns_none_usage_when_provider_does_not_return_usage(
     mock_chat_completion.return_value = response
 
     result = await groq_client.generate(
-        messages=TEST_MESSAGES,
+        request=llm_request,
     )
 
     assert result.usage is None
@@ -128,8 +129,7 @@ async def test_generate_returns_none_usage_when_provider_does_not_return_usage(
 
 @pytest.mark.asyncio
 async def test_generate_passes_request_parameters(
-    groq_client,
-    mock_chat_completion,
+    groq_client, mock_chat_completion, llm_request
 ) -> None:
     """
     It should forward request parameters to the Groq SDK.
@@ -143,9 +143,7 @@ async def test_generate_passes_request_parameters(
     mock_chat_completion.return_value = response
 
     await groq_client.generate(
-        messages=TEST_MESSAGES,
-        temperature=0.8,
-        max_tokens=512,
+        request=llm_request,
     )
 
     mock_chat_completion.assert_awaited_once_with(
@@ -164,21 +162,21 @@ async def test_generate_passes_request_parameters(
     [
         (
             build_authentication_error(),
-            LLMAuthenticationError,
+            ClientAuthenticationError,
         ),
         (
             build_rate_limit_error(),
-            LLMRateLimitError,
+            ClientRateLimitError,
         ),
         (
             APITimeoutError(
                 "Request timed out",
             ),
-            LLMTimeoutError,
+            ClientTimeoutError,
         ),
         (
             APIConnectionError(request=MagicMock()),
-            LLMProviderError,
+            ClientError,
         ),
         (
             APIStatusError(
@@ -186,13 +184,13 @@ async def test_generate_passes_request_parameters(
                 response=MagicMock(),
                 body={},
             ),
-            LLMProviderError,
+            ClientError,
         ),
         (
             Exception(
                 "Unexpected error",
             ),
-            LLMProviderError,
+            ClientError,
         ),
     ],
 )
@@ -201,6 +199,7 @@ async def test_generate_translates_provider_exceptions(
     mock_chat_completion,
     provider_exception,
     expected_exception,
+    llm_request,
 ) -> None:
     """
     It should translate provider exceptions into application exceptions.
@@ -210,15 +209,12 @@ async def test_generate_translates_provider_exceptions(
 
     with pytest.raises(expected_exception):
         await groq_client.generate(
-            messages=TEST_MESSAGES,
+            request=llm_request,
         )
 
 
 @pytest.mark.asyncio
-async def test_stream_yields_chunks(
-    groq_client,
-    mock_chat_completion,
-) -> None:
+async def test_stream_yields_chunks(groq_client, mock_chat_completion, llm_request) -> None:
     """
     It should yield streamed chunks.
     """
@@ -232,7 +228,7 @@ async def test_stream_yields_chunks(
     chunks = [
         item
         async for item in groq_client.stream(
-            messages=TEST_MESSAGES,
+            request=llm_request,
         )
     ]
 
@@ -242,10 +238,7 @@ async def test_stream_yields_chunks(
 
 
 @pytest.mark.asyncio
-async def test_stream_ignores_empty_choices(
-    groq_client,
-    mock_chat_completion,
-) -> None:
+async def test_stream_ignores_empty_choices(groq_client, mock_chat_completion, llm_request) -> None:
     """
     It should ignore chunks without choices.
     """
@@ -259,7 +252,7 @@ async def test_stream_ignores_empty_choices(
     chunks = [
         item
         async for item in groq_client.stream(
-            messages=TEST_MESSAGES,
+            request=llm_request,
         )
     ]
 
@@ -267,10 +260,7 @@ async def test_stream_ignores_empty_choices(
 
 
 @pytest.mark.asyncio
-async def test_stream_ignores_empty_delta(
-    groq_client,
-    mock_chat_completion,
-) -> None:
+async def test_stream_ignores_empty_delta(groq_client, mock_chat_completion, llm_request) -> None:
     """
     It should ignore chunks without a delta.
     """
@@ -284,7 +274,7 @@ async def test_stream_ignores_empty_delta(
     chunks = [
         item
         async for item in groq_client.stream(
-            messages=TEST_MESSAGES,
+            request=llm_request,
         )
     ]
 
@@ -292,10 +282,7 @@ async def test_stream_ignores_empty_delta(
 
 
 @pytest.mark.asyncio
-async def test_stream_ignores_empty_content(
-    groq_client,
-    mock_chat_completion,
-) -> None:
+async def test_stream_ignores_empty_content(groq_client, mock_chat_completion, llm_request) -> None:
     """
     It should ignore chunks without content.
     """
@@ -309,18 +296,18 @@ async def test_stream_ignores_empty_content(
     chunks = [
         item
         async for item in groq_client.stream(
-            messages=TEST_MESSAGES,
+            request=llm_request,
         )
     ]
 
-    assert chunks == []
+    assert len(chunks) == 1
+    assert chunks[0].content == ""
+    assert chunks[0].is_final is False
+    assert chunks[0].finish_reason is None
 
 
 @pytest.mark.asyncio
-async def test_stream_marks_final_chunk(
-    groq_client,
-    mock_chat_completion,
-) -> None:
+async def test_stream_marks_final_chunk(groq_client, mock_chat_completion, llm_request) -> None:
     """
     It should mark the final streamed chunk.
     """
@@ -334,7 +321,7 @@ async def test_stream_marks_final_chunk(
     chunks = [
         item
         async for item in groq_client.stream(
-            messages=TEST_MESSAGES,
+            request=llm_request,
         )
     ]
 
@@ -349,21 +336,21 @@ async def test_stream_marks_final_chunk(
     [
         (
             build_authentication_error(),
-            LLMAuthenticationError,
+            ClientAuthenticationError,
         ),
         (
             build_rate_limit_error(),
-            LLMRateLimitError,
+            ClientRateLimitError,
         ),
         (
             APITimeoutError(
                 "Request timed out",
             ),
-            LLMTimeoutError,
+            ClientTimeoutError,
         ),
         (
             APIConnectionError(request=MagicMock()),
-            LLMProviderError,
+            ClientError,
         ),
         (
             APIStatusError(
@@ -371,13 +358,13 @@ async def test_stream_marks_final_chunk(
                 response=MagicMock(),
                 body={},
             ),
-            LLMProviderError,
+            ClientError,
         ),
         (
             Exception(
                 "Unexpected error",
             ),
-            LLMProviderError,
+            ClientError,
         ),
     ],
 )
@@ -386,6 +373,7 @@ async def test_stream_translates_provider_exceptions(
     mock_chat_completion,
     provider_exception,
     expected_exception,
+    llm_request,
 ) -> None:
     """
     It should translate provider exceptions while streaming.
@@ -395,7 +383,7 @@ async def test_stream_translates_provider_exceptions(
 
     with pytest.raises(expected_exception):
         async for _ in groq_client.stream(
-            messages=TEST_MESSAGES,
+            request=llm_request,
         ):
             pass
 
@@ -414,8 +402,7 @@ def test_model_returns_configured_model(
 
 @pytest.mark.asyncio
 async def test_stream_yields_multiple_chunks(
-    groq_client,
-    mock_chat_completion,
+    groq_client, mock_chat_completion, llm_request
 ) -> None:
     """
     It should yield streamed chunks in the order received.
@@ -440,7 +427,7 @@ async def test_stream_yields_multiple_chunks(
     chunks = [
         chunk
         async for chunk in groq_client.stream(
-            messages=TEST_MESSAGES,
+            request=llm_request,
         )
     ]
 

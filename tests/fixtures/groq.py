@@ -8,7 +8,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.clients.groq import GroqClient
+from src.clients.llm.groq import GroqClient
+from src.core.config import settings
 
 
 @pytest.fixture
@@ -33,10 +34,13 @@ def groq_client(
     """
 
     with patch(
-        "src.clients.groq.AsyncGroq",
+        "src.clients.llm.groq.AsyncGroq",
         return_value=mock_groq_sdk,
     ):
-        return GroqClient()
+        return GroqClient(
+            api_key=settings.GROQ_API_KEY,
+            model=settings.GROQ_MODEL,
+        )
 
 
 @pytest.fixture

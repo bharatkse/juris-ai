@@ -4,7 +4,7 @@ Builders for LLM domain models.
 
 from __future__ import annotations
 
-from src.clients.models import LLMChunk, LLMMessage, LLMResponse, LLMTokenUsage
+from src.clients.models import LLMMessage, LLMResponse, LLMStreamChunk, LLMTokenUsage
 from src.core.enums import MessageRole
 
 
@@ -86,12 +86,12 @@ def build_llm_chunk(
     is_final: bool = False,
     finish_reason: str | None = None,
     metadata: dict | None = None,
-) -> LLMChunk:
+) -> LLMStreamChunk:
     """
     Build a streamed LLM chunk.
     """
 
-    return LLMChunk(
+    return LLMStreamChunk(
         content=content,
         is_final=is_final,
         finish_reason=finish_reason,

@@ -8,19 +8,19 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from src.clients.base import BaseLLMClient
-from src.clients.models import LLMChunk, LLMResponse, LLMTokenUsage
+from src.clients.llm.base import LLMClient
+from src.clients.models import LLMResponse, LLMStreamChunk, LLMTokenUsage
 from src.clients.storage.base import StorageClient
 from src.core.enums import StorageType
 
 
 @pytest.fixture
-def llm_client() -> BaseLLMClient:
+def llm_client() -> LLMClient:
     """
     Return a mocked LLM client.
     """
 
-    client = AsyncMock(spec=BaseLLMClient)
+    client = AsyncMock(spec=LLMClient)
 
     client.provider = "groq"
     client.model = "llama-3.3-70b-versatile"
@@ -38,17 +38,17 @@ def llm_client() -> BaseLLMClient:
     )
 
     async def stream():
-        yield LLMChunk(
+        yield LLMStreamChunk(
             content="This ",
             is_final=False,
         )
 
-        yield LLMChunk(
+        yield LLMStreamChunk(
             content="is ",
             is_final=False,
         )
 
-        yield LLMChunk(
+        yield LLMStreamChunk(
             content="mocked.",
             is_final=True,
             finish_reason="stop",

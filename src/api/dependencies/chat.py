@@ -9,7 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.agents.base import BaseAgent
 from src.agents.legal import LegalAgent
-from src.clients.groq import GroqClient
+from src.clients.llm.groq import GroqClient
+from src.core.config import settings
 from src.db.session import get_db_session
 from src.prompts.legal import LEGAL_SYSTEM_PROMPT
 from src.repositories.conversation import ConversationRepository
@@ -19,8 +20,10 @@ from src.services.chat import ChatService
 # ---------------------------------------------------------------------------
 # LLM Client
 # ---------------------------------------------------------------------------
-
-_groq_client = GroqClient()
+_groq_client = GroqClient(
+    api_key=settings.GROQ_API_KEY,
+    model=settings.GROQ_MODEL,
+)
 
 
 def get_groq_client() -> GroqClient:
