@@ -19,8 +19,8 @@ from src.clients.storage.models import (
     UploadRequest,
     UploadResponse,
 )
+from src.core.custom_exceptions.client import ClientProviderError, ClientResponseError
 from src.core.enums import DocumentStatus, StorageType
-from src.core.exceptions_.client import ClientProviderError, ClientResponseError
 from tests.factories.document import DocumentFactory
 
 

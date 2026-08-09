@@ -14,7 +14,7 @@ from src.api.dependencies.chat import (
     get_groq_client,
     get_legal_agent,
 )
-from src.clients.groq import GroqClient
+from src.clients.llm.groq import GroqClient
 from src.repositories.conversation import ConversationRepository
 from src.repositories.conversation_event import ConversationEventRepository
 

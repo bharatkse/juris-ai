@@ -10,7 +10,7 @@ from src.agents.base import BaseAgent
 from src.agents.legal_stream import LegalAgentStream
 from src.agents.models import AgentRequest, AgentResponse
 from src.agents.stream import AgentStream
-from src.clients.base import BaseLLMClient
+from src.clients.llm.base import LLMClient
 from src.clients.models import LLMMessage
 from src.core.enums import MessageRole
 
@@ -22,7 +22,7 @@ class LegalAgent(BaseAgent):
 
     def __init__(
         self,
-        client: BaseLLMClient,
+        client: LLMClient,
         system_prompt: str,
     ) -> None:
         self._client = client

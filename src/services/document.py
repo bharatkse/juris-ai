@@ -9,8 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.clients.storage.base import StorageClient
 from src.clients.storage.models import DeleteRequest, StoredObject, UploadRequest
+from src.core.custom_exceptions.client import ClientProviderError, ClientResponseError
 from src.core.enums import DocumentStatus
-from src.core.exceptions_.client import ClientProviderError, ClientResponseError
 from src.core.logger import get_logger
 from src.db.models.document import Document
 from src.repositories.document import DocumentRepository

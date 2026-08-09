@@ -449,15 +449,15 @@ PYTEST := poetry run pytest
 TARGET ?=
 
 test: ## Run all tests (make test TARGET=tests/unit/services)
-	@$(PYTEST) $(TARGET) -v
+	@$(PYTEST) $(TARGET) -v -s
 
 test-unit: ## Run unit tests (make test-unit TARGET=services or TARGET=tests/unit/services/test_user.py)
 	@if [ -z "$(TARGET)" ]; then \
-		$(PYTEST) tests/unit -v; \
+		$(PYTEST) tests/unit -v -s; \
 	elif [ -e "$(TARGET)" ]; then \
-		$(PYTEST) $(TARGET) -v; \
+		$(PYTEST) $(TARGET) -v -s; \
 	else \
-		$(PYTEST) tests/unit/$(TARGET) -v; \
+		$(PYTEST) tests/unit/$(TARGET) -v -s; \
 	fi
 
 test-integration: ## Run integration tests (TARGET optional)

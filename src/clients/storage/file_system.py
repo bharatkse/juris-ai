@@ -19,8 +19,8 @@ from src.clients.storage.models import (
 )
 from src.clients.storage.paths import StoragePaths
 from src.clients.storage.serializer import StorageSerializer
+from src.core.custom_exceptions.client import ClientProviderError, ClientResponseError
 from src.core.enums import StorageType
-from src.core.exceptions_.client import ClientProviderError, ClientResponseError
 from src.core.logger import get_logger
 
 log = get_logger(__name__)

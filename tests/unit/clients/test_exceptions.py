@@ -3,11 +3,12 @@ from unittest.mock import MagicMock
 import pytest
 from groq import APIConnectionError, APIStatusError, APITimeoutError
 
-from src.clients.exceptions import (
-    LLMAuthenticationError,
-    LLMProviderError,
-    LLMRateLimitError,
-    LLMTimeoutError,
+from src.core.custom_exceptions.client import (
+    ClientAuthenticationError,
+    ClientConnectionError,
+    ClientProviderError,
+    ClientRateLimitError,
+    ClientTimeoutError,
 )
 from tests.builders.groq import build_groq_messages
 from tests.unit.clients.exeption_builder import (
@@ -30,33 +31,33 @@ TEST_MESSAGES = build_groq_messages()
     [
         (
             build_authentication_error(),
-            LLMAuthenticationError,
-            LLMAuthenticationError.status_code,
-            LLMAuthenticationError.error_code,
-            LLMAuthenticationError.default_message,
+            ClientAuthenticationError,
+            ClientAuthenticationError.status_code,
+            ClientAuthenticationError.error_code,
+            ClientAuthenticationError.default_message,
         ),
         (
             build_rate_limit_error(),
-            LLMRateLimitError,
-            LLMRateLimitError.status_code,
-            LLMRateLimitError.error_code,
-            LLMRateLimitError.default_message,
+            ClientRateLimitError,
+            ClientRateLimitError.status_code,
+            ClientRateLimitError.error_code,
+            ClientRateLimitError.default_message,
         ),
         (
             APITimeoutError(
                 "Request timed out",
             ),
-            LLMTimeoutError,
-            LLMTimeoutError.status_code,
-            LLMTimeoutError.error_code,
-            LLMTimeoutError.default_message,
+            ClientTimeoutError,
+            ClientTimeoutError.status_code,
+            ClientTimeoutError.error_code,
+            ClientTimeoutError.default_message,
         ),
         (
             APIConnectionError(request=MagicMock()),
-            LLMProviderError,
-            LLMProviderError.status_code,
-            LLMProviderError.error_code,
-            LLMProviderError.default_message,
+            ClientConnectionError,
+            ClientConnectionError.status_code,
+            ClientConnectionError.error_code,
+            ClientConnectionError.default_message,
         ),
         (
             APIStatusError(
@@ -64,19 +65,19 @@ TEST_MESSAGES = build_groq_messages()
                 response=MagicMock(),
                 body={},
             ),
-            LLMProviderError,
-            LLMProviderError.status_code,
-            LLMProviderError.error_code,
-            LLMProviderError.default_message,
+            ClientProviderError,
+            ClientProviderError.status_code,
+            ClientProviderError.error_code,
+            ClientProviderError.default_message,
         ),
         (
             Exception(
                 "Unexpected error",
             ),
-            LLMProviderError,
-            LLMProviderError.status_code,
-            LLMProviderError.error_code,
-            LLMProviderError.default_message,
+            ClientProviderError,
+            ClientProviderError.status_code,
+            ClientProviderError.error_code,
+            ClientProviderError.default_message,
         ),
     ],
 )
@@ -88,6 +89,7 @@ async def test_generate_translates_provider_exceptions(
     status_code,
     error_code,
     default_message,
+    llm_request,
 ) -> None:
     """
     It should translate provider exceptions into application exceptions.
@@ -99,7 +101,7 @@ async def test_generate_translates_provider_exceptions(
         expected_exception,
     ) as exc_info:
         await groq_client.generate(
-            messages=TEST_MESSAGES,
+            request=llm_request,
         )
 
     error = exc_info.value
@@ -127,33 +129,33 @@ async def test_generate_translates_provider_exceptions(
     [
         (
             build_authentication_error(),
-            LLMAuthenticationError,
-            LLMAuthenticationError.status_code,
-            LLMAuthenticationError.error_code,
-            LLMAuthenticationError.default_message,
+            ClientAuthenticationError,
+            ClientAuthenticationError.status_code,
+            ClientAuthenticationError.error_code,
+            ClientAuthenticationError.default_message,
         ),
         (
             build_rate_limit_error(),
-            LLMRateLimitError,
-            LLMRateLimitError.status_code,
-            LLMRateLimitError.error_code,
-            LLMRateLimitError.default_message,
+            ClientRateLimitError,
+            ClientRateLimitError.status_code,
+            ClientRateLimitError.error_code,
+            ClientRateLimitError.default_message,
         ),
         (
             APITimeoutError(
                 "Request timed out",
             ),
-            LLMTimeoutError,
-            LLMTimeoutError.status_code,
-            LLMTimeoutError.error_code,
-            LLMTimeoutError.default_message,
+            ClientTimeoutError,
+            ClientTimeoutError.status_code,
+            ClientTimeoutError.error_code,
+            ClientTimeoutError.default_message,
         ),
         (
             APIConnectionError(request=MagicMock()),
-            LLMProviderError,
-            LLMProviderError.status_code,
-            LLMProviderError.error_code,
-            LLMProviderError.default_message,
+            ClientConnectionError,
+            ClientConnectionError.status_code,
+            ClientConnectionError.error_code,
+            ClientConnectionError.default_message,
         ),
         (
             APIStatusError(
@@ -161,19 +163,19 @@ async def test_generate_translates_provider_exceptions(
                 response=MagicMock(),
                 body={},
             ),
-            LLMProviderError,
-            LLMProviderError.status_code,
-            LLMProviderError.error_code,
-            LLMProviderError.default_message,
+            ClientProviderError,
+            ClientProviderError.status_code,
+            ClientProviderError.error_code,
+            ClientProviderError.default_message,
         ),
         (
             Exception(
                 "Unexpected error",
             ),
-            LLMProviderError,
-            LLMProviderError.status_code,
-            LLMProviderError.error_code,
-            LLMProviderError.default_message,
+            ClientProviderError,
+            ClientProviderError.status_code,
+            ClientProviderError.error_code,
+            ClientProviderError.default_message,
         ),
     ],
 )
@@ -185,6 +187,7 @@ async def test_stream_translates_provider_exceptions(
     status_code,
     error_code,
     default_message,
+    llm_request,
 ) -> None:
     """
     It should translate provider exceptions while streaming.
@@ -196,7 +199,7 @@ async def test_stream_translates_provider_exceptions(
         expected_exception,
     ) as exc_info:
         async for _ in groq_client.stream(
-            messages=TEST_MESSAGES,
+            request=llm_request,
         ):
             pass
 

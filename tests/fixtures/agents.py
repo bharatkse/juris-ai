@@ -11,8 +11,8 @@ import pytest
 
 from src.agents.legal import LegalAgent
 from src.agents.legal_stream import LegalAgentStream
-from src.clients.base import BaseLLMClient
-from src.clients.models import LLMChunk, LLMMessage
+from src.clients.llm.base import LLMClient
+from src.clients.models import LLMMessage, LLMStreamChunk
 from src.core.config import settings
 from src.core.enums import LLMProvider
 from src.prompts.legal import LEGAL_SYSTEM_PROMPT
@@ -21,12 +21,12 @@ from tests.builders.llm import build_llm_chunk, build_llm_messages
 
 
 @pytest.fixture
-def mock_llm_client() -> BaseLLMClient:
+def mock_llm_client() -> LLMClient:
     """
     Mock LLM client.
     """
 
-    client = MagicMock(spec=BaseLLMClient)
+    client = MagicMock(spec=LLMClient)
 
     client.provider = LLMProvider.GROQ.value
     client.model = settings.GROQ_MODEL
@@ -51,7 +51,7 @@ def llm_messages() -> list[LLMMessage]:
 
 
 @pytest.fixture
-def llm_stream() -> AsyncIterator[LLMChunk]:
+def llm_stream() -> AsyncIterator[LLMStreamChunk]:
     """
     Build a default streamed LLM response.
     """
@@ -72,7 +72,7 @@ def llm_stream() -> AsyncIterator[LLMChunk]:
 
 
 @pytest.fixture
-def empty_llm_stream() -> AsyncIterator[LLMChunk]:
+def empty_llm_stream() -> AsyncIterator[LLMStreamChunk]:
     """
     Return an empty LLM stream.
     """
@@ -82,7 +82,7 @@ def empty_llm_stream() -> AsyncIterator[LLMChunk]:
 
 @pytest.fixture
 def legal_agent(
-    mock_llm_client: BaseLLMClient,
+    mock_llm_client: LLMClient,
 ) -> LegalAgent:
     """
     Return a legal AI agent.
@@ -96,7 +96,7 @@ def legal_agent(
 
 @pytest.fixture
 def legal_agent_stream(
-    mock_llm_client: BaseLLMClient,
+    mock_llm_client: LLMClient,
     llm_messages: list[LLMMessage],
 ) -> LegalAgentStream:
     """

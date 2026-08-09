@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Any
 
 from src.clients.storage.models import StoredObject
-from src.core.exceptions_.client import ClientProviderError
+from src.core.custom_exceptions.client import ClientProviderError
 
 
 class StorageSerializer:

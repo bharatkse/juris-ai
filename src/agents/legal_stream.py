@@ -9,7 +9,7 @@ from collections.abc import AsyncIterator
 
 from src.agents.models import AgentChunk, AgentResponse
 from src.agents.stream import AgentStream
-from src.clients.base import BaseLLMClient
+from src.clients.llm.base import LLMClient
 from src.clients.models import LLMMessage
 
 
@@ -21,7 +21,7 @@ class LegalAgentStream(AgentStream):
     def __init__(
         self,
         *,
-        client: BaseLLMClient,
+        client: LLMClient,
         messages: list[LLMMessage],
     ) -> None:
         self._client = client
