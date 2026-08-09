@@ -10,6 +10,8 @@ import pytest
 
 from src.clients.base import BaseLLMClient
 from src.clients.models import LLMChunk, LLMResponse, LLMTokenUsage
+from src.clients.storage.base import StorageClient
+from src.core.enums import StorageType
 
 
 @pytest.fixture
@@ -53,5 +55,20 @@ def llm_client() -> BaseLLMClient:
         )
 
     client.stream.side_effect = stream
+
+    return client
+
+
+@pytest.fixture
+def mock_storage_client() -> StorageClient:
+    """
+    Return a mocked storage client.
+    """
+
+    client = AsyncMock(
+        spec=StorageClient,
+    )
+
+    client.storage_type = StorageType.LOCAL
 
     return client

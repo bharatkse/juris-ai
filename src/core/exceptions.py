@@ -15,7 +15,7 @@ from src.core.constants import (
     ERROR_CONFLICT,
     ERROR_DOMAIN,
     ERROR_FORBIDDEN,
-    ERROR_INTERVAL_SERVER_ERROR,
+    ERROR_INTERNAL_SERVER_ERROR,
     ERROR_NOT_FOUND,
     ERROR_PERSISTENCE,
     ERROR_UNAUTHORIZED,
@@ -42,7 +42,7 @@ class AppError(Exception):
     """
 
     status_code: int = HTTP_500_INTERNAL_SERVER_ERROR
-    error_code: str = ERROR_INTERVAL_SERVER_ERROR
+    error_code: str = ERROR_INTERNAL_SERVER_ERROR
     default_message: str = "An unexpected error occurred."
 
     def __init__(
@@ -166,7 +166,7 @@ class InternalServerError(AppError):
         self,
         *,
         message: str = "Internal server error.",
-        error_code: str = ERROR_INTERVAL_SERVER_ERROR,
+        error_code: str = ERROR_INTERNAL_SERVER_ERROR,
     ) -> None:
         super().__init__(
             message=message,

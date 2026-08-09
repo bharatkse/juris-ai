@@ -73,3 +73,27 @@ class GroqModel(StrEnum):
     LLAMA_3_3_70B = "llama-3.3-70b-versatile"
     GPT_OSS_120B = "openai/gpt-oss-120b"
     GPT_OSS_20B = "openai/gpt-oss-20b"
+
+
+class DocumentStatus(StrEnum):
+    """
+    Document processing status.
+    """
+
+    UPLOADED = "uploaded"
+    PROCESSING = "processing"
+    READY = "ready"
+    FAILED = "failed"
+    DELETED = "deleted"
+
+
+class StorageType(StrEnum):
+    """
+    Supported storage providers.
+    """
+
+    LOCAL = "local"
+    S3 = "s3"
+    AZURE_BLOB = "azure_blob"
+    GCS = "gcs"
+    MINIO = "minio"

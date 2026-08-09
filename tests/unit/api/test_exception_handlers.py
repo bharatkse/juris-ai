@@ -17,7 +17,7 @@ from src.api.exception_handlers import (
     unhandled_exception_handler,
 )
 from src.core.constants import (
-    ERROR_INTERVAL_SERVER_ERROR,
+    ERROR_INTERNAL_SERVER_ERROR,
     ERROR_PERSISTENCE,
     HTTP_500_INTERNAL_SERVER_ERROR,
 )
@@ -161,7 +161,7 @@ def test_unhandled_exception_handler(
     body = response.body.decode()
 
     assert '"success":false' in body
-    assert ERROR_INTERVAL_SERVER_ERROR in body
+    assert ERROR_INTERNAL_SERVER_ERROR in body
     assert "Something went wrong on our side." in body
 
     mock_logger.exception.assert_called_once_with(
