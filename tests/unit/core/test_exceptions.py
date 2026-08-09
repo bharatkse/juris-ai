@@ -9,7 +9,7 @@ from src.core.constants import (
     ERROR_CONFLICT,
     ERROR_DOMAIN,
     ERROR_FORBIDDEN,
-    ERROR_INTERVAL_SERVER_ERROR,
+    ERROR_INTERNAL_SERVER_ERROR,
     ERROR_NOT_FOUND,
     ERROR_PERSISTENCE,
     ERROR_UNAUTHORIZED,
@@ -51,7 +51,7 @@ def test_app_error_uses_defaults() -> None:
     assert error.message == "Something went wrong."
     assert error.detail == "Something went wrong."
     assert error.status_code == HTTP_500_INTERNAL_SERVER_ERROR
-    assert error.error_code == ERROR_INTERVAL_SERVER_ERROR
+    assert error.error_code == ERROR_INTERNAL_SERVER_ERROR
 
 
 def test_app_error_overrides_defaults() -> None:
@@ -157,7 +157,7 @@ def test_internal_server_error() -> None:
     error = InternalServerError()
 
     assert error.status_code == HTTP_500_INTERNAL_SERVER_ERROR
-    assert error.error_code == ERROR_INTERVAL_SERVER_ERROR
+    assert error.error_code == ERROR_INTERNAL_SERVER_ERROR
     assert error.message == "Internal server error."
 
 

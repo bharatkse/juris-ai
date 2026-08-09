@@ -14,6 +14,7 @@ from src.db.mixins import PrimaryKeyMixin, SoftDeleteMixin, TimestampMixin
 
 if TYPE_CHECKING:
     from .conversation_event import ConversationEvent
+    from .document import Document
     from .user import User
 
 
@@ -49,6 +50,11 @@ class Conversation(
     events: Mapped[list["ConversationEvent"]] = relationship(
         back_populates="conversation",
         order_by="ConversationEvent.created_at",
+    )
+
+    documents: Mapped[list["Document"]] = relationship(
+        back_populates="conversation",
+        cascade="all, delete-orphan",
     )
 
     def __repr__(self) -> str:

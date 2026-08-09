@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.repositories.conversation import ConversationRepository
 from src.repositories.conversation_event import ConversationEventRepository
+from src.repositories.document import DocumentRepository
 from src.repositories.user import UserRepository
 
 
@@ -50,6 +51,30 @@ def user_repository(
 
     return UserRepository(
         session=db_session,
+    )
+
+
+@pytest.fixture
+def document_repository(
+    db_session: AsyncSession,
+) -> DocumentRepository:
+    """
+    Return a document repository.
+    """
+
+    return DocumentRepository(
+        session=db_session,
+    )
+
+
+@pytest.fixture
+def mock_document_repository() -> MagicMock:
+    """
+    Return a mocked document repository.
+    """
+
+    return MagicMock(
+        spec=DocumentRepository,
     )
 
 

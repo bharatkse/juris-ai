@@ -14,7 +14,7 @@ The goal is to:
 from fastapi import FastAPI, Request
 
 from src.core.constants import (
-    ERROR_INTERVAL_SERVER_ERROR,
+    ERROR_INTERNAL_SERVER_ERROR,
     ERROR_PERSISTENCE,
     HTTP_500_INTERNAL_SERVER_ERROR,
 )
@@ -126,7 +126,7 @@ def unhandled_exception_handler(_: Request, exc: Exception) -> ApiResponse:
         success=False,
         status_code=HTTP_500_INTERNAL_SERVER_ERROR,
         error=ErrorDetailModel(
-            code=ERROR_INTERVAL_SERVER_ERROR,
+            code=ERROR_INTERNAL_SERVER_ERROR,
             message=("Something went wrong on our side. " "Please try again later."),
         ),
     )

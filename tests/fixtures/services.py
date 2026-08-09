@@ -10,6 +10,7 @@ import pytest
 
 from src.services.chat import ChatService
 from src.services.conversation import ConversationService
+from src.services.document import DocumentService
 from src.services.user import UserService
 
 
@@ -63,4 +64,21 @@ def chat_service(
         conversation_repository=mock_conversation_repository,
         event_repository=mock_conversation_event_repository,
         agent=mock_agent,
+    )
+
+
+@pytest.fixture
+def document_service(
+    mock_async_session: AsyncMock,
+    mock_document_repository: MagicMock,
+    mock_storage_client: MagicMock,
+) -> DocumentService:
+    """
+    Return a document service.
+    """
+
+    return DocumentService(
+        session=mock_async_session,
+        repository=mock_document_repository,
+        storage=mock_storage_client,
     )
