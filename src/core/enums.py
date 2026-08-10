@@ -95,3 +95,67 @@ class StorageType(StrEnum):
     AZURE_BLOB = "azure_blob"
     GCS = "gcs"
     MINIO = "minio"
+
+
+class Intent(StrEnum):
+    """
+    Supported planning intents.
+    """
+
+    GENERAL = "general"
+
+    LEGAL_RESEARCH = "legal_research"
+
+    CONTRACT_REVIEW = "contract_review"
+
+    CONTRACT_ANALYSIS = "contract_analysis"
+
+    CLAUSE_EXTRACTION = "clause_extraction"
+
+    RISK_ANALYSIS = "risk_analysis"
+
+
+class AgentType(StrEnum):
+    """
+    Supported agent types.
+    """
+
+    LEGAL = "legal"
+
+    CONTRACT = "contract"
+
+
+class ExecutionMode(StrEnum):
+    """
+    Supported execution strategies.
+    """
+
+    SEQUENTIAL = "sequential"
+
+    PARALLEL = "parallel"
+
+    HYBRID = "hybrid"
+
+
+class ExecutionStatus(StrEnum):
+    """
+    Runtime execution status.
+    """
+
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
+
+class RetrievalSource(StrEnum):
+    """
+    Source of retrieved content.
+    """
+
+    WEB = "web"
+    DOCUMENT = "document"
+    VECTOR = "vector"
+    DATABASE = "database"
+    MEMORY = "memory"

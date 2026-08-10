@@ -28,7 +28,10 @@ from tests.builders.groq import (
     build_groq_stream_chunk,
     build_groq_usage,
 )
-from tests.unit.clients.exeption_builder import build_authentication_error, build_rate_limit_error
+from tests.unit.clients.exeption_builder import (
+    build_authentication_error,
+    build_rate_limit_error,
+)
 
 if TYPE_CHECKING:
     from src.clients.models import LLMRequest

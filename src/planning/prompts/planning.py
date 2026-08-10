@@ -4,9 +4,9 @@ Planning prompt builder.
 
 from __future__ import annotations
 
+from core.models.planning import PlanningPromptRequest
 from src.core.enums import MessageRole
 from src.core.models import GenerateRequest, Message
-from src.planning.models import PlanningPromptRequest
 
 from .base import BasePromptBuilder
 

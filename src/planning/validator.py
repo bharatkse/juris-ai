@@ -4,8 +4,8 @@ Execution plan validator.
 
 from __future__ import annotations
 
+from core.models.planning import ExecutionMode, ExecutionPlan, ExecutionStep
 from src.core.exceptions.planning import PlanValidationError
-from src.planning.models import ExecutionMode, ExecutionPlan, ExecutionStep
 
 
 class ExecutionPlanValidator:

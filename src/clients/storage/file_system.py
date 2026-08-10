@@ -4,6 +4,7 @@ from pathlib import Path
 
 import aiofiles
 
+from core.exceptions.client import ClientProviderError, ClientResponseError
 from src.clients.storage.base import StorageClient
 from src.clients.storage.models import (
     DeleteRequest,
@@ -20,7 +21,6 @@ from src.clients.storage.models import (
 from src.clients.storage.paths import StoragePaths
 from src.clients.storage.serializer import StorageSerializer
 from src.core.enums import StorageType
-from src.core.exceptions.client import ClientProviderError, ClientResponseError
 from src.core.logger import get_logger
 
 log = get_logger(__name__)
