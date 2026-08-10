@@ -29,16 +29,19 @@ jobs:
 
           result=$(curl \
             --silent \
-            --fail \
+            --show-error \
             --connect-timeout 10 \
             --max-time 30 \
+            --write-out "\nHTTP_STATUS:%{http_code}" \
             --data-binary @.codecov.yml \
             https://codecov.io/validate)
 
           echo "$result"
 
-          if echo "$result" | grep -q '"status": "error"'; then
-            echo "Codecov configuration validation failed!"
+          status=$(echo "$result" | sed -n 's/.*HTTP_STATUS:\([0-9]*\).*/\1/p')
+
+          if [ "$status" != "200" ]; then
+            echo "Codecov configuration validation failed with HTTP status: $status"
             exit 1
           fi
 
