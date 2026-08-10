@@ -10,7 +10,7 @@ from typing import Any
 
 
 @dataclass(slots=True, frozen=True)
-class UploadRequest:
+class UploadRequestDTO:
     """
     Upload request.
 
@@ -36,16 +36,16 @@ class UploadRequest:
 
 
 @dataclass(slots=True, frozen=True)
-class UploadResponse:
+class UploadResponseDTO:
     """
     Upload response.
     """
 
-    object: StoredObject
+    object: StoredObjectDTO
 
 
 @dataclass(slots=True, frozen=True)
-class DownloadRequest:
+class DownloadRequestDTO:
     """
     Download request.
     """
@@ -56,18 +56,18 @@ class DownloadRequest:
 
 
 @dataclass(slots=True, frozen=True)
-class DownloadResponse:
+class DownloadResponseDTO:
     """
     Download response.
     """
 
-    object: StoredObject
+    object: StoredObjectDTO
 
     content: bytes
 
 
 @dataclass(slots=True, frozen=True)
-class DeleteRequest:
+class DeleteRequestDTO:
     """
     Delete request.
     """
@@ -78,7 +78,7 @@ class DeleteRequest:
 
 
 @dataclass(slots=True, frozen=True)
-class ExistsRequest:
+class ExistsRequestDTO:
     """
     Exists request.
     """
@@ -89,7 +89,7 @@ class ExistsRequest:
 
 
 @dataclass(slots=True, frozen=True)
-class MetadataRequest:
+class MetadataRequestDTO:
     """
     Metadata request.
     """
@@ -100,7 +100,7 @@ class MetadataRequest:
 
 
 @dataclass(slots=True, frozen=True)
-class ListRequest:
+class ListRequestDTO:
     """
     List request.
     """
@@ -113,7 +113,7 @@ class ListRequest:
 
 
 @dataclass(slots=True, frozen=True)
-class StoredObject:
+class StoredObjectDTO:
     """
     Stored object metadata.
 
@@ -145,12 +145,12 @@ class StoredObject:
 
 
 @dataclass(slots=True, frozen=True)
-class ListResponse:
+class ListResponseDTO:
     """
     List response.
     """
 
     objects: tuple[
-        StoredObject,
+        StoredObjectDTO,
         ...,
     ]

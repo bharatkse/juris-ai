@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.orchestration.response import Citation, Source, Usage
+from src.orchestration.schemas.response import Citation, Source, Usage
 
 
 class AggregationMetadata(BaseModel):
@@ -17,6 +17,10 @@ class AggregationMetadata(BaseModel):
     model_config = ConfigDict(
         frozen=True,
         extra="forbid",
+    )
+
+    agents: list[str] = Field(
+        default_factory=list,
     )
 
     merged_responses: int = 0

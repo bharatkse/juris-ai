@@ -9,7 +9,7 @@ from typing import final
 from src.agents.base import BaseAgent
 from src.agents.prompts.legal import LegalPromptBuilder
 from src.clients.llm.base import LLMClient
-from src.core.models.agent import AgentMetadata
+from src.core.dto.agent import AgentMetadataDTO
 from src.tools.retrieval import RetrieverTool
 
 
@@ -19,7 +19,7 @@ class LegalAgent(BaseAgent):
     General-purpose legal assistant.
     """
 
-    metadata = AgentMetadata(
+    metadata = AgentMetadataDTO(
         name="legal",
         description="General-purpose legal assistant.",
         capabilities=(

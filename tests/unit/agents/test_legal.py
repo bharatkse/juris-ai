@@ -9,9 +9,9 @@ from unittest.mock import AsyncMock
 import pytest
 
 from src.agents.legal import LegalAgent
-from src.core.enums import MessageRole
-from src.core.models.message import Message
-from tests.builders.agent import build_agent_request, build_agent_response
+from src.core.dto.message import MessageDTO
+from src.core.enums import MessageRoleEnum
+from tests.builders.agent import build_agent_request
 from tests.builders.clients.llm import build_llm_response
 
 
@@ -38,14 +38,21 @@ async def test_run_calls_generate(
     """
 
     mock_llm_client.generate = AsyncMock(
-        return_value=build_agent_response(),
+        return_value=build_llm_response(),
     )
 
-    await legal_agent.run(
-        request=build_agent_request(),
+    request = build_agent_request(
+        instruction="Answer the user's legal question.",
+    )
+
+    response = await legal_agent.run(
+        request=request,
     )
 
     mock_llm_client.generate.assert_awaited_once()
+
+    assert response.content == "Hello!"
+    assert response.agent_name == legal_agent.metadata.name
 
 
 @pytest.mark.asyncio
@@ -57,10 +64,12 @@ async def test_run_passes_expected_messages(
     It should build the expected LLM messages.
     """
 
-    request = build_agent_request()
+    request = build_agent_request(
+        instruction="Answer the user's legal question.",
+    )
 
     mock_llm_client.generate = AsyncMock(
-        return_value=build_agent_response(),
+        return_value=build_llm_response(),
     )
 
     await legal_agent.run(
@@ -71,15 +80,11 @@ async def test_run_passes_expected_messages(
 
     messages = llm_request.messages
 
-    assert messages[0] == Message(
-        role=MessageRole.SYSTEM,
-        content=legal_agent._prompt_builder._system_prompt,
-    )
+    assert messages[0].role is MessageRoleEnum.SYSTEM
+    assert messages[0].content == (legal_agent._prompt_builder._system_prompt)
 
-    assert messages[-1] == Message(
-        role=MessageRole.USER,
-        content="Hello",
-    )
+    assert messages[-1].role is MessageRoleEnum.USER
+    assert messages[-1].content == "Hello"
 
 
 @pytest.mark.asyncio
@@ -92,27 +97,22 @@ async def test_run_includes_history(
     """
 
     request = build_agent_request(
+        instruction="Answer the current legal question.",
         messages=[
-            Message(
-                role=MessageRole.USER,
+            MessageDTO(
+                role=MessageRoleEnum.USER,
                 content="Old question",
             ),
-            Message(
-                role=MessageRole.ASSISTANT,
+            MessageDTO(
+                role=MessageRoleEnum.ASSISTANT,
                 content="Old answer",
             ),
-            Message(
-                role=MessageRole.USER,
+            MessageDTO(
+                role=MessageRoleEnum.USER,
                 content="Current question",
             ),
-        ]
+        ],
     )
-
-    assert [message.content for message in request.conversation.messages] == [
-        "Old question",
-        "Old answer",
-        "Current question",
-    ]
 
     mock_llm_client.generate = AsyncMock(
         return_value=build_llm_response(),
@@ -149,7 +149,10 @@ async def test_run_returns_agent_response(
     )
 
     response = await legal_agent.run(
-        request=build_agent_request(),
+        request=build_agent_request(
+            instruction="Provide a legal answer.",
+        ),
     )
 
     assert response.content == "Legal answer"
+    assert response.agent_name == legal_agent.metadata.name

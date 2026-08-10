@@ -5,13 +5,19 @@ Base AI agent.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from typing import ClassVar
 
 from src.agents.prompts.base import BasePromptBuilder
 from src.clients.llm.base import LLMClient
-from src.core.enums import MessageRole
-from src.core.models import GenerateRequest
-from src.core.models.agent import AgentRequest, AgentResponse, AgentStreamChunk
-from src.core.models.tool import RetrievedContent, ToolRequest
+from src.core.dto.agent import (
+    AgentMetadataDTO,
+    AgentRequestDTO,
+    AgentResponseDTO,
+    AgentStreamChunkDTO,
+)
+from src.core.dto.clients.llm import LLMRequestDTO
+from src.core.dto.tool import RetrievedContentDTO, ToolRequestDTO
+from src.core.enums import MessageRoleEnum
 from src.tools.retrieval import RetrieverTool
 
 
@@ -19,6 +25,8 @@ class BaseAgent:
     """
     Base class for AI agents.
     """
+
+    metadata: ClassVar[AgentMetadataDTO]
 
     def __init__(
         self,
@@ -44,13 +52,13 @@ class BaseAgent:
     async def run(
         self,
         *,
-        request: AgentRequest,
-    ) -> AgentResponse:
+        request: AgentRequestDTO,
+    ) -> AgentResponseDTO:
         """
         Execute the agent.
         """
 
-        llm_request = await self._build_generate_request(
+        llm_request = await self._build_llm_request(
             request=request,
         )
 
@@ -58,7 +66,8 @@ class BaseAgent:
             request=llm_request,
         )
 
-        return AgentResponse(
+        return AgentResponseDTO(
+            agent_name=self.metadata.name,
             content=response.content,
             metadata=response.metadata,
         )
@@ -66,20 +75,20 @@ class BaseAgent:
     async def stream(
         self,
         *,
-        request: AgentRequest,
-    ) -> AsyncIterator[AgentStreamChunk]:
+        request: AgentRequestDTO,
+    ) -> AsyncIterator[AgentStreamChunkDTO]:
         """
         Stream the agent response.
         """
 
-        llm_request = await self._build_generate_request(
+        llm_request = await self._build_llm_request(
             request=request,
         )
 
         async for chunk in self._llm.stream(
             request=llm_request,
         ):
-            yield AgentStreamChunk(
+            yield AgentStreamChunkDTO(
                 content=chunk.content,
                 is_final=chunk.is_final,
                 finish_reason=chunk.finish_reason,
@@ -89,8 +98,8 @@ class BaseAgent:
     async def _build_generate_request(
         self,
         *,
-        request: AgentRequest,
-    ) -> GenerateRequest:
+        request: AgentRequestDTO,
+    ) -> LLMRequestDTO:
         """
         Build an LLM generation request.
         """
@@ -107,9 +116,9 @@ class BaseAgent:
     async def _retrieve_context(
         self,
         *,
-        request: AgentRequest,
+        request: AgentRequestDTO,
     ) -> tuple[
-        RetrievedContent,
+        RetrievedContentDTO,
         ...,
     ]:
         """
@@ -125,13 +134,13 @@ class BaseAgent:
             ),
         )
 
-        return response.results
+        return response.content
 
     @staticmethod
     def _build_tool_request(
         *,
-        request: AgentRequest,
-    ) -> ToolRequest:
+        request: AgentRequestDTO,
+    ) -> ToolRequestDTO:
         """
         Build a retrieval tool request.
         """
@@ -141,10 +150,28 @@ class BaseAgent:
             for message in reversed(
                 request.conversation.messages,
             )
-            if message.role is MessageRole.USER
+            if message.role is MessageRoleEnum.USER
         )
 
-        return ToolRequest(
+        return ToolRequestDTO(
             query=user_message.content,
             uploaded_files=request.context.uploaded_files,
+        )
+
+    async def _build_llm_request(
+        self,
+        *,
+        request: AgentRequestDTO,
+    ) -> LLMRequestDTO:
+        """
+        Build the provider-independent LLM request.
+        """
+
+        context = await self._retrieve_context(
+            request=request,
+        )
+
+        return self._prompt_builder.build(
+            request=request,
+            context=context,
         )

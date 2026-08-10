@@ -14,7 +14,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class ExecutionMemory(BaseModel):
+class ExecutionMemorySchema(BaseModel):
     """
     Shared execution memory.
 

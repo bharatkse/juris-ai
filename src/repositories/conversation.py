@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
 
-from sqlalchemy import exists
+from sqlalchemy import exists, func, select
 
 from src.db.models.conversation import Conversation
 from src.repositories.base import BaseRepository
@@ -90,9 +90,9 @@ class ConversationRepository(
         user_id: UserId,
         offset: int = 0,
         limit: int = 20,
-    ) -> list[Conversation]:
+    ) -> tuple[list[Conversation], int]:
         """
-        Retrieve conversations for a user.
+        Retrieve paginated conversations for a user.
         """
 
         statement = (
@@ -103,21 +103,32 @@ class ConversationRepository(
             .order_by(
                 self._model.updated_at.desc(),
             )
-            .offset(
-                offset,
-            )
-            .limit(
-                limit,
-            )
+            .offset(offset)
+            .limit(limit)
         )
 
         result = await self._session.execute(
             statement,
         )
 
-        return list(
+        conversations = list(
             result.scalars().all(),
         )
+
+        count_statement = (
+            select(func.count())
+            .select_from(self._model)
+            .where(
+                self._model.user_id == user_id,
+                self._model.deleted_at.is_(None),
+            )
+        )
+
+        total = await self._session.scalar(
+            count_statement,
+        )
+
+        return conversations, total or 0
 
     async def update(
         self,

@@ -12,7 +12,7 @@ from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from src.core.constants import DEFAULT_APP_NAME, DEFAULT_APP_VERSION, TEST_DB_URL
-from src.core.enums import CacheBackend, Environment, GroqModel
+from src.core.enums import CacheBackendEnum, EnvironmentEnum, GroqModelEnum
 
 
 class Settings(BaseSettings):
@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     APP_NAME: str = DEFAULT_APP_NAME
     APP_VERSION: str = DEFAULT_APP_VERSION
 
-    ENVIRONMENT: Environment = Environment.DEVELOPMENT
+    ENVIRONMENT: EnvironmentEnum = EnvironmentEnum.DEVELOPMENT
 
     DEBUG: bool = False
 
@@ -72,7 +72,7 @@ class Settings(BaseSettings):
     # Cache / Redis
     # --------------------------------------------------------------------------
 
-    CACHE_BACKEND: CacheBackend = CacheBackend.REDIS
+    CACHE_BACKEND: CacheBackendEnum = CacheBackendEnum.REDIS
 
     CACHE_TTL: int = 3600
     CACHE_MAX_SIZE: int = 1000
@@ -114,7 +114,9 @@ class Settings(BaseSettings):
     # External Services
     # --------------------------------------------------------------------------
     GROQ_API_KEY: SecretStr | None = None
-    GROQ_MODEL: GroqModel = GroqModel.LLAMA_3_3_70B
+    GROQ_MODEL: GroqModelEnum = GroqModelEnum.LLAMA_3_3_70B
+
+    BRAVE_API_KEY: SecretStr | None = None
 
     # --------------------------------------------------------------------------
     # Pydantic Configuration
@@ -188,15 +190,15 @@ class Settings(BaseSettings):
 
     @property
     def redis_enabled(self) -> bool:
-        return self.CACHE_BACKEND is CacheBackend.REDIS
+        return self.CACHE_BACKEND is CacheBackendEnum.REDIS
 
     @property
     def is_testing(self) -> bool:
-        return self.ENVIRONMENT is Environment.TESTING
+        return self.ENVIRONMENT is EnvironmentEnum.TESTING
 
     @property
     def is_development(self) -> bool:
-        return self.ENVIRONMENT is Environment.DEVELOPMENT
+        return self.ENVIRONMENT is EnvironmentEnum.DEVELOPMENT
 
     # --------------------------------------------------------------------------
     # Validation Helpers
@@ -207,7 +209,7 @@ class Settings(BaseSettings):
             return self
 
         required_fields = {
-            Environment.DEVELOPMENT: {
+            EnvironmentEnum.DEVELOPMENT: {
                 "SECRET_KEY": self.SECRET_KEY,
                 "DB_HOST": self.DB_HOST,
                 "DB_NAME": self.DB_NAME,
@@ -215,14 +217,14 @@ class Settings(BaseSettings):
                 "DB_PASSWORD": self.DB_PASSWORD,
                 "GROQ_API_KEY": self.GROQ_API_KEY,
             },
-            Environment.STAGING: {
+            EnvironmentEnum.STAGING: {
                 "SECRET_KEY": self.SECRET_KEY,
                 "DB_HOST": self.DB_HOST,
                 "DB_NAME": self.DB_NAME,
                 "DB_USER": self.DB_USER,
                 "DB_PASSWORD": self.DB_PASSWORD,
             },
-            Environment.PRODUCTION: {
+            EnvironmentEnum.PRODUCTION: {
                 "SECRET_KEY": self.SECRET_KEY,
             },
         }

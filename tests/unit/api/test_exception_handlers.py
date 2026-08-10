@@ -68,7 +68,7 @@ def test_app_exception_handler(
         extra={
             "error_code": "CUSTOM_ERROR",
             "status_code": 418,
-            "message": "Unexpected failure.",
+            "error_message": "Unexpected failure.",
         },
     )
 

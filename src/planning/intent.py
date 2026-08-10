@@ -5,7 +5,9 @@ Intent analyzer.
 from __future__ import annotations
 
 from src.clients.llm.base import LLMClient
-from src.core.models.planning import Intent, PlanningRequest
+from src.core.dto.planning import PlanningRequestDTO
+from src.core.enums import IntentEnum
+from src.core.schemas.planning import IntentResponseSchema
 from src.planning.prompts.intent import IntentPromptBuilder
 
 
@@ -26,8 +28,8 @@ class IntentAnalyzer:
     async def analyze(
         self,
         *,
-        request: PlanningRequest,
-    ) -> Intent:
+        request: PlanningRequestDTO,
+    ) -> IntentEnum:
         """
         Analyze the planning request.
         """
@@ -36,7 +38,9 @@ class IntentAnalyzer:
             request=request,
         )
 
-        return await self._llm.generate_structured(
+        response = await self._llm.generate_structured(
             request=llm_request,
-            response_model=Intent,
+            response_model=IntentResponseSchema,
         )
+
+        return response.intent

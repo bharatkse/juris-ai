@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Any
 
 from core.exceptions.client import ClientProviderError
-from src.clients.storage.models import StoredObject
+from src.core.dto.clients.storage import StoredObjectDTO
 
 
 class StorageSerializer:
@@ -18,7 +18,7 @@ class StorageSerializer:
     """
 
     @classmethod
-    def dumps(cls, stored_object: StoredObject, *, indent: int | None = None) -> str:
+    def dumps(cls, stored_object: StoredObjectDTO, *, indent: int | None = None) -> str:
         """
         Serialize a stored object into JSON.
         """
@@ -34,7 +34,7 @@ class StorageSerializer:
     def loads(
         cls,
         payload: str,
-    ) -> StoredObject:
+    ) -> StoredObjectDTO:
         """
         Deserialize a stored object from JSON.
         """
@@ -55,7 +55,7 @@ class StorageSerializer:
 
     @staticmethod
     def serialize(
-        stored_object: StoredObject,
+        stored_object: StoredObjectDTO,
     ) -> dict[str, Any]:
         """
         Serialize a stored object into a dictionary.
@@ -75,13 +75,13 @@ class StorageSerializer:
     @staticmethod
     def deserialize(
         payload: dict[str, Any],
-    ) -> StoredObject:
+    ) -> StoredObjectDTO:
         """
         Deserialize a stored object from a dictionary.
         """
 
         try:
-            return StoredObject(
+            return StoredObjectDTO(
                 object_id=payload["object_id"],
                 filename=payload["filename"],
                 content_type=payload["content_type"],

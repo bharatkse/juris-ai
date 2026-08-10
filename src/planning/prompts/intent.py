@@ -4,42 +4,52 @@ Intent prompt builder.
 
 from __future__ import annotations
 
-from src.core.enums import MessageRole
-from src.core.models import GenerateRequest, Message
-from src.core.models.planning import PlanningRequest
+from src.core.dto.clients.llm import LLMMessageDTO, LLMRequestDTO
+from src.core.dto.planning import PlanningRequestDTO
+from src.core.enums import MessageRoleEnum
 
 from .base import BasePromptBuilder
 
 
 class IntentPromptBuilder(
-    BasePromptBuilder[PlanningRequest],
+    BasePromptBuilder[PlanningRequestDTO],
 ):
     """
     Builds prompts for intent classification.
     """
 
+    template_name = "intent.md"
+
     def __init__(
         self,
     ) -> None:
-        self._system_prompt = self.load_template(
-            "intent.md",
-        )
+        self._system_prompt = self.load_template(self.template_name)
 
     def build(
         self,
         *,
-        request: PlanningRequest,
-    ) -> GenerateRequest:
+        request: PlanningRequestDTO,
+    ) -> LLMRequestDTO:
         """
         Build an intent classification request.
         """
 
-        return GenerateRequest(
+        return LLMRequestDTO(
             messages=(
-                Message(
-                    role=MessageRole.SYSTEM,
+                LLMMessageDTO(
+                    role=MessageRoleEnum.SYSTEM,
                     content=self._system_prompt,
                 ),
-                *request.conversation.messages,
+                *(
+                    LLMMessageDTO(
+                        role=message.role,
+                        content=message.content,
+                    )
+                    for message in request.history
+                ),
+                LLMMessageDTO(
+                    role=MessageRoleEnum.USER,
+                    content=request.message,
+                ),
             ),
         )

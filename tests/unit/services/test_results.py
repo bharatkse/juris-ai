@@ -4,8 +4,8 @@ Unit tests for ChatResult & ChatStreamChunk.
 
 from __future__ import annotations
 
-from src.services.models.chat import ChatResult
-from src.services.models.stream import ChatStreamChunk
+from src.services.dto.chat import ChatResultDTO
+from src.services.dto.stream import ChatStreamChunkDTO
 from tests.builders.orchestrator import build_orchestrator_response
 from tests.factories.conversation import ConversationFactory
 from tests.factories.conversation_event import ConversationEventFactory
@@ -31,7 +31,7 @@ def test_chat_result_stores_values() -> None:
         content="Legal answer",
     )
 
-    result = ChatResult(
+    result = ChatResultDTO(
         conversation=conversation,
         user_event=user_event,
         assistant_event=assistant_event,
@@ -49,7 +49,7 @@ def test_chat_stream_chunk_stores_values() -> None:
     It should store stream chunk values.
     """
 
-    chunk = ChatStreamChunk(
+    chunk = ChatStreamChunkDTO(
         content="Hello",
         is_final=True,
         metadata={

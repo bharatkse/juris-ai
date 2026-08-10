@@ -8,7 +8,7 @@ import pytest
 from pydantic import SecretStr, ValidationError
 
 from src.core.config import Settings, get_settings
-from src.core.enums import CacheBackend, Environment
+from src.core.enums import CacheBackendEnum, EnvironmentEnum
 
 
 def test_settings_allows_testing_without_required_fields() -> None:
@@ -18,7 +18,7 @@ def test_settings_allows_testing_without_required_fields() -> None:
     """
 
     settings = Settings(
-        ENVIRONMENT=Environment.TESTING,
+        ENVIRONMENT=EnvironmentEnum.TESTING,
     )
 
     assert settings.is_testing is True
@@ -30,7 +30,7 @@ def test_settings_accepts_valid_port() -> None:
     """
 
     settings = Settings(
-        ENVIRONMENT=Environment.TESTING,
+        ENVIRONMENT=EnvironmentEnum.TESTING,
         PORT=8080,
     )
 
@@ -56,7 +56,7 @@ def test_settings_rejects_invalid_port(
         ValidationError,
     ):
         Settings(
-            ENVIRONMENT=Environment.TESTING,
+            ENVIRONMENT=EnvironmentEnum.TESTING,
             PORT=port,
         )
 
@@ -81,7 +81,7 @@ def test_settings_rejects_invalid_database_configuration(
         ValidationError,
     ):
         Settings(
-            ENVIRONMENT=Environment.TESTING,
+            ENVIRONMENT=EnvironmentEnum.TESTING,
             **{
                 field: 0,
             },
@@ -97,7 +97,7 @@ def test_settings_rejects_invalid_cache_ttl() -> None:
         ValidationError,
     ):
         Settings(
-            ENVIRONMENT=Environment.TESTING,
+            ENVIRONMENT=EnvironmentEnum.TESTING,
             CACHE_TTL=0,
         )
 
@@ -108,7 +108,7 @@ def test_database_url_returns_test_database_url() -> None:
     """
 
     settings = Settings(
-        ENVIRONMENT=Environment.TESTING,
+        ENVIRONMENT=EnvironmentEnum.TESTING,
     )
 
     assert settings.database_url == settings.TEST_DATABASE_URL
@@ -120,7 +120,7 @@ def test_database_url_returns_postgres_url() -> None:
     """
 
     settings = Settings(
-        ENVIRONMENT=Environment.DEVELOPMENT,
+        ENVIRONMENT=EnvironmentEnum.DEVELOPMENT,
         SECRET_KEY="secret",
         DB_HOST="localhost",
         DB_PORT=5432,
@@ -143,7 +143,7 @@ def test_database_url_raises_for_production() -> None:
     """
 
     settings = Settings(
-        ENVIRONMENT=Environment.PRODUCTION,
+        ENVIRONMENT=EnvironmentEnum.PRODUCTION,
         SECRET_KEY="secret",
     )
 
@@ -159,7 +159,7 @@ def test_alembic_database_url() -> None:
     """
 
     settings = Settings(
-        ENVIRONMENT=Environment.TESTING,
+        ENVIRONMENT=EnvironmentEnum.TESTING,
         DB_HOST="localhost",
         DB_PORT=5432,
         DB_NAME="legal_ai",
@@ -178,7 +178,7 @@ def test_is_testing() -> None:
     """
 
     settings = Settings(
-        ENVIRONMENT=Environment.TESTING,
+        ENVIRONMENT=EnvironmentEnum.TESTING,
     )
 
     assert settings.is_testing is True
@@ -191,7 +191,7 @@ def test_is_development() -> None:
     """
 
     settings = Settings(
-        ENVIRONMENT=Environment.DEVELOPMENT,
+        ENVIRONMENT=EnvironmentEnum.DEVELOPMENT,
         SECRET_KEY="secret",
         DB_HOST="localhost",
         DB_NAME="legal_ai",
@@ -212,8 +212,8 @@ def test_redis_enabled_when_using_redis() -> None:
     """
 
     settings = Settings(
-        ENVIRONMENT=Environment.TESTING,
-        CACHE_BACKEND=CacheBackend.REDIS,
+        ENVIRONMENT=EnvironmentEnum.TESTING,
+        CACHE_BACKEND=CacheBackendEnum.REDIS,
     )
 
     assert settings.redis_enabled is True
@@ -225,8 +225,8 @@ def test_redis_disabled_when_using_memory_cache() -> None:
     """
 
     settings = Settings(
-        ENVIRONMENT=Environment.TESTING,
-        CACHE_BACKEND=CacheBackend.MEMORY,
+        ENVIRONMENT=EnvironmentEnum.TESTING,
+        CACHE_BACKEND=CacheBackendEnum.MEMORY,
     )
 
     assert settings.redis_enabled is False
@@ -242,7 +242,7 @@ def test_validate_configuration_requires_secret_key(clean_environment) -> None:
         match="SECRET_KEY",
     ):
         Settings(
-            ENVIRONMENT=Environment.DEVELOPMENT,
+            ENVIRONMENT=EnvironmentEnum.DEVELOPMENT,
             _env_file=None,
         )
 
@@ -257,7 +257,7 @@ def test_validate_configuration_requires_database_configuration() -> None:
         match="DB_HOST",
     ):
         Settings(
-            ENVIRONMENT=Environment.DEVELOPMENT,
+            ENVIRONMENT=EnvironmentEnum.DEVELOPMENT,
             SECRET_KEY="secret",
             _env_file=None,
         )
@@ -274,7 +274,7 @@ def test_validate_configuration_requires_groq_api_key(monkeypatch) -> None:
         match="GROQ_API_KEY",
     ):
         Settings(
-            ENVIRONMENT=Environment.DEVELOPMENT,
+            ENVIRONMENT=EnvironmentEnum.DEVELOPMENT,
             SECRET_KEY="secret",
             DB_HOST="localhost",
             DB_NAME="legal_ai",
@@ -290,7 +290,7 @@ def test_validate_required_fields_raises() -> None:
     """
 
     settings = Settings(
-        ENVIRONMENT=Environment.TESTING,
+        ENVIRONMENT=EnvironmentEnum.TESTING,
     )
 
     with pytest.raises(
@@ -311,7 +311,7 @@ def test_validate_required_fields_accepts_complete_configuration() -> None:
     """
 
     settings = Settings(
-        ENVIRONMENT=Environment.TESTING,
+        ENVIRONMENT=EnvironmentEnum.TESTING,
     )
 
     settings._validate_required_fields(

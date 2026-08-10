@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 from typing import Any
 
-from src.core.enums import Gender, MessageRole
+from src.core.enums import GenderEnum, MessageRoleEnum
 from src.schemas.base import (
     AIUsageModel,
     ApiResponseModel,
@@ -39,7 +39,7 @@ def build_create_user_request(
         "confirm_password": "Password@123",
         "first_name": "John",
         "last_name": "Doe",
-        "gender": Gender.MALE,
+        "gender": GenderEnum.MALE,
         "phone_number": "9876543210",
         "date_of_birth": date(1995, 1, 1),
     }
@@ -165,12 +165,12 @@ def build_chat_response(
     **kwargs: Any,
 ) -> ChatResponse:
     user_event = build_conversation_event_response(
-        role=MessageRole.USER,
+        role=MessageRoleEnum.USER,
         content="Hello",
     )
 
     assistant_event = build_conversation_event_response(
-        role=MessageRole.ASSISTANT,
+        role=MessageRoleEnum.ASSISTANT,
         content="Hi!",
     )
 

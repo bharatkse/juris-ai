@@ -1,5 +1,5 @@
 """
-Conversation models.
+Conversation message models.
 """
 
 from __future__ import annotations
@@ -7,19 +7,18 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from .message import Message
+from src.core.enums import MessageRoleEnum
 
 
 @dataclass(slots=True, frozen=True)
-class Conversation:
+class MessageDTO:
     """
-    Provider-independent conversation.
+    Provider-independent conversation message.
     """
 
-    messages: tuple[
-        Message,
-        ...,
-    ]
+    role: MessageRoleEnum
+
+    content: str
 
     metadata: dict[str, Any] = field(
         default_factory=dict,

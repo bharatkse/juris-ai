@@ -6,43 +6,45 @@ from __future__ import annotations
 
 from typing import Any
 
-from src.core.enums import MessageRole
-from src.core.models.agent import (
-    AgentContext,
-    AgentRequest,
-    AgentResponse,
-    AgentStreamChunk,
+from src.core.dto.agent import (
+    AgentContextDTO,
+    AgentRequestDTO,
+    AgentResponseDTO,
+    AgentStreamChunkDTO,
 )
-from src.core.models.conversation import Conversation
-from src.core.models.message import Message
-from src.core.models.tool import ToolFile
+from src.core.dto.conversation import ConversationDTO
+from src.core.dto.message import MessageDTO
+from src.core.dto.tool import ToolFileDTO
+from src.core.enums import MessageRoleEnum
 
 
 def build_agent_request(
     *,
-    messages: list[Message] | None = None,
-    uploaded_files: tuple[ToolFile, ...] = (),
+    messages: list[MessageDTO] | None = None,
+    instruction: str = "Answer the user's legal question.",
+    uploaded_files: tuple[ToolFileDTO, ...] = (),
     metadata: dict[str, object] | None = None,
-) -> AgentRequest:
+) -> AgentRequestDTO:
     """
-    Build an AgentRequest.
+    Build an AgentRequestDTO.
     """
 
-    conversation = Conversation(
+    conversation = ConversationDTO(
         messages=tuple(
             messages
             or [
-                Message(
-                    role=MessageRole.USER,
+                MessageDTO(
+                    role=MessageRoleEnum.USER,
                     content="Hello",
                 ),
             ],
         ),
     )
 
-    return AgentRequest(
+    return AgentRequestDTO(
         conversation=conversation,
-        context=AgentContext(
+        instruction=instruction,
+        context=AgentContextDTO(
             uploaded_files=uploaded_files,
             metadata=metadata or {},
         ),
@@ -51,15 +53,17 @@ def build_agent_request(
 
 def build_agent_response(
     *,
+    agent_name: str = "legal",
     content: str = "Hello",
     metadata: dict[str, Any] | None = None,
-) -> AgentResponse:
+) -> AgentResponseDTO:
     """
-    Build an AgentResponse.
+    Build an AgentResponseDTO.
     """
 
-    return AgentResponse(
+    return AgentResponseDTO(
         content=content,
+        agent_name=agent_name,
         metadata=metadata or {},
     )
 
@@ -70,12 +74,12 @@ def build_agent_stream_chunk(
     is_final: bool = False,
     finish_reason: str | None = None,
     metadata: dict[str, Any] | None = None,
-) -> AgentStreamChunk:
+) -> AgentStreamChunkDTO:
     """
-    Build an AgentStreamChunk.
+    Build an AgentStreamChunkDTO.
     """
 
-    return AgentStreamChunk(
+    return AgentStreamChunkDTO(
         content=content,
         is_final=is_final,
         finish_reason=finish_reason,

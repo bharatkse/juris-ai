@@ -4,17 +4,13 @@ Conversation API routes.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from src.core.types import ConversationId
-
 from fastapi import APIRouter, Depends, status
 
 from src.api.dependencies.auth import get_current_user
 from src.api.dependencies.conversation import get_conversation_service
 from src.core.logger import get_logger
 from src.core.response import ApiResponse
+from src.core.types import ConversationId
 from src.schemas.conversation import (
     ConversationListResponse,
     ConversationResponse,
@@ -54,13 +50,7 @@ async def create_conversation(
         },
     )
 
-    conversation = await service.create(
-        request.model_copy(
-            update={
-                "user_id": current_user.id,
-            },
-        ),
-    )
+    conversation = await service.create(request=request, user_id=current_user.id)
 
     return ApiResponse(
         data=ConversationResponse.model_validate(
@@ -77,13 +67,15 @@ async def create_conversation(
     summary="List conversations",
 )
 async def list_conversations(
+    offset: int = 0,
+    limit: int = 20,
     current_user=Depends(get_current_user),
     service: ConversationService = Depends(
         get_conversation_service,
     ),
 ) -> ApiResponse:
     """
-    Retrieve conversations for the authenticated user.
+    Retrieve paginated conversations for the authenticated user.
     """
 
     logger.info(
@@ -91,24 +83,33 @@ async def list_conversations(
         extra={
             "operation": "list_conversations",
             "user_id": str(current_user.id),
+            "offset": offset,
+            "limit": limit,
         },
     )
 
-    conversations = await service.list(
+    conversations, total = await service.list(
         user_id=current_user.id,
+        offset=offset,
+        limit=limit,
     )
 
     return ApiResponse(
         data=ConversationListResponse(
-            conversations=[
+            items=[
                 ConversationResponse.model_validate(
                     conversation,
                     from_attributes=True,
                 )
                 for conversation in conversations
             ],
-        ),
-        message="Conversations retrieved successfully.",
+            pagination={
+                "offset": offset,
+                "limit": limit,
+                "total": total,
+                "has_more": offset + limit < total,
+            },
+        )
     )
 
 

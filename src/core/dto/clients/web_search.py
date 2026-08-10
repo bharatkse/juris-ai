@@ -10,7 +10,7 @@ from typing import Any
 
 
 @dataclass(slots=True, frozen=True)
-class WebSearchRequest:
+class WebSearchRequestDTO:
     """
     Request sent to a web search provider.
     """
@@ -25,7 +25,7 @@ class WebSearchRequest:
 
 
 @dataclass(slots=True, frozen=True)
-class WebSearchResult:
+class WebSearchResultDTO:
     """
     A single search result.
     """
@@ -42,12 +42,12 @@ class WebSearchResult:
 
 
 @dataclass(slots=True, frozen=True)
-class WebSearchResponse:
+class WebSearchResponseDTO:
     """
     Response returned by a web search provider.
     """
 
-    results: tuple[WebSearchResult, ...]
+    results: tuple[WebSearchResultDTO, ...]
 
     metadata: Mapping[str, Any] = field(
         default_factory=dict,

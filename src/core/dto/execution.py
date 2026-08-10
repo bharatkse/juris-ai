@@ -6,34 +6,34 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from src.core.models.conversation import Conversation
-from src.core.models.planning import ExecutionPlan
+from src.core.dto.conversation import ConversationDTO
+from src.core.dto.planning import ExecutionPlanDTO
 from src.execution.bus import CollaborationBus
-from src.execution.memory import ExecutionMemory
-from src.execution.state import ExecutionState
+from src.execution.schemas.memory import ExecutionMemorySchema
+from src.execution.schemas.state import ExecutionStateSchema
 
 
 @dataclass(slots=True, frozen=True)
-class ExecutionRequest:
+class ExecutionRequestDTO:
     """
     Immutable execution request.
     """
 
-    conversation: Conversation
+    conversation: ConversationDTO
 
-    plan: ExecutionPlan
+    plan: ExecutionPlanDTO
 
 
 @dataclass(slots=True)
-class ExecutionContext:
+class ExecutionContextDTO:
     """
     Mutable runtime execution context.
 
     Shared by every execution step belonging to the same request.
     """
 
-    state: ExecutionState
+    state: ExecutionStateSchema
 
-    memory: ExecutionMemory
+    memory: ExecutionMemorySchema
 
     bus: CollaborationBus

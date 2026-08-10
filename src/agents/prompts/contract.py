@@ -5,10 +5,10 @@ Contract prompt builder.
 from __future__ import annotations
 
 from src.agents.prompts.base import BasePromptBuilder
-from src.core.enums import MessageRole
-from src.core.models import GenerateRequest, Message
-from src.core.models.agent import AgentRequest
-from src.core.models.tool import RetrievedContent
+from src.core.dto.agent import AgentRequestDTO
+from src.core.dto.clients.llm import LLMMessageDTO, LLMRequestDTO
+from src.core.dto.tool import RetrievedContentDTO
+from src.core.enums import MessageRoleEnum
 
 
 class ContractPromptBuilder(BasePromptBuilder):
@@ -24,27 +24,27 @@ class ContractPromptBuilder(BasePromptBuilder):
     def build(
         self,
         *,
-        request: AgentRequest,
+        request: AgentRequestDTO,
         context: tuple[
-            RetrievedContent,
+            RetrievedContentDTO,
             ...,
         ],
-    ) -> GenerateRequest:
+    ) -> LLMRequestDTO:
         """
-        Build a language model generation request.
+        Build a provider-independent LLM request.
         """
 
-        messages: list[Message] = [
-            Message(
-                role=MessageRole.SYSTEM,
-                content=self.load_template(),
+        messages: list[LLMMessageDTO] = [
+            LLMMessageDTO(
+                role=MessageRoleEnum.SYSTEM,
+                content=self._system_prompt,
             ),
         ]
 
         if context:
             messages.append(
-                Message(
-                    role=MessageRole.SYSTEM,
+                LLMMessageDTO(
+                    role=MessageRoleEnum.SYSTEM,
                     content=self.build_context(
                         context=context,
                     ),
@@ -52,9 +52,13 @@ class ContractPromptBuilder(BasePromptBuilder):
             )
 
         messages.extend(
-            request.conversation.messages,
+            LLMMessageDTO(
+                role=message.role,
+                content=message.content,
+            )
+            for message in request.conversation.messages
         )
 
-        return GenerateRequest(
+        return LLMRequestDTO(
             messages=tuple(messages),
         )

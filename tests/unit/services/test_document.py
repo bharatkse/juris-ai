@@ -13,13 +13,13 @@ if TYPE_CHECKING:
 import pytest
 from sqlalchemy.exc import SQLAlchemyError
 
-from src.clients.storage.models import (
-    DeleteRequest,
-    StoredObject,
-    UploadRequest,
-    UploadResponse,
+from src.core.dto.clients.storage import (
+    DeleteRequestDTO,
+    StoredObjectDTO,
+    UploadRequestDTO,
+    UploadResponseDTO,
 )
-from src.core.enums import DocumentStatus, StorageType
+from src.core.enums import DocumentStatusEnum, StorageTypeEnum
 from src.core.exceptions.client import ClientProviderError, ClientResponseError
 from tests.factories.document import DocumentFactory
 
@@ -55,14 +55,14 @@ async def test_upload_uploads_document(
     It should upload a document and persist its metadata.
     """
 
-    upload = UploadRequest(
+    upload = UploadRequestDTO(
         object_id="obj_123",
         filename="contract.pdf",
         content=b"content",
         content_type="application/pdf",
     )
 
-    stored = StoredObject(
+    stored = StoredObjectDTO(
         object_id="obj_123",
         filename="stored.pdf",
         storage_path="documents/stored.pdf",
@@ -71,9 +71,9 @@ async def test_upload_uploads_document(
         content_type="application/pdf",
     )
 
-    mock_storage_client.storage_type = StorageType.LOCAL
+    mock_storage_client.storage_type = StorageTypeEnum.LOCAL
 
-    mock_storage_client.upload.return_value = UploadResponse(
+    mock_storage_client.upload.return_value = UploadResponseDTO(
         object=stored,
     )
 
@@ -95,8 +95,8 @@ async def test_upload_uploads_document(
     assert document.size == stored.size
     assert document.storage_path == stored.storage_path
     assert document.checksum == stored.checksum
-    assert document.storage_type == StorageType.LOCAL
-    assert document.status == DocumentStatus.UPLOADED
+    assert document.storage_type == StorageTypeEnum.LOCAL
+    assert document.status == DocumentStatusEnum.UPLOADED
 
     mock_storage_client.upload.assert_awaited_once()
     mock_document_repository.create.assert_awaited_once()
@@ -125,14 +125,14 @@ async def test_upload_cleans_up_when_upload_fails(
     It should clean up uploaded files when upload fails.
     """
 
-    upload = UploadRequest(
+    upload = UploadRequestDTO(
         object_id="obj_123",
         filename="contract.pdf",
         content=b"content",
         content_type="application/pdf",
     )
 
-    stored = StoredObject(
+    stored = StoredObjectDTO(
         object_id="obj_123",
         filename="stored.pdf",
         storage_path="documents/stored.pdf",
@@ -141,10 +141,10 @@ async def test_upload_cleans_up_when_upload_fails(
         content_type="application/pdf",
     )
 
-    mock_storage_client.storage_type = StorageType.LOCAL
+    mock_storage_client.storage_type = StorageTypeEnum.LOCAL
 
     mock_storage_client.upload.side_effect = [
-        UploadResponse(
+        UploadResponseDTO(
             object=stored,
         ),
         exception,
@@ -165,7 +165,7 @@ async def test_upload_cleans_up_when_upload_fails(
 
     assert isinstance(
         request,
-        DeleteRequest,
+        DeleteRequestDTO,
     )
 
     assert request.object_id == stored.object_id
@@ -231,7 +231,7 @@ async def test_cleanup_uploads_deletes_uploaded_objects(
     It should delete uploaded objects.
     """
 
-    stored = StoredObject(
+    stored = StoredObjectDTO(
         object_id="obj_123",
         filename="stored.pdf",
         storage_path="documents/stored.pdf",
@@ -271,7 +271,7 @@ async def test_cleanup_uploads_ignores_delete_failures(
     It should ignore cleanup failures.
     """
 
-    stored = StoredObject(
+    stored = StoredObjectDTO(
         object_id="obj_123",
         filename="stored.pdf",
         storage_path="documents/stored.pdf",

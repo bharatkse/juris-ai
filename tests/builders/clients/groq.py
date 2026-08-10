@@ -7,7 +7,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from unittest.mock import MagicMock
 
-from src.clients.models import LLMMessage
+from src.core.dto.clients.llm import LLMMessageDTO
 from tests.builders.clients.llm import build_llm_message
 from tests.helpers.async_iterator import async_iterator
 
@@ -154,8 +154,8 @@ def build_groq_stream(
 
 
 def build_groq_messages(
-    *messages: LLMMessage,
-) -> list[LLMMessage]:
+    *messages: LLMMessageDTO,
+) -> list[LLMMessageDTO]:
     """
     Build LLM messages for Groq tests.
     """
@@ -169,7 +169,7 @@ def build_groq_messages(
 
 
 def build_groq_chat_messages(
-    messages: list[LLMMessage],
+    messages: list[LLMMessageDTO],
 ) -> list[dict[str, str]]:
     """
     Convert LLM messages to Groq SDK format.

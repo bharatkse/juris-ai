@@ -28,7 +28,7 @@ class CurrentUser:
 # Replace once authentication is implemented.
 #
 _DEVELOPMENT_USER = CurrentUser(
-    id=UserId("user_dev"),
+    id=UserId("user_a262b39693764d658314559e85a900d7"),
 )
 
 

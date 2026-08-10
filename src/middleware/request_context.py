@@ -8,11 +8,17 @@ from src.core.context import RequestContext
 
 
 class RequestContextMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request, call_next):
+    async def dispatch(
+        self,
+        request,
+        call_next,
+    ):
         request.state.context = RequestContext()
 
         response = await call_next(request)
 
-        response.headers["X-Request-ID"] = request.state.context.request_id
+        response.headers["X-Request-ID"] = str(
+            request.state.context.request_id,
+        )
 
         return response

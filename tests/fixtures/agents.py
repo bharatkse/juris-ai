@@ -11,7 +11,7 @@ import pytest
 from src.agents.legal import LegalAgent
 from src.clients.llm.base import LLMClient
 from src.core.config import settings
-from src.core.enums import LLMProvider
+from src.core.enums import LLMProviderEnum
 from src.tools.retrieval import RetrieverTool
 
 
@@ -25,7 +25,7 @@ def mock_llm_client() -> LLMClient:
         spec=LLMClient,
     )
 
-    client.provider = LLMProvider.GROQ.value
+    client.provider = LLMProviderEnum.GROQ.value
     client.model = settings.GROQ_MODEL
 
     client.generate = AsyncMock()

@@ -73,7 +73,7 @@ redis = "^5.0.4"
 
 # Async Utilities and HTTP Client
 aiofiles = "^23.2.1"
-httpx = "^0.28.0"
+httpx = {extras = ["http2"], version = "^0.28.1"}
 
 # Optional AWS SDK
 # Required only when using S3 as the storage backend.

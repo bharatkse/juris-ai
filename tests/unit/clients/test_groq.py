@@ -10,10 +10,11 @@ import pytest
 from groq import APIConnectionError, APIStatusError, APITimeoutError
 
 from src.core.config import settings
-from src.core.enums import LLMProvider
+from src.core.enums import LLMProviderEnum
 from src.core.exceptions.client import (
     ClientAuthenticationError,
     ClientError,
+    ClientProviderError,
     ClientRateLimitError,
     ClientTimeoutError,
 )
@@ -65,31 +66,33 @@ async def test_generate_returns_llm_response(
             for message in llm_request.messages
         ],
         temperature=llm_request.temperature,
-        max_tokens=llm_request.max_tokens,
     )
 
 
 @pytest.mark.asyncio
-async def test_generate_returns_empty_content_when_missing(
-    groq_client, mock_chat_completion, llm_request
+async def test_generate_raises_when_content_is_missing(
+    groq_client,
+    mock_chat_completion,
+    llm_request,
 ) -> None:
     """
-    It should return an empty string when the provider returns no content.
+    It should raise a provider error when the provider
+    returns no content.
     """
-    response = build_groq_response(
+
+    mock_chat_completion.return_value = build_groq_response(
         content=None,
         finish_reason="stop",
         usage=None,
     )
 
-    mock_chat_completion.return_value = response
-
-    result = await groq_client.generate(
-        request=llm_request,
-    )
-
-    assert result.content == ""
-    assert result.usage is None
+    with pytest.raises(
+        ClientProviderError,
+        match="returned an empty completion",
+    ):
+        await groq_client.generate(
+            request=llm_request,
+        )
 
 
 @pytest.mark.asyncio
@@ -384,7 +387,7 @@ async def test_stream_translates_provider_exceptions(
 def test_provider_returns_provider_name(
     groq_client,
 ) -> None:
-    assert groq_client.provider == LLMProvider.GROQ.value
+    assert groq_client.provider == LLMProviderEnum.GROQ.value
 
 
 def test_model_returns_configured_model(

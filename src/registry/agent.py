@@ -41,21 +41,19 @@ class AgentRegistry(AgentRegistryProtocol):
 
         Raises:
             AgentRegistrationError:
-                If a capability is already registered.
+                If an agent with the same name is already registered.
         """
 
-        for capability in component.metadata.capabilities:
-            if capability in self._agents:
-                existing = self._agents[capability]
+        key = component.metadata.name
 
-                raise AgentRegistrationError(
-                    message=(
-                        f"Capability '{capability}' is already "
-                        f"registered by '{existing.metadata.name}'."
-                    ),
-                )
+        if key in self._agents:
+            existing = self._agents[key]
 
-            self._agents[capability] = component
+            raise AgentRegistrationError(
+                message=(f"Agent '{key}' is already " f"registered by '{existing.metadata.name}'."),
+            )
+
+        self._agents[key] = component
 
     def resolve(
         self,

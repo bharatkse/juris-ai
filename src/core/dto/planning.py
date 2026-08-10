@@ -7,17 +7,19 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from src.core.enums import AgentType, ExecutionMode, Intent
-from src.core.models.conversation import Conversation
+from src.core.enums import AgentTypeEnum, ExecutionModeEnum, IntentEnum
+from src.core.schemas.conversation import ConversationMessageSchema
 
 
 @dataclass(slots=True, frozen=True)
-class PlanningRequest:
+class PlanningRequestDTO:
     """
     Planner request.
     """
 
-    conversation: Conversation
+    message: str
+
+    history: tuple[ConversationMessageSchema, ...] = ()
 
     metadata: dict[str, Any] = field(
         default_factory=dict,
@@ -25,14 +27,14 @@ class PlanningRequest:
 
 
 @dataclass(slots=True, frozen=True)
-class ExecutionStep:
+class ExecutionStepDTO:
     """
     Single execution step.
     """
 
     id: str
 
-    agent: AgentType
+    agent: AgentTypeEnum
 
     instruction: str
 
@@ -44,17 +46,17 @@ class ExecutionStep:
 
 
 @dataclass(slots=True, frozen=True)
-class ExecutionPlan:
+class ExecutionPlanDTO:
     """
     Execution plan produced by the planner.
     """
 
-    intent: Intent
+    intent: IntentEnum
 
-    mode: ExecutionMode
+    mode: ExecutionModeEnum
 
     steps: tuple[
-        ExecutionStep,
+        ExecutionStepDTO,
         ...,
     ]
 
@@ -64,20 +66,20 @@ class ExecutionPlan:
 
 
 @dataclass(slots=True, frozen=True)
-class PlanningResponse:
+class PlanningResponseDTO:
     """
     Planner response.
     """
 
-    plan: ExecutionPlan
+    plan: ExecutionPlanDTO
 
 
 @dataclass(slots=True, frozen=True)
-class PlanningPromptRequest:
+class PlanningPromptRequestDTO:
     """
     Planning prompt request.
     """
 
-    planning_request: PlanningRequest
+    planning_request: PlanningRequestDTO
 
-    intent: Intent
+    intent: IntentEnum

@@ -7,7 +7,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import StreamingResponse
 
 from src.api.dependencies.auth import get_current_user
@@ -16,6 +16,7 @@ from src.api.streaming import encode_sse_event
 from src.core.logger import get_logger
 from src.core.response import ApiResponse
 from src.schemas.chat import (
+    AIResponse,
     ChatRequest,
     ChatResponse,
     ChatStreamResponse,
@@ -38,7 +39,8 @@ router = APIRouter(
     status_code=status.HTTP_200_OK,
 )
 async def chat(
-    request: ChatRequest,
+    http_request: Request,
+    chat_request: ChatRequest = Depends(ChatRequest.as_form),
     current_user=Depends(get_current_user),
     service: ChatService = Depends(get_chat_service),
 ) -> ApiResponse:
@@ -50,15 +52,24 @@ async def chat(
         "Processing chat request.",
         extra={
             "operation": "chat",
-            "conversation_id": str(request.conversation_id),
+            "conversation_id": str(chat_request.conversation_id),
             "user_id": str(current_user.id),
         },
     )
 
     result = await service.chat(
         user_id=current_user.id,
-        conversation_id=request.conversation_id,
-        message=request.message,
+        conversation_id=chat_request.conversation_id,
+        message=chat_request.message,
+        request_id=http_request.state.context.request_id,
+    )
+
+    response = AIResponse(
+        content=result.response.content,
+        citations=result.response.citations,
+        sources=result.response.sources,
+        usage=result.response.usage,
+        metadata=result.response.metadata,
     )
 
     return ApiResponse(
@@ -66,7 +77,7 @@ async def chat(
         status_code=status.HTTP_200_OK,
         data=ChatResponse(
             conversation_id=result.conversation.id,
-            response=result.response,
+            response=response,
             user_event=ConversationEventResponse.model_validate(
                 result.user_event,
                 from_attributes=True,
@@ -87,7 +98,8 @@ async def chat(
     status_code=status.HTTP_200_OK,
 )
 async def stream_chat(
-    request: ChatRequest,
+    http_request: Request,
+    chat_request: ChatRequest = Depends(ChatRequest.as_form),
     current_user=Depends(get_current_user),
     service: ChatService = Depends(get_chat_service),
 ) -> StreamingResponse:
@@ -99,7 +111,7 @@ async def stream_chat(
         "Starting chat stream.",
         extra={
             "operation": "stream_chat",
-            "conversation_id": str(request.conversation_id),
+            "conversation_id": str(chat_request.conversation_id),
             "user_id": str(current_user.id),
         },
     )
@@ -108,8 +120,9 @@ async def stream_chat(
         try:
             async for chunk in service.stream_chat(
                 user_id=current_user.id,
-                conversation_id=request.conversation_id,
-                message=request.message,
+                conversation_id=chat_request.conversation_id,
+                message=chat_request.message,
+                request_id=http_request.state.context.request_id,
             ):
                 yield encode_sse_event(
                     ChatStreamResponse(
@@ -125,11 +138,12 @@ async def stream_chat(
                 "Client disconnected from chat stream.",
                 extra={
                     "operation": "stream_chat",
-                    "conversation_id": str(request.conversation_id),
+                    "conversation_id": str(
+                        chat_request.conversation_id,
+                    ),
                     "user_id": str(current_user.id),
                 },
             )
-
             raise
 
         except Exception:
@@ -137,11 +151,12 @@ async def stream_chat(
                 "Chat stream failed.",
                 extra={
                     "operation": "stream_chat",
-                    "conversation_id": str(request.conversation_id),
+                    "conversation_id": str(
+                        chat_request.conversation_id,
+                    ),
                     "user_id": str(current_user.id),
                 },
             )
-
             raise
 
     return StreamingResponse(

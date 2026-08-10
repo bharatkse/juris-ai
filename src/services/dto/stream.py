@@ -7,14 +7,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from src.orchestration.response import AgentResponse
+from src.orchestration.schemas.response import AgentResponse
 
 
 @dataclass(
     frozen=True,
     slots=True,
 )
-class ChatStreamChunk:
+class ChatStreamChunkDTO:
     """
     Chunk returned while streaming a chat response.
 

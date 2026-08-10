@@ -6,43 +6,43 @@ from __future__ import annotations
 
 from typing import Any
 
-from src.clients.models import (
-    LLMMessage,
-    LLMRequest,
-    LLMResponse,
-    LLMStreamChunk,
-    LLMTokenUsage,
+from src.core.dto.clients.llm import (
+    LLMMessageDTO,
+    LLMRequestDTO,
+    LLMResponseDTO,
+    LLMStreamChunkDTO,
+    LLMTokenUsageDTO,
 )
-from src.core.enums import MessageRole
+from src.core.enums import MessageRoleEnum
 
 
 def build_llm_message(
     *,
-    role: MessageRole = MessageRole.USER,
+    role: MessageRoleEnum = MessageRoleEnum.USER,
     content: str = "Hello",
-) -> LLMMessage:
+) -> LLMMessageDTO:
     """
     Build an LLM message.
     """
 
-    return LLMMessage(
+    return LLMMessageDTO(
         role=role,
         content=content,
     )
 
 
-def build_llm_messages() -> list[LLMMessage]:
+def build_llm_messages() -> list[LLMMessageDTO]:
     """
     Build a simple LLM conversation.
     """
 
     return [
         build_llm_message(
-            role=MessageRole.SYSTEM,
+            role=MessageRoleEnum.SYSTEM,
             content="You are a helpful assistant.",
         ),
         build_llm_message(
-            role=MessageRole.USER,
+            role=MessageRoleEnum.USER,
             content="Hello",
         ),
     ]
@@ -50,16 +50,16 @@ def build_llm_messages() -> list[LLMMessage]:
 
 def build_llm_request(
     *,
-    messages: tuple[LLMMessage, ...] | None = None,
+    messages: tuple[LLMMessageDTO, ...] | None = None,
     temperature: float = 0.2,
     max_tokens: int | None = None,
     metadata: dict[str, object] | None = None,
-) -> LLMRequest:
+) -> LLMRequestDTO:
     """
     Build an LLM request.
     """
 
-    return LLMRequest(
+    return LLMRequestDTO(
         messages=messages
         or tuple(
             build_llm_messages(),
@@ -75,12 +75,12 @@ def build_llm_token_usage(
     prompt_tokens: int = 10,
     completion_tokens: int = 20,
     total_tokens: int = 30,
-) -> LLMTokenUsage:
+) -> LLMTokenUsageDTO:
     """
     Build LLM token usage.
     """
 
-    return LLMTokenUsage(
+    return LLMTokenUsageDTO(
         prompt_tokens=prompt_tokens,
         completion_tokens=completion_tokens,
         total_tokens=total_tokens,
@@ -93,14 +93,14 @@ def build_llm_response(
     provider: str = "groq",
     model: str = "llama-3.3-70b-versatile",
     finish_reason: str | None = "stop",
-    usage: LLMTokenUsage | None = None,
+    usage: LLMTokenUsageDTO | None = None,
     metadata: dict[str, Any] | None = None,
-) -> LLMResponse:
+) -> LLMResponseDTO:
     """
     Build an LLM response.
     """
 
-    return LLMResponse(
+    return LLMResponseDTO(
         content=content,
         provider=provider,
         model=model,
@@ -116,12 +116,12 @@ def build_llm_stream_chunk(
     is_final: bool = False,
     finish_reason: str | None = None,
     metadata: dict[str, Any] | None = None,
-) -> LLMStreamChunk:
+) -> LLMStreamChunkDTO:
     """
     Build an LLM stream chunk.
     """
 
-    return LLMStreamChunk(
+    return LLMStreamChunkDTO(
         content=content,
         is_final=is_final,
         finish_reason=finish_reason,

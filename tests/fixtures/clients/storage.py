@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from src.clients.storage.base import StorageClient
-from src.core.enums import StorageType
+from src.core.enums import StorageTypeEnum
 
 
 @pytest.fixture
@@ -22,6 +22,6 @@ def mock_storage_client() -> StorageClient:
         spec=StorageClient,
     )
 
-    client.storage_type = StorageType.LOCAL
+    client.storage_type = StorageTypeEnum.LOCAL
 
     return client

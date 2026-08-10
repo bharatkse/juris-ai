@@ -70,10 +70,56 @@ Requirements:
 
 ## Response
 
-Return only a valid `ExecutionPlan`.
+Return only a valid JSON object.
 
-Do not include explanations.
+The JSON object must have exactly this structure:
 
-Do not include markdown.
+{
+"intent": "general",
+"mode": "sequential",
+"steps": [
+{
+"id": "step-1",
+"agent": "legal",
+"instruction": "Process the user's request.",
+"stage": 1,
+"arguments": {}
+}
+],
+"metadata": {}
+}
 
-Do not include reasoning.
+The `intent` must be exactly one of:
+
+- `general`
+- `legal_research`
+- `contract_review`
+- `contract_analysis`
+- `clause_extraction`
+- `risk_analysis`
+
+The `mode` must be exactly one of:
+
+- `sequential`
+- `parallel`
+- `hybrid`
+
+The `agent` must be exactly one of:
+
+- `legal`
+- `contract`
+
+Rules:
+
+- Use `steps`.
+- `steps` must be an array.
+- Every step must have `id`, `agent`, and `instruction`.
+- `stage` must be an integer greater than zero.
+- `arguments` must be a JSON object.
+- `metadata` must be a JSON object.
+- The `intent` must match the detected intent.
+- Do not add fields that are not defined above.
+- Return valid JSON only.
+- Do not include explanations.
+- Do not include markdown.
+- Do not include reasoning.

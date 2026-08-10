@@ -6,6 +6,8 @@ Provides shared functionality for all application services.
 
 from __future__ import annotations
 
+from typing import Any
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -41,7 +43,7 @@ class BaseService:
 
     async def refresh(
         self,
-        instance: object,
+        instance: Any,
     ) -> None:
         """
         Refresh an entity from the database.

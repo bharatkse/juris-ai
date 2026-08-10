@@ -8,10 +8,10 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.execution.state import ExecutionState
+from src.execution.schemas.state import ExecutionStateSchema
 
 
-class ExecutionResult(BaseModel):
+class ExecutionResultSchema(BaseModel):
     """
     Result produced by an execution session.
     """
@@ -21,7 +21,7 @@ class ExecutionResult(BaseModel):
         extra="forbid",
     )
 
-    state: ExecutionState
+    state: ExecutionStateSchema
 
     artifacts: dict[str, Any] = Field(
         default_factory=dict,

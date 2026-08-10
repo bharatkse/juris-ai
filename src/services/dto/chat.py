@@ -8,14 +8,14 @@ from dataclasses import dataclass
 
 from src.db.models.conversation import Conversation
 from src.db.models.conversation_event import ConversationEvent
-from src.orchestration.response import AgentResponse
+from src.orchestration.schemas.response import AgentResponse
 
 
 @dataclass(
     frozen=True,
     slots=True,
 )
-class ChatResult:
+class ChatResultDTO:
     """
     Result returned by ChatService.
     """

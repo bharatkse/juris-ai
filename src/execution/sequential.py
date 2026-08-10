@@ -4,7 +4,7 @@ Sequential execution strategy.
 
 from __future__ import annotations
 
-from src.core.models.planning import ExecutionPlan
+from src.core.dto.planning import ExecutionPlanDTO
 from src.execution.protocols import ExecutionStrategy, StepRunner
 
 
@@ -16,7 +16,7 @@ class SequentialExecutionStrategy(ExecutionStrategy):
     async def execute(
         self,
         *,
-        plan: ExecutionPlan,
+        plan: ExecutionPlanDTO,
         step_runner: StepRunner,
     ) -> None:
         """

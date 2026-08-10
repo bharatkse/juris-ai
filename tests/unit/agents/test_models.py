@@ -4,28 +4,28 @@ Unit tests for agent domain models.
 
 from __future__ import annotations
 
-from src.core.enums import MessageRole
-from src.core.models.agent import (
-    AgentContext,
-    AgentMetadata,
-    AgentRequest,
-    AgentResponse,
-    AgentStreamChunk,
+from src.core.dto.agent import (
+    AgentContextDTO,
+    AgentMetadataDTO,
+    AgentRequestDTO,
+    AgentResponseDTO,
+    AgentStreamChunkDTO,
 )
-from src.core.models.conversation import Conversation
-from src.core.models.message import Message
-from src.core.models.tool import ToolFile
+from src.core.dto.conversation import ConversationDTO
+from src.core.dto.message import MessageDTO
+from src.core.dto.tool import ToolFileDTO
+from src.core.enums import MessageRoleEnum
 
 
-def build_conversation() -> Conversation:
+def build_conversation() -> ConversationDTO:
     """
     Build a test conversation.
     """
 
-    return Conversation(
+    return ConversationDTO(
         messages=(
-            Message(
-                role=MessageRole.USER,
+            MessageDTO(
+                role=MessageRoleEnum.USER,
                 content="Hello",
             ),
         ),
@@ -37,7 +37,7 @@ def test_agent_context_defaults() -> None:
     It should use empty runtime context by default.
     """
 
-    context = AgentContext()
+    context = AgentContextDTO()
 
     assert context.uploaded_files == ()
     assert context.metadata == {}
@@ -48,13 +48,13 @@ def test_agent_context_accepts_uploaded_files() -> None:
     It should accept uploaded files.
     """
 
-    file = ToolFile(
+    file = ToolFileDTO(
         filename="contract.pdf",
         content=b"contract content",
         content_type="application/pdf",
     )
 
-    context = AgentContext(
+    context = AgentContextDTO(
         uploaded_files=(file,),
         metadata={
             "source": "test",
@@ -67,18 +67,20 @@ def test_agent_context_accepts_uploaded_files() -> None:
     }
 
 
-def test_agent_request_defaults_context() -> None:
+def test_agent_request_requires_instruction() -> None:
     """
-    It should default the agent context.
+    It should require an agent instruction.
     """
 
     conversation = build_conversation()
 
-    request = AgentRequest(
+    request = AgentRequestDTO(
         conversation=conversation,
+        instruction="Answer the user's legal question.",
     )
 
     assert request.conversation is conversation
+    assert request.instruction == "Answer the user's legal question."
     assert request.context.uploaded_files == ()
     assert request.context.metadata == {}
 
@@ -90,31 +92,35 @@ def test_agent_request_accepts_context() -> None:
 
     conversation = build_conversation()
 
-    context = AgentContext(
+    context = AgentContextDTO(
         metadata={
             "source": "test",
         },
     )
 
-    request = AgentRequest(
+    request = AgentRequestDTO(
         conversation=conversation,
+        instruction="Analyze the legal question.",
         context=context,
     )
 
     assert request.conversation is conversation
+    assert request.instruction == "Analyze the legal question."
     assert request.context is context
 
 
-def test_agent_response_defaults_metadata() -> None:
+def test_agent_response_requires_agent_name() -> None:
     """
-    It should default metadata to an empty dictionary.
+    It should require the agent name.
     """
 
-    response = AgentResponse(
+    response = AgentResponseDTO(
         content="Hello",
+        agent_name="legal",
     )
 
     assert response.content == "Hello"
+    assert response.agent_name == "legal"
     assert response.metadata == {}
 
 
@@ -128,13 +134,34 @@ def test_agent_response_accepts_metadata() -> None:
         "model": "llama",
     }
 
-    response = AgentResponse(
+    response = AgentResponseDTO(
         content="Legal answer",
+        agent_name="legal",
         metadata=metadata,
     )
 
     assert response.content == "Legal answer"
+    assert response.agent_name == "legal"
     assert response.metadata == metadata
+
+
+def test_agent_response_accepts_citations_and_sources() -> None:
+    """
+    It should accept citations and sources.
+    """
+
+    response = AgentResponseDTO(
+        content="Legal answer",
+        agent_name="legal",
+        citations=(),
+        sources=(),
+    )
+
+    assert response.content == "Legal answer"
+    assert response.agent_name == "legal"
+    assert response.citations == ()
+    assert response.sources == ()
+    assert response.usage is None
 
 
 def test_agent_stream_chunk_defaults() -> None:
@@ -142,7 +169,7 @@ def test_agent_stream_chunk_defaults() -> None:
     It should use the default streaming values.
     """
 
-    chunk = AgentStreamChunk()
+    chunk = AgentStreamChunkDTO()
 
     assert chunk.content == ""
     assert chunk.is_final is False
@@ -155,7 +182,7 @@ def test_agent_stream_chunk_accepts_values() -> None:
     It should accept streaming values.
     """
 
-    chunk = AgentStreamChunk(
+    chunk = AgentStreamChunkDTO(
         content="Hello",
         is_final=True,
         finish_reason="stop",
@@ -177,7 +204,7 @@ def test_agent_metadata_accepts_values() -> None:
     It should describe an agent.
     """
 
-    metadata = AgentMetadata(
+    metadata = AgentMetadataDTO(
         name="legal",
         description="General-purpose legal assistant.",
         capabilities=(
@@ -201,7 +228,7 @@ def test_agent_metadata_defaults_tools() -> None:
     It should default tools to an empty tuple.
     """
 
-    metadata = AgentMetadata(
+    metadata = AgentMetadataDTO(
         name="legal",
         description="Legal assistant.",
         capabilities=("legal_qa",),

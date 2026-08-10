@@ -6,25 +6,25 @@ Using str-based enums keeps JSON serialisation automatic.
 from enum import StrEnum
 
 
-class Environment(StrEnum):
+class EnvironmentEnum(StrEnum):
     DEVELOPMENT = "development"
     STAGING = "staging"
     PRODUCTION = "production"
     TESTING = "testing"
 
 
-class CacheBackend(StrEnum):
+class CacheBackendEnum(StrEnum):
     MEMORY = "memory"
     REDIS = "redis"
 
 
-class Gender(StrEnum):
+class GenderEnum(StrEnum):
     MALE = "male"
     FEMALE = "female"
     OTHER = "other"
 
 
-class MessageRole(StrEnum):
+class MessageRoleEnum(StrEnum):
     """
     Supported chat message roles.
     """
@@ -36,7 +36,7 @@ class MessageRole(StrEnum):
     TEST = "test"
 
 
-class EventType(StrEnum):
+class EventTypeEnum(StrEnum):
     USER = "user"
 
     ASSISTANT = "assistant"
@@ -54,26 +54,26 @@ class EventType(StrEnum):
     PLANNER = "planner"
 
 
-class SortOrder(StrEnum):
+class SortOrderEnum(StrEnum):
     ASC = "asc"
     DESC = "desc"
 
 
-class LLMProvider(StrEnum):
+class LLMProviderEnum(StrEnum):
     GROQ = "groq"
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
     OLLAMA = "ollama"
 
 
-class GroqModel(StrEnum):
+class GroqModelEnum(StrEnum):
     LLAMA_3_1_8B = "llama-3.1-8b-instant"
     LLAMA_3_3_70B = "llama-3.3-70b-versatile"
     GPT_OSS_120B = "openai/gpt-oss-120b"
     GPT_OSS_20B = "openai/gpt-oss-20b"
 
 
-class DocumentStatus(StrEnum):
+class DocumentStatusEnum(StrEnum):
     """
     Document processing status.
     """
@@ -85,7 +85,7 @@ class DocumentStatus(StrEnum):
     DELETED = "deleted"
 
 
-class StorageType(StrEnum):
+class StorageTypeEnum(StrEnum):
     """
     Supported storage providers.
     """
@@ -97,7 +97,7 @@ class StorageType(StrEnum):
     MINIO = "minio"
 
 
-class Intent(StrEnum):
+class IntentEnum(StrEnum):
     """
     Supported planning intents.
     """
@@ -115,7 +115,7 @@ class Intent(StrEnum):
     RISK_ANALYSIS = "risk_analysis"
 
 
-class AgentType(StrEnum):
+class AgentTypeEnum(StrEnum):
     """
     Supported agent types.
     """
@@ -125,7 +125,7 @@ class AgentType(StrEnum):
     CONTRACT = "contract"
 
 
-class ExecutionMode(StrEnum):
+class ExecutionModeEnum(StrEnum):
     """
     Supported execution strategies.
     """
@@ -137,7 +137,7 @@ class ExecutionMode(StrEnum):
     HYBRID = "hybrid"
 
 
-class ExecutionStatus(StrEnum):
+class ExecutionStatusEnum(StrEnum):
     """
     Runtime execution status.
     """
@@ -149,7 +149,7 @@ class ExecutionStatus(StrEnum):
     SKIPPED = "skipped"
 
 
-class RetrievalSource(StrEnum):
+class RetrievalSourceEnum(StrEnum):
     """
     Source of retrieved content.
     """
@@ -159,3 +159,25 @@ class RetrievalSource(StrEnum):
     VECTOR = "vector"
     DATABASE = "database"
     MEMORY = "memory"
+
+
+class AttachmentTypeEnum(StrEnum):
+    """
+    Supported attachment types.
+    """
+
+    PDF = "pdf"
+    DOCX = "docx"
+    IMAGE = "image"
+    TEXT = "text"
+    OTHER = "other"
+
+
+class RequestSourceEnum(StrEnum):
+    """
+    Source of the orchestration request.
+    """
+
+    CHAT = "chat"
+    API = "api"
+    TOOL = "tool"

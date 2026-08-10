@@ -4,17 +4,15 @@ Builders for orchestration models.
 
 from __future__ import annotations
 
-from src.core.enums import MessageRole
+from src.core.enums import AttachmentTypeEnum, MessageRoleEnum, RequestSourceEnum
+from src.core.schemas.conversation import ConversationMessageSchema
 from src.core.types import ConversationId, UserId
-from src.orchestration.request import (
+from src.orchestration.schemas.request import (
     Attachment,
-    AttachmentType,
-    ConversationMessage,
     OrchestratorRequest,
     RequestMetadata,
-    RequestSource,
 )
-from src.orchestration.response import (
+from src.orchestration.schemas.response import (
     AgentResponse,
     Citation,
     OrchestratorResponse,
@@ -141,19 +139,19 @@ def build_orchestrator_response(
 
 def build_conversation_message(
     **kwargs,
-) -> ConversationMessage:
+) -> ConversationMessageSchema:
     """
-    Build a ConversationMessage.
+    Build a ConversationMessageSchema.
     """
 
     data = {
-        "role": MessageRole.USER,
+        "role": MessageRoleEnum.USER,
         "content": "Hello",
     }
 
     data.update(kwargs)
 
-    return ConversationMessage(**data)
+    return ConversationMessageSchema(**data)
 
 
 def build_attachment(
@@ -166,7 +164,7 @@ def build_attachment(
     data = {
         "id": "file_123",
         "name": "contract.pdf",
-        "type": AttachmentType.PDF,
+        "type": AttachmentTypeEnum.PDF,
         "uri": "s3://bucket/contract.pdf",
     }
 
@@ -183,7 +181,7 @@ def build_request_metadata(
     """
 
     data = {
-        "source": RequestSource.CHAT,
+        "source": RequestSourceEnum.CHAT,
     }
 
     data.update(kwargs)
@@ -196,7 +194,7 @@ def build_orchestrator_request(
     conversation_id: ConversationId | None = None,
     user_id: UserId | None = None,
     message: str = "Hello",
-    history: list[ConversationMessage] | None = None,
+    history: list[ConversationMessageSchema] | None = None,
     attachments: list[Attachment] | None = None,
     metadata: RequestMetadata | None = None,
 ) -> OrchestratorRequest:

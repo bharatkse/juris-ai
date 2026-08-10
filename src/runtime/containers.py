@@ -8,15 +8,13 @@ group shared dependencies during application startup.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from src.clients.llm.base import LLMClient
-    from src.clients.web_search.base import WebSearchClient
-    from src.execution.executor import Executor
-    from src.planning.planner import ExecutionPlanner
-    from src.registry.protocols import AgentRegistryProtocol, ToolRegistryProtocol
-    from src.validation.response import ResponseValidator
+from src.clients.llm.base import LLMClient
+from src.clients.web_search.base import WebSearchClient
+from src.execution.executor import Executor
+from src.planning.planner import ExecutionPlanner
+from src.registry.protocols import AgentRegistryProtocol, ToolRegistryProtocol
+from src.validation.response import ResponseValidator
 
 
 @dataclass(frozen=True, slots=True)

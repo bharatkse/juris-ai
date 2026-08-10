@@ -4,34 +4,13 @@ Incoming request models for the AI orchestrator.
 
 from __future__ import annotations
 
-from enum import StrEnum
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.core.enums import MessageRole
+from src.core.enums import AttachmentTypeEnum, RequestSourceEnum
+from src.core.schemas.conversation import ConversationMessageSchema
 from src.core.types import ConversationId, UserId
-
-
-class AttachmentType(StrEnum):
-    """
-    Supported attachment types.
-    """
-
-    PDF = "pdf"
-    DOCX = "docx"
-    IMAGE = "image"
-    TEXT = "text"
-    OTHER = "other"
-
-
-class RequestSource(StrEnum):
-    """
-    Source of the orchestration request.
-    """
-
-    CHAT = "chat"
-    API = "api"
-    TOOL = "tool"
 
 
 class Attachment(BaseModel):
@@ -48,24 +27,9 @@ class Attachment(BaseModel):
 
     name: str
 
-    type: AttachmentType
+    type: AttachmentTypeEnum
 
     uri: str
-
-
-class ConversationMessage(BaseModel):
-    """
-    Conversation history message.
-    """
-
-    model_config = ConfigDict(
-        frozen=True,
-        extra="forbid",
-    )
-
-    role: MessageRole
-
-    content: str
 
 
 class RequestMetadata(BaseModel):
@@ -78,7 +42,7 @@ class RequestMetadata(BaseModel):
         extra="forbid",
     )
 
-    source: RequestSource = RequestSource.CHAT
+    source: RequestSourceEnum = RequestSourceEnum.CHAT
 
 
 class OrchestratorRequest(BaseModel):
@@ -90,6 +54,7 @@ class OrchestratorRequest(BaseModel):
         frozen=True,
         extra="forbid",
     )
+    request_id: UUID
 
     conversation_id: ConversationId
 
@@ -100,7 +65,7 @@ class OrchestratorRequest(BaseModel):
         max_length=10_000,
     )
 
-    history: list[ConversationMessage] = Field(
+    history: list[ConversationMessageSchema] = Field(
         default_factory=list,
     )
 

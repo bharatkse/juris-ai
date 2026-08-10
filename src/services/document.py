@@ -8,8 +8,12 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.clients.storage.base import StorageClient
-from src.clients.storage.models import DeleteRequest, StoredObject, UploadRequest
-from src.core.enums import DocumentStatus
+from src.core.dto.clients.storage import (
+    DeleteRequestDTO,
+    StoredObjectDTO,
+    UploadRequestDTO,
+)
+from src.core.enums import DocumentStatusEnum
 from src.core.exceptions.client import ClientProviderError, ClientResponseError
 from src.core.logger import get_logger
 from src.db.models.document import Document
@@ -38,7 +42,7 @@ class DocumentService:
         self,
         *,
         conversation_id: str,
-        uploads: list[UploadRequest],
+        uploads: list[UploadRequestDTO],
     ) -> list[Document]:
         """
         Upload documents and persist metadata.
@@ -53,7 +57,7 @@ class DocumentService:
             conversation_id,
         )
 
-        uploaded_objects: list[StoredObject] = []
+        uploaded_objects: list[StoredObjectDTO] = []
         documents: list[Document] = []
 
         try:
@@ -78,7 +82,7 @@ class DocumentService:
                         checksum=stored.checksum,
                         storage_type=self._storage.storage_type,
                         storage_path=stored.storage_path,
-                        status=DocumentStatus.UPLOADED,
+                        status=DocumentStatusEnum.UPLOADED,
                     )
 
                     await self._repository.create(
@@ -142,7 +146,7 @@ class DocumentService:
     async def _cleanup_uploads(
         self,
         *,
-        uploaded_objects: list[StoredObject],
+        uploaded_objects: list[StoredObjectDTO],
     ) -> None:
         """
         Remove uploaded files after a failed transaction.
@@ -151,7 +155,7 @@ class DocumentService:
         for stored in uploaded_objects:
             try:
                 await self._storage.delete(
-                    request=DeleteRequest(
+                    request=DeleteRequestDTO(
                         object_id=stored.object_id,
                         filename=stored.filename,
                     ),

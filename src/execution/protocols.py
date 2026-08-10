@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from src.core.models.message import AgentMessage
-from src.core.models.planning import ExecutionPlan, ExecutionStep
+from src.core.dto.planning import ExecutionPlanDTO, ExecutionStepDTO
+from src.core.schemas.message import AgentMessageSchema
 
 
 class StepRunner(Protocol):
@@ -26,7 +26,7 @@ class StepRunner(Protocol):
     async def __call__(
         self,
         *,
-        step: ExecutionStep,
+        step: ExecutionStepDTO,
     ) -> None: ...
 
 
@@ -44,7 +44,7 @@ class ExecutionStrategy(Protocol):
     async def execute(
         self,
         *,
-        plan: ExecutionPlan,
+        plan: ExecutionPlanDTO,
         step_runner: StepRunner,
     ) -> None: ...
 
@@ -57,5 +57,5 @@ class AgentMessageHandler(Protocol):
     async def handle_message(
         self,
         *,
-        message: AgentMessage,
+        message: AgentMessageSchema,
     ) -> object: ...

@@ -11,10 +11,10 @@ from httpx import ConnectError, HTTPStatusError, TimeoutException
 from src.clients.helper import map_exception
 from src.clients.http import AsyncHTTPClient
 from src.clients.web_search.base import WebSearchClient
-from src.clients.web_search.models import (
-    WebSearchRequest,
-    WebSearchResponse,
-    WebSearchResult,
+from src.core.dto.clients.web_search import (
+    WebSearchRequestDTO,
+    WebSearchResponseDTO,
+    WebSearchResultDTO,
 )
 from src.core.exceptions.client import (
     ClientConnectionError,
@@ -53,8 +53,8 @@ class BraveClient(
     async def search(
         self,
         *,
-        request: WebSearchRequest,
-    ) -> WebSearchResponse:
+        request: WebSearchRequestDTO,
+    ) -> WebSearchResponseDTO:
         """
         Search the web using Brave Search.
         """
@@ -100,7 +100,7 @@ class BraveClient(
         )
 
         results = tuple(
-            WebSearchResult(
+            WebSearchResultDTO(
                 title=result["title"],
                 url=result["url"],
                 snippet=result.get(
@@ -117,7 +117,7 @@ class BraveClient(
             request.query,
         )
 
-        return WebSearchResponse(
+        return WebSearchResponseDTO(
             results=results,
             metadata={
                 "provider": "brave",

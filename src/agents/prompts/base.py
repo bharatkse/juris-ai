@@ -6,74 +6,57 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import ClassVar, Final
 
-from src.core.exceptions.infrastructure import ConfigurationError
-from src.core.models import GenerateRequest
-from src.core.models.agent import AgentRequest
-from src.core.models.tool import RetrievedContent
+from src.core.dto.agent import AgentRequestDTO
+from src.core.dto.clients.llm import LLMRequestDTO
+from src.core.dto.tool import RetrievedContentDTO
 
 
 class BasePromptBuilder(ABC):
     """
     Base class for agent prompt builders.
 
-    A prompt builder transforms an agent request together with
-    retrieved context into a language model generation request.
+    Prompt builders translate an agent-level request and retrieved
+    context into a provider-independent LLM request.
     """
 
-    _TEMPLATE_DIRECTORY: Final[Path] = Path(__file__).parent / "templates"
-
-    template_name: ClassVar[str]
+    template_name: str
 
     @abstractmethod
     def build(
         self,
         *,
-        request: AgentRequest,
+        request: AgentRequestDTO,
         context: tuple[
-            RetrievedContent,
+            RetrievedContentDTO,
             ...,
         ],
-    ) -> GenerateRequest:
+    ) -> LLMRequestDTO:
         """
-        Build a language model generation request.
-        """
-
-    @classmethod
-    def load_template(
-        cls,
-    ) -> str:
-        """
-        Load the configured prompt template.
-
-        Raises:
-            ConfigurationError:
-                If the prompt template does not exist.
+        Build a provider-independent LLM request.
         """
 
-        template = cls._TEMPLATE_DIRECTORY / cls.template_name
+    def load_template(self) -> str:
+        """
+        Load the prompt template associated with the builder.
+        """
 
-        try:
-            return template.read_text(
-                encoding="utf-8",
-            ).strip()
+        template_path = Path(__file__).parent / "templates" / self.template_name
 
-        except FileNotFoundError as exc:
-            raise ConfigurationError(
-                message=(f"Prompt template '{cls.template_name}' " "was not found."),
-            ) from exc
+        return template_path.read_text(
+            encoding="utf-8",
+        )
 
     @staticmethod
     def build_context(
         *,
         context: tuple[
-            RetrievedContent,
+            RetrievedContentDTO,
             ...,
         ],
     ) -> str:
         """
-        Build retrieved context.
+        Format retrieved content for inclusion in the prompt.
         """
 
-        return "\n\n".join(item.content for item in context)
+        return "\n\n".join(item.content for item in context if item.content.strip())

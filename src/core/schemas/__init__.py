@@ -1,0 +1,3 @@
+"""
+Core Data validation models.
+"""

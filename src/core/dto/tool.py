@@ -7,11 +7,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from src.core.enums import RetrievalSource
+from src.core.enums import RetrievalSourceEnum
 
 
 @dataclass(slots=True, frozen=True)
-class ToolMetadata:
+class ToolMetadataDTO:
     """
     Immutable metadata describing a tool.
     """
@@ -22,7 +22,7 @@ class ToolMetadata:
 
 
 @dataclass(slots=True, frozen=True)
-class ToolFile:
+class ToolFileDTO:
     """
     File available to a tool.
     """
@@ -39,7 +39,7 @@ class ToolFile:
 
 
 @dataclass(slots=True, frozen=True)
-class ToolRequest:
+class ToolRequestDTO:
     """
     Request passed to a tool.
     """
@@ -51,19 +51,19 @@ class ToolRequest:
     )
 
     uploaded_files: tuple[
-        ToolFile,
+        ToolFileDTO,
         ...,
     ] = ()
 
 
 @dataclass(slots=True, frozen=True)
-class ToolResponse:
+class ToolResponseDTO:
     """
     Response returned by a tool.
     """
 
     content: tuple[
-        RetrievedContent,
+        RetrievedContentDTO,
         ...,
     ] = ()
 
@@ -73,12 +73,13 @@ class ToolResponse:
 
 
 @dataclass(slots=True, frozen=True)
-class RetrievedContent:
+class RetrievedContentDTO:
     """
     Content retrieved from a knowledge source.
     """
 
-    source: RetrievalSource
+    source: RetrievalSourceEnum
+    source_name: str
 
     content: str
 

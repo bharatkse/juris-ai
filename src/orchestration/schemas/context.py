@@ -8,15 +8,12 @@ throughout planning and execution.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.orchestration.request import Attachment
-
-if TYPE_CHECKING:
-    from src.core.types import ConversationId, UserId
-    from src.orchestration.request import ConversationMessage
+from src.core.schemas.conversation import ConversationMessageSchema
+from src.core.types import ConversationId, UserId
+from src.orchestration.schemas.request import Attachment
 
 
 class RequestContext(BaseModel):
@@ -44,7 +41,7 @@ class ConversationContext(BaseModel):
 
     conversation_id: ConversationId
 
-    history: list[ConversationMessage] = Field(
+    history: list[ConversationMessageSchema] = Field(
         default_factory=list,
     )
 

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from src.core.models.tool import ToolMetadata, ToolRequest, ToolResponse
+from src.core.dto.tool import ToolMetadataDTO, ToolRequestDTO, ToolResponseDTO
 
 
 class BaseTool(ABC):
@@ -21,14 +21,14 @@ class BaseTool(ABC):
     Tools are singleton, stateless application services.
     """
 
-    metadata: ToolMetadata
+    metadata: ToolMetadataDTO
 
     @abstractmethod
     async def run(
         self,
         *,
-        request: ToolRequest,
-    ) -> ToolResponse:
+        request: ToolRequestDTO,
+    ) -> ToolResponseDTO:
         """
         Execute the tool.
 

@@ -5,7 +5,9 @@ LLM-backed execution plan generator.
 from __future__ import annotations
 
 from src.clients.llm.base import LLMClient
-from src.core.models.planning import ExecutionPlan, Intent, PlanningRequest
+from src.core.dto.planning import ExecutionPlanDTO, ExecutionStepDTO, PlanningRequestDTO
+from src.core.enums import IntentEnum
+from src.core.schemas.planning import ExecutionPlanResponseSchema
 from src.planning.prompts.planning import PlanningPromptBuilder
 
 
@@ -26,9 +28,9 @@ class LLMPlanGenerator:
     async def generate(
         self,
         *,
-        request: PlanningRequest,
-        intent: Intent,
-    ) -> ExecutionPlan:
+        request: PlanningRequestDTO,
+        intent: IntentEnum,
+    ) -> ExecutionPlanDTO:
         """
         Generate an execution plan for the supplied request.
         """
@@ -38,7 +40,37 @@ class LLMPlanGenerator:
             intent=intent,
         )
 
-        return await self._llm.generate_structured(
+        response = await self._llm.generate_structured(
             request=llm_request,
-            response_model=ExecutionPlan,
+            response_model=ExecutionPlanResponseSchema,
+        )
+
+        return self._to_execution_plan(
+            response=response,
+        )
+
+    @staticmethod
+    def _to_execution_plan(
+        *,
+        response: ExecutionPlanResponseSchema,
+    ) -> ExecutionPlanDTO:
+        """
+        Convert the provider-facing Pydantic response
+        into the domain execution plan.
+        """
+
+        return ExecutionPlanDTO(
+            intent=response.intent,
+            mode=response.mode,
+            steps=tuple(
+                ExecutionStepDTO(
+                    id=step.id,
+                    agent=step.agent,
+                    instruction=step.instruction,
+                    stage=step.stage,
+                    arguments=step.arguments,
+                )
+                for step in response.steps
+            ),
+            metadata=response.metadata,
         )

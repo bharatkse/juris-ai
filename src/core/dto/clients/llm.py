@@ -5,31 +5,31 @@ Provider-independent LLM models.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Any
 
-from src.core.enums import MessageRole
+from src.core.enums import MessageRoleEnum
 
 
 @dataclass(slots=True, frozen=True)
-class LLMMessage:
+class LLMMessageDTO:
     """
     Message exchanged with an LLM provider.
     """
 
-    role: MessageRole
+    role: MessageRoleEnum
 
     content: str
 
 
 @dataclass(slots=True, frozen=True)
-class LLMRequest:
+class LLMRequestDTO:
     """
     Provider-independent LLM request.
     """
 
-    messages: tuple[LLMMessage, ...]
+    messages: tuple[LLMMessageDTO, ...]
 
     temperature: float = 0.2
 
@@ -39,9 +39,25 @@ class LLMRequest:
         default_factory=lambda: MappingProxyType({}),
     )
 
+    response_format: dict[str, Any] | None = None
+
+    def with_response_format(
+        self,
+        *,
+        response_format: dict[str, Any],
+    ) -> LLMRequestDTO:
+        """
+        Return a copy of the request with a response format.
+        """
+
+        return replace(
+            self,
+            response_format=response_format,
+        )
+
 
 @dataclass(slots=True, frozen=True)
-class LLMTokenUsage:
+class LLMTokenUsageDTO:
     """
     Token usage reported by an LLM provider.
     """
@@ -54,7 +70,7 @@ class LLMTokenUsage:
 
 
 @dataclass(slots=True, frozen=True)
-class LLMResponse:
+class LLMResponseDTO:
     """
     Provider-independent LLM response.
     """
@@ -67,7 +83,7 @@ class LLMResponse:
 
     finish_reason: str | None = None
 
-    usage: LLMTokenUsage | None = None
+    usage: LLMTokenUsageDTO | None = None
 
     metadata: Mapping[str, Any] = field(
         default_factory=lambda: MappingProxyType({}),
@@ -75,7 +91,7 @@ class LLMResponse:
 
 
 @dataclass(slots=True, frozen=True)
-class LLMStreamChunk:
+class LLMStreamChunkDTO:
     """
     Chunk produced while streaming an LLM response.
     """

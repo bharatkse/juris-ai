@@ -11,10 +11,10 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.core.enums import ExecutionStatus
+from src.core.enums import ExecutionStatusEnum
 
 
-class StepExecutionState(BaseModel):
+class StepExecutionStateSchema(BaseModel):
     """
     Runtime state for a single execution step.
     """
@@ -25,7 +25,7 @@ class StepExecutionState(BaseModel):
 
     step_id: str
 
-    status: ExecutionStatus = ExecutionStatus.PENDING
+    status: ExecutionStatusEnum = ExecutionStatusEnum.PENDING
 
     started_at: datetime | None = None
 
@@ -34,7 +34,7 @@ class StepExecutionState(BaseModel):
     error: str | None = None
 
 
-class ExecutionState(BaseModel):
+class ExecutionStateSchema(BaseModel):
     """
     Mutable runtime execution state.
     """
@@ -45,13 +45,13 @@ class ExecutionState(BaseModel):
 
     request_id: UUID
 
-    status: ExecutionStatus = ExecutionStatus.PENDING
+    status: ExecutionStatusEnum = ExecutionStatusEnum.PENDING
 
     hop_count: int = 0
 
     retry_count: int = 0
 
-    steps: dict[str, StepExecutionState] = Field(
+    steps: dict[str, StepExecutionStateSchema] = Field(
         default_factory=dict,
     )
 
@@ -68,7 +68,7 @@ class ExecutionState(BaseModel):
         Register a step before execution begins.
         """
 
-        self.steps[step_id] = StepExecutionState(
+        self.steps[step_id] = StepExecutionStateSchema(
             step_id=step_id,
         )
 
@@ -83,7 +83,7 @@ class ExecutionState(BaseModel):
 
         step = self.steps[step_id]
 
-        step.status = ExecutionStatus.RUNNING
+        step.status = ExecutionStatusEnum.RUNNING
         step.started_at = datetime.now(UTC)
 
     def complete_step(
@@ -97,7 +97,7 @@ class ExecutionState(BaseModel):
 
         step = self.steps[step_id]
 
-        step.status = ExecutionStatus.COMPLETED
+        step.status = ExecutionStatusEnum.COMPLETED
         step.completed_at = datetime.now(UTC)
 
     def fail_step(
@@ -112,6 +112,6 @@ class ExecutionState(BaseModel):
 
         step = self.steps[step_id]
 
-        step.status = ExecutionStatus.FAILED
+        step.status = ExecutionStatusEnum.FAILED
         step.completed_at = datetime.now(UTC)
         step.error = error

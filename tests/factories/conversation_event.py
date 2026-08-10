@@ -4,9 +4,11 @@ Conversation event factory.
 
 from __future__ import annotations
 
+from uuid import uuid4
+
 import factory
 
-from src.core.enums import MessageRole
+from src.core.enums import MessageRoleEnum
 from src.db.mixins import generate_prefixed_uuid_pk
 from src.db.models.conversation_event import ConversationEvent
 from tests.factories.base import BaseFactory
@@ -27,15 +29,15 @@ class ConversationEventFactory(BaseFactory):
         """
 
         user_message = factory.Trait(
-            role=MessageRole.USER,
+            role=MessageRoleEnum.USER,
         )
 
         assistant_message = factory.Trait(
-            role=MessageRole.ASSISTANT,
+            role=MessageRoleEnum.ASSISTANT,
         )
 
         system_message = factory.Trait(
-            role=MessageRole.SYSTEM,
+            role=MessageRoleEnum.SYSTEM,
         )
 
     id = factory.LazyFunction(
@@ -45,10 +47,18 @@ class ConversationEventFactory(BaseFactory):
     conversation = factory.SubFactory(
         ConversationFactory,
     )
-    conversation_id = factory.SelfAttribute("conversation.id")
+
+    conversation_id = factory.SelfAttribute(
+        "conversation.id",
+    )
+
+    request_id = factory.LazyFunction(
+        uuid4,
+    )
+
     parent_event = None
 
-    role = MessageRole.USER
+    role = MessageRoleEnum.USER
 
     content = factory.Faker(
         "sentence",

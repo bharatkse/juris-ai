@@ -4,7 +4,7 @@ Unit tests for the ConversationEvent ORM model.
 
 from __future__ import annotations
 
-from src.core.enums import MessageRole
+from src.core.enums import MessageRoleEnum
 from tests.factories.conversation import ConversationFactory
 from tests.factories.conversation_event import ConversationEventFactory
 
@@ -16,7 +16,7 @@ def test_role_defaults_to_user() -> None:
 
     event = ConversationEventFactory()
 
-    assert event.role == MessageRole.USER
+    assert event.role == MessageRoleEnum.USER
 
 
 def test_event_metadata_defaults_to_empty_dict() -> None:
@@ -48,7 +48,7 @@ def test_user_message_trait() -> None:
         user_message=True,
     )
 
-    assert event.role == MessageRole.USER
+    assert event.role == MessageRoleEnum.USER
 
 
 def test_assistant_message_trait() -> None:
@@ -60,7 +60,7 @@ def test_assistant_message_trait() -> None:
         assistant_message=True,
     )
 
-    assert event.role == MessageRole.ASSISTANT
+    assert event.role == MessageRoleEnum.ASSISTANT
 
 
 def test_system_message_trait() -> None:
@@ -72,7 +72,7 @@ def test_system_message_trait() -> None:
         system_message=True,
     )
 
-    assert event.role == MessageRole.SYSTEM
+    assert event.role == MessageRoleEnum.SYSTEM
 
 
 def test_child_event_references_parent() -> None:

@@ -7,10 +7,12 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from fastapi import File, Form, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.core.enums import MessageRole
+from src.core.enums import MessageRoleEnum
 from src.core.types import ConversationEventId, ConversationId
+from src.orchestration.schemas.response import Citation, ResponseMetadata, Source, Usage
 
 
 class ChatRequest(BaseModel):
@@ -30,6 +32,24 @@ class ChatRequest(BaseModel):
         description="User message.",
     )
 
+    files: list[UploadFile] = Field(
+        default_factory=list,
+        description="Documents attached to the chat message.",
+    )
+
+    @classmethod
+    def as_form(
+        cls,
+        conversation_id: ConversationId = Form(...),
+        message: str = Form(...),
+        files: list[UploadFile] = File(default=[]),
+    ) -> ChatRequest:
+        return cls(
+            conversation_id=conversation_id,
+            message=message,
+            files=files,
+        )
+
 
 class ConversationEventResponse(BaseModel):
     """
@@ -47,7 +67,7 @@ class ConversationEventResponse(BaseModel):
 
     parent_event_id: ConversationEventId | None
 
-    role: MessageRole
+    role: MessageRoleEnum
 
     content: str
 
@@ -61,17 +81,29 @@ class ConversationEventResponse(BaseModel):
 
 class AIResponse(BaseModel):
     """
-    Assistant response.
+    Assistant response returned by the chat API.
     """
 
     model_config = ConfigDict(
         extra="forbid",
     )
 
-    message: str
+    content: str
 
-    metadata: dict[str, Any] = Field(
-        default_factory=dict,
+    citations: list[Citation] = Field(
+        default_factory=list,
+    )
+
+    sources: list[Source] = Field(
+        default_factory=list,
+    )
+
+    usage: Usage = Field(
+        default_factory=Usage,
+    )
+
+    metadata: ResponseMetadata = Field(
+        default_factory=ResponseMetadata,
     )
 
 

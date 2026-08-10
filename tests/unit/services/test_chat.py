@@ -5,21 +5,30 @@ Unit tests for ChatService.
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
+from uuid import uuid4
 
 import pytest
 from sqlalchemy.exc import SQLAlchemyError
 
-from src.core.enums import MessageRole
+from src.core.enums import MessageRoleEnum
 from src.core.exceptions.httpx import ConversationInactiveError, NotFoundError
+from src.orchestration.schemas.request import OrchestratorRequest
 from src.services.chat import ChatService
-from src.services.models.chat import ChatResult
-from tests.builders.agent import build_agent_response
+from src.services.dto.chat import ChatResultDTO
 from tests.builders.orchestrator import build_orchestrator_response
 from tests.factories.conversation import ConversationFactory
 from tests.factories.conversation_event import ConversationEventFactory
 from tests.helpers.identifiers import unknown_conversation_id, unknown_user_id
 
 TEST_MESSAGE = "Hello"
+
+
+def _request_id():
+    """
+    Generate a request identifier for a chat request.
+    """
+
+    return uuid4()
 
 
 @pytest.mark.asyncio
@@ -34,20 +43,29 @@ async def test_chat_returns_chat_result(
     """
 
     conversation = ConversationFactory.build()
+    request_id = uuid4()
 
     user_event = ConversationEventFactory.build(
         conversation_id=conversation.id,
-        role=MessageRole.USER,
+        request_id=request_id,
+        role=MessageRoleEnum.USER,
+        content="Hello",
+    )
+
+    response = build_orchestrator_response(
+        conversation_id=conversation.id,
+        content="Hello!",
     )
 
     assistant_event = ConversationEventFactory.build(
         conversation_id=conversation.id,
+        request_id=request_id,
         parent_event_id=user_event.id,
-        role=MessageRole.ASSISTANT,
-    )
-
-    response = build_agent_response(
-        content="Hello!",
+        role=MessageRoleEnum.ASSISTANT,
+        content=response.content,
+        event_metadata=response.metadata.model_dump(
+            mode="json",
+        ),
     )
 
     mock_conversation_service.get_or_raise = AsyncMock(
@@ -75,12 +93,13 @@ async def test_chat_returns_chat_result(
     result = await chat_service.chat(
         user_id=conversation.user_id,
         conversation_id=conversation.id,
-        message=TEST_MESSAGE,
+        message="Hello",
+        request_id=request_id,
     )
 
     assert isinstance(
         result,
-        ChatResult,
+        ChatResultDTO,
     )
 
     assert result.conversation is conversation
@@ -95,18 +114,37 @@ async def test_chat_returns_chat_result(
 
     mock_conversation_event_service.create.assert_any_await(
         conversation_id=conversation.id,
-        role=MessageRole.USER,
-        content=TEST_MESSAGE,
+        request_id=request_id,
+        role=MessageRoleEnum.USER,
+        content="Hello",
     )
 
     mock_orchestrator.handle.assert_awaited_once()
 
-    request = mock_orchestrator.handle.await_args.kwargs["request"]
+    orchestration_request = mock_orchestrator.handle.await_args.kwargs["request"]
 
-    assert request.conversation_id == conversation.id
-    assert request.user_id == conversation.user_id
-    assert request.message == TEST_MESSAGE
-    assert request.history == []
+    assert isinstance(
+        orchestration_request,
+        OrchestratorRequest,
+    )
+
+    assert orchestration_request.request_id == request_id
+    assert orchestration_request.conversation_id == conversation.id
+    assert orchestration_request.user_id == conversation.user_id
+    assert orchestration_request.message == "Hello"
+    assert orchestration_request.history == []
+    assert orchestration_request.attachments == []
+
+    mock_conversation_event_service.create.assert_any_await(
+        conversation_id=conversation.id,
+        request_id=request_id,
+        parent_event_id=user_event.id,
+        role=MessageRoleEnum.ASSISTANT,
+        content=response.content,
+        metadata=response.metadata.model_dump(
+            mode="json",
+        ),
+    )
 
     chat_service.commit.assert_awaited_once_with()
     chat_service.rollback.assert_not_awaited()
@@ -122,8 +160,11 @@ async def test_chat_raises_when_conversation_does_not_exist(
     """
     It should fail when the conversation does not exist.
     """
+
     user_id = unknown_user_id()
     conversation_id = unknown_conversation_id()
+    request_id = _request_id()
+
     error = NotFoundError(
         message="Conversation not found.",
     )
@@ -143,6 +184,7 @@ async def test_chat_raises_when_conversation_does_not_exist(
             user_id=user_id,
             conversation_id=conversation_id,
             message=TEST_MESSAGE,
+            request_id=request_id,
         )
 
     mock_conversation_service.get_or_raise.assert_awaited_once_with(
@@ -172,6 +214,8 @@ async def test_chat_raises_when_conversation_is_inactive(
         archived=True,
     )
 
+    request_id = _request_id()
+
     mock_conversation_service.get_or_raise = AsyncMock(
         side_effect=ConversationInactiveError(
             "Conversation is inactive.",
@@ -189,6 +233,7 @@ async def test_chat_raises_when_conversation_is_inactive(
             user_id=conversation.user_id,
             conversation_id=conversation.id,
             message=TEST_MESSAGE,
+            request_id=request_id,
         )
 
     mock_conversation_service.get_or_raise.assert_awaited_once_with(
@@ -215,6 +260,7 @@ async def test_chat_rolls_back_when_creating_user_event_fails(
     """
 
     conversation = ConversationFactory.build()
+    request_id = _request_id()
 
     mock_conversation_service.get_or_raise = AsyncMock(
         return_value=conversation,
@@ -234,6 +280,7 @@ async def test_chat_rolls_back_when_creating_user_event_fails(
             user_id=conversation.user_id,
             conversation_id=conversation.id,
             message=TEST_MESSAGE,
+            request_id=request_id,
         )
 
     mock_conversation_service.get_or_raise.assert_awaited_once_with(
@@ -243,7 +290,8 @@ async def test_chat_rolls_back_when_creating_user_event_fails(
 
     mock_conversation_event_service.create.assert_awaited_once_with(
         conversation_id=conversation.id,
-        role=MessageRole.USER,
+        request_id=request_id,
+        role=MessageRoleEnum.USER,
         content=TEST_MESSAGE,
     )
 
@@ -265,6 +313,7 @@ async def test_chat_rolls_back_when_agent_fails(
     """
 
     conversation = ConversationFactory.build()
+    request_id = _request_id()
 
     mock_conversation_service.get_or_raise = AsyncMock(
         return_value=conversation,
@@ -272,7 +321,8 @@ async def test_chat_rolls_back_when_agent_fails(
 
     user_event = ConversationEventFactory.build(
         conversation_id=conversation.id,
-        role=MessageRole.USER,
+        request_id=request_id,
+        role=MessageRoleEnum.USER,
         content=TEST_MESSAGE,
     )
 
@@ -298,6 +348,7 @@ async def test_chat_rolls_back_when_agent_fails(
             user_id=conversation.user_id,
             conversation_id=conversation.id,
             message=TEST_MESSAGE,
+            request_id=request_id,
         )
 
     mock_conversation_service.get_or_raise.assert_awaited_once_with(
@@ -307,7 +358,8 @@ async def test_chat_rolls_back_when_agent_fails(
 
     mock_conversation_event_service.create.assert_awaited_once_with(
         conversation_id=conversation.id,
-        role=MessageRole.USER,
+        request_id=request_id,
+        role=MessageRoleEnum.USER,
         content=TEST_MESSAGE,
     )
 
@@ -329,6 +381,7 @@ async def test_chat_rolls_back_when_creating_assistant_event_fails(
     """
 
     conversation = ConversationFactory.build()
+    request_id = _request_id()
 
     mock_conversation_service.get_or_raise = AsyncMock(
         return_value=conversation,
@@ -336,7 +389,8 @@ async def test_chat_rolls_back_when_creating_assistant_event_fails(
 
     user_event = ConversationEventFactory.build(
         conversation_id=conversation.id,
-        role=MessageRole.USER,
+        request_id=request_id,
+        role=MessageRoleEnum.USER,
         content=TEST_MESSAGE,
     )
 
@@ -353,11 +407,13 @@ async def test_chat_rolls_back_when_creating_assistant_event_fails(
         return_value=[],
     )
 
+    response = build_orchestrator_response(
+        conversation_id=conversation.id,
+        content="Legal answer",
+    )
+
     mock_orchestrator.handle = AsyncMock(
-        return_value=build_orchestrator_response(
-            conversation_id=conversation.id,
-            content="Legal answer",
-        ),
+        return_value=response,
     )
 
     chat_service.commit = AsyncMock()
@@ -368,6 +424,7 @@ async def test_chat_rolls_back_when_creating_assistant_event_fails(
             user_id=conversation.user_id,
             conversation_id=conversation.id,
             message=TEST_MESSAGE,
+            request_id=request_id,
         )
 
     mock_conversation_service.get_or_raise.assert_awaited_once_with(
@@ -376,6 +433,13 @@ async def test_chat_rolls_back_when_creating_assistant_event_fails(
     )
 
     assert mock_conversation_event_service.create.await_count == 2
+
+    mock_conversation_event_service.create.assert_any_await(
+        conversation_id=conversation.id,
+        request_id=request_id,
+        role=MessageRoleEnum.USER,
+        content=TEST_MESSAGE,
+    )
 
     mock_orchestrator.handle.assert_awaited_once()
 
@@ -395,6 +459,7 @@ async def test_chat_rolls_back_when_commit_fails(
     """
 
     conversation = ConversationFactory.build()
+    request_id = _request_id()
 
     mock_conversation_service.get_or_raise = AsyncMock(
         return_value=conversation,
@@ -402,13 +467,16 @@ async def test_chat_rolls_back_when_commit_fails(
 
     user_event = ConversationEventFactory.build(
         conversation_id=conversation.id,
-        role=MessageRole.USER,
+        request_id=request_id,
+        role=MessageRoleEnum.USER,
         content=TEST_MESSAGE,
     )
 
     assistant_event = ConversationEventFactory.build(
         conversation_id=conversation.id,
-        role=MessageRole.ASSISTANT,
+        request_id=request_id,
+        parent_event_id=user_event.id,
+        role=MessageRoleEnum.ASSISTANT,
         content="Legal answer",
     )
 
@@ -423,11 +491,13 @@ async def test_chat_rolls_back_when_commit_fails(
         return_value=[],
     )
 
+    response = build_orchestrator_response(
+        conversation_id=conversation.id,
+        content="Legal answer",
+    )
+
     mock_orchestrator.handle = AsyncMock(
-        return_value=build_orchestrator_response(
-            conversation_id=conversation.id,
-            content="Legal answer",
-        ),
+        return_value=response,
     )
 
     chat_service.commit = AsyncMock(
@@ -443,6 +513,7 @@ async def test_chat_rolls_back_when_commit_fails(
             user_id=conversation.user_id,
             conversation_id=conversation.id,
             message=TEST_MESSAGE,
+            request_id=request_id,
         )
 
     mock_conversation_service.get_or_raise.assert_awaited_once_with(
@@ -471,6 +542,7 @@ async def test_stream_chat_raises_when_conversation_does_not_exist(
 
     conversation_id = unknown_conversation_id()
     user_id = unknown_user_id()
+    request_id = _request_id()
 
     mock_conversation_service.get_or_raise = AsyncMock(
         side_effect=NotFoundError(
@@ -489,6 +561,7 @@ async def test_stream_chat_raises_when_conversation_does_not_exist(
             user_id=user_id,
             conversation_id=conversation_id,
             message=TEST_MESSAGE,
+            request_id=request_id,
         ):
             pass
 
@@ -517,6 +590,7 @@ async def test_stream_chat_raises_when_conversation_is_archived(
 
     conversation_id = unknown_conversation_id()
     user_id = unknown_user_id()
+    request_id = _request_id()
 
     mock_conversation_service.get_or_raise = AsyncMock(
         side_effect=ConversationInactiveError(
@@ -535,6 +609,7 @@ async def test_stream_chat_raises_when_conversation_is_archived(
             user_id=user_id,
             conversation_id=conversation_id,
             message=TEST_MESSAGE,
+            request_id=request_id,
         ):
             pass
 
@@ -562,6 +637,7 @@ async def test_stream_chat_rolls_back_when_creating_user_event_fails(
     """
 
     conversation = ConversationFactory.build()
+    request_id = _request_id()
 
     mock_conversation_service.get_or_raise = AsyncMock(
         return_value=conversation,
@@ -581,6 +657,7 @@ async def test_stream_chat_rolls_back_when_creating_user_event_fails(
             user_id=conversation.user_id,
             conversation_id=conversation.id,
             message=TEST_MESSAGE,
+            request_id=request_id,
         ):
             pass
 
@@ -591,7 +668,8 @@ async def test_stream_chat_rolls_back_when_creating_user_event_fails(
 
     mock_conversation_event_service.create.assert_awaited_once_with(
         conversation_id=conversation.id,
-        role=MessageRole.USER,
+        request_id=request_id,
+        role=MessageRoleEnum.USER,
         content=TEST_MESSAGE,
     )
 
@@ -613,6 +691,7 @@ async def test_stream_chat_rolls_back_when_agent_fails(
     """
 
     conversation = ConversationFactory.build()
+    request_id = _request_id()
 
     mock_conversation_service.get_or_raise = AsyncMock(
         return_value=conversation,
@@ -620,7 +699,8 @@ async def test_stream_chat_rolls_back_when_agent_fails(
 
     user_event = ConversationEventFactory.build(
         conversation_id=conversation.id,
-        role=MessageRole.USER,
+        request_id=request_id,
+        role=MessageRoleEnum.USER,
         content=TEST_MESSAGE,
     )
 
@@ -646,6 +726,7 @@ async def test_stream_chat_rolls_back_when_agent_fails(
             user_id=conversation.user_id,
             conversation_id=conversation.id,
             message=TEST_MESSAGE,
+            request_id=request_id,
         ):
             pass
 
@@ -656,7 +737,8 @@ async def test_stream_chat_rolls_back_when_agent_fails(
 
     mock_conversation_event_service.create.assert_awaited_once_with(
         conversation_id=conversation.id,
-        role=MessageRole.USER,
+        request_id=request_id,
+        role=MessageRoleEnum.USER,
         content=TEST_MESSAGE,
     )
 

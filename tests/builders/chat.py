@@ -6,43 +6,52 @@ from __future__ import annotations
 
 from typing import Any
 
-from src.services.models.chat import ChatResult
-from src.services.models.stream import ChatStreamChunk
-from tests.builders.schemas import build_ai_response
+from src.core.enums import MessageRoleEnum
+from src.services.dto.chat import ChatResultDTO
+from src.services.dto.stream import ChatStreamChunkDTO
+from tests.builders.orchestrator import build_orchestrator_response
 from tests.factories.conversation import ConversationFactory
 from tests.factories.conversation_event import ConversationEventFactory
 
 
 def build_chat_result(
-    **kwargs: Any,
-) -> ChatResult:
-    """
-    Build a ChatResult.
-    """
+    *,
+    conversation=None,
+    response=None,
+    user_event=None,
+    assistant_event=None,
+) -> ChatResultDTO:
+    conversation = conversation or ConversationFactory.build()
 
-    conversation = ConversationFactory.build()
+    response = response or build_orchestrator_response(
+        conversation_id=conversation.id,
+        content="Hello!",
+    )
 
-    data: dict[str, Any] = {
-        "conversation": conversation,
-        "user_event": ConversationEventFactory.build(
-            conversation_id=conversation.id,
-        ),
-        "assistant_event": ConversationEventFactory.build(
-            conversation_id=conversation.id,
-        ),
-        "response": build_ai_response(),
-    }
+    user_event = user_event or ConversationEventFactory.build(
+        conversation_id=conversation.id,
+        role=MessageRoleEnum.USER,
+        content="Hello",
+    )
 
-    data.update(kwargs)
+    assistant_event = assistant_event or ConversationEventFactory.build(
+        conversation_id=conversation.id,
+        role=MessageRoleEnum.ASSISTANT,
+        content="Hello!",
+        parent_event_id=user_event.id,
+    )
 
-    return ChatResult(
-        **data,
+    return ChatResultDTO(
+        conversation=conversation,
+        user_event=user_event,
+        assistant_event=assistant_event,
+        response=response,
     )
 
 
 def build_chat_stream_chunk(
     **kwargs: Any,
-) -> ChatStreamChunk:
+) -> ChatStreamChunkDTO:
     """
     Build a ChatStreamChunk.
     """
@@ -56,6 +65,6 @@ def build_chat_stream_chunk(
 
     data.update(kwargs)
 
-    return ChatStreamChunk(
+    return ChatStreamChunkDTO(
         **data,
     )

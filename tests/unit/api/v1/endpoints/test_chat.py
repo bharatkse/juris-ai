@@ -17,6 +17,7 @@ from src.schemas.chat import ChatStreamResponse, ConversationEventResponse
 from tests.builders.chat import build_chat_result, build_chat_stream_chunk
 from tests.builders.schemas import build_chat_request
 from tests.helpers.identifiers import unknown_user_id
+from tests.helpers.request import build_http_request
 
 
 @pytest.mark.asyncio
@@ -42,8 +43,11 @@ async def test_chat(
         return_value=result,
     )
 
+    http_request = build_http_request()
+
     response = await chat(
-        request=request,
+        http_request=http_request,
+        chat_request=request,
         current_user=current_user,
         service=service,
     )
@@ -59,6 +63,7 @@ async def test_chat(
         user_id=current_user.id,
         conversation_id=request.conversation_id,
         message=request.message,
+        request_id=http_request.state.context.request_id,
     )
 
     assert mock_model_validate.call_count == 2
@@ -90,9 +95,10 @@ async def test_stream_chat_returns_streaming_response() -> None:
 
     service = MagicMock()
     service.stream_chat.return_value = stream()
-
+    http_request = build_http_request()
     response = await stream_chat(
-        request=request,
+        http_request=http_request,
+        chat_request=request,
         current_user=current_user,
         service=service,
     )
@@ -130,11 +136,12 @@ async def test_stream_chat_streams_events(
 
     service = MagicMock()
     service.stream_chat.return_value = stream()
-
+    http_request = build_http_request()
     mock_encode_sse_event.return_value = "data: test\n\n"
 
     response = await stream_chat(
-        request=request,
+        http_request=http_request,
+        chat_request=request,
         current_user=current_user,
         service=service,
     )
@@ -150,6 +157,7 @@ async def test_stream_chat_streams_events(
         user_id=current_user.id,
         conversation_id=request.conversation_id,
         message=request.message,
+        request_id=http_request.state.context.request_id,
     )
 
     mock_encode_sse_event.assert_called_once()
@@ -186,9 +194,10 @@ async def test_stream_chat_propagates_cancelled_error(
 
     service = MagicMock()
     service.stream_chat.return_value = stream()
-
+    http_request = build_http_request()
     response = await stream_chat(
-        request=request,
+        http_request=http_request,
+        chat_request=request,
         current_user=current_user,
         service=service,
     )

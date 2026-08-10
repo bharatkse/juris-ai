@@ -7,18 +7,19 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from src.core.models.conversation import Conversation
-from src.core.models.tool import ToolFile
+from src.core.dto.conversation import ConversationDTO
+from src.core.dto.response import CitationDTO, SourceDTO, UsageDTO
+from src.core.dto.tool import ToolFileDTO
 
 
 @dataclass(slots=True, frozen=True)
-class AgentContext:
+class AgentContextDTO:
     """
     Runtime context supplied to an agent.
     """
 
     uploaded_files: tuple[
-        ToolFile,
+        ToolFileDTO,
         ...,
     ] = ()
 
@@ -28,36 +29,40 @@ class AgentContext:
 
 
 @dataclass(slots=True, frozen=True)
-class AgentRequest:
+class AgentRequestDTO:
     """
     Request sent to an AI agent.
 
-    The request contains the current conversation together with
+    The request contains the current ConversationDTO together with
     the runtime context required to execute the agent.
     """
 
-    conversation: Conversation
-
-    context: AgentContext = field(
-        default_factory=AgentContext,
+    conversation: ConversationDTO
+    instruction: str
+    context: AgentContextDTO = field(
+        default_factory=AgentContextDTO,
     )
 
 
 @dataclass(slots=True, frozen=True)
-class AgentResponse:
+class AgentResponseDTO:
     """
     Response returned by an AI agent.
     """
 
     content: str
+    agent_name: str
+    citations: tuple[CitationDTO, ...] = ()
 
+    sources: tuple[SourceDTO, ...] = ()
+    usage: UsageDTO | None = None
     metadata: dict[str, Any] = field(
         default_factory=dict,
     )
 
 
 @dataclass(slots=True, frozen=True)
-class AgentStreamChunk:
+class AgentStreamChunkDTO:
     """
     Streaming response chunk produced by an AI agent.
     """
@@ -74,7 +79,7 @@ class AgentStreamChunk:
 
 
 @dataclass(slots=True, frozen=True)
-class AgentMetadata:
+class AgentMetadataDTO:
     """
     Immutable metadata describing an AI agent.
     """

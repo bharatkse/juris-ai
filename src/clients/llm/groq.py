@@ -5,6 +5,7 @@ Groq LLM client.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from typing import Any
 
 from groq import (
     APIConnectionError,
@@ -17,12 +18,12 @@ from groq import (
 
 from src.clients.helper import map_exception
 from src.clients.llm.base import LLMClient
-from src.clients.models import (
-    LLMMessage,
-    LLMRequest,
-    LLMResponse,
-    LLMStreamChunk,
-    LLMTokenUsage,
+from src.core.dto.clients.llm import (
+    LLMMessageDTO,
+    LLMRequestDTO,
+    LLMResponseDTO,
+    LLMStreamChunkDTO,
+    LLMTokenUsageDTO,
 )
 from src.core.exceptions.client import (
     ClientAuthenticationError,
@@ -67,8 +68,8 @@ class GroqClient(LLMClient):
     async def generate(
         self,
         *,
-        request: LLMRequest,
-    ) -> LLMResponse:
+        request: LLMRequestDTO,
+    ) -> LLMResponseDTO:
         """
         Generate a completion.
         """
@@ -79,14 +80,42 @@ class GroqClient(LLMClient):
             self.model,
         )
 
+        request_kwargs: dict[str, Any] = {
+            "model": self._model,
+            "messages": self._to_messages(
+                request.messages,
+            ),
+            "temperature": request.temperature,
+        }
+
+        if request.max_tokens is not None:
+            request_kwargs["max_tokens"] = request.max_tokens
+
+        if request.response_format is not None:
+            request_kwargs["response_format"] = request.response_format
+
+            log.debug(
+                "Using structured response format for provider '%s'.",
+                self.provider,
+            )
+
+        log.info(
+            "LLM request details.",
+            extra={
+                "response_format": request.response_format,
+                "messages": [
+                    {
+                        "role": message.role.value,
+                        "content": message.content,
+                    }
+                    for message in request.messages
+                ],
+            },
+        )
+
         try:
             response = await self._client.chat.completions.create(
-                model=self._model,
-                messages=self._to_messages(
-                    request.messages,
-                ),
-                temperature=request.temperature,
-                max_tokens=request.max_tokens,
+                **request_kwargs,
             )
 
         except Exception as exc:
@@ -124,19 +153,36 @@ class GroqClient(LLMClient):
 
         choice = response.choices[0]
 
+        content = choice.message.content
+
+        if not content or not content.strip():
+            log.error(
+                "Provider '%s' returned an empty completion.",
+                self.provider,
+                extra={
+                    "model": self.model,
+                    "finish_reason": choice.finish_reason,
+                    "response_id": response.id,
+                },
+            )
+
+            raise ClientProviderError(
+                message=(f"Provider '{self.provider}' returned an empty completion."),
+            )
+
         log.info(
             "Generated completion using provider '%s'. Finish reason: %s.",
             self.provider,
             choice.finish_reason,
         )
 
-        return LLMResponse(
-            content=choice.message.content or "",
+        return LLMResponseDTO(
+            content=content,
             provider=self.provider,
             model=self.model,
             finish_reason=choice.finish_reason,
             usage=(
-                LLMTokenUsage(
+                LLMTokenUsageDTO(
                     prompt_tokens=response.usage.prompt_tokens,
                     completion_tokens=response.usage.completion_tokens,
                     total_tokens=response.usage.total_tokens,
@@ -152,8 +198,8 @@ class GroqClient(LLMClient):
     async def stream(
         self,
         *,
-        request: LLMRequest,
-    ) -> AsyncIterator[LLMStreamChunk]:
+        request: LLMRequestDTO,
+    ) -> AsyncIterator[LLMStreamChunkDTO]:
         """
         Stream a completion.
         """
@@ -164,15 +210,24 @@ class GroqClient(LLMClient):
             self.model,
         )
 
+        request_kwargs: dict[str, Any] = {
+            "model": self._model,
+            "messages": self._to_messages(
+                request.messages,
+            ),
+            "temperature": request.temperature,
+            "stream": True,
+        }
+
+        if request.max_tokens is not None:
+            request_kwargs["max_tokens"] = request.max_tokens
+
+        if request.response_format is not None:
+            request_kwargs["response_format"] = request.response_format
+
         try:
             stream = await self._client.chat.completions.create(
-                model=self._model,
-                messages=self._to_messages(
-                    request.messages,
-                ),
-                temperature=request.temperature,
-                max_tokens=request.max_tokens,
-                stream=True,
+                **request_kwargs,
             )
 
             async for chunk in stream:
@@ -186,12 +241,12 @@ class GroqClient(LLMClient):
 
                 if choice.finish_reason is not None:
                     log.info(
-                        "Completed streamed response using provider '%s'. Finish reason: %s.",
+                        "Completed streamed response using provider '%s'. " "Finish reason: %s.",
                         self.provider,
                         choice.finish_reason,
                     )
 
-                yield LLMStreamChunk(
+                yield LLMStreamChunkDTO(
                     content=choice.delta.content or "",
                     is_final=choice.finish_reason is not None,
                     finish_reason=choice.finish_reason,
@@ -223,7 +278,7 @@ class GroqClient(LLMClient):
     @staticmethod
     def _to_messages(
         messages: tuple[
-            LLMMessage,
+            LLMMessageDTO,
             ...,
         ],
     ) -> list[dict[str, str]]:

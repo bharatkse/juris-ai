@@ -9,7 +9,7 @@ from typing import final
 from src.agents.base import BaseAgent
 from src.agents.prompts.contract import ContractPromptBuilder
 from src.clients.llm.base import LLMClient
-from src.core.models.agent import AgentMetadata
+from src.core.dto.agent import AgentMetadataDTO
 from src.tools.retrieval import RetrieverTool
 
 
@@ -19,7 +19,7 @@ class ContractAgent(BaseAgent):
     Contract analysis specialist.
     """
 
-    metadata = AgentMetadata(
+    metadata = AgentMetadataDTO(
         name="contract",
         description="Contract analysis specialist.",
         capabilities=(

@@ -60,10 +60,9 @@ async def test_create_conversation(
 
     service.create.assert_awaited_once()
 
-    created_request = service.create.await_args.args[0]
+    created_request = service.create.await_args.kwargs["request"]
 
     assert created_request.title == request.title
-    assert created_request.user_id == current_user.id
 
     mock_model_validate.assert_called_once_with(
         conversation,

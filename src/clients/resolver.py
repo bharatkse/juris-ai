@@ -11,7 +11,7 @@ LLM client.
 from __future__ import annotations
 
 from src.clients.llm.base import LLMClient
-from src.core.enums import LLMProvider
+from src.core.enums import LLMProviderEnum
 from src.core.exceptions.client import ClientConfigurationError
 from src.core.logger import get_logger
 
@@ -26,8 +26,8 @@ class LLMResolver:
     def __init__(
         self,
         *,
-        clients: dict[LLMProvider, LLMClient],
-        default_provider: LLMProvider,
+        clients: dict[LLMProviderEnum, LLMClient],
+        default_provider: LLMProviderEnum,
     ) -> None:
         self._clients = clients
         self._default_provider = default_provider
@@ -40,7 +40,7 @@ class LLMResolver:
 
     def get(
         self,
-        provider: LLMProvider | None = None,
+        provider: LLMProviderEnum | None = None,
     ) -> LLMClient:
         """
         Resolve an LLM client.
@@ -87,7 +87,7 @@ class LLMResolver:
 
     def supports(
         self,
-        provider: LLMProvider,
+        provider: LLMProviderEnum,
     ) -> bool:
         """
         Return whether a provider is configured.
@@ -106,7 +106,7 @@ class LLMResolver:
     @property
     def default_provider(
         self,
-    ) -> LLMProvider:
+    ) -> LLMProviderEnum:
         """
         Return the default provider.
         """

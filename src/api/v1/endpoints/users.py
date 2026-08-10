@@ -4,18 +4,14 @@ User API routes.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from fastapi import APIRouter, Depends, status
 
 from src.api.dependencies.user import get_user_service
 from src.core.logger import get_logger
 from src.core.response import ApiResponse
+from src.core.types import UserId
 from src.schemas.user import CreateUserRequest, UpdateUserRequest, UserResponse
 from src.services.user import UserService
-
-if TYPE_CHECKING:
-    from src.core.types import UserId
 
 logger = get_logger(__name__)
 

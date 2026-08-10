@@ -192,7 +192,10 @@ async def test_list_returns_empty_list_when_no_conversations_exist(
         user_id=conversation.user_id,
     )
 
-    assert conversations == []
+    assert conversations == (
+        [],
+        0,
+    )
 
 
 @pytest.mark.asyncio
@@ -217,7 +220,7 @@ async def test_list_returns_conversations(
         ),
     )
 
-    conversations = await conversation_repository.list(
+    conversations, _ = await conversation_repository.list(
         user_id=user.id,
     )
 
@@ -253,7 +256,7 @@ async def test_list_excludes_archived_conversations(
         archived,
     )
 
-    conversations = await conversation_repository.list(
+    conversations, _ = await conversation_repository.list(
         user_id=active.user_id,
     )
 

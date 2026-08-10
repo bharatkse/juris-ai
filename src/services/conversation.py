@@ -150,7 +150,7 @@ class ConversationService(BaseService):
             )
 
             raise ConversationNotFoundError(
-                "Conversation not found.",
+                message="Conversation not found.",
             )
 
         if not conversation.is_active:
@@ -175,9 +175,9 @@ class ConversationService(BaseService):
         user_id: UserId,
         offset: int = 0,
         limit: int = 20,
-    ) -> list[Conversation]:
+    ) -> tuple[list[Conversation], int]:
         """
-        Retrieve conversations for a user.
+        Retrieve paginated conversations for a user.
         """
 
         return await self._repository.list(

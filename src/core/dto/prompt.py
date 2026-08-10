@@ -7,21 +7,21 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from core.models.agent import AgentRequest
-from core.models.planning import Intent, PlanningRequest
-from core.models.tool import RetrievedContent
+from src.core.dto.agent import AgentRequestDTO
+from src.core.dto.planning import Intent, PlanningRequestDTO
+from src.core.dto.tool import RetrievedContentDTO
 
 
 @dataclass(slots=True, frozen=True)
-class AgentPromptRequest:
+class AgentPromptRequestDTO:
     """
     Request used to build an agent prompt.
     """
 
-    request: AgentRequest
+    request: AgentRequestDTO
 
     context: tuple[
-        RetrievedContent,
+        RetrievedContentDTO,
         ...,
     ] = ()
 
@@ -31,12 +31,12 @@ class AgentPromptRequest:
 
 
 @dataclass(slots=True, frozen=True)
-class PlanningPromptRequest:
+class PlanningPromptRequestDTO:
     """
     Request used to build a planning prompt.
     """
 
-    request: PlanningRequest
+    request: PlanningRequestDTO
 
     intent: Intent
 

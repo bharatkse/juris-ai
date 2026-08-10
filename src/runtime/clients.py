@@ -36,12 +36,12 @@ def create_clients(
     """
 
     llm_client = GroqClient(
-        api_key=settings.groq.api_key,
-        model=settings.groq.model,
+        api_key=settings.GROQ_API_KEY.get_secret_value(),
+        model=settings.GROQ_MODEL,
     )
 
     web_search_client = BraveClient(
-        api_key=settings.brave.api_key,
+        api_key=settings.BRAVE_API_KEY.get_secret_value(),
     )
 
     return ClientContainer(

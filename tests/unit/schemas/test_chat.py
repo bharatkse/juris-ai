@@ -9,7 +9,8 @@ from datetime import datetime
 import pytest
 from pydantic import ValidationError
 
-from src.core.enums import MessageRole
+from src.core.enums import MessageRoleEnum
+from src.orchestration.schemas.response import ResponseMetadata, Usage
 from src.schemas.chat import (
     AIResponse,
     ChatRequest,
@@ -140,7 +141,7 @@ def test_conversation_event_response_rejects_extra_fields() -> None:
             id="event_123",
             conversation_id="conv_123",
             parent_event_id=None,
-            role=MessageRole.USER,
+            role=MessageRoleEnum.USER,
             content="Hello",
             event_metadata={},
             created_at=datetime.now(),
@@ -154,16 +155,81 @@ def test_ai_response_accepts_valid_response() -> None:
     """
 
     response = AIResponse(
-        message="Legal answer",
-        metadata={
-            "provider": "groq",
-        },
+        content="Legal answer",
+        usage=Usage(
+            provider="groq",
+            model="llama-3.3-70b-versatile",
+            prompt_tokens=100,
+            completion_tokens=50,
+            total_tokens=150,
+            latency_ms=120.5,
+        ),
+        metadata=ResponseMetadata(
+            agents=["legal"],
+            workflow="legal_qa",
+        ),
     )
 
-    assert response.message == "Legal answer"
-    assert response.metadata == {
-        "provider": "groq",
-    }
+    assert response.content == "Legal answer"
+
+    assert response.usage.provider == "groq"
+    assert response.usage.model == "llama-3.3-70b-versatile"
+    assert response.usage.prompt_tokens == 100
+    assert response.usage.completion_tokens == 50
+    assert response.usage.total_tokens == 150
+    assert response.usage.latency_ms == 120.5
+
+    assert response.metadata.agents == ["legal"]
+    assert response.metadata.workflow == "legal_qa"
+
+
+def test_ai_response_uses_defaults() -> None:
+    """
+    It should use defaults for optional response fields.
+    """
+
+    response = AIResponse(
+        content="Legal answer",
+    )
+
+    assert response.content == "Legal answer"
+    assert response.citations == []
+    assert response.sources == []
+    assert response.usage.provider is None
+    assert response.usage.model is None
+    assert response.usage.prompt_tokens == 0
+    assert response.usage.completion_tokens == 0
+    assert response.usage.total_tokens == 0
+    assert response.usage.latency_ms is None
+    assert response.metadata.agents == []
+    assert response.metadata.workflow is None
+
+
+def test_ai_response_rejects_extra_fields() -> None:
+    """
+    It should reject unexpected fields.
+    """
+
+    with pytest.raises(ValidationError):
+        AIResponse(
+            content="Legal answer",
+            message="Unexpected field",
+        )
+
+
+def test_ai_response_rejects_invalid_metadata() -> None:
+    """
+    It should reject metadata fields that are not part of
+    ResponseMetadata.
+    """
+
+    with pytest.raises(ValidationError):
+        AIResponse(
+            content="Legal answer",
+            metadata={
+                "provider": "groq",
+            },
+        )
 
 
 def test_chat_response_accepts_valid_response() -> None:
@@ -173,21 +239,26 @@ def test_chat_response_accepts_valid_response() -> None:
 
     user_event = ConversationEventResponse.model_validate(
         ConversationEventFactory.build(
-            role=MessageRole.USER,
+            role=MessageRoleEnum.USER,
         ),
     )
 
     assistant_event = ConversationEventResponse.model_validate(
         ConversationEventFactory.build(
-            role=MessageRole.ASSISTANT,
+            role=MessageRoleEnum.ASSISTANT,
         ),
     )
 
     ai_response = AIResponse(
-        message="Legal answer",
-        metadata={
-            "provider": "groq",
-        },
+        content="Legal answer",
+        usage=Usage(
+            provider="groq",
+            model="llama-3.3-70b-versatile",
+        ),
+        metadata=ResponseMetadata(
+            agents=["legal"],
+            workflow="legal_qa",
+        ),
     )
 
     conversation_id = unknown_conversation_id()
@@ -212,13 +283,13 @@ def test_chat_response_rejects_extra_fields() -> None:
 
     user_event = ConversationEventResponse.model_validate(
         ConversationEventFactory.build(
-            role=MessageRole.USER,
+            role=MessageRoleEnum.USER,
         ),
     )
 
     assistant_event = ConversationEventResponse.model_validate(
         ConversationEventFactory.build(
-            role=MessageRole.ASSISTANT,
+            role=MessageRoleEnum.ASSISTANT,
         ),
     )
 
@@ -226,7 +297,7 @@ def test_chat_response_rejects_extra_fields() -> None:
         ChatResponse(
             conversation_id="conv_123",
             response=AIResponse(
-                message="Answer",
+                content="Answer",
             ),
             user_event=user_event,
             assistant_event=assistant_event,

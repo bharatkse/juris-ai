@@ -4,8 +4,9 @@ Execution plan validator.
 
 from __future__ import annotations
 
+from src.core.dto.planning import ExecutionPlanDTO, ExecutionStepDTO
+from src.core.enums import ExecutionModeEnum
 from src.core.exceptions.planning import PlanValidationError
-from src.core.models.planning import ExecutionMode, ExecutionPlan, ExecutionStep
 
 
 class ExecutionPlanValidator:
@@ -15,8 +16,8 @@ class ExecutionPlanValidator:
 
     def validate(
         self,
-        plan: ExecutionPlan,
-    ) -> ExecutionPlan:
+        plan: ExecutionPlanDTO,
+    ) -> ExecutionPlanDTO:
         """
         Validate an execution plan.
 
@@ -35,7 +36,7 @@ class ExecutionPlanValidator:
     def _validate_plan(
         cls,
         *,
-        plan: ExecutionPlan,
+        plan: ExecutionPlanDTO,
     ) -> None:
         """
         Validate an execution plan.
@@ -62,20 +63,20 @@ class ExecutionPlanValidator:
     @staticmethod
     def _validate_mode(
         *,
-        plan: ExecutionPlan,
+        plan: ExecutionPlanDTO,
     ) -> None:
         """
         Validate the execution mode.
         """
 
         match plan.mode:
-            case ExecutionMode.SEQUENTIAL:
+            case ExecutionModeEnum.SEQUENTIAL:
                 pass
 
-            case ExecutionMode.PARALLEL:
+            case ExecutionModeEnum.PARALLEL:
                 pass
 
-            case ExecutionMode.HYBRID:
+            case ExecutionModeEnum.HYBRID:
                 ExecutionPlanValidator._validate_hybrid(
                     plan=plan,
                 )
@@ -88,7 +89,7 @@ class ExecutionPlanValidator:
     @staticmethod
     def _validate_hybrid(
         *,
-        plan: ExecutionPlan,
+        plan: ExecutionPlanDTO,
     ) -> None:
         """
         Validate a hybrid execution plan.
@@ -104,7 +105,7 @@ class ExecutionPlanValidator:
     @staticmethod
     def _validate_step_ids(
         *,
-        plan: ExecutionPlan,
+        plan: ExecutionPlanDTO,
     ) -> None:
         """
         Validate execution step identifiers.
@@ -120,7 +121,7 @@ class ExecutionPlanValidator:
     @staticmethod
     def _validate_step(
         *,
-        step: ExecutionStep,
+        step: ExecutionStepDTO,
     ) -> None:
         """
         Validate a single execution step.

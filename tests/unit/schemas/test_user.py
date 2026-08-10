@@ -9,7 +9,7 @@ from datetime import date, datetime
 import pytest
 from pydantic import ValidationError
 
-from src.core.enums import Gender
+from src.core.enums import GenderEnum
 from src.schemas.user import CreateUserRequest, UpdateUserRequest, UserResponse
 from tests.builders.schemas import build_create_user_request, build_update_user_request
 from tests.factories.user import UserFactory
@@ -137,7 +137,7 @@ def test_update_user_request_accepts_all_fields() -> None:
     request = build_update_user_request(
         first_name="John",
         last_name="Doe",
-        gender=Gender.MALE,
+        gender=GenderEnum.MALE,
         phone_number="9876543210",
         date_of_birth=date(
             1995,
@@ -148,7 +148,7 @@ def test_update_user_request_accepts_all_fields() -> None:
 
     assert request.first_name == "John"
     assert request.last_name == "Doe"
-    assert request.gender == Gender.MALE
+    assert request.gender == GenderEnum.MALE
     assert request.phone_number == "9876543210"
     assert request.date_of_birth == date(
         1995,
@@ -267,7 +267,7 @@ def test_user_response_rejects_extra_fields() -> None:
             email="john@example.com",
             first_name="John",
             last_name="Doe",
-            gender=Gender.MALE,
+            gender=GenderEnum.MALE,
             phone_number="9876543210",
             date_of_birth=date(
                 1995,

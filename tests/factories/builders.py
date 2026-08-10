@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from src.core.enums import MessageRole
+from src.core.enums import MessageRoleEnum
 from src.db.models.conversation import Conversation
 from src.db.models.conversation_event import ConversationEvent
 from tests.factories.conversation import ConversationFactory
@@ -62,7 +62,7 @@ def build_chat_conversation(
 
     user_event = ConversationEventFactory.build(
         conversation=conversation,
-        role=MessageRole.USER,
+        role=MessageRoleEnum.USER,
         content=question,
     )
 
@@ -86,13 +86,13 @@ def build_chat_exchange(
 
     user_event = ConversationEventFactory.build(
         conversation=conversation,
-        role=MessageRole.USER,
+        role=MessageRoleEnum.USER,
         content=question,
     )
 
     assistant_event = ConversationEventFactory.build(
         conversation=conversation,
-        role=MessageRole.ASSISTANT,
+        role=MessageRoleEnum.ASSISTANT,
         parent_event=user_event,
         content=answer,
     )
@@ -120,13 +120,13 @@ def build_conversation_history(
     for turn in range(1, turns + 1):
         user_event = ConversationEventFactory.build(
             conversation=conversation,
-            role=MessageRole.USER,
+            role=MessageRoleEnum.USER,
             content=f"Question {turn}",
         )
 
         assistant_event = ConversationEventFactory.build(
             conversation=conversation,
-            role=MessageRole.ASSISTANT,
+            role=MessageRoleEnum.ASSISTANT,
             parent_event=user_event,
             content=f"Answer {turn}",
         )
@@ -162,20 +162,20 @@ def build_regenerated_response(
 
     user_event = ConversationEventFactory.build(
         conversation=conversation,
-        role=MessageRole.USER,
+        role=MessageRoleEnum.USER,
         content=question,
     )
 
     assistant_event = ConversationEventFactory.build(
         conversation=conversation,
-        role=MessageRole.ASSISTANT,
+        role=MessageRoleEnum.ASSISTANT,
         parent_event=user_event,
         content=first_answer,
     )
 
     regenerated_event = ConversationEventFactory.build(
         conversation=conversation,
-        role=MessageRole.ASSISTANT,
+        role=MessageRoleEnum.ASSISTANT,
         parent_event=user_event,
         content=regenerated_answer,
     )

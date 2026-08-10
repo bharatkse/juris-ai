@@ -9,8 +9,8 @@ from unittest.mock import MagicMock
 import pytest
 
 from src.clients.llm.base import LLMClient
-from src.clients.models import LLMRequest
-from src.core.enums import LLMProvider
+from src.core.dto.clients.llm import LLMRequestDTO
+from src.core.enums import LLMProviderEnum
 from tests.builders.clients.llm import build_llm_request
 
 
@@ -24,14 +24,14 @@ def mock_llm_client() -> LLMClient:
         spec=LLMClient,
     )
 
-    client.provider = LLMProvider.GROQ.value
+    client.provider = LLMProviderEnum.GROQ.value
     client.model = "llama-3.3-70b-versatile"
 
     return client
 
 
 @pytest.fixture
-def llm_request() -> LLMRequest:
+def llm_request() -> LLMRequestDTO:
     """
     Build a default LLM request.
     """

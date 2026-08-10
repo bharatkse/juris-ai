@@ -8,7 +8,7 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
-from src.core.enums import Gender
+from src.core.enums import GenderEnum
 from src.core.types import UserId
 
 
@@ -45,7 +45,7 @@ class CreateUserRequest(BaseModel):
         max_length=100,
     )
 
-    gender: Gender | None = None
+    gender: GenderEnum | None = None
 
     phone_number: str | None = Field(
         default=None,
@@ -90,7 +90,7 @@ class UpdateUserRequest(BaseModel):
         max_length=100,
     )
 
-    gender: Gender | None = None
+    gender: GenderEnum | None = None
 
     phone_number: str | None = Field(
         default=None,
@@ -119,7 +119,7 @@ class UserResponse(BaseModel):
 
     last_name: str | None
 
-    gender: Gender | None
+    gender: GenderEnum | None
 
     phone_number: str | None
 

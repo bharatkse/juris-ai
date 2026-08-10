@@ -18,4 +18,5 @@ pytest_plugins = [
     "tests.fixtures.security",
     "tests.fixtures.environment",
     "tests.fixtures.orchestrator",
+    "tests.fixtures.conversation",
 ]
