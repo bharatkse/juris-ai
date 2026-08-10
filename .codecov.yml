@@ -1,26 +1,23 @@
----
 codecov:
   require_ci_to_pass: true
-  notify:
-    after_n_builds: 1
-    wait_for_ci: true
 
 coverage:
-  precision: 2  # What precision do you want the coverage value to be
+  precision: 2
   round: down
   range: "50...100"
 
   status:
-    project:  # Disabling project coverage status checks
+    project:
       default:
         target: auto
         informational: true
+
     patch:
       default:
-        target: 80%  # Set the target patch coverage here
-        threshold: 1%  # How much the coverage can decrease in comparison to the base
-        if_not_found: success  # If coverage report is not found, mark it as success
-        only_pulls: true  # Status will only be posted in pull requests
+        target: 80%
+        threshold: 1%
+        if_not_found: success
+        only_pulls: true
         removed_code_behavior: removals_only
 
 comment:
