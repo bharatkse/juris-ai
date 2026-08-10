@@ -8,6 +8,12 @@ from typing import Final
 
 from httpx import ConnectError, HTTPStatusError, TimeoutException
 
+from core.exceptions.client import (
+    ClientConnectionError,
+    ClientProviderError,
+    ClientRateLimitError,
+    ClientTimeoutError,
+)
 from src.clients.helper import map_exception
 from src.clients.http import AsyncHTTPClient
 from src.clients.web_search.base import WebSearchClient
@@ -15,12 +21,6 @@ from src.clients.web_search.models import (
     WebSearchRequest,
     WebSearchResponse,
     WebSearchResult,
-)
-from src.core.exceptions.client import (
-    ClientConnectionError,
-    ClientProviderError,
-    ClientRateLimitError,
-    ClientTimeoutError,
 )
 from src.core.logger import get_logger
 

@@ -5,50 +5,10 @@ Planning domain models.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import StrEnum
 from typing import Any
 
+from src.core.enums import AgentType, ExecutionMode, Intent
 from src.core.models.conversation import Conversation
-
-
-class Intent(StrEnum):
-    """
-    Supported planning intents.
-    """
-
-    GENERAL = "general"
-
-    LEGAL_RESEARCH = "legal_research"
-
-    CONTRACT_REVIEW = "contract_review"
-
-    CONTRACT_ANALYSIS = "contract_analysis"
-
-    CLAUSE_EXTRACTION = "clause_extraction"
-
-    RISK_ANALYSIS = "risk_analysis"
-
-
-class AgentType(StrEnum):
-    """
-    Supported agent types.
-    """
-
-    LEGAL = "legal"
-
-    CONTRACT = "contract"
-
-
-class ExecutionMode(StrEnum):
-    """
-    Supported execution strategies.
-    """
-
-    SEQUENTIAL = "sequential"
-
-    PARALLEL = "parallel"
-
-    HYBRID = "hybrid"
 
 
 @dataclass(slots=True, frozen=True)
