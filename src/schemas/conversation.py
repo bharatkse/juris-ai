@@ -9,28 +9,38 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.core.types import ConversationId, UserId
+from src.schemas.base import Page
 
 
 class CreateConversationRequest(BaseModel):
     """
     Request payload for creating a conversation.
-
-    Currently empty.
-
-    Reserved for future customization.
     """
 
     model_config = ConfigDict(
         extra="forbid",
     )
-    user_id: UserId = Field(
-        ...,
-        description="Identifier of the user creating the conversation.",
-    )
 
     title: str | None = Field(
         default=None,
-        description="Optional title for the conversation.",
+        min_length=1,
+        max_length=255,
+        description="Optional conversation title.",
+    )
+
+
+class UpdateConversationRequest(BaseModel):
+    """
+    Request payload for updating a conversation.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
+    title: str = Field(
+        min_length=1,
+        max_length=255,
     )
 
 
@@ -45,9 +55,23 @@ class ConversationResponse(BaseModel):
     )
 
     id: ConversationId
+
     user_id: UserId
+
     title: str
+
+    is_active: bool
 
     created_at: datetime
 
     updated_at: datetime
+
+
+class ConversationListResponse(
+    Page[ConversationResponse],
+):
+    """
+    Paginated conversation response.
+    """
+
+    pass

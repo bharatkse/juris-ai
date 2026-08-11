@@ -53,7 +53,8 @@ asyncpg = "^0.31.0"
 alembic = "^1.13.1"
 
 # PDF parsing and text extraction
-pymupdf = "^1.24.2"
+pypdf = "^6.15.0"
+python-docx = "^1.2.0"
 
 # # Vector database for semantic search
 # # Replace with `faiss-gpu` when running on CUDA-enabled systems.
@@ -72,12 +73,11 @@ redis = "^5.0.4"
 
 # Async Utilities and HTTP Client
 aiofiles = "^23.2.1"
-httpx = "^0.28.0"
+httpx = {extras = ["http2"], version = "^0.28.1"}
 
 # Optional AWS SDK
 # Required only when using S3 as the storage backend.
 boto3 = "^1.34.101"
-
 
 # -------------------------------------------------
 # Development Dependencies

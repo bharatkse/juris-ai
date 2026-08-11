@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import Boolean, Date, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from src.core.enums import Gender
+from src.core.enums import GenderEnum
 from src.db.base import Base
 from src.db.mixins import PrimaryKeyMixin, TimestampMixin
 
@@ -30,7 +30,7 @@ class User(PrimaryKeyMixin, TimestampMixin, Base):
 
     first_name: Mapped[str] = mapped_column(String(50), nullable=True)
     last_name: Mapped[str] = mapped_column(String(50), nullable=True)
-    gender: Mapped[Gender] = mapped_column(String(10), nullable=True)
+    gender: Mapped[GenderEnum] = mapped_column(String(10), nullable=True)
     date_of_birth: Mapped[date] = mapped_column(Date, nullable=True)
     phone_number: Mapped[str] = mapped_column(String(20), nullable=True)
     is_active: Mapped[Boolean] = mapped_column(Boolean, default=True)

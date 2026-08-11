@@ -274,7 +274,7 @@ async def test_update_updates_user(
     )
 
     mock_user_repository.get.return_value = user
-    mock_user_repository.update.return_value = None
+    mock_user_repository.update.return_value = user
 
     user_service.commit = AsyncMock()
     user_service.rollback = AsyncMock()

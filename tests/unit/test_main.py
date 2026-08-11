@@ -4,6 +4,7 @@ Unit tests for application entry point.
 
 from __future__ import annotations
 
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -75,7 +76,8 @@ def test_create_app_registers_request_context_middleware() -> None:
     assert RequestContextMiddleware in middleware
 
 
-def test_root_endpoint() -> None:
+@pytest.mark.asyncio
+async def test_root_endpoint() -> None:
     """
     It should expose the root endpoint.
     """
@@ -84,18 +86,32 @@ def test_root_endpoint() -> None:
 
     root = next(route.endpoint for route in app.routes if route.path == "/")
 
-    response = root()
+    response = await root()
 
-    assert response == {
+    assert isinstance(
+        response,
+        main.ApiResponse,
+    )
+
+    assert response.status_code == 200
+
+    payload = json.loads(
+        response.body,
+    )
+
+    assert payload["success"] is True
+
+    assert payload["data"] == {
         "name": main.settings.APP_NAME,
         "version": main.settings.APP_VERSION,
-        "docs": "/docs" if main.settings.ENABLE_DOCS else "disabled",
+        "environment": main.settings.ENVIRONMENT,
+        "docs": ("/docs" if main.settings.ENABLE_DOCS else None),
         "health": "/api/v1/health",
     }
 
 
 @pytest.mark.asyncio
-@patch("src.main.log")
+@patch("src.main.logger")
 @patch("src.main.ensure_dir")
 @patch("src.main.setup_logging")
 async def test_lifespan(
@@ -109,9 +125,7 @@ async def test_lifespan(
 
     app = FastAPI()
 
-    async with main.lifespan(
-        app,
-    ):
+    async with main.lifespan(app):
         pass
 
     mock_setup_logging.assert_called_once_with(
@@ -122,18 +136,14 @@ async def test_lifespan(
         backup_count=main.settings.LOG_BACKUP_COUNT,
     )
 
-    assert mock_ensure_dir.call_count == 3
+    assert mock_ensure_dir.call_count == 2
 
     mock_ensure_dir.assert_any_call(
-        "data/raw",
+        main.settings.DATA_DIRECTORY,
     )
 
     mock_ensure_dir.assert_any_call(
-        "data/db",
-    )
-
-    mock_ensure_dir.assert_any_call(
-        "logs",
+        main.settings.LOG_DIRECTORY,
     )
 
     assert mock_log.info.call_count == 3

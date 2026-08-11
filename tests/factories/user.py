@@ -7,7 +7,7 @@ from __future__ import annotations
 import factory
 from faker import Faker
 
-from src.core.enums import Gender
+from src.core.enums import GenderEnum
 from src.db.mixins import generate_prefixed_uuid_pk
 from src.db.models.user import User
 from tests.factories.base import BaseFactory
@@ -53,7 +53,7 @@ class UserFactory(BaseFactory):
     )
 
     gender = factory.Iterator(
-        list(Gender),
+        list(GenderEnum),
     )
 
     date_of_birth = factory.LazyFunction(

@@ -8,8 +8,8 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Final, Generic, TypeVar
 
+from src.core.dto.clients.llm import LLMRequestDTO
 from src.core.exceptions.infrastructure import ConfigurationError
-from src.core.models import GenerateRequest
 
 RequestT = TypeVar("RequestT")
 
@@ -32,7 +32,7 @@ class BasePromptBuilder(
         self,
         *,
         request: RequestT,
-    ) -> GenerateRequest:
+    ) -> LLMRequestDTO:
         """
         Build a language model generation request.
         """

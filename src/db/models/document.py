@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import Enum, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from src.core.enums import DocumentStatus, StorageType
+from src.core.enums import DocumentStatusEnum, StorageTypeEnum
 from src.db.base import Base
 from src.db.mixins import PrimaryKeyMixin, TimestampMixin
 
@@ -60,13 +60,13 @@ class Document(
         nullable=False,
     )
 
-    storage_type: Mapped[StorageType] = mapped_column(
+    storage_type: Mapped[StorageTypeEnum] = mapped_column(
         Enum(
-            StorageType,
+            StorageTypeEnum,
             name="storage_type",
         ),
         nullable=False,
-        default=StorageType.LOCAL,
+        default=StorageTypeEnum.LOCAL,
     )
 
     # Provider-specific object location.
@@ -82,13 +82,13 @@ class Document(
         index=True,
     )
 
-    status: Mapped[DocumentStatus] = mapped_column(
+    status: Mapped[DocumentStatusEnum] = mapped_column(
         Enum(
-            DocumentStatus,
+            DocumentStatusEnum,
             name="document_status",
         ),
         nullable=False,
-        default=DocumentStatus.UPLOADED,
+        default=DocumentStatusEnum.UPLOADED,
         index=True,
     )
 

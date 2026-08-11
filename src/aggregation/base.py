@@ -7,8 +7,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 
-from src.aggregation.models import AggregatedResponse
-from src.orchestration.response import AgentResponse
+from src.aggregation.schemas import AggregatedResponse
+from src.orchestration.schemas.response import AgentResponse
 
 
 class BaseAggregator(ABC):

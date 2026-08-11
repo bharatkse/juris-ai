@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.core.enums import DocumentStatus
+from src.core.enums import DocumentStatusEnum
 from src.repositories.document import DocumentRepository
 from tests.factories.conversation import ConversationFactory
 from tests.factories.document import DocumentFactory
@@ -121,20 +121,20 @@ async def test_update_document(
         document=DocumentFactory.build(),
     )
 
-    document.status = DocumentStatus.READY
+    document.status = DocumentStatusEnum.READY
 
     updated_document = await document_repository.update(
         document=document,
     )
 
-    assert updated_document.status == DocumentStatus.READY
+    assert updated_document.status == DocumentStatusEnum.READY
 
     retrieved_document = await document_repository.get(
         document_id=document.id,
     )
 
     assert retrieved_document is not None
-    assert retrieved_document.status == DocumentStatus.READY
+    assert retrieved_document.status == DocumentStatusEnum.READY
 
 
 async def test_delete_document(

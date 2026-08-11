@@ -1,106 +1,87 @@
 """
-Builders for agent domain models.
+Builders for AI agent domain models.
 """
 
 from __future__ import annotations
 
-from src.agents.models import AgentChunk, AgentMessage, AgentRequest, AgentResponse
-from src.clients.models import LLMMessage, LLMTokenUsage
-from src.core.enums import MessageRole
+from typing import Any
+
+from src.core.dto.agent import (
+    AgentContextDTO,
+    AgentRequestDTO,
+    AgentResponseDTO,
+    AgentStreamChunkDTO,
+)
+from src.core.dto.conversation import ConversationDTO
+from src.core.dto.message import MessageDTO
+from src.core.dto.tool import ToolFileDTO
+from src.core.enums import MessageRoleEnum
 
 
 def build_agent_request(
     *,
-    question: str = "Hello",
-    history: list[AgentMessage] | None = None,
-) -> AgentRequest:
-    """
-    Build an AgentRequest.
-    """
-
-    return AgentRequest(
-        question=question,
-        history=history or [],
-    )
-
-
-def build_agent_chunk(
-    *,
-    content: str = "Hello",
-    is_final: bool = False,
-    finish_reason: str | None = None,
+    messages: list[MessageDTO] | None = None,
+    instruction: str = "Answer the user's legal question.",
+    uploaded_files: tuple[ToolFileDTO, ...] = (),
     metadata: dict[str, object] | None = None,
-) -> AgentChunk:
+) -> AgentRequestDTO:
     """
-    Build an AgentChunk.
+    Build an AgentRequestDTO.
     """
 
-    return AgentChunk(
-        content=content,
-        is_final=is_final,
-        finish_reason=finish_reason,
-        metadata=metadata,
+    conversation = ConversationDTO(
+        messages=tuple(
+            messages
+            or [
+                MessageDTO(
+                    role=MessageRoleEnum.USER,
+                    content="Hello",
+                ),
+            ],
+        ),
     )
 
-
-def build_token_usage(
-    *,
-    prompt_tokens: int = 10,
-    completion_tokens: int = 20,
-    total_tokens: int = 30,
-) -> LLMTokenUsage:
-    """
-    Build token usage.
-    """
-
-    return LLMTokenUsage(
-        prompt_tokens=prompt_tokens,
-        completion_tokens=completion_tokens,
-        total_tokens=total_tokens,
+    return AgentRequestDTO(
+        conversation=conversation,
+        instruction=instruction,
+        context=AgentContextDTO(
+            uploaded_files=uploaded_files,
+            metadata=metadata or {},
+        ),
     )
 
 
 def build_agent_response(
     *,
+    agent_name: str = "legal",
     content: str = "Hello",
-    provider: str = "groq",
-    model: str = "llama-3.3-70b-versatile",
-    finish_reason: str | None = "stop",
-    latency_ms: int = 100,
-    usage: LLMTokenUsage = None,
-    metadata: dict[str, object] | None = None,
-) -> AgentResponse:
+    metadata: dict[str, Any] | None = None,
+) -> AgentResponseDTO:
     """
-    Build an AgentResponse.
+    Build an AgentResponseDTO.
     """
 
-    return AgentResponse(
+    return AgentResponseDTO(
         content=content,
-        provider=provider,
-        model=model,
-        finish_reason=finish_reason,
-        latency_ms=latency_ms,
-        usage=usage,
+        agent_name=agent_name,
         metadata=metadata or {},
     )
 
 
-def build_chat_history() -> list[LLMMessage]:
+def build_agent_stream_chunk(
+    *,
+    content: str = "Hello",
+    is_final: bool = False,
+    finish_reason: str | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> AgentStreamChunkDTO:
     """
-    Build a simple conversation history.
+    Build an AgentStreamChunkDTO.
     """
 
-    return [
-        LLMMessage(
-            role=MessageRole.SYSTEM,
-            content="You are a legal assistant.",
-        ),
-        LLMMessage(
-            role=MessageRole.USER,
-            content="Hello",
-        ),
-        LLMMessage(
-            role=MessageRole.ASSISTANT,
-            content="Hi! How can I help?",
-        ),
-    ]
+    return AgentStreamChunkDTO(
+        content=content,
+        is_final=is_final,
+        finish_reason=finish_reason,
+        metadata=metadata or {},
+    )

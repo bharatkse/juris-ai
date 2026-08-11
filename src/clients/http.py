@@ -9,7 +9,7 @@ from typing import Any, Final, NoReturn
 
 import httpx
 
-from core.exceptions.client import (
+from src.core.exceptions.client import (
     ClientAuthenticationError,
     ClientAuthorizationError,
     ClientConnectionError,
@@ -102,9 +102,7 @@ class AsyncHTTPClient:
                 path,
             )
 
-            self._raise_client_exception(
-                exc,
-            )
+            self._raise_client_exception(exc)
 
     async def get(
         self,
@@ -116,11 +114,7 @@ class AsyncHTTPClient:
         Perform an HTTP GET request.
         """
 
-        return await self.request(
-            "GET",
-            path,
-            params=params,
-        )
+        return await self.request("GET", path, params=params)
 
     async def post(
         self,
@@ -132,11 +126,7 @@ class AsyncHTTPClient:
         Perform an HTTP POST request.
         """
 
-        return await self.request(
-            "POST",
-            path,
-            json=json,
-        )
+        return await self.request("POST", path, json=json)
 
     async def get_json(
         self,
@@ -148,10 +138,7 @@ class AsyncHTTPClient:
         Perform an HTTP GET request and return JSON.
         """
 
-        response = await self.get(
-            path,
-            params=params,
-        )
+        response = await self.get(path, params=params)
 
         try:
             payload = response.json()
@@ -186,10 +173,7 @@ class AsyncHTTPClient:
         Perform an HTTP POST request and return JSON.
         """
 
-        response = await self.post(
-            path,
-            json=json,
-        )
+        response = await self.post(path, json=json)
 
         try:
             payload = response.json()

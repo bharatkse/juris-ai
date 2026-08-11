@@ -6,24 +6,25 @@ Owns the mutable runtime state for a single execution request.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
 from uuid import UUID
 
-from src.agents.models import AgentContext, AgentRequest
+from src.core.dto.agent import AgentRequestDTO
+from src.core.dto.conversation import ConversationDTO
+from src.core.dto.planning import ExecutionPlanDTO, ExecutionStepDTO
+from src.core.enums import ExecutionModeEnum, ExecutionStatusEnum
 from src.core.exceptions.execution import ExecutionError
-from src.core.models.conversation import Conversation
-from src.core.models.planning import ExecutionMode, ExecutionPlan, ExecutionStep
+from src.core.logger import get_logger
 from src.execution.bus import CollaborationBus
 from src.execution.hybrid import HybridExecutionStrategy
-from src.execution.memory import ExecutionMemory
 from src.execution.parallel import ParallelExecutionStrategy
 from src.execution.protocols import ExecutionStrategy
+from src.execution.schemas.memory import ExecutionMemorySchema
+from src.execution.schemas.result import ExecutionResultSchema
+from src.execution.schemas.state import ExecutionStateSchema
 from src.execution.sequential import SequentialExecutionStrategy
-from src.execution.state import ExecutionState, ExecutionStatus
 from src.registry.agent import AgentRegistry
 
-if TYPE_CHECKING:
-    from src.execution.result import ExecutionResult
+logger = get_logger(__name__)
 
 
 class ExecutionSession:
@@ -37,8 +38,8 @@ class ExecutionSession:
         self,
         *,
         request_id: UUID,
-        conversation: Conversation,
-        plan: ExecutionPlan,
+        conversation: ConversationDTO,
+        plan: ExecutionPlanDTO,
         agent_registry: AgentRegistry,
         sequential_strategy: SequentialExecutionStrategy,
         parallel_strategy: ParallelExecutionStrategy,
@@ -53,9 +54,9 @@ class ExecutionSession:
         self._parallel_strategy = parallel_strategy
         self._hybrid_strategy = hybrid_strategy
 
-        self._state = ExecutionState(
+        self._state = ExecutionStateSchema(
             request_id=request_id,
-            status=ExecutionStatus.RUNNING,
+            status=ExecutionStatusEnum.RUNNING,
         )
 
         for step in plan.steps:
@@ -63,15 +64,25 @@ class ExecutionSession:
                 step_id=step.id,
             )
 
-        self._memory = ExecutionMemory()
+        self._memory = ExecutionMemorySchema()
         self._bus = CollaborationBus()
 
     async def execute(
         self,
-    ) -> ExecutionResult:
+    ) -> ExecutionResultSchema:
         """
         Execute the execution plan.
         """
+
+        logger.info(
+            "Starting execution session.",
+            extra={
+                "operation": "execute_session",
+                "request_id": str(self._state.request_id),
+                "execution_mode": self._plan.mode.value,
+                "step_count": len(self._plan.steps),
+            },
+        )
 
         strategy = self._resolve_strategy(
             mode=self._plan.mode,
@@ -83,13 +94,32 @@ class ExecutionSession:
                 step_runner=self._run_step,
             )
 
-            self._state.status = ExecutionStatus.COMPLETED
+            self._state.status = ExecutionStatusEnum.COMPLETED
+
+            logger.info(
+                "Execution session completed.",
+                extra={
+                    "operation": "execute_session",
+                    "request_id": str(self._state.request_id),
+                    "execution_mode": self._plan.mode.value,
+                },
+            )
 
         except Exception:
-            self._state.status = ExecutionStatus.FAILED
+            self._state.status = ExecutionStatusEnum.FAILED
+
+            logger.exception(
+                "Execution session failed.",
+                extra={
+                    "operation": "execute_session",
+                    "request_id": str(self._state.request_id),
+                    "execution_mode": self._plan.mode.value,
+                },
+            )
+
             raise
 
-        return ExecutionResult(
+        return ExecutionResultSchema(
             state=self._state,
             artifacts=dict(
                 self._memory.artifacts,
@@ -99,11 +129,21 @@ class ExecutionSession:
     async def _run_step(
         self,
         *,
-        step: ExecutionStep,
+        step: ExecutionStepDTO,
     ) -> None:
         """
         Execute a single execution step.
         """
+
+        logger.info(
+            "Starting execution step.",
+            extra={
+                "operation": "execute_step",
+                "request_id": str(self._state.request_id),
+                "step_id": step.id,
+                "agent": step.agent.value,
+            },
+        )
 
         self._state.start_step(
             step_id=step.id,
@@ -114,7 +154,17 @@ class ExecutionSession:
                 key=step.agent.value,
             )
 
-            response = await agent.execute(
+            logger.debug(
+                "Resolved execution agent.",
+                extra={
+                    "operation": "resolve_agent",
+                    "request_id": str(self._state.request_id),
+                    "step_id": step.id,
+                    "agent": step.agent.value,
+                },
+            )
+
+            response = await agent.run(
                 request=self._build_agent_request(
                     step=step,
                 ),
@@ -129,46 +179,65 @@ class ExecutionSession:
                 step_id=step.id,
             )
 
+            logger.info(
+                "Execution step completed.",
+                extra={
+                    "operation": "execute_step",
+                    "request_id": str(self._state.request_id),
+                    "step_id": step.id,
+                    "agent": step.agent.value,
+                },
+            )
+
         except Exception as exc:
             self._state.fail_step(
                 step_id=step.id,
                 error=str(exc),
             )
-            raise
+
+            logger.exception(
+                "Execution step failed.",
+                extra={
+                    "operation": "execute_step",
+                    "request_id": str(self._state.request_id),
+                    "step_id": step.id,
+                    "agent": step.agent.value,
+                },
+            )
+
+            # raise
 
     def _build_agent_request(
         self,
         *,
-        step: ExecutionStep,
-    ) -> AgentRequest:
+        step: ExecutionStepDTO,
+    ) -> AgentRequestDTO:
         """
         Build the request for an execution agent.
         """
 
-        return AgentRequest(
+        return AgentRequestDTO(
             conversation=self._conversation,
-            context=AgentContext(
-                instruction=step.instruction,
-            ),
+            instruction=step.instruction,
         )
 
     def _resolve_strategy(
         self,
         *,
-        mode: ExecutionMode,
+        mode: ExecutionModeEnum,
     ) -> ExecutionStrategy:
         """
         Resolve the execution strategy.
         """
 
         match mode:
-            case ExecutionMode.SEQUENTIAL:
+            case ExecutionModeEnum.SEQUENTIAL:
                 return self._sequential_strategy
 
-            case ExecutionMode.PARALLEL:
+            case ExecutionModeEnum.PARALLEL:
                 return self._parallel_strategy
 
-            case ExecutionMode.HYBRID:
+            case ExecutionModeEnum.HYBRID:
                 return self._hybrid_strategy
 
             case _:

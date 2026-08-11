@@ -4,9 +4,9 @@ Web search tool.
 
 from __future__ import annotations
 
-from core.models.tool import ToolMetadata, ToolRequest, ToolResponse
 from src.clients.web_search.base import WebSearchClient
-from src.clients.web_search.models import WebSearchRequest
+from src.core.dto.clients.web_search import WebSearchRequestDTO
+from src.core.dto.tool import ToolMetadataDTO, ToolRequestDTO, ToolResponseDTO
 from src.tools.base import BaseTool
 
 
@@ -15,7 +15,7 @@ class WebSearchTool(BaseTool):
     Search public information on the internet.
     """
 
-    metadata = ToolMetadata(
+    metadata = ToolMetadataDTO(
         name="web_search",
         description="Search publicly available web content.",
     )
@@ -30,8 +30,8 @@ class WebSearchTool(BaseTool):
     async def run(
         self,
         *,
-        request: ToolRequest,
-    ) -> ToolResponse:
+        request: ToolRequestDTO,
+    ) -> ToolResponseDTO:
         """
         Execute a web search.
         """
@@ -42,13 +42,13 @@ class WebSearchTool(BaseTool):
         )
 
         response = await self._client.search(
-            request=WebSearchRequest(
+            request=WebSearchRequestDTO(
                 query=request.query,
                 max_results=max_results,
             ),
         )
 
-        return ToolResponse(
+        return ToolResponseDTO(
             content=response.results,
             metadata=response.metadata,
         )

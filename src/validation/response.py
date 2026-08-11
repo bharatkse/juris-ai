@@ -11,7 +11,7 @@ from src.core.exceptions.validation import (
     EmptyContentError,
     EmptyResponseError,
 )
-from src.orchestration.response import AgentResponse
+from src.orchestration.schemas.response import AgentResponse
 from src.validation.base import BaseValidator
 
 

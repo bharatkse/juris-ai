@@ -13,7 +13,9 @@ from src.db.models.user import User
 from src.repositories.base import BaseRepository
 
 
-class UserRepository(BaseRepository):
+class UserRepository(
+    BaseRepository[User],
+):
     """
     Repository responsible for User persistence.
     """
@@ -25,15 +27,12 @@ class UserRepository(BaseRepository):
         user: User,
     ) -> User:
         """
-        Create a new user.
+        Persist a new user.
         """
 
-        self._session.add(user)
-
-        await self.flush()
-        await self.refresh(user)
-
-        return user
+        return await self.persist(
+            user,
+        )
 
     async def get(
         self,
@@ -43,11 +42,20 @@ class UserRepository(BaseRepository):
         Retrieve a user by identifier.
         """
 
-        statement = select(self._model).where(self._model.id == user_id)
+        statement = select(
+            self._model,
+        ).where(
+            self._model.id == user_id,
+        )
 
-        result = await self._session.execute(statement)
+        result = await self._session.execute(
+            statement,
+        )
 
-        return cast(User | None, result.scalar_one_or_none())
+        return cast(
+            User | None,
+            result.scalar_one_or_none(),
+        )
 
     async def get_by_email(
         self,
@@ -57,11 +65,20 @@ class UserRepository(BaseRepository):
         Retrieve a user by email address.
         """
 
-        statement = select(self._model).where(self._model.email == email)
+        statement = select(
+            self._model,
+        ).where(
+            self._model.email == email,
+        )
 
-        result = await self._session.execute(statement)
+        result = await self._session.execute(
+            statement,
+        )
 
-        return cast(User | None, result.scalar_one_or_none())
+        return cast(
+            User | None,
+            result.scalar_one_or_none(),
+        )
 
     async def exists_by_email(
         self,
@@ -73,11 +90,15 @@ class UserRepository(BaseRepository):
 
         statement = select(
             exists().where(
-                User.email == email,
-            )
+                self._model.email == email,
+            ),
         )
 
-        return bool(await self._session.scalar(statement))
+        return bool(
+            await self._session.scalar(
+                statement,
+            ),
+        )
 
     async def update(
         self,
@@ -88,6 +109,9 @@ class UserRepository(BaseRepository):
         """
 
         await self.flush()
-        await self.refresh(user)
+
+        await self.refresh(
+            user,
+        )
 
         return user

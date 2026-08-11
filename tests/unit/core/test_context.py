@@ -5,7 +5,7 @@ Unit tests for RequestContext.
 from __future__ import annotations
 
 from src.core.context import RequestContext
-from src.schemas.base import AIInfoModel
+from src.schemas.base import AIUsageModel
 
 
 def test_request_context_generates_request_id() -> None:
@@ -27,7 +27,7 @@ def test_request_context_uses_provided_values() -> None:
     It should store the provided context values.
     """
 
-    ai = AIInfoModel(
+    ai = AIUsageModel(
         provider="groq",
         model="llama-3",
     )
@@ -50,7 +50,7 @@ def test_to_metadata_returns_metadata() -> None:
     It should convert the request context into metadata.
     """
 
-    ai = AIInfoModel(
+    ai = AIUsageModel(
         provider="groq",
         model="llama-3",
     )
@@ -65,7 +65,6 @@ def test_to_metadata_returns_metadata() -> None:
     metadata = context.to_metadata()
 
     assert metadata.request_id == "request_123"
-    assert metadata.conversation_id == "conversation_123"
     assert metadata.trace_id == "trace_123"
     assert metadata.ai is ai
 
@@ -80,7 +79,6 @@ def test_to_metadata_uses_defaults() -> None:
     metadata = context.to_metadata()
 
     assert metadata.request_id == context.request_id
-    assert metadata.conversation_id is None
     assert metadata.trace_id is None
     assert metadata.ai is None
     assert metadata.timestamp is not None

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import asyncio
 
-from src.core.models.planning import ExecutionPlan
+from src.core.dto.planning import ExecutionPlanDTO
 from src.execution.protocols import ExecutionStrategy, StepRunner
 
 
@@ -18,7 +18,7 @@ class ParallelExecutionStrategy(ExecutionStrategy):
     async def execute(
         self,
         *,
-        plan: ExecutionPlan,
+        plan: ExecutionPlanDTO,
         step_runner: StepRunner,
     ) -> None:
         """

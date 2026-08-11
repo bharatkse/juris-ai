@@ -6,19 +6,19 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from src.clients.storage.models import (
-    DeleteRequest,
-    DownloadRequest,
-    DownloadResponse,
-    ExistsRequest,
-    ListRequest,
-    ListResponse,
-    MetadataRequest,
-    StoredObject,
-    UploadRequest,
-    UploadResponse,
+from src.core.dto.clients.storage import (
+    DeleteRequestDTO,
+    DownloadRequestDTO,
+    DownloadResponseDTO,
+    ExistsRequestDTO,
+    ListRequestDTO,
+    ListResponseDTO,
+    MetadataRequestDTO,
+    StoredObjectDTO,
+    UploadRequestDTO,
+    UploadResponseDTO,
 )
-from src.core.enums import StorageType
+from src.core.enums import StorageTypeEnum
 
 
 class StorageClient(ABC):
@@ -28,7 +28,7 @@ class StorageClient(ABC):
 
     @property
     @abstractmethod
-    def storage_type(self) -> StorageType:
+    def storage_type(self) -> StorageTypeEnum:
         """
         Storage provider type.
         """
@@ -37,40 +37,40 @@ class StorageClient(ABC):
     async def upload(
         self,
         *,
-        request: UploadRequest,
-    ) -> UploadResponse: ...
+        request: UploadRequestDTO,
+    ) -> UploadResponseDTO: ...
 
     @abstractmethod
     async def download(
         self,
         *,
-        request: DownloadRequest,
-    ) -> DownloadResponse: ...
+        request: DownloadRequestDTO,
+    ) -> DownloadResponseDTO: ...
 
     @abstractmethod
     async def delete(
         self,
         *,
-        request: DeleteRequest,
+        request: DeleteRequestDTO,
     ) -> None: ...
 
     @abstractmethod
     async def exists(
         self,
         *,
-        request: ExistsRequest,
+        request: ExistsRequestDTO,
     ) -> bool: ...
 
     @abstractmethod
     async def metadata(
         self,
         *,
-        request: MetadataRequest,
-    ) -> StoredObject: ...
+        request: MetadataRequestDTO,
+    ) -> StoredObjectDTO: ...
 
     @abstractmethod
     async def list(
         self,
         *,
-        request: ListRequest,
-    ) -> ListResponse: ...
+        request: ListRequestDTO,
+    ) -> ListResponseDTO: ...

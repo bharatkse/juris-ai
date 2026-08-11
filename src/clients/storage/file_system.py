@@ -6,21 +6,21 @@ import aiofiles
 
 from core.exceptions.client import ClientProviderError, ClientResponseError
 from src.clients.storage.base import StorageClient
-from src.clients.storage.models import (
-    DeleteRequest,
-    DownloadRequest,
-    DownloadResponse,
-    ExistsRequest,
-    ListRequest,
-    ListResponse,
-    MetadataRequest,
-    StoredObject,
-    UploadRequest,
-    UploadResponse,
-)
 from src.clients.storage.paths import StoragePaths
 from src.clients.storage.serializer import StorageSerializer
-from src.core.enums import StorageType
+from src.core.dto.clients.storage import (
+    DeleteRequestDTO,
+    DownloadRequestDTO,
+    DownloadResponseDTO,
+    ExistsRequestDTO,
+    ListRequestDTO,
+    ListResponseDTO,
+    MetadataRequestDTO,
+    StoredObjectDTO,
+    UploadRequestDTO,
+    UploadResponseDTO,
+)
+from src.core.enums import StorageTypeEnum
 from src.core.logger import get_logger
 
 log = get_logger(__name__)
@@ -48,14 +48,14 @@ class LocalStorageClient(StorageClient):
     @property
     def storage_type(
         self,
-    ) -> StorageType:
-        return StorageType.LOCAL
+    ) -> StorageTypeEnum:
+        return StorageTypeEnum.LOCAL
 
     async def upload(
         self,
         *,
-        request: UploadRequest,
-    ) -> UploadResponse:
+        request: UploadRequestDTO,
+    ) -> UploadResponseDTO:
         """
         Upload an object.
         """
@@ -76,7 +76,7 @@ class LocalStorageClient(StorageClient):
                 filename=request.filename,
             )
 
-            stored_object = StoredObject(
+            stored_object = StoredObjectDTO(
                 object_id=request.object_id,
                 filename=request.filename,
                 content_type=request.content_type,
@@ -105,7 +105,7 @@ class LocalStorageClient(StorageClient):
                 request.object_id,
             )
 
-            return UploadResponse(
+            return UploadResponseDTO(
                 object=stored_object,
             )
 
@@ -132,8 +132,8 @@ class LocalStorageClient(StorageClient):
     async def download(
         self,
         *,
-        request: DownloadRequest,
-    ) -> DownloadResponse:
+        request: DownloadRequestDTO,
+    ) -> DownloadResponseDTO:
         """
         Download an object.
         """
@@ -153,7 +153,7 @@ class LocalStorageClient(StorageClient):
             stored_object=stored_object,
         )
 
-        return DownloadResponse(
+        return DownloadResponseDTO(
             object=stored_object,
             content=content,
         )
@@ -161,7 +161,7 @@ class LocalStorageClient(StorageClient):
     async def delete(
         self,
         *,
-        request: DeleteRequest,
+        request: DeleteRequestDTO,
     ) -> None:
         """
         Delete an object.
@@ -219,7 +219,7 @@ class LocalStorageClient(StorageClient):
     async def exists(
         self,
         *,
-        request: ExistsRequest,
+        request: ExistsRequestDTO,
     ) -> bool:
         """
         Determine whether an object exists.
@@ -244,8 +244,8 @@ class LocalStorageClient(StorageClient):
     async def metadata(
         self,
         *,
-        request: MetadataRequest,
-    ) -> StoredObject:
+        request: MetadataRequestDTO,
+    ) -> StoredObjectDTO:
         """
         Retrieve object metadata.
         """
@@ -261,20 +261,20 @@ class LocalStorageClient(StorageClient):
     async def list(
         self,
         *,
-        request: ListRequest,
-    ) -> ListResponse:
+        request: ListRequestDTO,
+    ) -> ListResponseDTO:
         """
         List stored objects.
         """
 
-        objects: list[StoredObject] = []
+        objects: list[StoredObjectDTO] = []
 
         directory = self._paths.object_directory(
             object_id=request.object_id,
         )
 
         if not directory.exists():
-            return ListResponse(
+            return ListResponseDTO(
                 objects=(),
             )
 
@@ -313,14 +313,14 @@ class LocalStorageClient(StorageClient):
             if request.limit is not None and len(objects) >= request.limit:
                 break
 
-        return ListResponse(
+        return ListResponseDTO(
             objects=tuple(objects),
         )
 
     async def _write_object(
         self,
         *,
-        stored_object: StoredObject,
+        stored_object: StoredObjectDTO,
         content: bytes,
     ) -> None:
         """
@@ -353,7 +353,7 @@ class LocalStorageClient(StorageClient):
     async def _read_object(
         self,
         *,
-        stored_object: StoredObject,
+        stored_object: StoredObjectDTO,
     ) -> bytes:
         """
         Read object content.
@@ -392,7 +392,7 @@ class LocalStorageClient(StorageClient):
     async def _write_metadata(
         self,
         *,
-        stored_object: StoredObject,
+        stored_object: StoredObjectDTO,
     ) -> None:
         """
         Write object metadata.
@@ -429,7 +429,7 @@ class LocalStorageClient(StorageClient):
         *,
         object_id: str,
         filename: str,
-    ) -> StoredObject:
+    ) -> StoredObjectDTO:
         """
         Read object metadata.
         """

@@ -9,9 +9,9 @@ flows through this bus.
 
 from __future__ import annotations
 
+from src.core.enums import AgentTypeEnum
 from src.core.exceptions.agent import AgentExecutionError
-from src.core.models.message import AgentMessage
-from src.core.models.planning import AgentType
+from src.core.schemas.message import AgentMessageSchema
 from src.execution.protocols import AgentMessageHandler
 
 
@@ -27,14 +27,14 @@ class CollaborationBus:
         self,
     ) -> None:
         self._handlers: dict[
-            AgentType,
+            AgentTypeEnum,
             AgentMessageHandler,
         ] = {}
 
     def register(
         self,
         *,
-        agent: AgentType,
+        agent: AgentTypeEnum,
         handler: AgentMessageHandler,
     ) -> None:
         """
@@ -46,7 +46,7 @@ class CollaborationBus:
     async def send(
         self,
         *,
-        message: AgentMessage,
+        message: AgentMessageSchema,
     ) -> object:
         """
         Send a message to another agent.

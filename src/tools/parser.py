@@ -11,14 +11,14 @@ from types import MappingProxyType
 from docx import Document
 from pypdf import PdfReader
 
-from core.models.tool import (
-    RetrievedContent,
-    ToolFile,
-    ToolMetadata,
-    ToolRequest,
-    ToolResponse,
+from src.core.dto.tool import (
+    RetrievedContentDTO,
+    ToolFileDTO,
+    ToolMetadataDTO,
+    ToolRequestDTO,
+    ToolResponseDTO,
 )
-from src.core.enums import RetrievalSource
+from src.core.enums import RetrievalSourceEnum
 from src.core.exceptions.tool import ToolValidationError
 from src.tools.base import BaseTool
 from src.tools.constants import (
@@ -34,7 +34,7 @@ class ParserTool(BaseTool):
     Parse uploaded documents into plain text.
     """
 
-    metadata = ToolMetadata(
+    metadata = ToolMetadataDTO(
         name="parser",
         description="Parse uploaded documents into plain text.",
     )
@@ -42,7 +42,7 @@ class ParserTool(BaseTool):
     def __init__(self) -> None:
         self._parsers: Mapping[
             str,
-            Callable[[ToolFile], str],
+            Callable[[ToolFileDTO], str],
         ] = MappingProxyType(
             {
                 PDF_CONTENT_TYPE: self._parse_pdf,
@@ -55,8 +55,8 @@ class ParserTool(BaseTool):
     async def run(
         self,
         *,
-        request: ToolRequest,
-    ) -> ToolResponse:
+        request: ToolRequestDTO,
+    ) -> ToolResponseDTO:
         """
         Parse uploaded documents.
         """
@@ -68,15 +68,15 @@ class ParserTool(BaseTool):
             for file in request.uploaded_files
         )
 
-        return ToolResponse(
+        return ToolResponseDTO(
             content=content,
         )
 
     def _parse(
         self,
         *,
-        file: ToolFile,
-    ) -> RetrievedContent:
+        file: ToolFileDTO,
+    ) -> RetrievedContentDTO:
         """
         Parse a single uploaded document.
         """
@@ -94,8 +94,8 @@ class ParserTool(BaseTool):
                 ),
             )
 
-        return RetrievedContent(
-            source=RetrievalSource.DOCUMENT,
+        return RetrievedContentDTO(
+            source=RetrievalSourceEnum.DOCUMENT,
             content=parser(file),
             metadata={
                 "filename": file.filename,
@@ -106,7 +106,7 @@ class ParserTool(BaseTool):
 
     @staticmethod
     def _parse_pdf(
-        file: ToolFile,
+        file: ToolFileDTO,
     ) -> str:
         """
         Parse a PDF document.
@@ -120,7 +120,7 @@ class ParserTool(BaseTool):
 
     @staticmethod
     def _parse_docx(
-        file: ToolFile,
+        file: ToolFileDTO,
     ) -> str:
         """
         Parse a DOCX document.
@@ -136,7 +136,7 @@ class ParserTool(BaseTool):
 
     @staticmethod
     def _parse_text(
-        file: ToolFile,
+        file: ToolFileDTO,
     ) -> str:
         """
         Parse a text or Markdown document.

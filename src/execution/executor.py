@@ -7,8 +7,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from src.core.models.conversation import Conversation
-from src.core.models.planning import ExecutionPlan
+from src.core.dto.conversation import ConversationDTO
+from src.core.dto.planning import ExecutionPlanDTO
 from src.execution.hybrid import HybridExecutionStrategy
 from src.execution.parallel import ParallelExecutionStrategy
 from src.execution.sequential import SequentialExecutionStrategy
@@ -16,7 +16,7 @@ from src.execution.session import ExecutionSession
 from src.registry.agent import AgentRegistry
 
 if TYPE_CHECKING:
-    from src.execution.result import ExecutionResult
+    from src.execution.schemas.result import ExecutionResultSchema
 
 
 class Executor:
@@ -41,9 +41,9 @@ class Executor:
         self,
         *,
         request_id: UUID,
-        conversation: Conversation,
-        plan: ExecutionPlan,
-    ) -> ExecutionResult:
+        conversation: ConversationDTO,
+        plan: ExecutionPlanDTO,
+    ) -> ExecutionResultSchema:
         """
         Execute an execution plan.
         """

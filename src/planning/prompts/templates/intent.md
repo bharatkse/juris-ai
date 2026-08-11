@@ -62,12 +62,24 @@ Use for:
 - Consider the complete conversation when classifying the request.
 - If the intent is ambiguous or cannot be determined confidently, return `general`.
 
-## Response
+## JSON Response
 
-Return only a valid `Intent` object.
+Return a valid JSON object with exactly this structure:
+
+{
+"intent": "general"
+}
+
+The value of `intent` must be exactly one of:
+
+- `general`
+- `legal_research`
+- `contract_review`
+- `contract_analysis`
+- `clause_extraction`
+- `risk_analysis`
 
 Do not include explanations.
-
 Do not include markdown.
-
 Do not include reasoning.
+Return JSON only.

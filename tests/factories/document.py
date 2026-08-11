@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import factory
 
-from src.core.enums import DocumentStatus, StorageType
+from src.core.enums import DocumentStatusEnum, StorageTypeEnum
 from src.db.mixins import generate_prefixed_uuid_pk
 from src.db.models.document import Document
 from tests.factories.base import BaseFactory
@@ -45,7 +45,7 @@ class DocumentFactory(BaseFactory):
 
     size = 1024
 
-    storage_type = StorageType.LOCAL
+    storage_type = StorageTypeEnum.LOCAL
 
     storage_path = factory.Sequence(
         lambda n: f"documents/doc_{n}.pdf",
@@ -55,4 +55,4 @@ class DocumentFactory(BaseFactory):
         lambda n: f"{n:064x}",
     )
 
-    status = DocumentStatus.UPLOADED
+    status = DocumentStatusEnum.UPLOADED

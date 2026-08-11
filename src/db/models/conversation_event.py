@@ -5,11 +5,12 @@ Conversation event ORM model.
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
+from uuid import UUID
 
-from sqlalchemy import JSON, ForeignKey, String
+from sqlalchemy import JSON, Enum, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from src.core.enums import MessageRole
+from src.core.enums import MessageRoleEnum
 from src.db.base import Base
 from src.db.mixins import PrimaryKeyMixin, TimestampMixin
 
@@ -35,17 +36,35 @@ class ConversationEvent(
         - Tool invocation
         - Tool response
 
-    Events form a tree through `parent_event_id`, enabling future
+    Events form a tree through ``parent_event_id``, enabling future
     support for agent execution, branching conversations, tool calls,
     and regenerated responses.
+
+    A request can produce at most one event per role. This is enforced
+    by the database using ``conversation_id``, ``request_id``, and
+    ``role``.
     """
 
     __tablename__ = "conversation_events"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "conversation_id",
+            "request_id",
+            "role",
+            name="uq_conversation_event_request_role",
+        ),
+    )
 
     _id_prefix = "event"
 
     conversation_id: Mapped[str] = mapped_column(
         ForeignKey("conversations.id"),
+        nullable=False,
+        index=True,
+    )
+
+    request_id: Mapped[UUID] = mapped_column(
         nullable=False,
         index=True,
     )
@@ -56,8 +75,12 @@ class ConversationEvent(
         index=True,
     )
 
-    role: Mapped[MessageRole] = mapped_column(
-        String(20),
+    role: Mapped[MessageRoleEnum] = mapped_column(
+        Enum(
+            MessageRoleEnum,
+            native_enum=False,
+            length=20,
+        ),
         nullable=False,
     )
 
@@ -85,4 +108,10 @@ class ConversationEvent(
     )
 
     def __repr__(self) -> str:
-        return f"ConversationEvent(" f"id={self.id!r}, " f"role={self.role.value!r}" f")"
+        return (
+            "ConversationEvent("
+            f"id={self.id!r}, "
+            f"request_id={self.request_id!r}, "
+            f"role={self.role.value!r}"
+            ")"
+        )

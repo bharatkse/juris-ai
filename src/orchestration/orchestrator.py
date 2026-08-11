@@ -7,8 +7,13 @@ Coordinates the complete AI request lifecycle.
 from __future__ import annotations
 
 from src.aggregation.response import ResponseAggregator
+from src.core.dto.agent import AgentResponseDTO
+from src.core.dto.conversation import ConversationDTO
+from src.core.dto.message import MessageDTO
+from src.core.enums import MessageRoleEnum
+from src.core.logger import get_logger
 from src.execution.executor import Executor
-from src.orchestration.context import (
+from src.orchestration.schemas.context import (
     ConversationContext,
     DocumentContext,
     OrchestrationContext,
@@ -16,10 +21,12 @@ from src.orchestration.context import (
     RuntimeContext,
     UserContext,
 )
-from src.orchestration.request import OrchestratorRequest
-from src.orchestration.response import OrchestratorResponse
+from src.orchestration.schemas.request import OrchestratorRequest
+from src.orchestration.schemas.response import OrchestratorResponse
 from src.planning.planner import ExecutionPlanner
 from src.validation.response import ResponseValidator
+
+log = get_logger(__name__)
 
 
 class AIOrchestrator:
@@ -49,33 +56,158 @@ class AIOrchestrator:
         Execute the complete orchestration lifecycle.
         """
 
-        context = self._build_context(
-            request=request,
+        log.info(
+            "Starting AI orchestration.",
+            extra={
+                "operation": "orchestrate",
+                "request_id": str(request.request_id),
+                "conversation_id": str(request.conversation_id),
+                "user_id": str(request.user_id),
+            },
         )
 
-        plan = await self._planner.create_plan(
-            context=context,
-        )
+        try:
+            orchestration_context = self._build_context(
+                request=request,
+            )
 
-        responses = await self._executor.execute(
-            plan=plan,
-            context=context,
-        )
+            log.debug(
+                "Orchestration context built.",
+                extra={
+                    "operation": "build_context",
+                    "request_id": str(request.request_id),
+                    "conversation_id": str(request.conversation_id),
+                    "history_count": len(request.history),
+                    "attachment_count": len(request.attachments),
+                },
+            )
 
-        await self._validator.validate(
-            responses=responses,
-        )
+            execution_plan = await self._planner.create_plan(
+                context=orchestration_context,
+            )
 
-        aggregation = await self._aggregator.aggregate(
-            responses=responses,
-        )
+            log.info(
+                "Execution plan created.",
+                extra={
+                    "operation": "create_plan",
+                    "request_id": str(request.request_id),
+                    "conversation_id": str(request.conversation_id),
+                    "intent": execution_plan.intent,
+                    "mode": execution_plan.mode,
+                    "step_count": len(execution_plan.steps),
+                },
+            )
 
-        return OrchestratorResponse(
-            conversation_id=request.conversation_id,
-            content=aggregation.response.content,
-            citations=aggregation.response.citations,
-            sources=aggregation.response.sources,
-            usage=aggregation.response.metadata.usage,
+            conversation = self._build_conversation(
+                request=request,
+            )
+
+            log.debug(
+                "Execution conversation built.",
+                extra={
+                    "operation": "build_conversation",
+                    "request_id": str(request.request_id),
+                    "conversation_id": str(request.conversation_id),
+                    "message_count": len(conversation.messages),
+                },
+            )
+
+            execution_result = await self._executor.execute(
+                request_id=request.request_id,
+                conversation=conversation,
+                plan=execution_plan,
+            )
+
+            log.info(
+                "Execution completed.",
+                extra={
+                    "operation": "execute_plan",
+                    "request_id": str(request.request_id),
+                    "conversation_id": str(request.conversation_id),
+                    "mode": execution_plan.mode,
+                },
+            )
+
+            agent_responses = self._extract_agent_responses(
+                execution_result=execution_result,
+            )
+
+            await self._validator.validate(
+                responses=agent_responses,
+            )
+
+            log.debug(
+                "Agent responses validated.",
+                extra={
+                    "operation": "validate_responses",
+                    "request_id": str(request.request_id),
+                    "conversation_id": str(request.conversation_id),
+                    "response_count": len(agent_responses),
+                },
+            )
+
+            aggregation_result = await self._aggregator.aggregate(
+                responses=agent_responses,
+            )
+
+            log.debug(
+                "Agent responses aggregated.",
+                extra={
+                    "operation": "aggregate_responses",
+                    "request_id": str(request.request_id),
+                    "conversation_id": str(request.conversation_id),
+                },
+            )
+
+            orchestrator_response = OrchestratorResponse(
+                conversation_id=request.conversation_id,
+                content=aggregation_result.response.content,
+                citations=aggregation_result.response.citations,
+                sources=aggregation_result.response.sources,
+                usage=aggregation_result.response.metadata.usage,
+            )
+
+            log.info(
+                "AI orchestration completed.",
+                extra={
+                    "operation": "orchestrate",
+                    "request_id": str(request.request_id),
+                    "conversation_id": str(request.conversation_id),
+                    "citation_count": len(orchestrator_response.citations),
+                    "source_count": len(orchestrator_response.sources),
+                },
+            )
+
+            return orchestrator_response
+
+        except Exception:
+            log.exception(
+                "AI orchestration failed.",
+                extra={
+                    "operation": "orchestrate",
+                    "request_id": str(request.request_id),
+                    "conversation_id": str(request.conversation_id),
+                    "user_id": str(request.user_id),
+                },
+            )
+            raise
+
+    @staticmethod
+    def _extract_agent_responses(
+        *,
+        execution_result,
+    ) -> tuple[AgentResponseDTO, ...]:
+        """
+        Extract successful agent responses from an execution result.
+        """
+
+        return tuple(
+            artifact
+            for artifact in execution_result.artifacts.values()
+            if isinstance(
+                artifact,
+                AgentResponseDTO,
+            )
         )
 
     @staticmethod
@@ -93,6 +225,7 @@ class AIOrchestrator:
             ),
             conversation=ConversationContext(
                 conversation_id=request.conversation_id,
+                history=request.history,
             ),
             user=UserContext(
                 user_id=request.user_id,
@@ -101,4 +234,35 @@ class AIOrchestrator:
                 attachments=request.attachments,
             ),
             runtime=RuntimeContext(),
+        )
+
+    @staticmethod
+    def _build_conversation(
+        *,
+        request: OrchestratorRequest,
+    ) -> ConversationDTO:
+        """
+        Build the conversation used during execution.
+
+        The conversation contains historical messages followed by
+        the current user message.
+        """
+
+        messages = [
+            MessageDTO(
+                role=message.role,
+                content=message.content,
+            )
+            for message in request.history
+        ]
+
+        messages.append(
+            MessageDTO(
+                role=MessageRoleEnum.USER,
+                content=request.message,
+            ),
+        )
+
+        return ConversationDTO(
+            messages=tuple(messages),
         )

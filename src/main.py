@@ -1,24 +1,12 @@
 """
 Application entry point for the Juris-AI API.
-
-This module is responsible for:
-- Creating and configuring the FastAPI application
-- Registering global exception handlers
-- Including API routers
-- Exposing a lightweight system health check endpoint
-
-Run in development:
-    uvicorn main:app --reload
-
-Run in production:
-    uvicorn main:app --host 0.0.0.0 --port 8000 --workers 2
-
 """
 
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
+import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -26,20 +14,19 @@ from src.api.exception_handlers import register_exception_handlers
 from src.api.v1.routers import api_router
 from src.core.config import settings
 from src.core.constants import API_DESCRIPTION, API_TITLE
+from src.core.file_system import ensure_dir
 from src.core.logger import get_logger, setup_logging
-from src.core.utils.file_utils import ensure_dir
+from src.core.response import ApiResponse
 from src.middleware.request_context import RequestContextMiddleware
 
-log = get_logger(__name__)
+logger = get_logger(__name__)
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
+def initialize_logging() -> None:
     """
-    Everything in the `try` block runs at startup.
-    Everything after `yield` runs at shutdown.
+    Configure application logging.
     """
-    # 1. Configure logging
+
     setup_logging(
         level=settings.LOG_LEVEL,
         fmt=settings.LOG_FORMAT,
@@ -48,45 +35,135 @@ async def lifespan(app: FastAPI):
         backup_count=settings.LOG_BACKUP_COUNT,
     )
 
-    log.info(f"Starting {settings.APP_NAME} v{settings.APP_VERSION} [{settings.ENVIRONMENT}]")
 
-    # 2. Ensure required directories exist
-    for path in [
-        # settings.STORAGE_PATH,
-        # settings.VECTOR_DB_PATH,
-        "data/raw",
-        "data/db",
-        "logs",
-    ]:
-        ensure_dir(path)
+def initialize_storage() -> None:
+    """
+    Ensure required directories exist.
+    """
 
-    # 3. Create DB tables (idempotent)
-    # create_all_tables(engine)
+    for directory in (
+        settings.DATA_DIRECTORY,
+        settings.LOG_DIRECTORY,
+    ):
+        ensure_dir(
+            directory,
+        )
 
-    # 4. Verify DB is reachable
-    # if not run_health_check(engine):
-    #     log.critical("Database health check failed — some tables may be missing")
 
-    log.info("Startup complete — ready to accept requests")
+async def startup() -> None:
+    """
+    Perform application startup tasks.
+    """
 
-    yield  # ← application is running
+    initialize_logging()
 
-    log.info(f"Shutting down {settings.APP_NAME}")
+    logger.info(
+        "Application starting.",
+        extra={
+            "application": settings.APP_NAME,
+            "version": settings.APP_VERSION,
+            "environment": settings.ENVIRONMENT,
+        },
+    )
+
+    initialize_storage()
+
+    #
+    # Future initialization:
+    #
+    # - Database connectivity
+    # - Database migrations
+    # - Vector database
+    # - AI model warm-up
+    #
+
+    logger.info(
+        "Application started successfully.",
+    )
+
+
+async def shutdown() -> None:
+    """
+    Perform application shutdown tasks.
+    """
+
+    logger.info(
+        "Application shutting down.",
+    )
+
+
+@asynccontextmanager
+async def lifespan(
+    _: FastAPI,
+):
+    """
+    Manage the application lifecycle.
+    """
+
+    await startup()
+
+    yield
+
+    await shutdown()
+
+
+def configure_middleware(
+    app: FastAPI,
+) -> None:
+    """
+    Register application middleware.
+    """
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.CORS_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    app.add_middleware(
+        RequestContextMiddleware,
+    )
+
+
+def configure_routes(
+    app: FastAPI,
+) -> None:
+    """
+    Register API routes.
+    """
+
+    app.include_router(
+        api_router,
+    )
+
+    @app.get(
+        "/",
+        include_in_schema=False,
+    )
+    async def root() -> ApiResponse:
+        """
+        Root endpoint.
+        """
+
+        return ApiResponse(
+            success=True,
+            data={
+                "name": settings.APP_NAME,
+                "version": settings.APP_VERSION,
+                "environment": settings.ENVIRONMENT,
+                "docs": ("/docs" if settings.ENABLE_DOCS else None),
+                "health": "/api/v1/health",
+            },
+        )
 
 
 def create_app() -> FastAPI:
     """
-    Initialize and configure the FastAPI application.
-
-    Responsibilities:
-    - Configure structured logging
-    - Register global exception handlers
-    - Include API routers for all endpoints
-    - Set service metadata (title, version, description)
-
-    Returns:
-        FastAPI: Fully configured FastAPI application instance
+    Create and configure the FastAPI application.
     """
+
     app = FastAPI(
         title=API_TITLE,
         description=API_DESCRIPTION,
@@ -97,44 +174,25 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # configure CORS (if needed)
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=settings.CORS_ORIGINS,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+    configure_middleware(
+        app,
     )
 
-    # Configured Custom middleware (applied in REVERSE order)
-    app.add_middleware(RequestContextMiddleware)
+    register_exception_handlers(
+        app,
+    )
 
-    # Configured Exception handlers
-    register_exception_handlers(app)
-
-    # Routers
-    app.include_router(api_router)
-
-    # Root endpoint
-    @app.get("/", include_in_schema=False)
-    def root():
-        return {
-            "name": settings.APP_NAME,
-            "version": settings.APP_VERSION,
-            "docs": "/docs" if settings.ENABLE_DOCS else "disabled",
-            "health": "/api/v1/health",
-        }
+    configure_routes(
+        app,
+    )
 
     return app
 
 
-# Application instance used by ASGI server
 app = create_app()
 
 
 if __name__ == "__main__":
-    import uvicorn
-
     uvicorn.run(
         "main:app",
         host=settings.HOST,

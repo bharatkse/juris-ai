@@ -7,13 +7,8 @@ well-known intents.
 
 from __future__ import annotations
 
-from core.models.planning import (
-    AgentType,
-    ExecutionMode,
-    ExecutionPlan,
-    ExecutionStep,
-    Intent,
-)
+from src.core.dto.planning import ExecutionPlanDTO, ExecutionStepDTO
+from src.core.enums import AgentTypeEnum, ExecutionModeEnum, IntentEnum
 
 
 class PlanTemplateRegistry:
@@ -24,8 +19,8 @@ class PlanTemplateRegistry:
     def resolve(
         self,
         *,
-        intent: Intent,
-    ) -> ExecutionPlan | None:
+        intent: IntentEnum,
+    ) -> ExecutionPlanDTO | None:
         """
         Return a predefined execution plan.
 
@@ -35,19 +30,19 @@ class PlanTemplateRegistry:
         """
 
         match intent:
-            case Intent.CONTRACT_REVIEW:
+            case IntentEnum.CONTRACT_REVIEW:
                 return self._contract_review()
 
-            case Intent.CONTRACT_ANALYSIS:
+            case IntentEnum.CONTRACT_ANALYSIS:
                 return self._contract_analysis()
 
-            case Intent.CLAUSE_EXTRACTION:
+            case IntentEnum.CLAUSE_EXTRACTION:
                 return self._clause_extraction()
 
-            case Intent.RISK_ANALYSIS:
+            case IntentEnum.RISK_ANALYSIS:
                 return self._risk_analysis()
 
-            case Intent.LEGAL_RESEARCH:
+            case IntentEnum.LEGAL_RESEARCH:
                 return self._legal_research()
 
             case _:
@@ -55,19 +50,19 @@ class PlanTemplateRegistry:
 
     def default(
         self,
-    ) -> ExecutionPlan:
+    ) -> ExecutionPlanDTO:
         """
         Return the default execution plan.
         """
 
         return self._build_plan(
-            intent=Intent.GENERAL,
-            mode=ExecutionMode.SEQUENTIAL,
+            intent=IntentEnum.GENERAL,
+            mode=ExecutionModeEnum.SEQUENTIAL,
             steps=(
-                ExecutionStep(
+                ExecutionStepDTO(
                     id="answer",
                     stage=1,
-                    agent=AgentType.LEGAL,
+                    agent=AgentTypeEnum.LEGAL,
                     instruction="Answer the user's question.",
                 ),
             ),
@@ -75,7 +70,7 @@ class PlanTemplateRegistry:
 
     def _contract_review(
         self,
-    ) -> ExecutionPlan:
+    ) -> ExecutionPlanDTO:
         """
         Build the contract review execution plan.
 
@@ -86,13 +81,13 @@ class PlanTemplateRegistry:
         """
 
         return self._build_plan(
-            intent=Intent.CONTRACT_REVIEW,
-            mode=ExecutionMode.SEQUENTIAL,
+            intent=IntentEnum.CONTRACT_REVIEW,
+            mode=ExecutionModeEnum.SEQUENTIAL,
             steps=(
-                ExecutionStep(
+                ExecutionStepDTO(
                     id="review_contract",
                     stage=1,
-                    agent=AgentType.CONTRACT,
+                    agent=AgentTypeEnum.CONTRACT,
                     instruction="Review the supplied contract.",
                 ),
             ),
@@ -100,19 +95,19 @@ class PlanTemplateRegistry:
 
     def _contract_analysis(
         self,
-    ) -> ExecutionPlan:
+    ) -> ExecutionPlanDTO:
         """
         Build the contract analysis execution plan.
         """
 
         return self._build_plan(
-            intent=Intent.CONTRACT_ANALYSIS,
-            mode=ExecutionMode.SEQUENTIAL,
+            intent=IntentEnum.CONTRACT_ANALYSIS,
+            mode=ExecutionModeEnum.SEQUENTIAL,
             steps=(
-                ExecutionStep(
+                ExecutionStepDTO(
                     id="analyze_contract",
                     stage=1,
-                    agent=AgentType.CONTRACT,
+                    agent=AgentTypeEnum.CONTRACT,
                     instruction="Analyze the supplied contract.",
                 ),
             ),
@@ -120,19 +115,19 @@ class PlanTemplateRegistry:
 
     def _clause_extraction(
         self,
-    ) -> ExecutionPlan:
+    ) -> ExecutionPlanDTO:
         """
         Build the clause extraction execution plan.
         """
 
         return self._build_plan(
-            intent=Intent.CLAUSE_EXTRACTION,
-            mode=ExecutionMode.SEQUENTIAL,
+            intent=IntentEnum.CLAUSE_EXTRACTION,
+            mode=ExecutionModeEnum.SEQUENTIAL,
             steps=(
-                ExecutionStep(
+                ExecutionStepDTO(
                     id="extract_clauses",
                     stage=1,
-                    agent=AgentType.CONTRACT,
+                    agent=AgentTypeEnum.CONTRACT,
                     instruction="Extract important clauses.",
                 ),
             ),
@@ -140,19 +135,19 @@ class PlanTemplateRegistry:
 
     def _risk_analysis(
         self,
-    ) -> ExecutionPlan:
+    ) -> ExecutionPlanDTO:
         """
         Build the risk analysis execution plan.
         """
 
         return self._build_plan(
-            intent=Intent.RISK_ANALYSIS,
-            mode=ExecutionMode.SEQUENTIAL,
+            intent=IntentEnum.RISK_ANALYSIS,
+            mode=ExecutionModeEnum.SEQUENTIAL,
             steps=(
-                ExecutionStep(
+                ExecutionStepDTO(
                     id="identify_risks",
                     stage=1,
-                    agent=AgentType.CONTRACT,
+                    agent=AgentTypeEnum.CONTRACT,
                     instruction="Identify contractual risks.",
                 ),
             ),
@@ -160,19 +155,19 @@ class PlanTemplateRegistry:
 
     def _legal_research(
         self,
-    ) -> ExecutionPlan:
+    ) -> ExecutionPlanDTO:
         """
         Build the legal research execution plan.
         """
 
         return self._build_plan(
-            intent=Intent.LEGAL_RESEARCH,
-            mode=ExecutionMode.SEQUENTIAL,
+            intent=IntentEnum.LEGAL_RESEARCH,
+            mode=ExecutionModeEnum.SEQUENTIAL,
             steps=(
-                ExecutionStep(
+                ExecutionStepDTO(
                     id="answer_legal_question",
                     stage=1,
-                    agent=AgentType.LEGAL,
+                    agent=AgentTypeEnum.LEGAL,
                     instruction="Answer the legal question.",
                 ),
             ),
@@ -181,18 +176,18 @@ class PlanTemplateRegistry:
     @staticmethod
     def _build_plan(
         *,
-        intent: Intent,
-        mode: ExecutionMode,
+        intent: IntentEnum,
+        mode: ExecutionModeEnum,
         steps: tuple[
-            ExecutionStep,
+            ExecutionStepDTO,
             ...,
         ],
-    ) -> ExecutionPlan:
+    ) -> ExecutionPlanDTO:
         """
         Build an execution plan.
         """
 
-        return ExecutionPlan(
+        return ExecutionPlanDTO(
             intent=intent,
             mode=mode,
             steps=steps,

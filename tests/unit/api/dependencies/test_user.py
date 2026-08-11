@@ -47,7 +47,7 @@ def test_get_user_repository(
     assert result is repository
 
     mock_user_repository.assert_called_once_with(
-        session,
+        session=session,
     )
 
 

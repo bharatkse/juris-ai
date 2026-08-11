@@ -8,21 +8,29 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
-from src.core.enums import Gender
+from src.core.enums import GenderEnum
 from src.core.types import UserId
 
 
 class CreateUserRequest(BaseModel):
     """
-    Request payload for creating a new user.
+    Request payload for creating a user.
     """
 
     model_config = ConfigDict(
         extra="forbid",
     )
 
-    email: EmailStr = Field(
-        description="User email address.",
+    email: EmailStr
+
+    password: str = Field(
+        min_length=8,
+        max_length=128,
+    )
+
+    confirm_password: str = Field(
+        min_length=8,
+        max_length=128,
     )
 
     first_name: str | None = Field(
@@ -37,7 +45,7 @@ class CreateUserRequest(BaseModel):
         max_length=100,
     )
 
-    gender: Gender | None = None
+    gender: GenderEnum | None = None
 
     phone_number: str | None = Field(
         default=None,
@@ -46,28 +54,24 @@ class CreateUserRequest(BaseModel):
     )
 
     date_of_birth: date | None = None
-    password: str = Field(
-        min_length=8,
-        max_length=128,
-        description="User password.",
-    )
-
-    confirm_password: str = Field(
-        min_length=8,
-        max_length=128,
-        description="Confirmation of the user password.",
-    )
 
     @model_validator(mode="after")
     def validate_passwords(self) -> CreateUserRequest:
+        """
+        Ensure both passwords match.
+        """
+
         if self.password != self.confirm_password:
-            raise ValueError("Passwords do not match.")
+            raise ValueError(
+                "Passwords do not match.",
+            )
+
         return self
 
 
 class UpdateUserRequest(BaseModel):
     """
-    Request payload for updating a user profile.
+    Request payload for updating a user.
     """
 
     model_config = ConfigDict(
@@ -86,7 +90,7 @@ class UpdateUserRequest(BaseModel):
         max_length=100,
     )
 
-    gender: Gender | None = None
+    gender: GenderEnum | None = None
 
     phone_number: str | None = Field(
         default=None,
@@ -99,7 +103,7 @@ class UpdateUserRequest(BaseModel):
 
 class UserResponse(BaseModel):
     """
-    User response.
+    User details.
     """
 
     model_config = ConfigDict(
@@ -115,7 +119,7 @@ class UserResponse(BaseModel):
 
     last_name: str | None
 
-    gender: Gender | None
+    gender: GenderEnum | None
 
     phone_number: str | None
 

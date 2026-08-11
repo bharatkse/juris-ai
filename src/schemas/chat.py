@@ -7,9 +7,12 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from fastapi import File, Form, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.core.enums import MessageRole
+from src.core.enums import MessageRoleEnum
+from src.core.types import ConversationEventId, ConversationId
+from src.orchestration.schemas.response import Citation, ResponseMetadata, Source, Usage
 
 
 class ChatRequest(BaseModel):
@@ -21,9 +24,7 @@ class ChatRequest(BaseModel):
         extra="forbid",
     )
 
-    conversation_id: str = Field(
-        description="Conversation identifier.",
-    )
+    conversation_id: ConversationId
 
     message: str = Field(
         min_length=1,
@@ -31,33 +32,79 @@ class ChatRequest(BaseModel):
         description="User message.",
     )
 
+    files: list[UploadFile] = Field(
+        default_factory=list,
+        description="Documents attached to the chat message.",
+    )
+
+    @classmethod
+    def as_form(
+        cls,
+        conversation_id: ConversationId = Form(...),
+        message: str = Form(...),
+        files: list[UploadFile] = File(default=[]),
+    ) -> ChatRequest:
+        return cls(
+            conversation_id=conversation_id,
+            message=message,
+            files=files,
+        )
+
 
 class ConversationEventResponse(BaseModel):
     """
-    Conversation event response.
+    Conversation event.
     """
 
     model_config = ConfigDict(
         from_attributes=True,
         extra="forbid",
-        populate_by_name=True,
     )
 
-    id: str
+    id: ConversationEventId
 
-    conversation_id: str
+    conversation_id: ConversationId
 
-    parent_event_id: str | None
+    parent_event_id: ConversationEventId | None
 
-    role: MessageRole
+    role: MessageRoleEnum
 
     content: str
 
-    event_metadata: dict[str, Any] | None = Field(
-        serialization_alias="metadata",
+    metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        alias="event_metadata",
     )
 
     created_at: datetime
+
+
+class AIResponse(BaseModel):
+    """
+    Assistant response returned by the chat API.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
+    content: str
+
+    citations: list[Citation] = Field(
+        default_factory=list,
+    )
+
+    sources: list[Source] = Field(
+        default_factory=list,
+    )
+
+    usage: Usage = Field(
+        default_factory=Usage,
+    )
+
+    metadata: ResponseMetadata = Field(
+        default_factory=ResponseMetadata,
+    )
 
 
 class ChatResponse(BaseModel):
@@ -69,7 +116,9 @@ class ChatResponse(BaseModel):
         extra="forbid",
     )
 
-    conversation_id: str
+    conversation_id: ConversationId
+
+    response: AIResponse
 
     user_event: ConversationEventResponse
 

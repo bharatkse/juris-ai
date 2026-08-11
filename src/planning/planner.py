@@ -5,7 +5,7 @@ Coordinates execution plan generation.
 
 Flow:
 
-PlanningRequest
+OrchestrationContext
         │
         ▼
 Intent Analyzer
@@ -32,8 +32,9 @@ ExecutionPlan
 
 from __future__ import annotations
 
-from core.models.planning import ExecutionPlan, PlanningRequest
+from src.core.dto.planning import ExecutionPlanDTO, PlanningRequestDTO
 from src.core.exceptions.planning import PlanValidationError
+from src.orchestration.schemas.context import OrchestrationContext
 from src.planning.intent import IntentAnalyzer
 from src.planning.llm_planner import LLMPlanGenerator
 from src.planning.templates import PlanTemplateRegistry
@@ -58,14 +59,18 @@ class ExecutionPlanner:
         self._llm_planner = llm_planner
         self._validator = validator
 
-    async def plan(
+    async def create_plan(
         self,
         *,
-        request: PlanningRequest,
-    ) -> ExecutionPlan:
+        context: OrchestrationContext,
+    ) -> ExecutionPlanDTO:
         """
         Create an execution plan.
         """
+
+        request = self._build_planning_request(
+            context=context,
+        )
 
         plan = await self._resolve_plan(
             request=request,
@@ -78,8 +83,8 @@ class ExecutionPlanner:
     async def _resolve_plan(
         self,
         *,
-        request: PlanningRequest,
-    ) -> ExecutionPlan:
+        request: PlanningRequestDTO,
+    ) -> ExecutionPlanDTO:
         """
         Resolve an execution plan.
         """
@@ -100,10 +105,26 @@ class ExecutionPlanner:
             intent=intent,
         )
 
+    @staticmethod
+    def _build_planning_request(
+        *,
+        context: OrchestrationContext,
+    ) -> PlanningRequestDTO:
+        """
+        Build a planning request from orchestration context.
+        """
+
+        return PlanningRequestDTO(
+            message=context.request.message,
+            history=tuple(
+                context.conversation.history,
+            ),
+        )
+
     def _validate_plan(
         self,
-        plan: ExecutionPlan,
-    ) -> ExecutionPlan:
+        plan: ExecutionPlanDTO,
+    ) -> ExecutionPlanDTO:
         """
         Validate an execution plan.
 

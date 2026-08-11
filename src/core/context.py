@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from uuid import uuid4
 
-from src.schemas.base import AIInfoModel, MetadataModel
+from src.schemas.base import AIUsageModel, MetadataModel
 
 
 @dataclass(slots=True)
@@ -23,14 +23,13 @@ class RequestContext:
 
     trace_id: str | None = None
 
-    ai: AIInfoModel | None = None
+    ai: AIUsageModel | None = None
 
     def to_metadata(self) -> MetadataModel:
         """Convert execution context into response metadata."""
 
         return MetadataModel(
             request_id=self.request_id,
-            conversation_id=self.conversation_id,
             trace_id=self.trace_id,
             ai=self.ai,
         )
