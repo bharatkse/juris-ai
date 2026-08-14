@@ -22,6 +22,7 @@ from __future__ import annotations
 from typing import Protocol, TypeVar, runtime_checkable
 
 from src.agents.base import BaseAgent
+from src.clients.llm.base import LLMClient
 from src.tools.base import BaseTool
 
 T = TypeVar("T")
@@ -108,6 +109,21 @@ class ToolRegistryProtocol(
 
     Tools are registered and resolved by their
     unique tool name.
+    """
+
+    ...
+
+
+@runtime_checkable
+class LLMClientRegistryProtocol(
+    Registry[LLMClient],
+    Protocol,
+):
+    """
+    Registry contract for LLM clients.
+
+    LLM clients are registered by logical runtime key
+    and resolved when constructing AI components.
     """
 
     ...

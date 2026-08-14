@@ -80,12 +80,12 @@ repos:
   # ----------------------------------------
   # CloudFormation / SAM linting
   # ----------------------------------------
+
   - repo: https://github.com/aws-cloudformation/cfn-lint
     rev: v1.43.3
     hooks:
       - id: cfn-lint
-        files: ^infrastructure/.*\.ya?ml$
-        exclude: ^openapi/
+        files: ^infrastructure/cf_templates/.*\.ya?ml$
 
   # ----------------------------------------
   # OpenAPI / YAML linting

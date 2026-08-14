@@ -4,6 +4,8 @@ Intent analyzer.
 
 from __future__ import annotations
 
+from langsmith import traceable
+
 from src.clients.llm.base import LLMClient
 from src.core.dto.planning import PlanningRequestDTO
 from src.core.enums import IntentEnum
@@ -25,6 +27,10 @@ class IntentAnalyzer:
         self._llm = llm_client
         self._prompt_builder = prompt_builder
 
+    @traceable(
+        name="intent-analyzer",
+        run_type="chain",
+    )
     async def analyze(
         self,
         *,

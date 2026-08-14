@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
 from src.api.exception_handlers import register_exception_handlers
 from src.api.v1.routers import api_router
@@ -18,6 +19,7 @@ from src.core.file_system import ensure_dir
 from src.core.logger import get_logger, setup_logging
 from src.core.response import ApiResponse
 from src.middleware.request_context import RequestContextMiddleware
+from src.observability.telemetry import configure_telemetry, shutdown_telemetry
 
 logger = get_logger(__name__)
 
@@ -38,16 +40,22 @@ def initialize_logging() -> None:
 
 def initialize_storage() -> None:
     """
-    Ensure required directories exist.
+    Ensure required application directories exist.
     """
 
     for directory in (
         settings.DATA_DIRECTORY,
         settings.LOG_DIRECTORY,
     ):
-        ensure_dir(
-            directory,
-        )
+        ensure_dir(directory)
+
+
+def initialize_observability() -> None:
+    """
+    Configure application observability.
+    """
+
+    configure_telemetry()
 
 
 async def startup() -> None:
@@ -67,6 +75,7 @@ async def startup() -> None:
     )
 
     initialize_storage()
+    initialize_observability()
 
     #
     # Future initialization:
@@ -102,9 +111,12 @@ async def lifespan(
 
     await startup()
 
-    yield
+    try:
+        yield
 
-    await shutdown()
+    finally:
+        await shutdown()
+        shutdown_telemetry()
 
 
 def configure_middleware(
@@ -159,6 +171,21 @@ def configure_routes(
         )
 
 
+def configure_instrumentation(
+    app: FastAPI,
+) -> None:
+    """
+    Configure framework-level OpenTelemetry instrumentation.
+    """
+
+    if not settings.OTEL_TRACING:
+        return
+
+    FastAPIInstrumentor.instrument_app(
+        app,
+    )
+
+
 def create_app() -> FastAPI:
     """
     Create and configure the FastAPI application.
@@ -168,13 +195,17 @@ def create_app() -> FastAPI:
         title=API_TITLE,
         description=API_DESCRIPTION,
         version=settings.APP_VERSION,
-        docs_url="/docs" if settings.ENABLE_DOCS else None,
-        redoc_url="/redoc" if settings.ENABLE_DOCS else None,
-        openapi_url="/openapi.json" if settings.ENABLE_DOCS else None,
+        docs_url=("/docs" if settings.ENABLE_DOCS else None),
+        redoc_url=("/redoc" if settings.ENABLE_DOCS else None),
+        openapi_url=("/openapi.json" if settings.ENABLE_DOCS else None),
         lifespan=lifespan,
     )
 
     configure_middleware(
+        app,
+    )
+
+    configure_instrumentation(
         app,
     )
 
@@ -198,6 +229,6 @@ if __name__ == "__main__":
         host=settings.HOST,
         port=settings.PORT,
         reload=settings.DEBUG,
-        workers=1 if settings.DEBUG else settings.WORKERS,
+        workers=(1 if settings.DEBUG else settings.WORKERS),
         log_level=settings.LOG_LEVEL.lower(),
     )

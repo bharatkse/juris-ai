@@ -8,7 +8,9 @@ from functools import lru_cache
 
 from src.aggregation.response import ResponseAggregator
 from src.core.config import get_settings
+from src.core.logger import get_logger
 from src.execution.executor import Executor
+from src.observability.langsmith import configure_langsmith
 from src.orchestration.orchestrator import AIOrchestrator
 from src.planning.planner import ExecutionPlanner
 from src.runtime.agents import register_agents
@@ -19,6 +21,8 @@ from src.runtime.registries import create_registries
 from src.runtime.tools import register_tools
 from src.validation.response import ResponseValidator
 
+logger = get_logger(__name__)
+
 
 @lru_cache
 def get_ai_orchestrator() -> AIOrchestrator:
@@ -27,6 +31,10 @@ def get_ai_orchestrator() -> AIOrchestrator:
     """
 
     settings = get_settings()
+
+    configure_langsmith(
+        settings=settings,
+    )
 
     clients = create_clients(
         settings=settings,
@@ -46,7 +54,6 @@ def get_ai_orchestrator() -> AIOrchestrator:
 
     planner: ExecutionPlanner = create_planner(
         clients=clients,
-        registries=registries,
     )
 
     executor: Executor = create_executor(

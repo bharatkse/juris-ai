@@ -23,13 +23,12 @@ from src.planning.prompts.intent import IntentPromptBuilder
 from src.planning.prompts.planning import PlanningPromptBuilder
 from src.planning.templates import PlanTemplateRegistry
 from src.planning.validator import ExecutionPlanValidator
-from src.runtime.containers import ClientContainer, RegistryContainer
+from src.runtime.containers import ClientContainer
 
 
 def create_planner(
     *,
     clients: ClientContainer,
-    registries: RegistryContainer,
 ) -> ExecutionPlanner:
     """
     Create the execution planner.

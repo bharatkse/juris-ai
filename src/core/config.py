@@ -118,6 +118,20 @@ class Settings(BaseSettings):
 
     BRAVE_API_KEY: SecretStr | None = None
 
+    LANGSMITH_TRACING: bool = False
+    LANGSMITH_TRACING_V2: bool = False
+    LANGSMITH_API_KEY: SecretStr | None = None
+    LANGSMITH_PROJECT: str = "juris-ai"
+    LANGSMITH_ENDPOINT: str = "https://api.smith.langchain.com"
+
+    # --------------------------------------------------------------------------
+    # Otel Configuration
+    # --------------------------------------------------------------------------
+    OTEL_TRACING: bool = False
+    OTEL_EXPORTER_OTLP_ENDPOINT: str = "http://localhost:4318/v1/traces"
+    OTEL_APP_VERSION: str = "0.1.0"
+    OTEL_EXPORTER_OTLP_PROTOCOL: str | None = None
+
     # --------------------------------------------------------------------------
     # Pydantic Configuration
     # --------------------------------------------------------------------------
@@ -200,6 +214,18 @@ class Settings(BaseSettings):
     def is_development(self) -> bool:
         return self.ENVIRONMENT is EnvironmentEnum.DEVELOPMENT
 
+    @property
+    def langsmith_key(self) -> str:
+        return self.LANGSMITH_API_KEY.get_secret_value()
+
+    @property
+    def grop_api_key(self) -> str:
+        return self.GROQ_API_KEY.get_secret_value()
+
+    @property
+    def brave_api_key(self) -> str:
+        return self.BRAVE_API_KEY.get_secret_value()
+
     # --------------------------------------------------------------------------
     # Validation Helpers
     # --------------------------------------------------------------------------
@@ -230,6 +256,14 @@ class Settings(BaseSettings):
         }
 
         self._validate_required_fields(required_fields[self.ENVIRONMENT])
+
+        if self.OTEL_TRACING:
+            required_fields = {
+                "OTEL_EXPORTER_OTLP_ENDPOINT": self.OTEL_EXPORTER_OTLP_ENDPOINT,
+                "OTEL_APP_VERSION": self.OTEL_APP_VERSION,
+                "OTEL_EXPORTER_OTLP_PROTOCOL": self.OTEL_EXPORTER_OTLP_PROTOCOL,
+            }
+            self._validate_required_fields(required_fields)
 
         return self
 
