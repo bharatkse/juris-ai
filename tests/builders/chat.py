@@ -7,8 +7,8 @@ from __future__ import annotations
 from typing import Any
 
 from src.core.enums import MessageRoleEnum
-from src.services.dto.chat import ChatResultDTO
-from src.services.dto.stream import ChatStreamChunkDTO
+from src.services.internal_dto.chat import ChatResultDTO
+from src.services.internal_dto.stream import ChatStreamChunkDTO
 from tests.builders.orchestrator import build_orchestrator_response
 from tests.factories.conversation import ConversationFactory
 from tests.factories.conversation_event import ConversationEventFactory

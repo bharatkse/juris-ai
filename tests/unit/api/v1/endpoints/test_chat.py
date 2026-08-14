@@ -11,9 +11,9 @@ import pytest
 from fastapi import status
 from fastapi.responses import StreamingResponse
 
+from src.api.schemas.chat import ChatStreamResponse, ConversationEventResponse
 from src.api.v1.endpoints.chat import chat, stream_chat
 from src.core.response import ApiResponse
-from src.schemas.chat import ChatStreamResponse, ConversationEventResponse
 from tests.builders.chat import build_chat_result, build_chat_stream_chunk
 from tests.builders.schemas import build_chat_request
 from tests.helpers.identifiers import unknown_user_id

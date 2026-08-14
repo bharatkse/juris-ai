@@ -6,13 +6,13 @@ Coordinates the complete AI request lifecycle.
 
 from __future__ import annotations
 
-from src.aggregation.response import ResponseAggregator
+from typing import TYPE_CHECKING
+
 from src.core.dto.agent import AgentResponseDTO
 from src.core.dto.conversation import ConversationDTO
 from src.core.dto.message import MessageDTO
 from src.core.enums import MessageRoleEnum
 from src.core.logger import get_logger
-from src.execution.executor import Executor
 from src.observability.tracing import span
 from src.orchestration.schemas.context import (
     ConversationContext,
@@ -24,8 +24,12 @@ from src.orchestration.schemas.context import (
 )
 from src.orchestration.schemas.request import OrchestratorRequest
 from src.orchestration.schemas.response import OrchestratorResponse
-from src.planning.planner import ExecutionPlanner
-from src.validation.response import ResponseValidator
+
+if TYPE_CHECKING:
+    from src.execution.aggregation.response import ResponseAggregator
+    from src.execution.executor import Executor
+    from src.execution.validation.response import ResponseValidator
+    from src.planning.planner import ExecutionPlanner
 
 log = get_logger(__name__)
 

@@ -15,13 +15,13 @@ from src.core.enums import ExecutionModeEnum, ExecutionStatusEnum
 from src.core.exceptions.execution import ExecutionError
 from src.core.logger import get_logger
 from src.execution.bus import CollaborationBus
-from src.execution.hybrid import HybridExecutionStrategy
-from src.execution.parallel import ParallelExecutionStrategy
 from src.execution.protocols import ExecutionStrategy
 from src.execution.schemas.memory import ExecutionMemorySchema
 from src.execution.schemas.result import ExecutionResultSchema
 from src.execution.schemas.state import ExecutionStateSchema
-from src.execution.sequential import SequentialExecutionStrategy
+from src.execution.strategies.hybrid import HybridExecutionStrategy
+from src.execution.strategies.parallel import ParallelExecutionStrategy
+from src.execution.strategies.sequential import SequentialExecutionStrategy
 from src.registry.agent import AgentRegistry
 
 logger = get_logger(__name__)

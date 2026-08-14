@@ -5,7 +5,7 @@ Unit tests for ApiResponse.
 from __future__ import annotations
 
 from src.core.response import ApiResponse
-from src.schemas.base import ErrorDetailModel, MetadataModel
+from src.core.schemas.response import ErrorDetailModel, MetadataModel
 
 
 def test_api_response_returns_success_response() -> None:

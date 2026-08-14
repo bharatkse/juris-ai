@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from uuid import uuid4
 
-from src.schemas.base import AIUsageModel, MetadataModel
+from src.core.schemas.response import AIUsageModel, MetadataModel
 
 
 @dataclass(slots=True)

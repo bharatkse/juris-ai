@@ -9,15 +9,15 @@ from datetime import datetime
 import pytest
 from pydantic import ValidationError
 
-from src.core.enums import MessageRoleEnum
-from src.orchestration.schemas.response import ResponseMetadata, Usage
-from src.schemas.chat import (
+from src.api.schemas.chat import (
     AIResponse,
     ChatRequest,
     ChatResponse,
     ChatStreamResponse,
     ConversationEventResponse,
 )
+from src.core.enums import MessageRoleEnum
+from src.orchestration.schemas.response import ResponseMetadata, Usage
 from tests.builders.schemas import build_chat_request
 from tests.factories.conversation_event import ConversationEventFactory
 from tests.helpers.identifiers import unknown_conversation_id

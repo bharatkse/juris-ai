@@ -219,7 +219,7 @@ class Settings(BaseSettings):
         return self.LANGSMITH_API_KEY.get_secret_value()
 
     @property
-    def grop_api_key(self) -> str:
+    def groq_api_key(self) -> str:
         return self.GROQ_API_KEY.get_secret_value()
 
     @property
@@ -278,7 +278,3 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Return cached application settings."""
     return Settings()
-
-
-# Module-level singleton used by all other modules
-settings: Settings = get_settings()

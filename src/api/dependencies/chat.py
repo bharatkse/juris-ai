@@ -11,7 +11,7 @@ from src.db.session import get_db_session
 from src.orchestration.orchestrator import AIOrchestrator
 from src.repositories.conversation import ConversationRepository
 from src.repositories.conversation_event import ConversationEventRepository
-from src.runtime.ai import get_ai_orchestrator
+from src.runtime.composition import get_ai_orchestrator
 from src.services.chat import ChatService
 from src.services.conversation import ConversationService
 from src.services.conversation_event import ConversationEventService

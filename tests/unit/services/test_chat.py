@@ -14,7 +14,7 @@ from src.core.enums import MessageRoleEnum
 from src.core.exceptions.httpx import ConversationInactiveError, NotFoundError
 from src.orchestration.schemas.request import OrchestratorRequest
 from src.services.chat import ChatService
-from src.services.dto.chat import ChatResultDTO
+from src.services.internal_dto.chat import ChatResultDTO
 from tests.builders.orchestrator import build_orchestrator_response
 from tests.factories.conversation import ConversationFactory
 from tests.factories.conversation_event import ConversationEventFactory

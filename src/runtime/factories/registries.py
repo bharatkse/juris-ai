@@ -19,14 +19,4 @@ from src.runtime.containers import RegistryContainer
 
 
 def create_registries() -> RegistryContainer:
-    """
-    Create shared runtime registries.
-
-    Registries are created once during application startup and
-    reused for the lifetime of the application.
-    """
-
-    return RegistryContainer(
-        agent_registry=AgentRegistry(),
-        tool_registry=ToolRegistry(),
-    )
+    return RegistryContainer(agent_registry=AgentRegistry(), tool_registry=ToolRegistry())

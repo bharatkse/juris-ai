@@ -12,16 +12,16 @@ from fastapi.responses import StreamingResponse
 
 from src.api.dependencies.auth import get_current_user
 from src.api.dependencies.chat import get_chat_service
-from src.api.streaming import encode_sse_event
-from src.core.logger import get_logger
-from src.core.response import ApiResponse
-from src.schemas.chat import (
+from src.api.schemas.chat import (
     AIResponse,
     ChatRequest,
     ChatResponse,
     ChatStreamResponse,
     ConversationEventResponse,
 )
+from src.api.streaming import encode_sse_event
+from src.core.logger import get_logger
+from src.core.response import ApiResponse
 from src.services.chat import ChatService
 
 logger = get_logger(__name__)

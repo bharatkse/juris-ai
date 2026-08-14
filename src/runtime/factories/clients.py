@@ -24,26 +24,8 @@ if TYPE_CHECKING:
     from src.core.config import Settings
 
 
-def create_clients(
-    *,
-    settings: Settings,
-) -> ClientContainer:
-    """
-    Create shared external service clients.
-
-    All clients are created once during application startup
-    and reused for the lifetime of the application.
-    """
-
-    groq_client = GroqClient(
-        api_key=settings.grop_api_key,
-        model=settings.GROQ_MODEL,
-    )
-
-    web_search_client = BraveClient(
-        api_key=settings.grop_api_key,
-    )
+def create_clients(*, settings: Settings) -> ClientContainer:
     return ClientContainer(
-        llm_client=groq_client,
-        web_search_client=web_search_client,
+        llm_client=GroqClient(api_key=settings.groq_api_key, model=settings.GROQ_MODEL),
+        web_search_client=BraveClient(api_key=settings.brave_api_key),
     )

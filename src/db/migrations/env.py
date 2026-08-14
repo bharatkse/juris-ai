@@ -15,8 +15,10 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 import src.db.models  # noqa: F401
-from src.core.config import settings
+from src.core.config import get_settings
 from src.db.base import Base
+
+settings = get_settings()
 
 # ------------------------------------------------------------------------------
 # Ensure project root is importable

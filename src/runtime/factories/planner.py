@@ -26,14 +26,7 @@ from src.planning.validator import ExecutionPlanValidator
 from src.runtime.containers import ClientContainer
 
 
-def create_planner(
-    *,
-    clients: ClientContainer,
-) -> ExecutionPlanner:
-    """
-    Create the execution planner.
-    """
-
+def create_planner(*, clients: ClientContainer) -> ExecutionPlanner:
     return ExecutionPlanner(
         intent_analyzer=IntentAnalyzer(
             llm_client=clients.llm_client,

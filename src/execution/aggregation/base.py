@@ -7,7 +7,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 
-from src.aggregation.schemas import AggregatedResponse
+from src.execution.aggregation.schemas import AggregatedResponse
 from src.orchestration.schemas.response import AgentResponse
 
 

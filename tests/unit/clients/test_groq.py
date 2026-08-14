@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 import pytest
 from groq import APIConnectionError, APIStatusError, APITimeoutError
 
-from src.core.config import settings
+from src.core.config import get_settings
 from src.core.enums import LLMProviderEnum
 from src.core.exceptions.client import (
     ClientAuthenticationError,
@@ -33,6 +33,7 @@ from tests.unit.clients.exeption_builder import (
 )
 
 TEST_MESSAGES = build_groq_messages()
+settings = get_settings()
 
 
 @pytest.mark.asyncio
