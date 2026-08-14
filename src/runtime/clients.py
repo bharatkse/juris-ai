@@ -35,16 +35,15 @@ def create_clients(
     and reused for the lifetime of the application.
     """
 
-    llm_client = GroqClient(
-        api_key=settings.GROQ_API_KEY.get_secret_value(),
+    groq_client = GroqClient(
+        api_key=settings.grop_api_key,
         model=settings.GROQ_MODEL,
     )
 
     web_search_client = BraveClient(
-        api_key=settings.BRAVE_API_KEY.get_secret_value(),
+        api_key=settings.grop_api_key,
     )
-
     return ClientContainer(
-        llm_client=llm_client,
+        llm_client=groq_client,
         web_search_client=web_search_client,
     )

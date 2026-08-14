@@ -11,6 +11,7 @@ from src.core.config import get_settings
 from src.core.context import RequestContext
 from src.core.logger import get_logger
 from src.core.response import ApiResponse
+from src.observability.metrics import metrics
 
 logger = get_logger(__name__)
 
@@ -35,6 +36,8 @@ async def health(
     """
     Return the application health status.
     """
+
+    metrics.health_checks.add(1)
 
     logger.info(
         "Health check requested.",

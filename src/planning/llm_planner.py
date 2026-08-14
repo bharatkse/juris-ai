@@ -4,6 +4,8 @@ LLM-backed execution plan generator.
 
 from __future__ import annotations
 
+from langsmith import traceable
+
 from src.clients.llm.base import LLMClient
 from src.core.dto.planning import ExecutionPlanDTO, ExecutionStepDTO, PlanningRequestDTO
 from src.core.enums import IntentEnum
@@ -25,6 +27,10 @@ class LLMPlanGenerator:
         self._llm = llm_client
         self._prompt_builder = prompt_builder
 
+    @traceable(
+        name="planner",
+        run_type="chain",
+    )
     async def generate(
         self,
         *,
@@ -34,7 +40,6 @@ class LLMPlanGenerator:
         """
         Generate an execution plan for the supplied request.
         """
-
         llm_request = self._prompt_builder.build(
             request=request,
             intent=intent,

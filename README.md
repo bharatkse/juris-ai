@@ -169,6 +169,12 @@ python -m venv .venv
 source .venv/bin/activate
 ```
 
+## Install System Dependency
+
+```bash
+make bootstrap
+```
+
 ## Install dependencies
 
 ```bash
@@ -200,7 +206,14 @@ The API will be available at:
 - Swagger UI: http://localhost:8001/docs
 - ReDoc: http://localhost:8001/redoc
 
----
+Your observability containers expose these ports:
+
+- Grafana: http://localhost:3000
+- Prometheus: http://localhost:9090
+
+Note - For Grafana, the default login is typically `admin` / `admin` unless you configured credentials through .env or the Compose file.
+
+## So
 
 # 📂 Project Structure
 

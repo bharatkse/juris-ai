@@ -6,27 +6,27 @@ Coordinates execution plan generation.
 Flow:
 
 OrchestrationContext
-        │
-        ▼
+│
+▼
 Intent Analyzer
-        │
-        ▼
+│
+▼
 Templates
-        │
-   Found?
-    │
- ┌──┴──┐
- │     │
+│
+Found?
+│
+┌──┴──┐
+│     │
 Yes    No
- │     │
- ▼     ▼
+│     │
+▼     ▼
 Plan  LLM Generator
- │     │
- └──┬──┘
-    ▼
+│     │
+└──┬──┘
+▼
 Validator
-    │
-    ▼
+│
+▼
 ExecutionPlan
 """
 
@@ -34,6 +34,7 @@ from __future__ import annotations
 
 from src.core.dto.planning import ExecutionPlanDTO, PlanningRequestDTO
 from src.core.exceptions.planning import PlanValidationError
+from src.observability.tracing import span
 from src.orchestration.schemas.context import OrchestrationContext
 from src.planning.intent import IntentAnalyzer
 from src.planning.llm_planner import LLMPlanGenerator
@@ -68,17 +69,42 @@ class ExecutionPlanner:
         Create an execution plan.
         """
 
-        request = self._build_planning_request(
-            context=context,
-        )
+        with span(
+            "juris_ai.planning",
+        ) as current_span:
+            request = self._build_planning_request(
+                context=context,
+            )
 
-        plan = await self._resolve_plan(
-            request=request,
-        )
+            plan = await self._resolve_plan(
+                request=request,
+            )
 
-        return self._validate_plan(
-            plan,
-        )
+            validated_plan = self._validate_plan(
+                plan,
+            )
+
+            current_span.set_attribute(
+                "planning.intent",
+                validated_plan.intent,
+            )
+            current_span.set_attribute(
+                "planning.source",
+                self._get_plan_source(
+                    plan=plan,
+                    validated_plan=validated_plan,
+                ),
+            )
+            current_span.set_attribute(
+                "execution.mode",
+                validated_plan.mode,
+            )
+            current_span.set_attribute(
+                "execution.step_count",
+                len(validated_plan.steps),
+            )
+
+            return validated_plan
 
     async def _resolve_plan(
         self,
@@ -138,3 +164,18 @@ class ExecutionPlanner:
 
         except PlanValidationError:
             return self._template_registry.default()
+
+    @staticmethod
+    def _get_plan_source(
+        *,
+        plan: ExecutionPlanDTO,
+        validated_plan: ExecutionPlanDTO,
+    ) -> str:
+        """
+        Determine the source of the execution plan.
+        """
+
+        if plan is validated_plan:
+            return "template_or_llm"
+
+        return "default_fallback"

@@ -625,3 +625,116 @@ RetrievedContent
 ```
 
 This keeps source information available for the final API response.
+
+---
+
+## 9. Observability
+
+### OTEL Collector
+
+#### 1.0
+
+```text
+                    Juris-AI
+                       │
+                OpenTelemetry
+                       │
+                       ▼
+                OTEL Collector
+                  /          \
+                 /            \
+          Metrics              Traces
+             │                   │
+             ▼                   ▼
+        Prometheus              Tempo
+             │                   │
+             └─────────┬─────────┘
+                       ▼
+                    Grafana
+```
+
+#### 2.0
+
+```text
+                    ┌──────────────┐
+                    │   Grafana    │
+                    │    :3000     │
+                    └──────┬───────┘
+                           │
+                    ┌──────┴───────┐
+                    │              │
+                    ▼              ▼
+              Prometheus        Tempo
+                 :9090           :3200
+                    ▲              ▲
+                    │              │
+                    │              │
+              Metrics          Traces
+                    │              │
+                    └──────┬───────┘
+                           │
+                           │
+                  OTEL Collector
+                    :4317/:4318
+                           ▲
+                           │
+                        Juris-AI
+```
+
+### LangSmith Trace
+
+**LangSmith** handles the LangChain/LangGraph/LLM execution layer.
+
+```text
+                         Juris-AI
+                            │
+             ┌──────────────┴──────────────┐
+             │                             │
+             ▼                             ▼
+       OpenTelemetry                  LangSmith
+             │                             │
+             ▼                             ▼
+      OTEL Collector                 LangSmith Cloud
+          │       │
+          │       │
+          ▼       ▼
+    Prometheus   Tempo
+          │       │
+          └───┬───┘
+              ▼
+           Grafana
+```
+
+LangSmith should capture
+
+For your Juris-AI architecture, eventually we want LangSmith to show something like:
+
+```text
+Chat request
+│
+└── AIOrchestrator
+    │
+    ├── ExecutionPlanner
+    │   └── LLM call
+    │
+    └── Executor
+        │
+        ├── Agent
+        │   └── LLM call
+        │
+        └── Tool
+```
+
+This is different from your OTEL trace:
+
+```
+POST /api/v1/chat
+└── juris_ai.orchestration
+    └── juris_ai.planning
+```
+
+OTEL tells us system timing and distributed execution.
+
+LangSmith tells us LLM/agent behavior.
+
+---
