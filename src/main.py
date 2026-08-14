@@ -13,7 +13,7 @@ from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
 from src.api.exception_handlers import register_exception_handlers
 from src.api.v1.routers import api_router
-from src.core.config import settings
+from src.core.config import get_settings
 from src.core.constants import API_DESCRIPTION, API_TITLE
 from src.core.file_system import ensure_dir
 from src.core.logger import get_logger, setup_logging
@@ -22,6 +22,8 @@ from src.middleware.request_context import RequestContextMiddleware
 from src.observability.telemetry import configure_telemetry, shutdown_telemetry
 
 logger = get_logger(__name__)
+
+settings = get_settings()
 
 
 def initialize_logging() -> None:

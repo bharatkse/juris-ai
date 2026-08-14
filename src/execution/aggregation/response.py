@@ -6,14 +6,14 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from src.aggregation.base import BaseAggregator
-from src.aggregation.schemas import (
+from src.core.dto.agent import AgentResponseDTO
+from src.core.exceptions.aggregation import EmptyAggregationError
+from src.execution.aggregation.base import BaseAggregator
+from src.execution.aggregation.schemas import (
     AggregatedResponse,
     AggregationMetadata,
     AggregationResult,
 )
-from src.core.dto.agent import AgentResponseDTO
-from src.core.exceptions.aggregation import EmptyAggregationError
 from src.orchestration.schemas.response import Usage
 
 

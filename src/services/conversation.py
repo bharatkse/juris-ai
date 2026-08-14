@@ -16,10 +16,10 @@ from src.core.exceptions.httpx import NotFoundError as ConversationNotFoundError
 from src.core.logger import get_logger
 from src.db.models.conversation import Conversation
 from src.repositories.conversation import ConversationRepository
-from src.schemas.conversation import CreateConversationRequest
 from src.services.base import BaseService
 
 if TYPE_CHECKING:
+    from src.api.schemas.conversation import CreateConversationRequest
     from src.core.types import ConversationId, UserId
 
 logger = get_logger(__name__)

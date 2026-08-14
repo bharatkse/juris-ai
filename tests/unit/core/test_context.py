@@ -5,7 +5,7 @@ Unit tests for RequestContext.
 from __future__ import annotations
 
 from src.core.context import RequestContext
-from src.schemas.base import AIUsageModel
+from src.core.schemas.response import AIUsageModel
 
 
 def test_request_context_generates_request_id() -> None:

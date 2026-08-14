@@ -8,14 +8,14 @@ from fastapi import APIRouter, Depends, status
 
 from src.api.dependencies.auth import get_current_user
 from src.api.dependencies.conversation import get_conversation_service
-from src.core.logger import get_logger
-from src.core.response import ApiResponse
-from src.core.types import ConversationId
-from src.schemas.conversation import (
+from src.api.schemas.conversation import (
     ConversationListResponse,
     ConversationResponse,
     CreateConversationRequest,
 )
+from src.core.logger import get_logger
+from src.core.response import ApiResponse
+from src.core.types import ConversationId
 from src.services.conversation import ConversationService
 
 logger = get_logger(__name__)

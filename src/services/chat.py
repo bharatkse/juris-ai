@@ -23,8 +23,8 @@ from src.orchestration.schemas.request import OrchestratorRequest
 from src.services.base import BaseService
 from src.services.conversation import ConversationService
 from src.services.conversation_event import ConversationEventService
-from src.services.dto.chat import ChatResultDTO
-from src.services.dto.stream import ChatStreamChunkDTO
+from src.services.internal_dto.chat import ChatResultDTO
+from src.services.internal_dto.stream import ChatStreamChunkDTO
 
 logger = get_logger(__name__)
 

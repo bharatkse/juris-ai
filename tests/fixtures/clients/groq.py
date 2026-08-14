@@ -9,7 +9,9 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from src.clients.llm.groq import GroqClient
-from src.core.config import settings
+from src.core.config import get_settings
+
+settings = get_settings()
 
 
 @pytest.fixture

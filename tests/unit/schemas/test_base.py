@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import ValidationError
 
-from src.schemas.base import (
+from src.core.schemas.response import (
     AIUsageModel,
     ApiResponseModel,
     ErrorDetailModel,

@@ -9,8 +9,8 @@ from datetime import date, datetime
 import pytest
 from pydantic import ValidationError
 
+from src.api.schemas.user import CreateUserRequest, UpdateUserRequest, UserResponse
 from src.core.enums import GenderEnum
-from src.schemas.user import CreateUserRequest, UpdateUserRequest, UserResponse
 from tests.builders.schemas import build_create_user_request, build_update_user_request
 from tests.factories.user import UserFactory
 

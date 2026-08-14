@@ -19,7 +19,9 @@ from opentelemetry.sdk.resources import (
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
-from src.core.config import settings
+from src.core.config import get_settings
+
+settings = get_settings()
 
 
 def _create_resource() -> Resource:

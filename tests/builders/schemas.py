@@ -7,23 +7,23 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 from typing import Any
 
-from src.core.enums import GenderEnum, MessageRoleEnum
-from src.schemas.base import (
-    AIUsageModel,
-    ApiResponseModel,
-    ErrorDetailModel,
-    MetadataModel,
-    PaginationModel,
-)
-from src.schemas.chat import (
+from src.api.schemas.chat import (
     AIResponse,
     ChatRequest,
     ChatResponse,
     ChatStreamResponse,
     ConversationEventResponse,
 )
-from src.schemas.conversation import ConversationResponse, CreateConversationRequest
-from src.schemas.user import CreateUserRequest, UpdateUserRequest, UserResponse
+from src.api.schemas.conversation import ConversationResponse, CreateConversationRequest
+from src.api.schemas.user import CreateUserRequest, UpdateUserRequest, UserResponse
+from src.core.enums import GenderEnum, MessageRoleEnum
+from src.core.schemas.response import (
+    AIUsageModel,
+    ApiResponseModel,
+    ErrorDetailModel,
+    MetadataModel,
+    PaginationModel,
+)
 from tests.factories.conversation import ConversationFactory
 from tests.factories.conversation_event import ConversationEventFactory
 from tests.factories.user import UserFactory

@@ -8,8 +8,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.core.schemas.response import Page
 from src.core.types import ConversationId, UserId
-from src.schemas.base import Page
 
 
 class CreateConversationRequest(BaseModel):

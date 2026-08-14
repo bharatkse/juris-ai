@@ -3,7 +3,9 @@ LLM dependencies.
 """
 
 from src.clients.llm.groq import GroqClient
-from src.core.config import settings
+from src.core.config import get_settings
+
+settings = get_settings()
 
 _groq_client = GroqClient(
     api_key=settings.GROQ_API_KEY,

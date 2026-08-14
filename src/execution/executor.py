@@ -9,10 +9,10 @@ from uuid import UUID
 
 from src.core.dto.conversation import ConversationDTO
 from src.core.dto.planning import ExecutionPlanDTO
-from src.execution.hybrid import HybridExecutionStrategy
-from src.execution.parallel import ParallelExecutionStrategy
-from src.execution.sequential import SequentialExecutionStrategy
 from src.execution.session import ExecutionSession
+from src.execution.strategies.hybrid import HybridExecutionStrategy
+from src.execution.strategies.parallel import ParallelExecutionStrategy
+from src.execution.strategies.sequential import SequentialExecutionStrategy
 from src.registry.agent import AgentRegistry
 
 if TYPE_CHECKING:

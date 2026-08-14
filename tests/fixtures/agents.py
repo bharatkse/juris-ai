@@ -10,9 +10,11 @@ import pytest
 
 from src.agents.legal import LegalAgent
 from src.clients.llm.base import LLMClient
-from src.core.config import settings
+from src.core.config import get_settings
 from src.core.enums import LLMProviderEnum
 from src.tools.retrieval import RetrieverTool
+
+settings = get_settings()
 
 
 @pytest.fixture
