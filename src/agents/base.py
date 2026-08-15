@@ -18,6 +18,7 @@ from src.core.dto.agent import (
 from src.core.dto.clients.llm import LLMRequestDTO
 from src.core.dto.tool import RetrievedContentDTO, ToolRequestDTO
 from src.core.enums import MessageRoleEnum
+from src.core.schemas.message import AgentMessageSchema
 from src.tools.retrieval import RetrieverTool
 
 
@@ -95,24 +96,6 @@ class BaseAgent:
                 metadata=chunk.metadata,
             )
 
-    async def _build_generate_request(
-        self,
-        *,
-        request: AgentRequestDTO,
-    ) -> LLMRequestDTO:
-        """
-        Build an LLM generation request.
-        """
-
-        context = await self._retrieve_context(
-            request=request,
-        )
-
-        return self._prompt_builder.build(
-            request=request,
-            context=context,
-        )
-
     async def _retrieve_context(
         self,
         *,
@@ -174,4 +157,20 @@ class BaseAgent:
         return self._prompt_builder.build(
             request=request,
             context=context,
+        )
+
+    async def handle_message(
+        self,
+        *,
+        message: AgentMessageSchema,
+    ) -> object:
+        """
+        Handle an agent-to-agent collaboration message.
+
+        Subclasses may override this to implement collaboration-specific
+        capabilities.
+        """
+
+        raise NotImplementedError(
+            f"Agent '{self.metadata.name}' does not support " "agent-to-agent collaboration.",
         )

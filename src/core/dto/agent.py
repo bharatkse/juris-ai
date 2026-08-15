@@ -34,11 +34,17 @@ class AgentRequestDTO:
     Request sent to an AI agent.
 
     The request contains the current ConversationDTO together with
-    the runtime context required to execute the agent.
+    the runtime context and structured arguments required to execute
+    the agent.
     """
 
     conversation: ConversationDTO
     instruction: str
+
+    arguments: dict[str, Any] = field(
+        default_factory=dict,
+    )
+
     context: AgentContextDTO = field(
         default_factory=AgentContextDTO,
     )

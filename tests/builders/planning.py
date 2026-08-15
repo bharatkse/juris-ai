@@ -83,7 +83,7 @@ def build_context(
 
 
 def build_step(
-    step_id: str,
+    step_id: str = "step-a",
     *,
     depends_on: tuple[str, ...] = (),
     stage: int = 1,
@@ -102,14 +102,19 @@ def build_step(
 
 
 def build_plan(
-    steps: tuple[ExecutionStepDTO, ...],
     *,
     mode: ExecutionModeEnum = ExecutionModeEnum.SEQUENTIAL,
+    steps: tuple[ExecutionStepDTO, ...] | None = None,
 ) -> ExecutionPlanDTO:
     """
     Build a valid execution plan for testing.
     """
-
+    if steps is None:
+        steps = (
+            build_step(
+                "step-a",
+            ),
+        )
     return ExecutionPlanDTO(
         intent=IntentEnum.GENERAL,
         mode=mode,

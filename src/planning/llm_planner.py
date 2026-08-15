@@ -48,7 +48,7 @@ class LLMPlanGenerator:
         """
         Generate an execution plan for the supplied request.
 
-        The LLM determines the intent and execution strategy
+        The LLM determines the intent and execution mode
         as part of the same structured response.
         """
 

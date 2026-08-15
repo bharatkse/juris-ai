@@ -127,23 +127,15 @@ class IntentEnum(StrEnum):
 
 class ExecutionModeEnum(StrEnum):
     """
-    Supported execution strategies.
+    Supported execution modes.
 
-    SEQUENTIAL:
-        Steps execute according to their dependency order.
-
-    PARALLEL:
-        Independent steps may execute concurrently.
-
-    HYBRID:
-        Dependency groups may execute sequentially while
-        independent branches execute concurrently.
+    Execution mode is part of the planning contract. The runtime
+    execution topology is derived from the plan dependencies and
+    executed by LangGraph.
     """
 
     SEQUENTIAL = "sequential"
-
     PARALLEL = "parallel"
-
     HYBRID = "hybrid"
 
 

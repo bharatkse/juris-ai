@@ -10,7 +10,9 @@ from pydantic import BaseModel, ConfigDict
 
 
 class AgentMessageSchema(BaseModel):
-    """Represents an agent-to-agent request."""
+    """
+    Represents an agent-to-agent request.
+    """
 
     model_config = ConfigDict(
         frozen=True,

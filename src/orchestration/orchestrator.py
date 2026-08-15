@@ -8,10 +8,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from src.core.dto.agent import AgentResponseDTO
+from src.core.dto.agent import AgentContextDTO, AgentResponseDTO
 from src.core.dto.conversation import ConversationDTO
 from src.core.dto.message import MessageDTO
-from src.core.enums import MessageRoleEnum
+from src.core.enums import ExecutionStatusEnum, MessageRoleEnum
+from src.core.exceptions.execution import ExecutionError
 from src.core.logger import get_logger
 from src.observability.tracing import span
 from src.orchestration.schemas.context import (
@@ -137,11 +138,21 @@ class AIOrchestrator:
                     },
                 )
 
+                context = AgentContextDTO(
+                    uploaded_files=tuple(request.attachments),
+                )
+
                 execution_result = await self._executor.execute(
                     request_id=request.request_id,
                     conversation=conversation,
                     plan=execution_plan,
+                    context=context,
                 )
+
+                if execution_result.state.status is ExecutionStatusEnum.FAILED:
+                    raise ExecutionError(
+                        message="Execution failed.",
+                    )
 
                 log.info(
                     "Execution completed.",

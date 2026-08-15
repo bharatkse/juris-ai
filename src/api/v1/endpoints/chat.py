@@ -12,6 +12,7 @@ from fastapi.responses import StreamingResponse
 
 from src.api.dependencies.auth import get_current_user
 from src.api.dependencies.chat import get_chat_service
+from src.api.helpers.files import build_tool_files
 from src.api.schemas.chat import (
     AIResponse,
     ChatRequest,
@@ -57,11 +58,16 @@ async def chat(
         },
     )
 
+    files = await build_tool_files(
+        chat_request.files,
+    )
+
     result = await service.chat(
         user_id=current_user.id,
         conversation_id=chat_request.conversation_id,
         message=chat_request.message,
         request_id=http_request.state.context.request_id,
+        files=files,
     )
 
     response = AIResponse(
@@ -116,6 +122,10 @@ async def stream_chat(
         },
     )
 
+    files = await build_tool_files(
+        chat_request.files,
+    )
+
     async def event_generator() -> AsyncIterator[str]:
         try:
             async for chunk in service.stream_chat(
@@ -123,6 +133,7 @@ async def stream_chat(
                 conversation_id=chat_request.conversation_id,
                 message=chat_request.message,
                 request_id=http_request.state.context.request_id,
+                files=files,
             ):
                 yield encode_sse_event(
                     ChatStreamResponse(

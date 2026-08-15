@@ -4,6 +4,8 @@ Reusable identifier helpers for tests.
 
 from __future__ import annotations
 
+from uuid import uuid4
+
 from src.core.types import ConversationEventId, ConversationId, UserId
 from src.db.mixins import generate_prefixed_uuid_pk
 
@@ -36,3 +38,11 @@ def unknown_conversation_event_id() -> ConversationEventId:
     return ConversationEventId(
         generate_prefixed_uuid_pk("event"),
     )
+
+
+def unknown_request_id() -> str:
+    """
+    Return a non-existent request identifier.
+    """
+
+    return str(uuid4())
