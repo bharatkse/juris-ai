@@ -11,20 +11,6 @@ from pydantic import BaseModel, ConfigDict, Field
 from src.core.enums import AgentTypeEnum, ExecutionModeEnum, IntentEnum
 
 
-class IntentResponseSchema(BaseModel):
-    """
-    Structured response returned by the LLM
-    for intent classification.
-    """
-
-    model_config = ConfigDict(
-        frozen=True,
-        extra="forbid",
-    )
-
-    intent: IntentEnum
-
-
 class ExecutionStepResponseSchema(BaseModel):
     """
     Structured execution step returned by the LLM.
@@ -40,6 +26,8 @@ class ExecutionStepResponseSchema(BaseModel):
     agent: AgentTypeEnum
 
     instruction: str
+
+    depends_on: tuple[str, ...] = ()
 
     stage: int = 1
 

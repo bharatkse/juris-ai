@@ -19,6 +19,8 @@ def test_settings_allows_testing_without_required_fields() -> None:
 
     settings = Settings(
         ENVIRONMENT=EnvironmentEnum.TESTING,
+        LANGSMITH_TRACING=False,
+        LANGSMITH_TRACING_V2=False,
     )
 
     assert settings.is_testing is True
@@ -32,6 +34,8 @@ def test_settings_accepts_valid_port() -> None:
     settings = Settings(
         ENVIRONMENT=EnvironmentEnum.TESTING,
         PORT=8080,
+        LANGSMITH_TRACING=False,
+        LANGSMITH_TRACING_V2=False,
     )
 
     assert settings.PORT == 8080
@@ -58,6 +62,8 @@ def test_settings_rejects_invalid_port(
         Settings(
             ENVIRONMENT=EnvironmentEnum.TESTING,
             PORT=port,
+            LANGSMITH_TRACING=False,
+            LANGSMITH_TRACING_V2=False,
         )
 
 
@@ -82,6 +88,8 @@ def test_settings_rejects_invalid_database_configuration(
     ):
         Settings(
             ENVIRONMENT=EnvironmentEnum.TESTING,
+            LANGSMITH_TRACING=False,
+            LANGSMITH_TRACING_V2=False,
             **{
                 field: 0,
             },
@@ -99,6 +107,8 @@ def test_settings_rejects_invalid_cache_ttl() -> None:
         Settings(
             ENVIRONMENT=EnvironmentEnum.TESTING,
             CACHE_TTL=0,
+            LANGSMITH_TRACING=False,
+            LANGSMITH_TRACING_V2=False,
         )
 
 
@@ -109,6 +119,8 @@ def test_database_url_returns_test_database_url() -> None:
 
     settings = Settings(
         ENVIRONMENT=EnvironmentEnum.TESTING,
+        LANGSMITH_TRACING=False,
+        LANGSMITH_TRACING_V2=False,
     )
 
     assert settings.database_url == settings.TEST_DATABASE_URL
@@ -130,6 +142,8 @@ def test_database_url_returns_postgres_url() -> None:
         GROQ_API_KEY=SecretStr(
             "api-key",
         ),
+        LANGSMITH_TRACING=False,
+        LANGSMITH_TRACING_V2=False,
     )
 
     assert settings.database_url == (
@@ -145,6 +159,8 @@ def test_database_url_raises_for_production() -> None:
     settings = Settings(
         ENVIRONMENT=EnvironmentEnum.PRODUCTION,
         SECRET_KEY="secret",
+        LANGSMITH_TRACING=False,
+        LANGSMITH_TRACING_V2=False,
     )
 
     with pytest.raises(
@@ -165,6 +181,8 @@ def test_alembic_database_url() -> None:
         DB_NAME="legal_ai",
         DB_USER="postgres",
         DB_PASSWORD="password",
+        LANGSMITH_TRACING=False,
+        LANGSMITH_TRACING_V2=False,
     )
 
     assert settings.alembic_database_url == (
@@ -179,6 +197,8 @@ def test_is_testing() -> None:
 
     settings = Settings(
         ENVIRONMENT=EnvironmentEnum.TESTING,
+        LANGSMITH_TRACING=False,
+        LANGSMITH_TRACING_V2=False,
     )
 
     assert settings.is_testing is True
@@ -200,6 +220,8 @@ def test_is_development() -> None:
         GROQ_API_KEY=SecretStr(
             "api-key",
         ),
+        LANGSMITH_TRACING=False,
+        LANGSMITH_TRACING_V2=False,
     )
 
     assert settings.is_development is True
@@ -214,6 +236,8 @@ def test_redis_enabled_when_using_redis() -> None:
     settings = Settings(
         ENVIRONMENT=EnvironmentEnum.TESTING,
         CACHE_BACKEND=CacheBackendEnum.REDIS,
+        LANGSMITH_TRACING=False,
+        LANGSMITH_TRACING_V2=False,
     )
 
     assert settings.redis_enabled is True
@@ -227,6 +251,8 @@ def test_redis_disabled_when_using_memory_cache() -> None:
     settings = Settings(
         ENVIRONMENT=EnvironmentEnum.TESTING,
         CACHE_BACKEND=CacheBackendEnum.MEMORY,
+        LANGSMITH_TRACING=False,
+        LANGSMITH_TRACING_V2=False,
     )
 
     assert settings.redis_enabled is False
@@ -244,6 +270,8 @@ def test_validate_configuration_requires_secret_key(clean_environment) -> None:
         Settings(
             ENVIRONMENT=EnvironmentEnum.DEVELOPMENT,
             _env_file=None,
+            LANGSMITH_TRACING=False,
+            LANGSMITH_TRACING_V2=False,
         )
 
 
@@ -260,6 +288,8 @@ def test_validate_configuration_requires_database_configuration() -> None:
             ENVIRONMENT=EnvironmentEnum.DEVELOPMENT,
             SECRET_KEY="secret",
             _env_file=None,
+            LANGSMITH_TRACING=False,
+            LANGSMITH_TRACING_V2=False,
         )
 
 
@@ -281,6 +311,8 @@ def test_validate_configuration_requires_groq_api_key(monkeypatch) -> None:
             DB_USER="postgres",
             DB_PASSWORD="password",
             _env_file=None,
+            LANGSMITH_TRACING=False,
+            LANGSMITH_TRACING_V2=False,
         )
 
 
@@ -291,6 +323,8 @@ def test_validate_required_fields_raises() -> None:
 
     settings = Settings(
         ENVIRONMENT=EnvironmentEnum.TESTING,
+        LANGSMITH_TRACING=False,
+        LANGSMITH_TRACING_V2=False,
     )
 
     with pytest.raises(
@@ -312,6 +346,8 @@ def test_validate_required_fields_accepts_complete_configuration() -> None:
 
     settings = Settings(
         ENVIRONMENT=EnvironmentEnum.TESTING,
+        LANGSMITH_TRACING=False,
+        LANGSMITH_TRACING_V2=False,
     )
 
     settings._validate_required_fields(

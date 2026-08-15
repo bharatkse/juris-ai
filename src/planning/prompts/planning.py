@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from src.core.dto.clients.llm import LLMMessageDTO, LLMRequestDTO
 from src.core.dto.planning import PlanningRequestDTO
-from src.core.enums import IntentEnum, MessageRoleEnum
+from src.core.enums import MessageRoleEnum
 
 from .base import BasePromptBuilder
 
@@ -16,6 +16,10 @@ class PlanningPromptBuilder(
 ):
     """
     Builds prompts for execution plan generation.
+
+    The planning prompt is responsible for generating the
+    complete execution plan in a single LLM call, including
+    intent, execution mode, steps, and dependencies.
     """
 
     template_name = "planning.md"
@@ -23,13 +27,14 @@ class PlanningPromptBuilder(
     def __init__(
         self,
     ) -> None:
-        self._system_prompt = self.load_template(self.template_name)
+        self._system_prompt = self.load_template(
+            self.template_name,
+        )
 
     def build(
         self,
         *,
         request: PlanningRequestDTO,
-        intent: IntentEnum,
     ) -> LLMRequestDTO:
         """
         Build an execution planning request.
@@ -50,9 +55,7 @@ class PlanningPromptBuilder(
                 ),
                 LLMMessageDTO(
                     role=MessageRoleEnum.USER,
-                    content=(
-                        f"Detected intent: {intent.value}\n\n" f"User request:\n{request.message}"
-                    ),
+                    content=("User request:\n" f"{request.message}"),
                 ),
             ),
         )

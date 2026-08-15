@@ -73,6 +73,16 @@ class GroqModelEnum(StrEnum):
     GPT_OSS_20B = "openai/gpt-oss-20b"
 
 
+class AgentTypeEnum(StrEnum):
+    """
+    Supported agent types.
+    """
+
+    LEGAL = "legal"
+
+    CONTRACT = "contract"
+
+
 class DocumentStatusEnum(StrEnum):
     """
     Document processing status.
@@ -115,19 +125,19 @@ class IntentEnum(StrEnum):
     RISK_ANALYSIS = "risk_analysis"
 
 
-class AgentTypeEnum(StrEnum):
-    """
-    Supported agent types.
-    """
-
-    LEGAL = "legal"
-
-    CONTRACT = "contract"
-
-
 class ExecutionModeEnum(StrEnum):
     """
     Supported execution strategies.
+
+    SEQUENTIAL:
+        Steps execute according to their dependency order.
+
+    PARALLEL:
+        Independent steps may execute concurrently.
+
+    HYBRID:
+        Dependency groups may execute sequentially while
+        independent branches execute concurrently.
     """
 
     SEQUENTIAL = "sequential"

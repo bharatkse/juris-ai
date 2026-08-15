@@ -23,6 +23,11 @@ def clean_environment(
         "DB_USER",
         "DB_PASSWORD",
         "GROQ_API_KEY",
+        "LANGSMITH_TRACING",
+        "LANGSMITH_TRACING_V2",
+        "LANGSMITH_API_KEY",
+        "LANGSMITH_PROJECT",
+        "LANGSMITH_ENDPOINT",
     ]:
         monkeypatch.delenv(
             key,

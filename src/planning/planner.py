@@ -8,7 +8,7 @@ Flow:
 OrchestrationContext
 │
 ▼
-Intent Analyzer
+PlanningRequestDTO
 │
 ▼
 Templates
@@ -21,22 +21,24 @@ Yes    No
 │     │
 ▼     ▼
 Plan  LLM Generator
+      │
+      │ ONE LLM CALL
+      ▼
+   ExecutionPlan
 │     │
 └──┬──┘
-▼
+   ▼
 Validator
-│
-▼
+   │
+   ▼
 ExecutionPlan
 """
 
 from __future__ import annotations
 
 from src.core.dto.planning import ExecutionPlanDTO, PlanningRequestDTO
-from src.core.exceptions.planning import PlanValidationError
 from src.observability.tracing import span
 from src.orchestration.schemas.context import OrchestrationContext
-from src.planning.intent import IntentAnalyzer
 from src.planning.llm_planner import LLMPlanGenerator
 from src.planning.templates import PlanTemplateRegistry
 from src.planning.validator import ExecutionPlanValidator
@@ -45,17 +47,25 @@ from src.planning.validator import ExecutionPlanValidator
 class ExecutionPlanner:
     """
     Coordinates execution plan generation.
+
+    Planning follows a deterministic-first strategy:
+
+        1. Build a planning request.
+        2. Attempt deterministic template resolution.
+        3. Fall back to the LLM planner when no template matches.
+        4. Validate the resulting execution plan.
+
+    The LLM planner performs intent classification and
+    execution-plan generation in a single LLM call.
     """
 
     def __init__(
         self,
         *,
-        intent_analyzer: IntentAnalyzer,
         template_registry: PlanTemplateRegistry,
         llm_planner: LLMPlanGenerator,
         validator: ExecutionPlanValidator,
     ) -> None:
-        self._intent_analyzer = intent_analyzer
         self._template_registry = template_registry
         self._llm_planner = llm_planner
         self._validator = validator
@@ -66,7 +76,7 @@ class ExecutionPlanner:
         context: OrchestrationContext,
     ) -> ExecutionPlanDTO:
         """
-        Create an execution plan.
+        Create a validated execution plan.
         """
 
         with span(
@@ -76,12 +86,12 @@ class ExecutionPlanner:
                 context=context,
             )
 
-            plan = await self._resolve_plan(
+            plan, source = await self._resolve_plan(
                 request=request,
             )
 
             validated_plan = self._validate_plan(
-                plan,
+                plan=plan,
             )
 
             current_span.set_attribute(
@@ -90,10 +100,7 @@ class ExecutionPlanner:
             )
             current_span.set_attribute(
                 "planning.source",
-                self._get_plan_source(
-                    plan=plan,
-                    validated_plan=validated_plan,
-                ),
+                source,
             )
             current_span.set_attribute(
                 "execution.mode",
@@ -110,26 +117,33 @@ class ExecutionPlanner:
         self,
         *,
         request: PlanningRequestDTO,
-    ) -> ExecutionPlanDTO:
+    ) -> tuple[
+        ExecutionPlanDTO,
+        str,
+    ]:
         """
         Resolve an execution plan.
+
+        Deterministic templates are attempted first. The LLM
+        planner is invoked only when no deterministic template
+        matches.
+
+        Returns:
+            The execution plan and its source.
         """
 
-        intent = await self._intent_analyzer.analyze(
-            request=request,
-        )
-
         plan = self._template_registry.resolve(
-            intent=intent,
+            request=request,
         )
 
         if plan is not None:
-            return plan
+            return plan, "template"
 
-        return await self._llm_planner.generate(
+        plan = await self._llm_planner.generate(
             request=request,
-            intent=intent,
         )
+
+        return plan, "llm"
 
     @staticmethod
     def _build_planning_request(
@@ -149,33 +163,19 @@ class ExecutionPlanner:
 
     def _validate_plan(
         self,
+        *,
         plan: ExecutionPlanDTO,
     ) -> ExecutionPlanDTO:
         """
         Validate an execution plan.
 
-        Falls back to the default plan if validation fails.
+        Validation failures are propagated to the caller.
+
+        An invalid plan must not silently fall back to a
+        generic execution plan because that could change the
+        intended semantics of the user's request.
         """
 
-        try:
-            return self._validator.validate(
-                plan,
-            )
-
-        except PlanValidationError:
-            return self._template_registry.default()
-
-    @staticmethod
-    def _get_plan_source(
-        *,
-        plan: ExecutionPlanDTO,
-        validated_plan: ExecutionPlanDTO,
-    ) -> str:
-        """
-        Determine the source of the execution plan.
-        """
-
-        if plan is validated_plan:
-            return "template_or_llm"
-
-        return "default_fallback"
+        return self._validator.validate(
+            plan,
+        )
