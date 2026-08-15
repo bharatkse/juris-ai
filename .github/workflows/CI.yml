@@ -1,0 +1,107 @@
+# CI workflow
+# Runs on pushes, pull requests, or when called by another workflow
+name: CI
+
+on:
+  # Allow this workflow to be reused by other workflows
+  workflow_call:
+    inputs:
+      environment:
+        description: "Environment to deploy to (development, testing, staging, production)"
+        required: false
+        type: string
+
+  # Run CI on pushes to main development branches
+  push:
+    branches:
+      - main
+      - develop
+
+  # Run CI on key pull request lifecycle events
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - edited
+
+# Ensure only one run per branch/workflow is active at a time
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.11.9"
+  DEFAULT_ENVIRONMENT: "testing"
+
+
+jobs:
+  # ============================================================================
+  # Setup & Configuration
+  # ============================================================================
+
+  ci-setup:
+    name: CI Setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    outputs:
+      python-version: ${{ steps.config.outputs.python-version }}
+      app-environment: ${{ steps.config.outputs.app-environment }}
+
+    steps:
+      - name: Configure CI
+        id: config
+        shell: bash
+        run: |
+          APP_ENVIRONMENT="${{ inputs.environment || env.DEFAULT_ENVIRONMENT }}"
+
+          {
+            echo "python-version=${{ env.PYTHON_VERSION }}"
+            echo "app-environment=${APP_ENVIRONMENT}"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Python Version : ${{ env.PYTHON_VERSION }}"
+          echo "Environment    : ${APP_ENVIRONMENT}"
+
+  # ============================================================================
+  # GitHub Actions Validation
+  # ============================================================================
+
+  actionlint:
+    needs: ci-setup
+    name: Lint GitHub Actions
+    uses: ./.github/workflows/actionlint.yaml
+
+  # ============================================================================
+  # Code Quality
+  # ============================================================================
+
+  code-quality:
+    needs: ci-setup
+    name: Code Quality Checks
+    uses: ./.github/workflows/code-quality.yaml
+    with:
+      python-version: ${{ needs.ci-setup.outputs.python-version }}
+
+  # ============================================================================
+  # Backend Tests
+  # ===========================================================================
+
+  backend-tests:
+    name: Backend Unit Tests
+    needs: ci-setup
+    uses: ./.github/workflows/pra-backend.yaml
+    with:
+      python-version: ${{ needs.ci-setup.outputs.python-version }}
+      app-environment: ${{ needs.ci-setup.outputs.app-environment }}
+      working-directory: .
+    secrets: inherit
+
+  # ===========================================================================
+  # Coverage Validation
+  # ===========================================================================
+  codecov-validation:
+    name: Coverage Validation
+    needs: backend-tests
+    uses: ./.github/workflows/codecov-validation.yaml

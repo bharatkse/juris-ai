@@ -1,0 +1,221 @@
+# -------------------------------------------------
+# Project Metadata (PEP 621)
+# Defines package metadata used for packaging,
+# publishing, and dependency management.
+# -------------------------------------------------
+[project]
+name = "Juris-AI"
+version = "0.1.0"
+description = "Juris AI is a modern backend service for AI-powered legal assistance."
+authors = [{ name = "Bharat Kumar", email = "kumar.bhart28@gmail.com" }]
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11,<4.0"
+dynamic = ["dependencies"]
+keywords = ["LangChain", "Legal", "AI", "FastAPI", "groq", "LangSmith", "Agent"]
+
+
+# -------------------------------------------------
+# Poetry Configuration
+# Poetry-specific settings that control how the
+# project is managed and packaged.
+# -------------------------------------------------
+[tool.poetry]
+package-mode = false
+
+
+# -------------------------------------------------
+# Runtime Dependencies
+# Packages required to run the application.
+# -------------------------------------------------
+[tool.poetry.dependencies]
+# Web API framework and ASGI server
+fastapi = "^0.111.0"
+uvicorn = { extras = ["standard"], version = "^0.29.0" }
+
+# Authentication and password hashing
+pwdlib = { extras = ["argon2"], version = "^0.3.0" }
+
+# Multipart form/file uploads
+python-multipart = "^0.0.9"
+
+# Data validation and application configuration
+pydantic = "^2.7.1"
+pydantic-settings = "^2.2.1"
+python-dotenv = "^1.0.1"
+
+# Database ORM and PostgreSQL driver
+sqlalchemy = "^2.0.29"
+psycopg = { version = "^3.1.19", extras = ["binary"] }
+asyncpg = "^0.31.0"
+
+# Database schema migrations
+alembic = "^1.13.1"
+
+# PDF parsing and text extraction
+pypdf = "^6.15.0"
+python-docx = "^1.2.0"
+
+# # Vector database for semantic search
+# # Replace with `faiss-gpu` when running on CUDA-enabled systems.
+# faiss-cpu = "^1.8.0"
+
+# Large Language Model (LLM) provider
+groq = "^1.5.0"
+
+# LLM Provider SDK
+# openai = "^1.30.1"
+# anthropic = "^0.28.0"
+
+# Optional caching backend
+# Used only when CACHE_BACKEND=redis.
+redis = "^5.0.4"
+
+# Async Utilities and HTTP Client
+aiofiles = "^23.2.1"
+httpx = { extras = ["http2"], version = "^0.28.1" }
+
+# Optional AWS SDK
+# Required only when using S3 as the storage backend.
+boto3 = "^1.34.101"
+
+# observability
+opentelemetry-api = "^1.44.0"
+opentelemetry-sdk = "^1.44.0"
+opentelemetry-exporter-otlp-proto-http = "^1.44.0"
+opentelemetry-exporter-otlp = "^1.44.0"
+opentelemetry-instrumentation-fastapi = "^0.65b0"
+langsmith = "^0.10.17"
+
+# -------------------------------------------------
+# Development Dependencies
+# Tools used for testing, linting, formatting,
+# static analysis, and local development.
+# -------------------------------------------------
+[tool.poetry.group.dev.dependencies]
+# Testing
+pytest = "^8.3.0"
+pytest-asyncio = "^0.24.0"
+pytest-cov = "^6.0.0"
+pytest-mock = "^3.15.1"
+factory-boy = "^3.3.3"
+faker = "^40.35.0"
+aiosqlite = "^0.22.1"
+
+# Code quality
+ruff = "^0.8.0"
+mypy = "^1.13.0"
+pre-commit = "^4.0.0"
+types-redis = "^4.6.0"
+
+# Local AWS development tools
+localstack = "^3.4.0"
+aws-sam-cli = { version = "^1.148.0", python = ">=3.10,<3.14" }
+awscli = "^1.34.0"
+
+# -------------------------------------------------
+# Ruff Configuration
+# Linting and code formatting settings.
+# -------------------------------------------------
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+exclude = [
+  ".git",
+  ".mypy_cache",
+  ".ruff_cache",
+  ".tox",
+  ".venv",
+  "build",
+  "dist",
+  "node_modules",
+]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "C4", "B", "UP"]
+ignore = ["E501", "B008"]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+
+
+# -------------------------------------------------
+# MyPy Configuration
+# Static type checking rules.
+# -------------------------------------------------
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+strict_equality = true
+
+# Fix for multiple 'src' modules
+explicit_package_bases = true
+namespace_packages = true
+
+# Exclude paths to avoid duplicate module conflicts
+exclude = ["src/.*/__pycache__", "src/__pycache__", ".venv", "venv", "env"]
+
+# Work around missing type stubs for third-party libraries.
+[[tool.mypy.overrides]]
+module = ["faiss.*", "fitz.*", "sentence_transformers.*"]
+ignore_missing_imports = true
+
+# -------------------------------------------------
+# Pytest Configuration
+# Test discovery, execution, and custom markers.
+# -------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "--strict-markers --tb=short -v"
+markers = [
+  "unit: Unit tests — no I/O",
+  "integration: Integration tests — use real services",
+  "slow: Tests that take more than 5 seconds",
+]
+
+# -------------------------------------------------
+# Coverage Configuration
+# Code coverage collection and reporting settings.
+# -------------------------------------------------
+[tool.coverage.run]
+source = ["src"]
+omit = ["tests/*", "scripts/*", "migrations/*"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+fail_under = 30
+exclude_lines = [
+  "pragma: no cover",
+  "if TYPE_CHECKING:",
+  "raise NotImplementedError",
+  "if __name__ == .__main__.:",
+]
+
+# -------------------------------------------------
+# Build System
+# Backend used to build and package the project.
+# -------------------------------------------------
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

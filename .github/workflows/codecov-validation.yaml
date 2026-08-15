@@ -1,0 +1,48 @@
+name: Codecov Config Validation
+
+on:
+  workflow_call:
+
+jobs:
+  validate-codecov-config:
+    name: Validate Codecov Configuration
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check if Codecov configuration exists
+        run: |
+          if [ ! -f .codecov.yml ]; then
+            echo "::error::.codecov.yml not found"
+            exit 1
+          fi
+
+      - name: Validate Codecov configuration
+        run: |
+          echo "Validating .codecov.yml..."
+
+          result=$(curl \
+            --silent \
+            --show-error \
+            --connect-timeout 10 \
+            --max-time 30 \
+            --write-out "\nHTTP_STATUS:%{http_code}" \
+            --data-binary @.codecov.yml \
+            https://codecov.io/validate)
+
+          echo "$result"
+
+          status=$(echo "$result" | sed -n 's/.*HTTP_STATUS:\([0-9]*\).*/\1/p')
+
+          if [ "$status" != "200" ]; then
+            echo "Codecov configuration validation failed with HTTP status: $status"
+            exit 1
+          fi
+
+          echo "Codecov configuration is valid."

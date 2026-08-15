@@ -1,0 +1,12 @@
+self-hosted-runner:
+  # Labels of self-hosted runner in array of string
+  labels:
+    - oracle-linux-8
+    - small
+    - nano
+    - large
+    - ubuntu
+    - m7a-large
+    - m7a-xlarge
+    - m7a-2xlarge
+    - m7a-medium

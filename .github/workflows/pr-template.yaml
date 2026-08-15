@@ -1,0 +1,54 @@
+name: PR Template Validation and Auto-Apply
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: write
+
+jobs:
+  validate-pr-template:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check PR Template Compliance
+        id: template-check
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const prBody = context.payload.pull_request.body || "";
+            const prBodyNormalized = prBody.toLowerCase();
+
+            const requiredSections = [
+              'developer:',
+              'summary of proposed changes',
+              'type of change',
+              'testing'
+            ];
+
+            const missingSections = requiredSections.filter(section =>
+              !prBodyNormalized.includes(section)
+            );
+
+            if (missingSections.length > 0) {
+              core.setFailed(`PR is missing required template sections: ${missingSections.join(', ')}`);
+
+              try {
+                  await github.rest.issues.createComment({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: context.issue.number,
+                    body: comment,
+                  });
+                } catch (error) {
+                  core.warning(`Unable to comment on PR: ${error.message}`);
+                }
+            } else {
+              core.info('PR template compliance check passed');
+            }

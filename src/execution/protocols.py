@@ -1,0 +1,61 @@
+"""
+Execution runtime protocols.
+
+Defines shared contracts used by the execution module.
+
+These protocols decouple the Executor from execution strategies,
+making each component independently testable.
+"""
+
+from __future__ import annotations
+
+from typing import Protocol
+
+from src.core.dto.planning import ExecutionPlanDTO, ExecutionStepDTO
+from src.core.schemas.message import AgentMessageSchema
+
+
+class StepRunner(Protocol):
+    """
+    Executes a single execution step.
+
+    Implemented by:
+        Executor._run_step()
+    """
+
+    async def __call__(
+        self,
+        *,
+        step: ExecutionStepDTO,
+    ) -> None: ...
+
+
+class ExecutionStrategy(Protocol):
+    """
+    Execution strategy contract.
+
+    Implemented by:
+        SequentialExecutionStrategy
+        ParallelExecutionStrategy
+        HybridExecutionStrategy
+        DistributedExecutionStrategy
+    """
+
+    async def execute(
+        self,
+        *,
+        plan: ExecutionPlanDTO,
+        step_runner: StepRunner,
+    ) -> None: ...
+
+
+class AgentMessageHandler(Protocol):
+    """
+    Handles inter-agent collaboration requests.
+    """
+
+    async def handle_message(
+        self,
+        *,
+        message: AgentMessageSchema,
+    ) -> object: ...

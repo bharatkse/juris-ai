@@ -1,0 +1,616 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+
+Description: Juris-AI Serverless Template
+
+Parameters:
+  Stage:
+    Type: String
+    Default: dev
+    AllowedValues: [local, snd, dev, uat, prod]
+    Description: >
+      Deployment stage.
+      Use "local" or "dev" for LocalStack — skips RDS and ALB.
+
+  ServiceName:
+    Type: String
+    Default: juris-ai
+    Description: Service name prefix for all resource names
+
+  ApiVersion:
+    Type: String
+    Default: v1
+    Description: API version string used in endpoint URL output
+
+  RateLimitPerSecond:
+    Type: Number
+    Default: 50
+    Description: API Gateway throttle — requests per second
+
+  RateLimitBurst:
+    Type: Number
+    Default: 100
+    Description: API Gateway throttle — burst limit
+
+  RateLimitQuotaPerDay:
+    Type: Number
+    Default: 10000
+    Description: API Gateway usage plan — daily quota
+
+  DBName:
+    Type: String
+    Default: jurisai_db
+    Description: PostgreSQL database name
+
+  DBEngine:
+    Type: String
+    Default: postgres
+    Description: RDS engine type
+
+  DBEngineVersion:
+    Type: String
+    Default: "15.4"
+    Description: PostgreSQL version — must be 15+ for pgvector support
+
+  DBInstanceType:
+    Type: String
+    Default: db.t3.micro
+    Description: RDS instance class
+
+  LocalFastApiUrl:
+    Type: String
+    Default: "http://host.docker.internal:8000"
+    Description: >
+      FastAPI container URL reachable from LocalStack.
+      Used as API Gateway integration URI when Stage=local|dev.
+      Change to http://api:8000 if running in the same Docker network.
+
+  VpcId:
+    Type: String
+    Default: ""
+    Description: Existing VPC ID. Leave blank to auto-create.
+
+  PublicSubnets:
+    Type: CommaDelimitedList
+    Default: ""
+    Description: Comma-delimited public subnet IDs (required when VpcId is set)
+
+  PrivateSubnets:
+    Type: CommaDelimitedList
+    Default: ""
+    Description: Comma-delimited private subnet IDs (required when VpcId is set)
+
+  AllowedOrigin:
+    Type: String
+    Default: "*"
+    Description: S3 CORS allowed origin. Override with your domain for prod.
+
+# =============================================================
+# Conditions
+# =============================================================
+Conditions:
+  # IsLocal: true for "local" or "dev" stages — skips RDS, ALB, VPC
+  IsLocal:    !Or [!Equals [!Ref Stage, "local"], !Equals [!Ref Stage, "dev"]]
+  IsCloud:    !Not [!Condition IsLocal]
+
+  UseExistingVpc: !And
+    - !Condition IsCloud
+    - !Not [!Equals [!Ref VpcId, ""]]
+
+  CreateVpc: !And
+    - !Condition IsCloud
+    - !Equals [!Ref VpcId, ""]
+
+  HasPublicSubnets: !Not [!Equals [!Join ["", !Ref PublicSubnets], ""]]
+  HasPrivateSubnets: !Not [!Equals [!Join ["", !Ref PrivateSubnets], ""]]
+
+
+# =============================================================
+# Resources
+# =============================================================
+Resources:
+  DefaultVPC:
+    Type: AWS::EC2::VPC
+    Condition: CreateVpc
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${ServiceName}-vpc-${Stage}"
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Condition: CreateVpc
+    Properties:
+      VpcId: !Ref DefaultVPC
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Condition: CreateVpc
+    Properties:
+      VpcId: !Ref DefaultVPC
+      CidrBlock: 10.0.2.0/24
+      MapPublicIpOnLaunch: true
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Condition: CreateVpc
+    Properties:
+      VpcId: !Ref DefaultVPC
+      CidrBlock: 10.0.3.0/24
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Condition: CreateVpc
+    Properties:
+      VpcId: !Ref DefaultVPC
+      CidrBlock: 10.0.4.0/24
+
+  # -----------------------------------------------------------
+  # Security Group — cloud only
+  # -----------------------------------------------------------
+  AppSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Condition: IsCloud
+    Properties:
+      GroupName: !Sub "${ServiceName}-sg-${Stage}"
+      GroupDescription: Security group for ECS, ALB, and RDS
+      VpcId: !If [UseExistingVpc, !Ref VpcId, !Ref DefaultVPC]
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8000
+          ToPort: 8000
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: 0.0.0.0/0
+
+  # Self-referencing ingress for RDS — added separately to avoid circular ref
+  AppSecurityGroupRDSIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Condition: IsCloud
+    Properties:
+      GroupId: !Ref AppSecurityGroup
+      IpProtocol: tcp
+      FromPort: 5432
+      ToPort: 5432
+      SourceSecurityGroupId: !Ref AppSecurityGroup
+
+  # -----------------------------------------------------------
+  # S3 Bucket for document storage
+  # -----------------------------------------------------------
+  JurisAIDocumentBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${ServiceName}-documents-${Stage}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ["*"]
+            AllowedMethods: [GET, PUT, POST, DELETE, HEAD]
+            AllowedOrigins:
+              - !Ref AllowedOrigin
+            MaxAge: 3600
+            ExposedHeaders: [ETag, x-amz-request-id]
+      Tags:
+        - Key: Environment
+          Value: !Ref Stage
+        - Key: Service
+          Value: !Ref ServiceName
+
+  # -----------------------------------------------------------
+  # Secrets Manager secret for DB credentials
+  # -----------------------------------------------------------
+  DBSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub "${ServiceName}-db-secret-${Stage}"
+      Description: !Sub "DB credentials for ${ServiceName} ${Stage}"
+      GenerateSecretString:
+        SecretStringTemplate: '{"username": "admin"}'
+        GenerateStringKey: "password"
+        PasswordLength: 16
+        ExcludeCharacters: '"@/\'
+      Tags:
+        - Key: Environment
+          Value: !Ref Stage
+
+  # -----------------------------------------------------------
+  # RDS — cloud only (IsCloud condition)
+  # -----------------------------------------------------------
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Condition: IsCloud
+    Metadata:
+      cfn-lint:
+        config:
+          ignore_checks: [W1030]   # CommaDelimitedList default "" is intentional
+    Properties:
+      DBSubnetGroupDescription: Private subnets for RDS
+      SubnetIds: !If
+        - UseExistingVpc
+        - !If
+            - HasPrivateSubnets
+            - !Ref PrivateSubnets
+            - !Ref PrivateSubnets
+        - [!Ref PrivateSubnet1, !Ref PrivateSubnet2]
+
+  JurisAIRDS:
+    Type: AWS::RDS::DBInstance
+    Condition: IsCloud
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      DBName: !Ref DBName
+      Engine: !Ref DBEngine
+      EngineVersion: !Ref DBEngineVersion
+      MasterUsername: !Sub
+        - "{{resolve:secretsmanager:${SecretId}:SecretString:username}}"
+        - SecretId: !Ref DBSecret
+      MasterUserPassword: !Sub
+        - "{{resolve:secretsmanager:${SecretId}:SecretString:password}}"
+        - SecretId: !Ref DBSecret
+      DBInstanceClass: !Ref DBInstanceType
+      AllocatedStorage: "20"
+      StorageType: gp3
+      PubliclyAccessible: false
+      VPCSecurityGroups:
+        - !Ref AppSecurityGroup
+      BackupRetentionPeriod: 7
+      DeletionProtection: false
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      Tags:
+        - Key: Environment
+          Value: !Ref Stage
+
+  # -----------------------------------------------------------
+  # ALB — cloud only (IsCloud condition)
+  # -----------------------------------------------------------
+  JurisAIALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Condition: IsCloud
+    Properties:
+      Name: !Sub "${ServiceName}-alb-${Stage}"
+      Subnets: !If
+        - UseExistingVpc
+        - !If
+            - HasPublicSubnets
+            - !Ref PublicSubnets
+            - !Ref PublicSubnets
+        - [!Ref PublicSubnet1, !Ref PublicSubnet2]
+      SecurityGroups:
+        - !Ref AppSecurityGroup
+      Scheme: internet-facing
+      Type: application
+      IpAddressType: ipv4
+
+  JurisAITargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Condition: IsCloud
+    Properties:
+      Name: !Sub "${ServiceName}-tg-${Stage}"
+      Port: 8000
+      Protocol: HTTP
+      TargetType: ip
+      VpcId: !If [UseExistingVpc, !Ref VpcId, !Ref DefaultVPC]
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: /health
+      HealthCheckIntervalSeconds: 30
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+
+  JurisAIALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: IsCloud
+    Properties:
+      LoadBalancerArn: !Ref JurisAIALB
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref JurisAITargetGroup
+
+  # -----------------------------------------------------------
+  # API Gateway — works on LocalStack free tier
+  #
+  # LOCAL:  API GW → direct HTTP → LocalFastApiUrl (your container)
+  # CLOUD:  API GW → HTTP → ALB DNS
+  # -----------------------------------------------------------
+  JurisAIRestApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub "${ServiceName}-api-${Stage}"
+      Description: !Sub "Juris-AI Legal RAG API — ${Stage}"
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      Tags:
+        - Key: Environment
+          Value: !Ref Stage
+        - Key: Service
+          Value: !Ref ServiceName
+
+  # {proxy+} resource — all routes
+  JurisAIProxyResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !GetAtt JurisAIRestApi.RootResourceId
+      PathPart: "{proxy+}"
+      RestApiId: !Ref JurisAIRestApi
+
+  # ANY / — root method
+  JurisAIRootMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref JurisAIRestApi
+      ResourceId: !GetAtt JurisAIRestApi.RootResourceId
+      HttpMethod: ANY
+      AuthorizationType: NONE
+      ApiKeyRequired: true
+      Integration:
+        Type: HTTP_PROXY
+        IntegrationHttpMethod: ANY
+        # LOCAL → container URL  |  CLOUD → ALB
+        Uri: !If
+          - IsLocal
+          - !Sub "${LocalFastApiUrl}/"
+          - !Sub "http://${JurisAIALB.DNSName}/"
+        PassthroughBehavior: WHEN_NO_MATCH
+        TimeoutInMillis: 29000
+
+  # ANY /{proxy+} — all other routes
+  JurisAIProxyMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref JurisAIRestApi
+      ResourceId: !Ref JurisAIProxyResource
+      HttpMethod: ANY
+      AuthorizationType: NONE
+      ApiKeyRequired: true
+      Integration:
+        Type: HTTP_PROXY
+        IntegrationHttpMethod: ANY
+        Uri: !If
+          - IsLocal
+          - !Sub "${LocalFastApiUrl}/{proxy}"
+          - !Sub "http://${JurisAIALB.DNSName}/{proxy}"
+        PassthroughBehavior: WHEN_NO_MATCH
+        TimeoutInMillis: 29000
+
+  # DependsOn includes proxy resource to prevent race condition
+  ApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - JurisAIRootMethod
+      - JurisAIProxyMethod
+      - JurisAIProxyResource
+    Properties:
+      RestApiId: !Ref JurisAIRestApi
+
+  ApiStage:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      StageName: !Ref Stage
+      RestApiId: !Ref JurisAIRestApi
+      DeploymentId: !Ref ApiDeployment
+      AccessLogSetting:
+        DestinationArn: !GetAtt ApiGatewayLogGroup.Arn
+      MethodSettings:
+        - ResourcePath: "/*"
+          HttpMethod: "*"
+          LoggingLevel: INFO
+          MetricsEnabled: true
+          ThrottlingRateLimit: !Ref RateLimitPerSecond
+          ThrottlingBurstLimit: !Ref RateLimitBurst
+
+  # -----------------------------------------------------------
+  # API Key + Usage Plan
+  # -----------------------------------------------------------
+  RestApiKey:
+    Type: AWS::ApiGateway::ApiKey
+    Properties:
+      Name: !Sub "${ServiceName}-api-key-${Stage}"
+      Enabled: true
+      StageKeys:
+        - RestApiId: !Ref JurisAIRestApi
+          StageName: !Ref ApiStage
+
+  RestApiUsagePlan:
+    Type: AWS::ApiGateway::UsagePlan
+    Properties:
+      UsagePlanName: !Sub "${ServiceName}-usage-plan-${Stage}"
+      Description: Rate limiting and quota for Juris-AI
+      ApiStages:
+        - ApiId: !Ref JurisAIRestApi
+          Stage: !Ref ApiStage
+      Throttle:
+        RateLimit: !Ref RateLimitPerSecond
+        BurstLimit: !Ref RateLimitBurst
+      Quota:
+        Limit: !Ref RateLimitQuotaPerDay
+        Period: DAY
+
+  RestApiUsagePlanKey:
+    Type: AWS::ApiGateway::UsagePlanKey
+    Properties:
+      KeyId: !Ref RestApiKey
+      KeyType: API_KEY
+      UsagePlanId: !Ref RestApiUsagePlan
+
+  # -----------------------------------------------------------
+  # CloudWatch Log Group
+  # -----------------------------------------------------------
+  ApiGatewayLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/apigateway/${ServiceName}-${Stage}"
+      RetentionInDays: 30
+
+  # -----------------------------------------------------------
+  # CloudWatch Alarms
+  # -----------------------------------------------------------
+  ApiGateway4XXAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ServiceName}-4xx-${Stage}"
+      AlarmDescription: High rate of client errors on API Gateway
+      MetricName: 4XXError
+      Namespace: AWS/ApiGateway
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 50
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: ApiName
+          Value: !Ref JurisAIRestApi
+
+  ApiGateway5XXAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ServiceName}-5xx-${Stage}"
+      AlarmDescription: Server errors on API Gateway
+      MetricName: 5XXError
+      Namespace: AWS/ApiGateway
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      Dimensions:
+        - Name: ApiName
+          Value: !Ref JurisAIRestApi
+
+  # -----------------------------------------------------------
+  # SSM Parameters — works on LocalStack free tier
+  # -----------------------------------------------------------
+  DBSecretArnParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/${ServiceName}/${Stage}/db-secret-arn"
+      Type: String
+      Value: !Ref DBSecret
+      Description: "Secrets Manager ARN for DB credentials"
+
+  DBHostParameter:
+    Type: AWS::SSM::Parameter
+    Condition: IsCloud
+    Properties:
+      Name: !Sub "/${ServiceName}/${Stage}/db-host"
+      Type: String
+      Value: !GetAtt JurisAIRDS.Endpoint.Address
+      Description: "RDS endpoint address"
+
+  PrivateSubnetsParameter:
+    Type: AWS::SSM::Parameter
+    Condition: IsCloud
+    Properties:
+      Name: !Sub "/${ServiceName}/${Stage}/private-subnets"
+      Type: String
+      Value: !If
+        - UseExistingVpc
+        - !Join [",", !Ref PrivateSubnets]
+        - !Join [",", [!Ref PrivateSubnet1, !Ref PrivateSubnet2]]
+      Description: "Private subnet IDs for ECS tasks"
+
+  AppSecurityGroupParameter:
+    Type: AWS::SSM::Parameter
+    Condition: IsCloud
+    Properties:
+      Name: !Sub "/${ServiceName}/${Stage}/app-security-group"
+      Type: String
+      Value: !Ref AppSecurityGroup
+      Description: "Security group ID for ECS and RDS"
+
+  TargetGroupArnParameter:
+    Type: AWS::SSM::Parameter
+    Condition: IsCloud
+    Properties:
+      Name: !Sub "/${ServiceName}/${Stage}/alb-target-group-arn"
+      Type: String
+      Value: !Ref JurisAITargetGroup
+      Description: "ALB target group ARN for ECS service"
+
+# =============================================================
+# Outputs
+# =============================================================
+Outputs:
+
+  DocumentBucket:
+    Description: S3 bucket for legal document storage
+    Value: !Ref JurisAIDocumentBucket
+    Export:
+      Name: !Sub "${ServiceName}-bucket-${Stage}"
+
+  ApiId:
+    Description: API Gateway REST API ID
+    Value: !Ref JurisAIRestApi
+
+  ApiGatewayEndpoint:
+    Description: API Gateway invoke URL
+    Value: !Sub "https://${JurisAIRestApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}/${ApiVersion}"
+    Export:
+      Name: !Sub "${ServiceName}-api-endpoint-${Stage}"
+
+  LocalStackApiEndpoint:
+    Description: LocalStack API Gateway endpoint (local dev only)
+    Value: !Sub "http://localhost:4566/restapis/${JurisAIRestApi}/${Stage}/_user_request_/"
+
+  ApiKeyId:
+    Description: API Key resource ID
+    Value: !Ref RestApiKey
+
+  GetApiKeyCommand:
+    Description: CLI command to retrieve the API key value (works for both LocalStack and AWS)
+    Value: !Sub >-
+      aws apigateway get-api-key
+      --api-key ${RestApiKey}
+      --include-value
+      --query 'value'
+      --output text
+
+  GetApiKeyLocalStackCommand:
+    Description: LocalStack-specific CLI command to retrieve API key value
+    Value: !Sub >-
+      AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test
+      aws apigateway get-api-key
+      --endpoint-url http://localhost:4566
+      --region us-east-1
+      --api-key ${RestApiKey}
+      --include-value
+      --query 'value'
+      --output text
+
+  DBSecretArn:
+    Description: Secrets Manager ARN for database credentials
+    Value: !Ref DBSecret
+
+  ALBDNSName:
+    Condition: IsCloud
+    Description: Application Load Balancer DNS name
+    Value: !GetAtt JurisAIALB.DNSName
+
+  DBEndpoint:
+    Condition: IsCloud
+    Description: RDS PostgreSQL endpoint address
+    Value: !GetAtt JurisAIRDS.Endpoint.Address
+
+  DBSecretArnSSMPath:
+    Description: SSM path for DB secret ARN
+    Value: !Sub "/${ServiceName}/${Stage}/db-secret-arn"
