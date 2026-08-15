@@ -81,7 +81,8 @@ class ExecutionPlanValidator:
         """
         Validate the execution mode.
 
-        Execution mode defines the execution strategy.
+        Execution mode is part of the planning contract and describes
+        the intended execution topology.
 
         Dependencies are validated independently and are the
         authoritative representation of the execution graph.

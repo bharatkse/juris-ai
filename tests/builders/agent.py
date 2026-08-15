@@ -12,10 +12,9 @@ from src.core.dto.agent import (
     AgentResponseDTO,
     AgentStreamChunkDTO,
 )
-from src.core.dto.conversation import ConversationDTO
 from src.core.dto.message import MessageDTO
 from src.core.dto.tool import ToolFileDTO
-from src.core.enums import MessageRoleEnum
+from tests.builders.conversation import build_conversation
 
 
 def build_agent_request(
@@ -29,20 +28,8 @@ def build_agent_request(
     Build an AgentRequestDTO.
     """
 
-    conversation = ConversationDTO(
-        messages=tuple(
-            messages
-            or [
-                MessageDTO(
-                    role=MessageRoleEnum.USER,
-                    content="Hello",
-                ),
-            ],
-        ),
-    )
-
     return AgentRequestDTO(
-        conversation=conversation,
+        conversation=build_conversation(messages=messages),
         instruction=instruction,
         context=AgentContextDTO(
             uploaded_files=uploaded_files,

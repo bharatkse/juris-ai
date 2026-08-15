@@ -4,19 +4,16 @@ Execution runtime coordinator.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
 from uuid import UUID
 
+from src.core.dto.agent import AgentContextDTO
 from src.core.dto.conversation import ConversationDTO
 from src.core.dto.planning import ExecutionPlanDTO
+from src.execution.config import ExecutionTimeoutPolicy
+from src.execution.graph.factory import ExecutionGraphFactory
+from src.execution.schemas.result import ExecutionResultSchema
 from src.execution.session import ExecutionSession
-from src.execution.strategies.hybrid import HybridExecutionStrategy
-from src.execution.strategies.parallel import ParallelExecutionStrategy
-from src.execution.strategies.sequential import SequentialExecutionStrategy
-from src.registry.agent import AgentRegistry
-
-if TYPE_CHECKING:
-    from src.execution.schemas.result import ExecutionResultSchema
+from src.execution.state import ExecutionStateAssembler
 
 
 class Executor:
@@ -27,15 +24,13 @@ class Executor:
     def __init__(
         self,
         *,
-        agent_registry: AgentRegistry,
-        sequential_strategy: SequentialExecutionStrategy,
-        parallel_strategy: ParallelExecutionStrategy,
-        hybrid_strategy: HybridExecutionStrategy,
+        graph_factory: ExecutionGraphFactory,
+        state_assembler: ExecutionStateAssembler,
+        timeout_policy: ExecutionTimeoutPolicy,
     ) -> None:
-        self._agent_registry = agent_registry
-        self._sequential_strategy = sequential_strategy
-        self._parallel_strategy = parallel_strategy
-        self._hybrid_strategy = hybrid_strategy
+        self._graph_factory = graph_factory
+        self._state_assembler = state_assembler
+        self._timeout_policy = timeout_policy
 
     async def execute(
         self,
@@ -43,6 +38,7 @@ class Executor:
         request_id: UUID,
         conversation: ConversationDTO,
         plan: ExecutionPlanDTO,
+        context: AgentContextDTO,
     ) -> ExecutionResultSchema:
         """
         Execute an execution plan.
@@ -52,10 +48,10 @@ class Executor:
             request_id=request_id,
             conversation=conversation,
             plan=plan,
-            agent_registry=self._agent_registry,
-            sequential_strategy=self._sequential_strategy,
-            parallel_strategy=self._parallel_strategy,
-            hybrid_strategy=self._hybrid_strategy,
+            context=context,
+            graph_factory=self._graph_factory,
+            state_assembler=self._state_assembler,
+            timeout_policy=self._timeout_policy,
         )
 
         return await session.execute()

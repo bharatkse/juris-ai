@@ -27,6 +27,8 @@ class StepExecutionStateSchema(BaseModel):
 
     status: ExecutionStatusEnum = ExecutionStatusEnum.PENDING
 
+    retry_count: int = 0
+
     started_at: datetime | None = None
 
     completed_at: datetime | None = None

@@ -9,7 +9,6 @@ flows through this bus.
 
 from __future__ import annotations
 
-from src.core.enums import AgentTypeEnum
 from src.core.exceptions.agent import AgentExecutionError
 from src.core.schemas.message import AgentMessageSchema
 from src.execution.protocols import AgentMessageHandler
@@ -19,22 +18,22 @@ class CollaborationBus:
     """
     Mediates communication between agents.
 
-    The Executor owns the CollaborationBus and injects it into
-    participating agents.
+    Agents never communicate directly with one another. All messages
+    are routed through the collaboration bus.
     """
 
     def __init__(
         self,
     ) -> None:
         self._handlers: dict[
-            AgentTypeEnum,
+            str,
             AgentMessageHandler,
         ] = {}
 
     def register(
         self,
         *,
-        agent: AgentTypeEnum,
+        agent: str,
         handler: AgentMessageHandler,
     ) -> None:
         """
@@ -62,7 +61,7 @@ class CollaborationBus:
 
         if handler is None:
             raise AgentExecutionError(
-                message=(f"No handler registered for agent " f"'{message.recipient.value}'."),
+                message=(f"No handler registered for agent " f"'{message.recipient}'."),
             )
 
         return await handler.handle_message(

@@ -14,7 +14,7 @@ Execution Plan
 Executor
         │
         ▼
-Execution Strategy
+LangGraph Execution Runtime
         │
         ▼
 Agent Execution
@@ -32,7 +32,6 @@ from src.core.constants import (
     ERROR_COLLABORATION,
     ERROR_EXECUTION,
     ERROR_STEP_EXECUTION,
-    ERROR_STRATEGY,
 )
 from src.core.exceptions.base import AIError
 
@@ -44,20 +43,6 @@ class ExecutionError(AIError):
 
     error_code = ERROR_EXECUTION
     default_message = "Execution failed."
-
-
-class StrategyError(ExecutionError):
-    """
-    Raised when an execution strategy fails.
-
-    Examples:
-        - Unsupported execution strategy
-        - Invalid execution mode
-        - Strategy initialization failure
-    """
-
-    error_code = ERROR_STRATEGY
-    default_message = "Execution strategy failed."
 
 
 class StepExecutionError(ExecutionError):

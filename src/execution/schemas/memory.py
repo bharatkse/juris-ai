@@ -1,10 +1,11 @@
 """
 Execution memory.
 
-Shared mutable memory for a single execution.
+Represents assembled runtime artifacts produced during execution.
 
-Acts as the runtime blackboard that enables agents to exchange
-intermediate artifacts during execution.
+LangGraph maintains update-oriented execution memory state during
+execution. The ExecutionStateAssembler converts those updates into
+this execution-domain model.
 """
 
 from __future__ import annotations
@@ -16,10 +17,11 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class ExecutionMemorySchema(BaseModel):
     """
-    Shared execution memory.
+    Assembled execution memory.
 
-    The Executor creates one ExecutionMemory instance per request
-    and shares it with all participating agents.
+    Represents execution artifacts produced during a single
+    execution request after LangGraph runtime updates have been
+    assembled.
     """
 
     model_config = ConfigDict(

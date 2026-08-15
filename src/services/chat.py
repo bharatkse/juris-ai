@@ -10,9 +10,6 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-if TYPE_CHECKING:
-    from src.db.models.conversation import Conversation as ConversationModel
-
 from src.core.dto.agent import AgentResponseDTO
 from src.core.enums import MessageRoleEnum
 from src.core.logger import get_logger
@@ -25,6 +22,10 @@ from src.services.conversation import ConversationService
 from src.services.conversation_event import ConversationEventService
 from src.services.internal_dto.chat import ChatResultDTO
 from src.services.internal_dto.stream import ChatStreamChunkDTO
+
+if TYPE_CHECKING:
+    from src.core.dto.tool import ToolFileDTO
+    from src.db.models.conversation import Conversation as ConversationModel
 
 logger = get_logger(__name__)
 
@@ -57,6 +58,7 @@ class ChatService(BaseService):
         conversation_id: ConversationId,
         message: str,
         request_id: UUID,
+        files: tuple[ToolFileDTO, ...] = (),
     ) -> ChatResultDTO:
         """
         Process a chat request.
@@ -99,6 +101,7 @@ class ChatService(BaseService):
                 current_event_id=user_event.id,
                 message=message,
                 request_id=request_id,
+                files=files,
             )
 
             response = await self._orchestrator.handle(
@@ -160,6 +163,7 @@ class ChatService(BaseService):
         conversation_id: ConversationId,
         message: str,
         request_id: UUID,
+        files: tuple[ToolFileDTO, ...] = (),
     ) -> AsyncIterator[ChatStreamChunkDTO]:
         """
         Stream a chat response.
@@ -196,6 +200,7 @@ class ChatService(BaseService):
                 current_event_id=user_event.id,
                 message=message,
                 request_id=request_id,
+                files=files,
             )
 
             stream = self._orchestrator.stream(
@@ -264,6 +269,7 @@ class ChatService(BaseService):
         current_event_id: ConversationEventId,
         message: str,
         request_id: UUID,
+        files: tuple[ToolFileDTO, ...] = (),
     ) -> OrchestratorRequest:
         """
         Build the orchestration request from conversation history.
@@ -288,4 +294,5 @@ class ChatService(BaseService):
             user_id=conversation.user_id,
             message=message,
             history=history,
+            attachments=files,
         )

@@ -64,6 +64,7 @@ async def test_chat(
         conversation_id=request.conversation_id,
         message=request.message,
         request_id=http_request.state.context.request_id,
+        files=(),
     )
 
     assert mock_model_validate.call_count == 2
@@ -158,6 +159,7 @@ async def test_stream_chat_streams_events(
         conversation_id=request.conversation_id,
         message=request.message,
         request_id=http_request.state.context.request_id,
+        files=(),
     )
 
     mock_encode_sse_event.assert_called_once()

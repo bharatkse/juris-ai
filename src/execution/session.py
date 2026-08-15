@@ -1,28 +1,22 @@
 """
 Execution runtime session.
-
-Owns the mutable runtime state for a single execution request.
 """
 
 from __future__ import annotations
 
+import asyncio
 from uuid import UUID
 
-from src.core.dto.agent import AgentRequestDTO
+from src.core.dto.agent import AgentContextDTO
 from src.core.dto.conversation import ConversationDTO
-from src.core.dto.planning import ExecutionPlanDTO, ExecutionStepDTO
-from src.core.enums import ExecutionModeEnum, ExecutionStatusEnum
+from src.core.dto.planning import ExecutionPlanDTO
 from src.core.exceptions.execution import ExecutionError
 from src.core.logger import get_logger
-from src.execution.bus import CollaborationBus
-from src.execution.protocols import ExecutionStrategy
-from src.execution.schemas.memory import ExecutionMemorySchema
+from src.execution.config import ExecutionTimeoutPolicy
+from src.execution.graph.factory import ExecutionGraphFactory
+from src.execution.graph.state import ExecutionGraphState
 from src.execution.schemas.result import ExecutionResultSchema
-from src.execution.schemas.state import ExecutionStateSchema
-from src.execution.strategies.hybrid import HybridExecutionStrategy
-from src.execution.strategies.parallel import ParallelExecutionStrategy
-from src.execution.strategies.sequential import SequentialExecutionStrategy
-from src.registry.agent import AgentRegistry
+from src.execution.state.assembler import ExecutionStateAssembler
 
 logger = get_logger(__name__)
 
@@ -31,7 +25,8 @@ class ExecutionSession:
     """
     Runtime execution session.
 
-    Each execution request owns its own session.
+    Owns request-scoped execution context while LangGraph owns
+    mutable graph runtime state.
     """
 
     def __init__(
@@ -40,207 +35,115 @@ class ExecutionSession:
         request_id: UUID,
         conversation: ConversationDTO,
         plan: ExecutionPlanDTO,
-        agent_registry: AgentRegistry,
-        sequential_strategy: SequentialExecutionStrategy,
-        parallel_strategy: ParallelExecutionStrategy,
-        hybrid_strategy: HybridExecutionStrategy,
+        context: AgentContextDTO,
+        graph_factory: ExecutionGraphFactory,
+        state_assembler: ExecutionStateAssembler,
+        timeout_policy: ExecutionTimeoutPolicy,
     ) -> None:
-        self._plan = plan
+        self._request_id = request_id
         self._conversation = conversation
+        self._plan = plan
+        self._context = context
 
-        self._agent_registry = agent_registry
-
-        self._sequential_strategy = sequential_strategy
-        self._parallel_strategy = parallel_strategy
-        self._hybrid_strategy = hybrid_strategy
-
-        self._state = ExecutionStateSchema(
-            request_id=request_id,
-            status=ExecutionStatusEnum.RUNNING,
-        )
-
-        for step in plan.steps:
-            self._state.register_step(
-                step_id=step.id,
-            )
-
-        self._memory = ExecutionMemorySchema()
-        self._bus = CollaborationBus()
+        self._graph_factory = graph_factory
+        self._state_assembler = state_assembler
+        self._timeout_policy = timeout_policy
 
     async def execute(
         self,
     ) -> ExecutionResultSchema:
         """
-        Execute the execution plan.
+        Execute the session through the compiled LangGraph workflow.
         """
 
         logger.info(
             "Starting execution session.",
             extra={
                 "operation": "execute_session",
-                "request_id": str(self._state.request_id),
+                "request_id": str(self._request_id),
                 "execution_mode": self._plan.mode.value,
                 "step_count": len(self._plan.steps),
             },
         )
 
-        strategy = self._resolve_strategy(
-            mode=self._plan.mode,
-        )
-
         try:
-            await strategy.execute(
+            graph = self._graph_factory.create(
                 plan=self._plan,
-                step_runner=self._run_step,
             )
 
-            self._state.status = ExecutionStatusEnum.COMPLETED
+            initial_state = self._build_initial_state()
+
+            graph_state = await asyncio.wait_for(
+                graph.ainvoke(
+                    initial_state,
+                ),
+                timeout=self._timeout_policy.timeout_seconds,
+            )
+
+            state = self._state_assembler.assemble_state(
+                graph_state=graph_state,
+            )
+
+            memory = self._state_assembler.assemble_memory(
+                graph_state=graph_state,
+            )
 
             logger.info(
                 "Execution session completed.",
                 extra={
                     "operation": "execute_session",
-                    "request_id": str(self._state.request_id),
+                    "request_id": str(self._request_id),
+                    "execution_status": state.status.value,
                     "execution_mode": self._plan.mode.value,
                 },
             )
 
-        except Exception:
-            self._state.status = ExecutionStatusEnum.FAILED
+            return ExecutionResultSchema(
+                state=state,
+                artifacts=dict(
+                    memory.artifacts,
+                ),
+            )
 
+        except TimeoutError as exc:
+            logger.error(
+                "Execution session timed out.",
+                extra={
+                    "operation": "execute_session_timeout",
+                    "request_id": str(self._request_id),
+                    "execution_mode": self._plan.mode.value,
+                    "timeout_seconds": (self._timeout_policy.timeout_seconds),
+                },
+            )
+
+            raise ExecutionError(
+                message=(
+                    "Execution timed out after " f"{self._timeout_policy.timeout_seconds} seconds."
+                ),
+            ) from exc
+
+        except Exception:
             logger.exception(
                 "Execution session failed.",
                 extra={
                     "operation": "execute_session",
-                    "request_id": str(self._state.request_id),
+                    "request_id": str(self._request_id),
                     "execution_mode": self._plan.mode.value,
                 },
             )
 
             raise
 
-        return ExecutionResultSchema(
-            state=self._state,
-            artifacts=dict(
-                self._memory.artifacts,
-            ),
-        )
-
-    async def _run_step(
-        self,
-        *,
-        step: ExecutionStepDTO,
-    ) -> None:
+    def _build_initial_state(self) -> ExecutionGraphState:
         """
-        Execute a single execution step.
+        Build the initial LangGraph state.
         """
 
-        logger.info(
-            "Starting execution step.",
-            extra={
-                "operation": "execute_step",
-                "request_id": str(self._state.request_id),
-                "step_id": step.id,
-                "agent": step.agent.value,
-            },
-        )
-
-        self._state.start_step(
-            step_id=step.id,
-        )
-
-        try:
-            agent = self._agent_registry.resolve(
-                key=step.agent.value,
-            )
-
-            logger.debug(
-                "Resolved execution agent.",
-                extra={
-                    "operation": "resolve_agent",
-                    "request_id": str(self._state.request_id),
-                    "step_id": step.id,
-                    "agent": step.agent.value,
-                },
-            )
-
-            response = await agent.run(
-                request=self._build_agent_request(
-                    step=step,
-                ),
-            )
-
-            self._memory.put_artifact(
-                key=f"{step.id}.response",
-                value=response,
-            )
-
-            self._state.complete_step(
-                step_id=step.id,
-            )
-
-            logger.info(
-                "Execution step completed.",
-                extra={
-                    "operation": "execute_step",
-                    "request_id": str(self._state.request_id),
-                    "step_id": step.id,
-                    "agent": step.agent.value,
-                },
-            )
-
-        except Exception as exc:
-            self._state.fail_step(
-                step_id=step.id,
-                error=str(exc),
-            )
-
-            logger.exception(
-                "Execution step failed.",
-                extra={
-                    "operation": "execute_step",
-                    "request_id": str(self._state.request_id),
-                    "step_id": step.id,
-                    "agent": step.agent.value,
-                },
-            )
-
-            # raise
-
-    def _build_agent_request(
-        self,
-        *,
-        step: ExecutionStepDTO,
-    ) -> AgentRequestDTO:
-        """
-        Build the request for an execution agent.
-        """
-
-        return AgentRequestDTO(
-            conversation=self._conversation,
-            instruction=step.instruction,
-        )
-
-    def _resolve_strategy(
-        self,
-        *,
-        mode: ExecutionModeEnum,
-    ) -> ExecutionStrategy:
-        """
-        Resolve the execution strategy.
-        """
-
-        match mode:
-            case ExecutionModeEnum.SEQUENTIAL:
-                return self._sequential_strategy
-
-            case ExecutionModeEnum.PARALLEL:
-                return self._parallel_strategy
-
-            case ExecutionModeEnum.HYBRID:
-                return self._hybrid_strategy
-
-            case _:
-                raise ExecutionError(
-                    message=(f"Unsupported execution mode '{mode.value}'."),
-                )
+        return {
+            "request_id": self._request_id,
+            "conversation": self._conversation,
+            "plan": self._plan,
+            "context": self._context,
+            "execution_state_updates": [],
+            "memory_updates": [],
+        }
