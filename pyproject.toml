@@ -185,9 +185,9 @@ asyncio_mode = "auto"
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "--strict-markers --tb=short -v"
+addopts = "--strict-markers --tb=short -v -p no:langsmith_plugin"
 markers = [
-  "unit: Unit tests — no I/O",
+  "unit: Unit tests — no I/O, no DB, no external services",
   "integration: Integration tests — use real services",
   "slow: Tests that take more than 5 seconds",
 ]

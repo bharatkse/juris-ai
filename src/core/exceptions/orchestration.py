@@ -4,15 +4,12 @@ Orchestration exceptions.
 Orchestration exceptions are raised while coordinating the AI
 request lifecycle.
 
-The orchestrator coordinates the planning and execution pipeline but
-does not perform business logic itself.
+The orchestrator coordinates the planning and execution pipeline
+but does not perform business logic itself.
 
 Pipeline:
 
 Request
-    │
-    ▼
-Intent Analysis
     │
     ▼
 Planning

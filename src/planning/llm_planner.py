@@ -8,7 +8,6 @@ from langsmith import traceable
 
 from src.clients.llm.base import LLMClient
 from src.core.dto.planning import ExecutionPlanDTO, ExecutionStepDTO, PlanningRequestDTO
-from src.core.enums import IntentEnum
 from src.core.schemas.planning import ExecutionPlanResponseSchema
 from src.planning.prompts.planning import PlanningPromptBuilder
 
@@ -16,6 +15,16 @@ from src.planning.prompts.planning import PlanningPromptBuilder
 class LLMPlanGenerator:
     """
     Generates execution plans using a language model.
+
+    The language model is responsible for generating the
+    complete planning result in a single structured call,
+    including:
+
+        - intent,
+        - execution mode,
+        - execution steps,
+        - step dependencies,
+        - plan metadata.
     """
 
     def __init__(
@@ -35,14 +44,16 @@ class LLMPlanGenerator:
         self,
         *,
         request: PlanningRequestDTO,
-        intent: IntentEnum,
     ) -> ExecutionPlanDTO:
         """
         Generate an execution plan for the supplied request.
+
+        The LLM determines the intent and execution strategy
+        as part of the same structured response.
         """
+
         llm_request = self._prompt_builder.build(
             request=request,
-            intent=intent,
         )
 
         response = await self._llm.generate_structured(
@@ -72,6 +83,7 @@ class LLMPlanGenerator:
                     id=step.id,
                     agent=step.agent,
                     instruction=step.instruction,
+                    depends_on=step.depends_on,
                     stage=step.stage,
                     arguments=step.arguments,
                 )

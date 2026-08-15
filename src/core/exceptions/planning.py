@@ -1,30 +1,33 @@
 """
 Planning exceptions.
 
-Planning exceptions are raised while analyzing user intent,
-constructing execution plans, or validating generated plans.
+Planning exceptions are raised while constructing execution
+plans or validating generated plans.
 
 These exceptions inherit from ``AIError`` and indicate failures
 during the planning phase of the AI orchestration pipeline.
 
 Planning Pipeline:
 
-Intent Analyzer
-        │
-        ▼
 Plan Template Resolver
         │
-        ▼
-LLM Plan Generator
+        ├── match
         │
         ▼
-Plan Validator
+ExecutionPlan
+        │
+        └── no match
+                │
+                ▼
+        LLM Plan Generator
+                │
+                ▼
+        Plan Validator
 """
 
 from __future__ import annotations
 
 from src.core.constants import (
-    ERROR_INTENT_ANALYSIS,
     ERROR_PLAN_GENERATION,
     ERROR_PLAN_VALIDATION,
     ERROR_PLANNING,
@@ -39,20 +42,6 @@ class PlanningError(AIError):
 
     error_code = ERROR_PLANNING
     default_message = "Planning operation failed."
-
-
-class IntentAnalysisError(PlanningError):
-    """
-    Raised when intent analysis fails.
-
-    Examples:
-        - Intent classifier failed
-        - Intent confidence below threshold
-        - Unsupported user intent
-    """
-
-    error_code = ERROR_INTENT_ANALYSIS
-    default_message = "Intent analysis failed."
 
 
 class PlanGenerationError(PlanningError):
@@ -74,7 +63,7 @@ class PlanValidationError(PlanningError):
     Raised when an execution plan fails validation.
 
     Examples:
-        - Unknown capability
+        - Unknown execution step
         - Circular dependency detected
         - Missing required inputs
         - Invalid execution mode
