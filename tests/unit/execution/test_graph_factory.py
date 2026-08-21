@@ -16,7 +16,7 @@ from tests.builders.planning import build_plan
     "src.execution.graph.factory.AgentExecutionNode",
 )
 def test_create_builds_agent_node_and_compiles_graph(
-    mock_agent_execution_node: MagicMock,
+    mock_agent_execution_node: MagicMock, mock_checkpointer: MagicMock
 ) -> None:
     """
     It should create the agent execution node and pass it to the
@@ -43,6 +43,7 @@ def test_create_builds_agent_node_and_compiles_graph(
         agent_registry=agent_registry,
         retry_policy=retry_policy,
         retry_classifier=retry_classifier,
+        checkpointer=mock_checkpointer,
     )
 
     compiled_graph = MagicMock()
@@ -64,4 +65,5 @@ def test_create_builds_agent_node_and_compiles_graph(
     builder.compile.assert_called_once_with(
         plan=plan,
         step_node=step_node,
+        checkpointer=mock_checkpointer,
     )

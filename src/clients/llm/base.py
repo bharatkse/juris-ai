@@ -84,7 +84,11 @@ class LLMClient(ABC):
         structured_request = replace(
             request,
             response_format={
-                "type": "json_object",
+                "type": "json_schema",
+                "json_schema": {
+                    "name": response_model.__name__,
+                    "schema": response_model.model_json_schema(),
+                },
             },
         )
 

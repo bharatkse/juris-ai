@@ -18,11 +18,12 @@ from src.core.exceptions.client import ClientProviderError, ClientResponseError
 from src.core.logger import get_logger
 from src.db.models.document import Document
 from src.repositories.document import DocumentRepository
+from src.services.base import BaseService
 
 log = get_logger(__name__)
 
 
-class DocumentService:
+class DocumentService(BaseService):
     """
     Manage uploaded documents.
     """
@@ -34,7 +35,7 @@ class DocumentService:
         repository: DocumentRepository,
         storage: StorageClient,
     ) -> None:
-        self._session = session
+        super().__init__(session)
         self._repository = repository
         self._storage = storage
 

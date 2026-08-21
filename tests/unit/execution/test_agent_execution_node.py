@@ -8,13 +8,14 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.core.dto.agent import AgentContextDTO, AgentMetadataDTO, AgentResponseDTO
+from src.core.dto.agent import AgentMetadataDTO, AgentResponseDTO
 from src.core.dto.tool import ToolFileDTO
 from src.core.enums import ExecutionStatusEnum
 from src.execution.config import ExecutionRetryPolicy
 from src.execution.graph.nodes import AgentExecutionNode
 from src.execution.retry import RetryClassifier
 from src.registry.agent import AgentRegistry
+from tests.builders.agent import build_agent_context
 from tests.builders.execution import build_graph_state
 from tests.builders.planning import build_plan, build_step
 
@@ -451,7 +452,7 @@ async def test_execute_step_passes_request_context_to_agent() -> None:
         content_type="application/pdf",
     )
 
-    context = AgentContextDTO(
+    context = build_agent_context(
         uploaded_files=(uploaded_file,),
         metadata={
             "source": "chat",

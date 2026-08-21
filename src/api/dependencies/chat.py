@@ -4,14 +4,15 @@ Chat service dependencies.
 
 from __future__ import annotations
 
-from fastapi import Depends
+from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.dependencies.action_workflow import get_action_workflow_service
 from src.db.session import get_db_session
 from src.orchestration.orchestrator import AIOrchestrator
 from src.repositories.conversation import ConversationRepository
 from src.repositories.conversation_event import ConversationEventRepository
-from src.runtime.composition import get_ai_orchestrator
+from src.services.action_workflow import ActionWorkflowService
 from src.services.chat import ChatService
 from src.services.conversation import ConversationService
 from src.services.conversation_event import ConversationEventService
@@ -90,6 +91,19 @@ def get_conversation_event_service(
     )
 
 
+def get_ai_orchestrator(
+    request: Request,
+) -> AIOrchestrator:
+    """
+    Return the application-scoped AI orchestrator.
+
+    The orchestrator is created during application startup with
+    the configured LangGraph PostgreSQL checkpointer.
+    """
+
+    return request.app.state.ai_orchestrator
+
+
 # ============================================================================
 # Chat Service
 # ============================================================================
@@ -108,6 +122,9 @@ def get_chat_service(
     orchestrator: AIOrchestrator = Depends(
         get_ai_orchestrator,
     ),
+    agent_action_workflow_service: ActionWorkflowService = Depends(
+        get_action_workflow_service,
+    ),
 ) -> ChatService:
     """
     Create a ChatService.
@@ -118,4 +135,5 @@ def get_chat_service(
         conversation_service=conversation_service,
         conversation_event_service=conversation_event_service,
         orchestrator=orchestrator,
+        action_workflow_service=agent_action_workflow_service,
     )

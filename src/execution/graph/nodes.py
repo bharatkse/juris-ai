@@ -29,20 +29,22 @@ class AgentExecutionNode:
     """
     Executes an eligible execution step within LangGraph.
 
-    The node produces immutable execution updates. LangGraph is
-    responsible for reducing concurrent updates into graph state.
+    Agent reasoning is delegated to the resolved agent.
 
-    Retry handling is bounded per execution step.
+    A concrete action produced by the agent is returned as part of
+    the LangGraph state. Action preparation is handled after graph
+    execution by the ExecutionSession through ActionWorkflowService.
 
-    Dependency eligibility is handled by the execution graph builder.
+    This node does not:
 
-    It does not:
-        - perform planning,
-        - determine dependency eligibility,
-        - select a different agent,
-        - modify the execution plan,
-        - execute tools directly,
-        - communicate directly with another agent.
+    - perform planning,
+    - determine dependency eligibility,
+    - implement authorization rules,
+    - implement approval rules,
+    - persist AgentAction,
+    - execute concrete actions,
+    - wait for human approval,
+    - communicate directly with another agent.
     """
 
     def __init__(
@@ -65,8 +67,8 @@ class AgentExecutionNode:
         """
         Execute an eligible agent step.
 
-        Dependency eligibility must already have been established by
-        the execution graph before this node is invoked.
+        Dependency eligibility must already have been established
+        by the execution graph before this node is invoked.
         """
 
         started_at = datetime.now(UTC)
@@ -230,6 +232,7 @@ class AgentExecutionNode:
                         "agent": agent_key,
                         "attempt": attempt,
                         "retry_count": retry_count,
+                        "action_present": response.action is not None,
                     },
                 )
 
@@ -250,6 +253,7 @@ class AgentExecutionNode:
                             value=response,
                         ),
                     ],
+                    "action": response.action,
                 }
 
             except Exception as exc:

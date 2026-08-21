@@ -62,7 +62,7 @@ class AuthenticationService:
             )
 
         try:
-            password_valid = self._password_service.verify_password(
+            password_valid = self._password_service.verify(
                 password,
                 user.password_hash,
             )

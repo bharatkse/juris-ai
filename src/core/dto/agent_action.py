@@ -14,11 +14,11 @@ from src.core.enums import ActionTypeEnum, ActorTypeEnum, AgentActionStatusEnum
 @dataclass(frozen=True, slots=True)
 class AgentActionRequestDTO:
     """
-    Represents a concrete executable agent action requested
+    Represents a concrete executable action proposed by an agent
     during execution.
 
-    This DTO describes the action that the Executor intends
-    to perform.
+    This DTO describes the concrete action the agent has reasoned
+    should be performed.
 
     It does not:
     - authorize the action,
@@ -26,10 +26,9 @@ class AgentActionRequestDTO:
     - execute the action,
     - persist the action.
 
-    The same DTO supports:
-    - user -> agent -> tool
-    - agent -> tool
-    - agent -> agent
+    The ActionWorkflowService is responsible for processing this
+    proposed action through persistence, authorization, and approval
+    policy.
     """
 
     execution_id: str

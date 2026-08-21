@@ -49,11 +49,21 @@ def conversation_service(
 
 
 @pytest.fixture
+def mock_action_workflow_service() -> MagicMock:
+    service = MagicMock()
+
+    service.prepare = AsyncMock()
+
+    return service
+
+
+@pytest.fixture
 def chat_service(
     mock_async_session: AsyncMock,
     mock_conversation_service: MagicMock,
     mock_conversation_event_service: MagicMock,
     mock_orchestrator: MagicMock,
+    mock_action_workflow_service: MagicMock,
 ) -> ChatService:
     """
     Return a chat service.
@@ -64,6 +74,7 @@ def chat_service(
         conversation_service=mock_conversation_service,
         conversation_event_service=mock_conversation_event_service,
         orchestrator=mock_orchestrator,
+        action_workflow_service=mock_action_workflow_service,
     )
 
 

@@ -75,7 +75,7 @@ async def chat(
         citations=result.response.citations,
         sources=result.response.sources,
         usage=result.response.usage,
-        metadata=result.response.metadata,
+        # metadata=result.response.metadata,
     )
 
     return ApiResponse(

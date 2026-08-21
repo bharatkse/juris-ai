@@ -36,7 +36,7 @@ def _create_engine() -> AsyncEngine:
     """
 
     return create_async_engine(
-        url=settings.database_url,
+        url=settings.async_database_url,
         echo=settings.DEBUG,
         pool_pre_ping=True,
         pool_size=settings.DATABASE_POOL_SIZE,

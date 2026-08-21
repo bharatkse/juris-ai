@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from src.authorization.service import AuthorizationService
     from src.clients.llm.base import LLMClient
     from src.clients.web_search.base import WebSearchClient
     from src.execution.executor import Executor
@@ -36,3 +37,4 @@ class RuntimeContainer:
     planner: ExecutionPlanner
     executor: Executor
     validator: ResponseValidator
+    authorization: AuthorizationService

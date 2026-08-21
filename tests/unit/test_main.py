@@ -146,7 +146,7 @@ async def test_lifespan(
         main.settings.LOG_DIRECTORY,
     )
 
-    assert mock_log.info.call_count == 3
+    assert mock_log.info.call_count == 4
 
 
 @pytest.mark.asyncio

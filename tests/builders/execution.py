@@ -13,6 +13,7 @@ from src.execution.graph.state import (
     ExecutionGraphState,
     ExecutionStepUpdate,
 )
+from tests.builders.agent import build_agent_context
 from tests.builders.conversation import build_conversation
 from tests.builders.planning import build_plan
 from tests.helpers.identifiers import unknown_request_id
@@ -36,5 +37,5 @@ def build_graph_state(
         "plan": plan or build_plan(),
         "execution_state_updates": execution_state_updates or [],
         "memory_updates": memory_updates or [],
-        "context": context or AgentContextDTO(),
+        "context": context or build_agent_context(),
     }

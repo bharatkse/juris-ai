@@ -662,6 +662,9 @@ langchain-core==1.6.0 ; python_version >= "3.11" and python_version < "4.0" \
 langchain-protocol==0.0.18 ; python_version >= "3.11" and python_version < "4.0" \
     --hash=sha256:70b53a86fbf9cedc863555effe44da192ab02d556ddbf2cf95b8873adcf41b5a \
     --hash=sha256:ec3e11782f1ed0c9db38e5a9ed01b0e7a0d3fba406faa8aef6594b73c56a63e6
+langgraph-checkpoint-postgres==3.1.2 ; python_version >= "3.11" and python_version < "4.0" \
+    --hash=sha256:1cd404803ff895a2b79f3ac04ce92b775e6b999715f8333fce674c6d927bba95 \
+    --hash=sha256:6a7e38ef16985b54e356cba7bdaf447943aae33d5aaf290026c593bb6b4a6264
 langgraph-checkpoint==4.2.0 ; python_version >= "3.11" and python_version < "4.0" \
     --hash=sha256:0547fd228935a0b758865de3a3d6d7a2537c308895d0f9ab092ce9151b5da942 \
     --hash=sha256:51a593b6bee684b0818e5d6e58e28ab340c6db7794575056ce7bd1b746a84ed7
@@ -1316,6 +1319,9 @@ psycopg-binary==3.3.4 ; python_version >= "3.11" and python_version < "4.0" and 
     --hash=sha256:f9b1c2533af01cd7648378599f82b0b8ae32f293296e6eec5753a625bc97ef28 \
     --hash=sha256:fa1cbc10768a796c96d3243656016bf4e337c81c71097270bb7b0ad6210d9765 \
     --hash=sha256:fbd1d4ed566895ad2d3bf4ddfd8bae90026930ddf29df3b9d91d32c8c47866a7
+psycopg-pool==3.3.1 ; python_version >= "3.11" and python_version < "4.0" \
+    --hash=sha256:2af5b432941c4c9ad5c87b3fa410aec910ec8f7c122855897983a06c45f2e4b5 \
+    --hash=sha256:b10b10b7a175d5cc1592147dc5b7eec8a9e0834eb3ed2c4a92c858e2f51eb63c
 psycopg==3.3.4 ; python_version >= "3.11" and python_version < "4.0" \
     --hash=sha256:b6bbc25ccf05c8fad3b061d9db2ef0909a555171b84b07f29458a447253d679a \
     --hash=sha256:e21207764952cff81b6b8bdacad9a3939f2793367fdac2987b3aac36a651b5bc

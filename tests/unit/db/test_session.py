@@ -28,7 +28,7 @@ def test_create_engine(
     assert created is engine
 
     mock_create_async_engine.assert_called_once_with(
-        url=session.settings.database_url,
+        url=session.settings.async_database_url,
         echo=session.settings.DEBUG,
         pool_pre_ping=True,
         pool_size=session.settings.DATABASE_POOL_SIZE,

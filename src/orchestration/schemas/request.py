@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from src.core.enums import AttachmentTypeEnum, RequestSourceEnum
 from src.core.schemas.conversation import ConversationMessageSchema
-from src.core.types import ConversationId, UserId
+from src.core.types import ConversationEventId, ConversationId, UserId
 
 
 class Attachment(BaseModel):
@@ -54,10 +54,11 @@ class OrchestratorRequest(BaseModel):
         frozen=True,
         extra="forbid",
     )
+
     request_id: UUID
 
     conversation_id: ConversationId
-
+    current_event_id: ConversationEventId
     user_id: UserId
 
     message: str = Field(
