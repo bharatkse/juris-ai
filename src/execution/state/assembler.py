@@ -4,6 +4,7 @@ Execution state assembler.
 
 from __future__ import annotations
 
+from src.core.dto.action import ActionRequestDTO
 from src.core.enums import ExecutionStatusEnum
 from src.execution.graph.state import ExecutionGraphState
 from src.execution.schemas.memory import ExecutionMemorySchema
@@ -80,3 +81,14 @@ class ExecutionStateAssembler:
             )
 
         return memory
+
+    def assemble_action(
+        self,
+        *,
+        graph_state: ExecutionGraphState,
+    ) -> ActionRequestDTO | None:
+        """
+        Assemble the proposed action from graph state.
+        """
+
+        return graph_state.get("action")

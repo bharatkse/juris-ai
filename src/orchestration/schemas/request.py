@@ -4,8 +4,6 @@ Incoming request models for the AI orchestrator.
 
 from __future__ import annotations
 
-from uuid import UUID
-
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.core.enums import AttachmentTypeEnum, RequestSourceEnum
@@ -54,7 +52,7 @@ class OrchestratorRequest(BaseModel):
         frozen=True,
         extra="forbid",
     )
-    request_id: UUID
+    request_id: str
 
     conversation_id: ConversationId
 

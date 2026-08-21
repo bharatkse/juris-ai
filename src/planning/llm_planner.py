@@ -86,6 +86,7 @@ class LLMPlanGenerator:
                     depends_on=step.depends_on,
                     stage=step.stage,
                     arguments=step.arguments,
+                    action=step.action,
                 )
                 for step in response.steps
             ),

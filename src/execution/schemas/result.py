@@ -8,6 +8,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.core.dto.action import ActionRequestDTO
 from src.execution.schemas.state import ExecutionStateSchema
 
 
@@ -26,3 +27,4 @@ class ExecutionResultSchema(BaseModel):
     artifacts: dict[str, Any] = Field(
         default_factory=dict,
     )
+    action: ActionRequestDTO | None = None

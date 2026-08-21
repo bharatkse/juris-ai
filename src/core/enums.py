@@ -183,3 +183,50 @@ class RequestSourceEnum(StrEnum):
     CHAT = "chat"
     API = "api"
     TOOL = "tool"
+
+
+class ApprovalDecisionEnum(StrEnum):
+    """
+    Result of evaluating an action against the approval policy.
+    """
+
+    ALLOW = "allow"
+    REQUIRE_APPROVAL = "require_approval"
+
+
+class ActionTypeEnum(StrEnum):
+    """
+    Categories of actions that can be requested during execution.
+    """
+
+    GENERAL = "general"
+    READ = "read"
+    ANALYZE = "analyze"
+    GENERATE = "generate"
+    UPDATE = "update"
+    DELETE = "delete"
+    SEND = "send"
+    SUBMIT = "submit"
+    EXTERNAL = "external"
+
+
+class AuthorizationDecisionEnum(StrEnum):
+    """
+    Result of an authorization evaluation.
+    """
+
+    ALLOW = "allow"
+    DENY = "deny"
+
+
+class ApprovalStatusEnum(StrEnum):
+    """
+    Lifecycle state of a human approval request.
+    """
+
+    NOT_REQUIRED = "not_required"
+    WAITING = "waiting"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    EDITED = "edited"
+    EXPIRED = "expired"

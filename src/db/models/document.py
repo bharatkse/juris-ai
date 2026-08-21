@@ -28,7 +28,7 @@ class Document(
 
     __tablename__ = "documents"
 
-    _id_prefix = "doc"
+    _id_prefix = "doct"
 
     conversation_id: Mapped[str] = mapped_column(
         ForeignKey(

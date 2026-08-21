@@ -2,9 +2,18 @@
 Database models.
 """
 
+from .action import Action
+from .approval import Approval
 from .conversation import Conversation
 from .conversation_event import ConversationEvent
 from .document import Document
 from .user import User
 
-__all__ = ["Conversation", "User", "ConversationEvent", "Document"]
+__all__ = [
+    "Conversation",
+    "User",
+    "ConversationEvent",
+    "Document",
+    "Action",
+    "Approval",
+]

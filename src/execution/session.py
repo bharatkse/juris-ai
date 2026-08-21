@@ -88,6 +88,10 @@ class ExecutionSession:
                 graph_state=graph_state,
             )
 
+            action = self._state_assembler.assemble_action(
+                graph_state=graph_state,
+            )
+
             logger.info(
                 "Execution session completed.",
                 extra={
@@ -103,6 +107,7 @@ class ExecutionSession:
                 artifacts=dict(
                     memory.artifacts,
                 ),
+                action=action,
             )
 
         except TimeoutError as exc:
@@ -146,4 +151,5 @@ class ExecutionSession:
             "context": self._context,
             "execution_state_updates": [],
             "memory_updates": [],
+            "action": None,
         }

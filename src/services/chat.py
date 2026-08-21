@@ -4,6 +4,7 @@ Chat service.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING
 from uuid import UUID
@@ -17,6 +18,7 @@ from src.core.schemas.conversation import ConversationMessageSchema
 from src.core.types import ConversationEventId, ConversationId, UserId
 from src.orchestration.orchestrator import AIOrchestrator
 from src.orchestration.schemas.request import OrchestratorRequest
+from src.services.action_workflow import ActionWorkflowService
 from src.services.base import BaseService
 from src.services.conversation import ConversationService
 from src.services.conversation_event import ConversationEventService
@@ -33,6 +35,19 @@ logger = get_logger(__name__)
 class ChatService(BaseService):
     """
     Coordinates chat interactions and owns the database transaction.
+
+    ChatService is responsible for:
+
+    - conversation persistence,
+    - orchestration,
+    - action workflow coordination,
+    - transaction boundaries.
+
+    Action persistence and action authorization are delegated to
+    ActionWorkflowService.
+
+    Approval lifecycle rules remain owned by
+    ApprovalLifecycleService.
     """
 
     def __init__(
@@ -42,6 +57,7 @@ class ChatService(BaseService):
         conversation_service: ConversationService,
         conversation_event_service: ConversationEventService,
         orchestrator: AIOrchestrator,
+        action_workflow_service: ActionWorkflowService,
     ) -> None:
         super().__init__(
             session=session,
@@ -50,6 +66,7 @@ class ChatService(BaseService):
         self._conversation_service = conversation_service
         self._conversation_event_service = conversation_event_service
         self._orchestrator = orchestrator
+        self._action_workflow_service = action_workflow_service
 
     async def chat(
         self,
@@ -63,14 +80,11 @@ class ChatService(BaseService):
         """
         Process a chat request.
 
-        ChatService owns the transaction boundary:
+        If orchestration produces an action, the action is passed
+        through ActionWorkflowService.
 
-        1. Create the user event.
-        2. Execute orchestration.
-        3. Create the assistant event.
-        4. Commit the transaction.
-
-        Any failure rolls back the entire transaction.
+        When human approval is required, the approval result is
+        returned and the request does not continue to execution.
         """
 
         logger.info(
@@ -104,22 +118,104 @@ class ChatService(BaseService):
                 files=files,
             )
 
-            response = await self._orchestrator.handle(
+            result = await self._orchestrator.handle(
                 request=orchestration_request,
             )
+
+            approval = None
+
+            # ---------------------------------------------------------
+            # Action workflow
+            #
+            # The orchestrator only proposes the action.
+            #
+            # ActionWorkflowService:
+            #
+            #   ActionRequestDTO
+            #       ↓
+            #   persist action
+            #       ↓
+            #   authorize action
+            #       ↓
+            #   optional approval
+            # ---------------------------------------------------------
+
+            if result.action is not None:
+                workflow_result = await self._action_workflow_service.authorize(
+                    event_id=user_event.id,
+                    user_id=user_id,
+                    action=result.action,
+                )
+
+                approval = workflow_result.approval
+
+                logger.info(
+                    "Action workflow completed.",
+                    extra={
+                        "operation": "action_workflow",
+                        "request_id": str(request_id),
+                        "conversation_id": str(conversation.id),
+                        "event_id": workflow_result.action.event_id,
+                        "action_id": workflow_result.action.action_id,
+                        "tool_name": workflow_result.action.tool_name,
+                        "action_type": (workflow_result.action.action_type.value),
+                        "approval_required": (workflow_result.approval_required),
+                        "approval_id": (
+                            str(approval.approval_id) if approval is not None else None
+                        ),
+                    },
+                )
+
+                # -----------------------------------------------------
+                # Approval required.
+                #
+                # Do not create the normal assistant event here.
+                # The action is waiting for human approval.
+                # -----------------------------------------------------
+
+                if workflow_result.approval_required:
+                    await self.commit()
+
+                    logger.info(
+                        "Chat request waiting for approval.",
+                        extra={
+                            "operation": "approval_required",
+                            "request_id": str(request_id),
+                            "conversation_id": str(conversation.id),
+                            "user_id": str(user_id),
+                            "action_id": (workflow_result.action.action_id),
+                            "approval_id": str(
+                                approval.approval_id,
+                            ),
+                        },
+                    )
+
+                    return ChatResultDTO(
+                        conversation=conversation,
+                        user_event=user_event,
+                        assistant_event=None,
+                        response=result.content,
+                        approval=approval,
+                    )
+
+            # ---------------------------------------------------------
+            # No approval required.
+            #
+            # Either this was normal chat or the action was
+            # authorized without human approval.
+            # ---------------------------------------------------------
 
             assistant_event = await self._conversation_event_service.create(
                 conversation_id=conversation.id,
                 request_id=request_id,
                 parent_event_id=user_event.id,
                 role=MessageRoleEnum.ASSISTANT,
-                content=response.content,
-                metadata=response.metadata.model_dump(
+                content=result.content,
+                metadata=result.metadata.model_dump(
                     mode="json",
                 ),
             )
 
-            # ChatService owns the transaction.
             await self.commit()
 
             logger.info(
@@ -131,6 +227,8 @@ class ChatService(BaseService):
                     "user_id": str(user_id),
                     "user_event_id": str(user_event.id),
                     "assistant_event_id": str(assistant_event.id),
+                    "action_required": result.action is not None,
+                    "approval_required": False,
                 },
             )
 
@@ -138,7 +236,8 @@ class ChatService(BaseService):
                 conversation=conversation,
                 user_event=user_event,
                 assistant_event=assistant_event,
-                response=response,
+                response=result.content,
+                approval=None,
             )
 
         except Exception:
@@ -168,8 +267,8 @@ class ChatService(BaseService):
         """
         Stream a chat response.
 
-        The transaction remains open until the final assistant
-        event is persisted successfully.
+        Action workflow processing should happen after the
+        orchestrator produces its final result.
         """
 
         logger.info(
@@ -231,8 +330,6 @@ class ChatService(BaseService):
                 ),
             )
 
-            # Commit only after the complete response has been
-            # successfully persisted.
             await self.commit()
 
             logger.info(
@@ -246,6 +343,21 @@ class ChatService(BaseService):
                     "assistant_event_id": str(assistant_event.id),
                 },
             )
+
+        except asyncio.CancelledError:
+            await self.rollback()
+
+            logger.info(
+                "Chat stream cancelled.",
+                extra={
+                    "operation": "stream_chat",
+                    "request_id": str(request_id),
+                    "conversation_id": str(conversation_id),
+                    "user_id": str(user_id),
+                },
+            )
+
+            raise
 
         except Exception:
             await self.rollback()

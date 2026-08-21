@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from src.core.dto.approval import ApprovalRequestDTO
 from src.db.models.conversation import Conversation
 from src.db.models.conversation_event import ConversationEvent
 from src.orchestration.schemas.response import AgentResponse
@@ -24,6 +25,8 @@ class ChatResultDTO:
 
     user_event: ConversationEvent
 
-    assistant_event: ConversationEvent
+    assistant_event: ConversationEvent | None = None
 
-    response: AgentResponse
+    response: AgentResponse | None = None
+
+    approval: ApprovalRequestDTO | None = None

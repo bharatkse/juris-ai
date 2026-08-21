@@ -56,7 +56,7 @@ class ConversationEvent(
         ),
     )
 
-    _id_prefix = "event"
+    _id_prefix = "evnt"
 
     conversation_id: Mapped[str] = mapped_column(
         ForeignKey("conversations.id"),

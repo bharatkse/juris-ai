@@ -9,6 +9,7 @@ from operator import add
 from typing import Annotated, Any, TypedDict
 from uuid import UUID
 
+from src.core.dto.action import ActionRequestDTO
 from src.core.dto.agent import AgentContextDTO
 from src.core.dto.conversation import ConversationDTO
 from src.core.dto.planning import ExecutionPlanDTO
@@ -70,3 +71,5 @@ class ExecutionGraphState(TypedDict):
         list[ExecutionArtifactUpdate],
         add,
     ]
+
+    action: ActionRequestDTO | None

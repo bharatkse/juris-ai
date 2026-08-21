@@ -687,6 +687,14 @@ dev: ## Start complete local development environment
 	@$(MAKE) alembic-upgrade
 	@$(MAKE) dev-deploy
 
+# ===
+# Utilities
+# ===
+.PHONY: project-tree
+
+project-tree: ## Show current project directory
+	tree -a -I '__pycache__|*.pyc|.git|.pytest_cache|.venv|.vscode|.aws-sam|localstack*|node_modules|htmlcov|*.egg-info|dist|build|tests|.ruff_cache|.mypy_cache'
+
 # ============================================================================
 # Help
 # ============================================================================

@@ -250,6 +250,7 @@ class AgentExecutionNode:
                             value=response,
                         ),
                     ],
+                    "action": response.action,
                 }
 
             except Exception as exc:

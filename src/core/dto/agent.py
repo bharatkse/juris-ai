@@ -7,6 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from src.core.dto.action import ActionRequestDTO
 from src.core.dto.conversation import ConversationDTO
 from src.core.dto.response import CitationDTO, SourceDTO, UsageDTO
 from src.core.dto.tool import ToolFileDTO
@@ -58,6 +59,7 @@ class AgentResponseDTO:
 
     content: str
     agent_name: str
+    action: ActionRequestDTO | None = None
     citations: tuple[CitationDTO, ...] = ()
 
     sources: tuple[SourceDTO, ...] = ()

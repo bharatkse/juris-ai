@@ -26,7 +26,6 @@ class ExecutionStepResponseSchema(BaseModel):
     agent: AgentTypeEnum
 
     instruction: str
-
     depends_on: tuple[str, ...] = ()
 
     stage: int = 1
