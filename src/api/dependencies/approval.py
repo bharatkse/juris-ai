@@ -5,23 +5,40 @@ Approval API dependencies.
 from __future__ import annotations
 
 from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db.session import get_db_session
 from src.repositories.approval import ApprovalRepository
-from src.services.approval import ApprovalService
+from src.services.approval_lifecycle import ApprovalLifecycleService
 
 
-def get_approval_lifecycle_service(
-    session=Depends(get_db_session),
-) -> ApprovalService:
+def get_approval_repository(
+    session: AsyncSession = Depends(
+        get_db_session,
+    ),
+) -> ApprovalRepository:
     """
-    Provide the approval lifecycle service.
+    Create an approval repository.
     """
 
-    repository = ApprovalRepository(
+    return ApprovalRepository(
         session=session,
     )
 
-    return ApprovalService(
+
+def get_approval_lifecycle_service(
+    session: AsyncSession = Depends(
+        get_db_session,
+    ),
+    repository: ApprovalRepository = Depends(
+        get_approval_repository,
+    ),
+) -> ApprovalLifecycleService:
+    """
+    Create the approval lifecycle service.
+    """
+
+    return ApprovalLifecycleService(
+        session=session,
         repository=repository,
     )

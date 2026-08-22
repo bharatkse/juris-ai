@@ -19,7 +19,6 @@ from src.core.types import ConversationEventId, ConversationId, UserId
 from src.orchestration.orchestrator import AIOrchestrator
 from src.orchestration.schemas.request import OrchestratorRequest
 from src.services.action_workflow import ActionWorkflowService
-from src.services.base import BaseService
 from src.services.conversation import ConversationService
 from src.services.conversation_event import ConversationEventService
 from src.services.internal_dto.chat import ChatResultDTO
@@ -32,7 +31,7 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-class ChatService(BaseService):
+class ChatService:
     """
     Coordinates chat interactions and owns the database transaction.
 

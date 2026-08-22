@@ -14,11 +14,16 @@ from src.execution.graph.factory import ExecutionGraphFactory
 from src.execution.schemas.result import ExecutionResultSchema
 from src.execution.session import ExecutionSession
 from src.execution.state import ExecutionStateAssembler
+from src.services.action_workflow import ActionWorkflowService
 
 
 class Executor:
     """
     Creates a request-scoped execution session.
+
+    The Executor owns execution coordination only.
+    Request-scoped application services are passed into
+    the execution session.
     """
 
     def __init__(
@@ -39,9 +44,14 @@ class Executor:
         conversation: ConversationDTO,
         plan: ExecutionPlanDTO,
         context: AgentContextDTO,
+        action_workflow_service: ActionWorkflowService,
     ) -> ExecutionResultSchema:
         """
         Execute an execution plan.
+
+        The ActionWorkflowService is request-scoped and therefore
+        supplied by the caller rather than stored on the runtime
+        Executor.
         """
 
         session = ExecutionSession(
@@ -52,6 +62,7 @@ class Executor:
             graph_factory=self._graph_factory,
             state_assembler=self._state_assembler,
             timeout_policy=self._timeout_policy,
+            action_workflow_service=action_workflow_service,
         )
 
         return await session.execute()

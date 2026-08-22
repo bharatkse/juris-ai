@@ -4,6 +4,8 @@ Execution runtime factory.
 
 from __future__ import annotations
 
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+
 from src.execution.config import ExecutionRetryPolicy, ExecutionTimeoutPolicy
 from src.execution.executor import Executor
 from src.execution.graph.builder import ExecutionGraphBuilder
@@ -16,13 +18,13 @@ from src.runtime.containers import RegistryContainer
 def create_executor(
     *,
     registries: RegistryContainer,
+    checkpointer: AsyncPostgresSaver,
 ) -> Executor:
     """
     Create the configured execution runtime.
     """
 
     retry_policy = ExecutionRetryPolicy()
-
     retry_classifier = RetryClassifier()
     timeout_policy = ExecutionTimeoutPolicy()
 
@@ -33,6 +35,7 @@ def create_executor(
         agent_registry=registries.agent_registry,
         retry_policy=retry_policy,
         retry_classifier=retry_classifier,
+        checkpointer=checkpointer,
     )
 
     state_assembler = ExecutionStateAssembler()

@@ -3,13 +3,13 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from src.authorization.approval_lifecycle.service import ApprovalLifecycleService
-from src.core.dto.action import ActionRequestDTO
+from src.core.dto.agent_action import AgentActionRequestDTO
 from src.core.enums import ActionTypeEnum, ApprovalStatusEnum
 from src.core.exceptions.authorization import AuthorizationError
 
 
-def create_action() -> ActionRequestDTO:
-    return ActionRequestDTO(
+def create_action() -> AgentActionRequestDTO:
+    return AgentActionRequestDTO(
         tool_name="email",
         action=ActionTypeEnum.SEND,
         arguments={

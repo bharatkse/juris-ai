@@ -4,6 +4,7 @@ LangGraph execution graph factory.
 
 from __future__ import annotations
 
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.graph.state import CompiledStateGraph
 
 from src.core.dto.planning import ExecutionPlanDTO
@@ -20,7 +21,7 @@ class ExecutionGraphFactory:
 
     The factory owns graph runtime dependency wiring while keeping
     the Executor and ExecutionSession independent from LangGraph
-    node construction details.
+    node construction and checkpointing details.
     """
 
     def __init__(
@@ -30,11 +31,13 @@ class ExecutionGraphFactory:
         agent_registry: AgentRegistry,
         retry_policy: ExecutionRetryPolicy,
         retry_classifier: RetryClassifier,
+        checkpointer: AsyncPostgresSaver,
     ) -> None:
         self._builder = builder
         self._agent_registry = agent_registry
         self._retry_policy = retry_policy
         self._retry_classifier = retry_classifier
+        self._checkpointer = checkpointer
 
     def create(
         self,
@@ -54,4 +57,5 @@ class ExecutionGraphFactory:
         return self._builder.compile(
             plan=plan,
             step_node=step_node,
+            checkpointer=self._checkpointer,
         )

@@ -1,25 +1,32 @@
 """
-Action workflow service.
+Agent action workflow service.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
+from src.authorization.approval_lifecycle.policy import ApprovalLifecyclePolicy
 from src.authorization.service import AuthorizationService
-from src.core.dto.action import ActionRequestDTO, ActionResponseDTO
+from src.core.dto.agent_action import AgentActionRequestDTO, AgentActionResponseDTO
 from src.core.dto.approval import ApprovalResponseDTO
-from src.services.action import ActionService
+from src.core.exceptions.authorization import AuthorizationError
+from src.services.agent_action import AgentActionService
+from src.services.approval_lifecycle import ApprovalLifecycleService
 
 
 @dataclass(frozen=True, slots=True)
 class ActionWorkflowResultDTO:
     """
-    Result of authorizing a concrete action.
+    Result of preparing an AgentAction for execution.
+
+    If human approval is required, the result contains the
+    persisted approval request.
+
+    This workflow never waits for human approval.
     """
 
-    action: ActionResponseDTO
-
+    action: AgentActionResponseDTO
     approval: ApprovalResponseDTO | None = None
 
     @property
@@ -33,60 +40,111 @@ class ActionWorkflowResultDTO:
 
 class ActionWorkflowService:
     """
-    Coordinates the action authorization workflow.
+    Coordinates preparation of a concrete AgentAction.
 
     Responsibilities:
-    - Persist the concrete action.
-    - Verify authorization for the action.
-    - Create an approval request when policy requires it.
+    - Persist the concrete AgentAction.
+    - Perform concrete action authorization.
+    - Evaluate the HITL approval policy.
+    - Create a durable approval request when required.
+    - Return immediately without waiting for approval.
 
     It does not:
-    - execute the action,
-    - own RBAC rules,
-    - own approval lifecycle rules,
-    - decide how agents communicate.
-
-    The same workflow can be used for user-originated and
-    agent-originated actions.
+    - implement RBAC rules,
+    - implement approval policy rules,
+    - implement approval lifecycle rules,
+    - execute actions,
+    - wait for human approval.
     """
 
     def __init__(
         self,
         *,
-        action_service: ActionService,
+        agent_action_service: AgentActionService,
         authorization_service: AuthorizationService,
+        approval_lifecycle_policy: ApprovalLifecyclePolicy,
+        approval_lifecycle_service: ApprovalLifecycleService,
     ) -> None:
-        self._action_service = action_service
+        self._agent_action_service = agent_action_service
         self._authorization_service = authorization_service
+        self._approval_lifecycle_policy = approval_lifecycle_policy
+        self._approval_lifecycle_service = approval_lifecycle_service
 
-    async def authorize(
+    async def prepare(
         self,
         *,
-        event_id: str,
         user_id: str,
-        action: ActionRequestDTO,
+        tenant_id: str,
+        action: AgentActionRequestDTO,
     ) -> ActionWorkflowResultDTO:
         """
-        Persist and authorize a concrete action.
+        Prepare a concrete AgentAction for execution.
 
-        Depending on authorization policy, the result may contain
-        a human approval request.
+        Workflow:
 
-        When approval is not required, the returned approval is
-        None and the caller may continue with execution.
+        1. Persist the concrete AgentAction.
+        2. Authorize the persisted concrete action.
+        3. Evaluate the HITL approval policy.
+        4. Create a durable approval request when required.
+        5. Return immediately.
+
+        Human approval is handled separately and never blocks
+        this workflow.
         """
 
-        persisted_action = await self._action_service.create(
-            event_id=event_id,
+        # ---------------------------------------------------------
+        # 1. Persist concrete AgentAction
+        # ---------------------------------------------------------
+
+        persisted_action = await self._agent_action_service.create(
             action=action,
+            user_id=user_id,
+            tenant_id=tenant_id,
         )
 
-        approval = await self._authorization_service.prepare_approval_request_action(
+        action_dto = persisted_action.to_dto()
+
+        # ---------------------------------------------------------
+        # 2. Authorize concrete action
+        # ---------------------------------------------------------
+
+        authorization_result = self._authorization_service.authorize_action(
             user_id=user_id,
-            action=persisted_action,
+            action=action_dto,
+        )
+
+        if not authorization_result.is_allowed:
+            raise AuthorizationError(
+                authorization_result.reason,
+            )
+
+        # ---------------------------------------------------------
+        # 3. Evaluate HITL policy
+        # ---------------------------------------------------------
+
+        policy_result = self._approval_lifecycle_policy.evaluate(
+            action_dto,
+        )
+
+        # ---------------------------------------------------------
+        # 4. No approval required
+        # ---------------------------------------------------------
+
+        if not policy_result.requires_approval:
+            return ActionWorkflowResultDTO(
+                action=action_dto,
+            )
+
+        # ---------------------------------------------------------
+        # 5. Approval required
+        # ---------------------------------------------------------
+
+        approval = await self._approval_lifecycle_service.create(
+            action=action_dto,
+            requested_by=user_id,
         )
 
         return ActionWorkflowResultDTO(
-            action=persisted_action,
+            action=action_dto,
             approval=approval,
         )

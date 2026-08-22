@@ -12,9 +12,19 @@ from src.core.dto.authorization import (
 )
 
 
-class RBACResolver(Protocol):
+class RBACResolverProtocol(Protocol):
     """
     Contract for RBAC authorization.
+
+    Implementations resolve:
+    - application/request-level capability authorization,
+    - concrete action authorization.
+
+    The protocol does not define:
+    - capability classification,
+    - approval policy,
+    - approval lifecycle,
+    - action execution.
     """
 
     def check_intent(
@@ -22,7 +32,8 @@ class RBACResolver(Protocol):
         request: ApplicationAuthorizationRequestDTO,
     ) -> bool:
         """
-        Check user capability permissions before planning.
+        Check whether the requester may request the
+        identified capabilities before planning.
         """
 
         ...
@@ -32,7 +43,8 @@ class RBACResolver(Protocol):
         request: AuthorizationRequestDTO,
     ) -> bool:
         """
-        Check user and agent permissions before execution.
+        Check whether a concrete action is authorized
+        before execution.
         """
 
         ...

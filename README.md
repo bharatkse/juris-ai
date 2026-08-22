@@ -4,75 +4,9 @@ Juris-AI is an AI-powered legal assistant designed around explicit agent executi
 
 The architecture separates **planning, execution, reasoning, external actions, persistence, and API concerns**, allowing the system to evolve from a small multi-agent application into a multi-agent, multi-provider, multi-source legal AI platform.
 
-## Architecture Principles
+## Architecture
 
-The core architectural boundaries are:
-
-- **FastAPI** — HTTP, authentication, request validation, and streaming.
-- **ChatService** — conversation lifecycle and database transaction coordination.
-- **AIOrchestrator** — coordinates the AI lifecycle; it does not perform planning or agent execution.
-- **Planner** — converts a user request into an explicit `ExecutionPlan`.
-- **Executor** — executes the plan; it never creates the plan.
-- **Agents** — perform domain-specific reasoning.
-- **Tools** — perform external actions such as document parsing, retrieval, and web search.
-- **Registries** — resolve agents and tools.
-- **LLM Clients / Gateway** — hide provider-specific SDK details.
-- **Validator** — validates generated execution results.
-- **Aggregator** — combines agent outputs and preserves provenance.
-- **Execution Runtime / Memory** — holds transient execution artifacts.
-- **ConversationEventService** — persists conversation events and remains independent from AI execution.
-
-The architecture intentionally keeps **planning and execution separate**:
-
-```text
-User Request
-     │
-     ▼
-ChatService
-     │
-     ▼
-AIOrchestrator
-     │
-     ▼
-Planner ───────────► LLM #1
-     │
-     ▼
-ExecutionPlan
-     │
-     ▼
-Executor
-     │
-     ├───────────────┐
-     ▼               ▼
- Sequential       Parallel
-     │               │
-     └───────┬───────┘
-             ▼
-          Agents
-             │
-             ├── Tools
-             │
-             └── LLM #2+
-             │
-             ▼
-      Execution Results
-             │
-             ▼
-         Validator
-             │
-             ▼
-        Aggregator
-             │
-             ▼
-    OrchestratorResponse
-             │
-             ▼
-        ChatService
-             │
-             ├── USER event
-             ├── ASSISTANT event
-             └── COMMIT
-```
+<img src="docs/images/architecture.png" alt="Architecture" width="800">
 
 ## Execution Strategies
 

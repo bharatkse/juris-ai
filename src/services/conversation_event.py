@@ -15,7 +15,6 @@ from src.core.exceptions.database import DatabaseError
 from src.core.logger import get_logger
 from src.db.models.conversation_event import ConversationEvent
 from src.repositories.conversation_event import ConversationEventRepository
-from src.services.base import BaseService
 
 if TYPE_CHECKING:
     from src.core.types import ConversationEventId, ConversationId
@@ -23,7 +22,7 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-class ConversationEventService(BaseService):
+class ConversationEventService:
     """
     Business logic for conversation events.
     """

@@ -7,6 +7,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
@@ -62,9 +63,14 @@ class ExecutionGraphBuilder:
         *,
         plan: ExecutionPlanDTO,
         step_node: StepNode,
+        checkpointer: BaseCheckpointSaver,
     ) -> CompiledStateGraph:
         """
         Build and compile the execution graph.
+
+        The checkpointer is attached at the LangGraph compilation
+        boundary so the compiled graph can persist and resume
+        execution state.
         """
 
         graph = self.build(
@@ -72,7 +78,9 @@ class ExecutionGraphBuilder:
             step_node=step_node,
         )
 
-        return graph.compile()
+        return graph.compile(
+            checkpointer=checkpointer,
+        )
 
     @staticmethod
     def _create_step_node(

@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from src.core.dto.action import ActionRequestDTO
 from src.core.dto.agent import AgentContextDTO, AgentResponseDTO
+from src.core.dto.agent_action import AgentActionRequestDTO
 from src.core.dto.conversation import ConversationDTO
 from src.core.dto.message import MessageDTO
 from src.core.enums import ExecutionStatusEnum, MessageRoleEnum
@@ -103,7 +103,7 @@ class AIOrchestrator:
                 -> execute
                 -> validate
                 -> aggregate
-                -> response + ActionRequestDTO
+                -> response + AgentActionRequestDTO
 
         Action persistence, action authorization, and approval
         processing are handled outside the orchestrator.
@@ -285,7 +285,7 @@ class AIOrchestrator:
                 # ActionWorkflowService is responsible for persistence.
                 # ---------------------------------------------------------
 
-                action_request: ActionRequestDTO | None = execution_result.action
+                action_request: AgentActionRequestDTO | None = execution_result.action
 
                 orchestrator_response = OrchestratorResponse(
                     conversation_id=request.conversation_id,

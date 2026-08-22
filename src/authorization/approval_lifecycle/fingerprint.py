@@ -7,23 +7,28 @@ from __future__ import annotations
 import hashlib
 import json
 
-from src.core.dto.action import ActionRequestDTO
+from src.core.dto.agent_action import AgentActionResponseDTO
 
 
 def create_action_fingerprint(
-    action: ActionRequestDTO,
+    action: AgentActionResponseDTO,
 ) -> str:
     """
-    Create a deterministic fingerprint for an exact action version.
+    Create a deterministic fingerprint for the exact action version.
+
+    The fingerprint covers the fields that define the executable
+    action payload and target.
     """
 
     payload = {
-        "tool_name": action.tool_name,
-        "action": action.action.value,
         "agent_id": action.agent_id,
-        "arguments": action.arguments,
-        "reason": action.reason,
+        "action_type": action.action_type.value,
+        "tool_name": action.tool_name,
+        "target_agent_id": action.target_agent_id,
+        "resource_type": action.resource_type,
         "resource_id": action.resource_id,
+        "parameters": action.parameters,
+        "reason": action.reason,
     }
 
     serialized = json.dumps(
@@ -32,4 +37,6 @@ def create_action_fingerprint(
         separators=(",", ":"),
     ).encode("utf-8")
 
-    return hashlib.sha256(serialized).hexdigest()
+    return hashlib.sha256(
+        serialized,
+    ).hexdigest()

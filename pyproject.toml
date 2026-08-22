@@ -69,6 +69,7 @@ groq = "^1.5.0"
 
 # Agent/workflow orchestration
 langgraph = "^1.2.9"
+langgraph-checkpoint-postgres = "^3.0.0"
 
 # Optional caching backend
 # Used only when CACHE_BACKEND=redis.

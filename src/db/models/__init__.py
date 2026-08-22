@@ -2,7 +2,7 @@
 Database models.
 """
 
-from .action import Action
+from .agent_action import AgentAction
 from .approval import Approval
 from .conversation import Conversation
 from .conversation_event import ConversationEvent
@@ -14,6 +14,6 @@ __all__ = [
     "User",
     "ConversationEvent",
     "Document",
-    "Action",
+    "AgentAction",
     "Approval",
 ]

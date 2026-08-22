@@ -17,6 +17,7 @@ from src.execution.graph.factory import ExecutionGraphFactory
 from src.execution.graph.state import ExecutionGraphState
 from src.execution.schemas.result import ExecutionResultSchema
 from src.execution.state.assembler import ExecutionStateAssembler
+from src.services.action_workflow import ActionWorkflowService
 
 logger = get_logger(__name__)
 
@@ -39,6 +40,7 @@ class ExecutionSession:
         graph_factory: ExecutionGraphFactory,
         state_assembler: ExecutionStateAssembler,
         timeout_policy: ExecutionTimeoutPolicy,
+        action_workflow_service: ActionWorkflowService,
     ) -> None:
         self._request_id = request_id
         self._conversation = conversation
@@ -48,6 +50,7 @@ class ExecutionSession:
         self._graph_factory = graph_factory
         self._state_assembler = state_assembler
         self._timeout_policy = timeout_policy
+        self._action_workflow_service = action_workflow_service
 
     async def execute(
         self,

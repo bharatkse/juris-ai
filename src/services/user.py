@@ -12,7 +12,6 @@ from src.core.exceptions.httpx import UserAlreadyExistsError, UserNotFoundError
 from src.db.models.user import User
 from src.repositories.user import UserRepository
 from src.security.password import PasswordService
-from src.services.base import BaseService
 
 if TYPE_CHECKING:
     from src.api.schemas.user import CreateUserRequest, UpdateUserRequest
@@ -21,7 +20,7 @@ if TYPE_CHECKING:
     from src.security.password import PasswordService
 
 
-class UserService(BaseService):
+class UserService:
     """
     Business logic for user management.
     """

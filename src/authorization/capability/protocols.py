@@ -2,17 +2,25 @@
 Protocols for capability analysis.
 """
 
+from __future__ import annotations
+
 from typing import Protocol
 
 from src.core.dto.capability import CapabilityAnalysisDTO
 
 
-class CapabilityAnalyzer(Protocol):
+class CapabilityAnalyzerProtocol(Protocol):
     """
-    Analyzes user input and identifies requested capabilities.
+    Identifies capabilities requested by input.
 
-    The analyzer determines what the user is asking to do.
-    It does not perform authorization or permission checks.
+    This protocol is classification-only.
+
+    It does not:
+    - authorize the actor,
+    - evaluate RBAC,
+    - evaluate approval policy,
+    - create approvals,
+    - execute actions.
     """
 
     def analyze(
@@ -20,6 +28,6 @@ class CapabilityAnalyzer(Protocol):
         content: str,
     ) -> CapabilityAnalysisDTO:
         """
-        Analyze user content and return the requested capabilities.
+        Analyze input and identify requested capabilities.
         """
         ...

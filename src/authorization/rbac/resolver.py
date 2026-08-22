@@ -5,23 +5,30 @@ RBAC permission resolution.
 from __future__ import annotations
 
 from src.authorization.rbac.policy import RBACPolicy
-from src.authorization.rbac.protocols import RBACResolver
+from src.authorization.rbac.protocols import RBACResolverProtocol
 from src.core.dto.authorization import (
     ApplicationAuthorizationRequestDTO,
     AuthorizationRequestDTO,
 )
 
 
-class RBACService(RBACResolver):
+class RBACService(RBACResolverProtocol):
     """
-    Resolves RBAC permissions for capabilities and concrete actions.
+    Resolves RBAC permissions for application requests
+    and concrete actions.
 
-    All permission decisions are delegated to the shared
-    RBAC policy.
+    All permission decisions are delegated to RBACPolicy.
+
+    This service does not:
+    - analyze capabilities,
+    - evaluate approval requirements,
+    - create approvals,
+    - execute actions.
     """
 
     def __init__(
         self,
+        *,
         policy: RBACPolicy,
     ) -> None:
         self._policy = policy
@@ -31,7 +38,8 @@ class RBACService(RBACResolver):
         request: ApplicationAuthorizationRequestDTO,
     ) -> bool:
         """
-        Check requested capabilities before planning.
+        Check whether the user may request all identified
+        capabilities before planning.
         """
 
         return all(
@@ -47,17 +55,20 @@ class RBACService(RBACResolver):
         request: AuthorizationRequestDTO,
     ) -> bool:
         """
-        Check user and agent permissions for a concrete action.
+        Check whether the concrete action is authorized.
+
+        Both the requesting user and the executing agent/tool
+        must have permission for the requested action.
         """
 
         if not self._policy.user_action_allowed(
             user_id=request.user_id,
-            action=request.action,
+            action=request.action_type,
         ):
             return False
 
         return self._policy.agent_action_allowed(
             agent_id=request.agent_id,
             tool_name=request.tool_name,
-            action=request.action,
+            action=request.action_type,
         )

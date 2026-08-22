@@ -4,7 +4,7 @@ import pytest
 
 from src.authorization.rbac.policy import RBACPolicy
 from src.authorization.service import AuthorizationService
-from src.core.dto.action import ActionRequestDTO
+from src.core.dto.agent_action import AgentActionRequestDTO
 from src.core.dto.authorization import AuthorizationResultDTO
 from src.core.enums import ActionTypeEnum, AuthorizationDecisionEnum
 from src.core.exceptions.authorization import AuthorizationError
@@ -19,7 +19,7 @@ def test_authorize_allows_authorized_action() -> None:
 
     service = AuthorizationService(policy=policy)
 
-    action = ActionRequestDTO(
+    action = AgentActionRequestDTO(
         tool_name="email",
         action=ActionTypeEnum.SEND,
         agent_id="agent-123",
@@ -44,7 +44,7 @@ def test_authorize_raises_error_when_action_is_denied() -> None:
 
     service = AuthorizationService(policy=policy)
 
-    action = ActionRequestDTO(
+    action = AgentActionRequestDTO(
         tool_name="email",
         action=ActionTypeEnum.SEND,
         agent_id="agent-123",
@@ -72,7 +72,7 @@ def test_authorize_builds_authorization_request() -> None:
 
     service = AuthorizationService(policy=policy)
 
-    action = ActionRequestDTO(
+    action = AgentActionRequestDTO(
         tool_name="email",
         action=ActionTypeEnum.SEND,
         arguments={"to": "client@example.com"},

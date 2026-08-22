@@ -1,10 +1,10 @@
 """
-Examples used for external-action classification.
+Examples used for capability classification.
 """
 
 from src.core.enums import ActionTypeEnum
 
-EXTERNAL_ACTION_EXAMPLES: dict[
+CAPABILITY_EXAMPLES: dict[
     ActionTypeEnum,
     tuple[str, ...],
 ] = {

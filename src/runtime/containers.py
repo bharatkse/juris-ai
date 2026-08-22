@@ -18,7 +18,6 @@ if TYPE_CHECKING:
     from src.execution.validation.response import ResponseValidator
     from src.planning.planner import ExecutionPlanner
     from src.registry.protocols import AgentRegistryProtocol, ToolRegistryProtocol
-    from src.services.action import ActionService
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,4 +38,3 @@ class RuntimeContainer:
     executor: Executor
     validator: ResponseValidator
     authorization: AuthorizationService
-    action: ActionService

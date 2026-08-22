@@ -1,10 +1,10 @@
-from src.core.dto.action import ActionRequestDTO
+from src.core.dto.agent_action import AgentActionRequestDTO
 from src.core.dto.authorization import AuthorizationRequestDTO
 from src.core.enums import ActionTypeEnum
 
 
 def test_action_request_defaults_arguments_and_reason() -> None:
-    request = ActionRequestDTO(
+    request = AgentActionRequestDTO(
         tool_name="email",
         action=ActionTypeEnum.SEND,
     )
@@ -14,7 +14,7 @@ def test_action_request_defaults_arguments_and_reason() -> None:
 
 
 def test_action_request_contains_concrete_action() -> None:
-    request = ActionRequestDTO(
+    request = AgentActionRequestDTO(
         tool_name="email",
         action=ActionTypeEnum.SEND,
         arguments={
@@ -31,7 +31,7 @@ def test_action_request_contains_concrete_action() -> None:
 
 
 def test_action_request_is_immutable() -> None:
-    request = ActionRequestDTO(
+    request = AgentActionRequestDTO(
         tool_name="email",
         action=ActionTypeEnum.SEND,
     )
@@ -41,11 +41,11 @@ def test_action_request_is_immutable() -> None:
     except AttributeError:
         pass
     else:
-        raise AssertionError("ActionRequestDTO must be immutable")
+        raise AssertionError("AgentActionRequestDTO must be immutable")
 
 
 def test_action_request_creates_authorization_request() -> None:
-    request = ActionRequestDTO(
+    request = AgentActionRequestDTO(
         tool_name="email",
         action=ActionTypeEnum.SEND,
         arguments={

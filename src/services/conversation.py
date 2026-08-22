@@ -16,7 +16,6 @@ from src.core.exceptions.httpx import NotFoundError as ConversationNotFoundError
 from src.core.logger import get_logger
 from src.db.models.conversation import Conversation
 from src.repositories.conversation import ConversationRepository
-from src.services.base import BaseService
 
 if TYPE_CHECKING:
     from src.api.schemas.conversation import CreateConversationRequest
@@ -25,7 +24,7 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-class ConversationService(BaseService):
+class ConversationService:
     """
     Business logic for conversation management.
     """

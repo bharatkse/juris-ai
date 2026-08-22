@@ -2,7 +2,7 @@
 RBAC permission policy.
 
 This module is the single source of truth for the current
-hardcoded RBAC permissions.
+RBAC permissions.
 """
 
 from __future__ import annotations
@@ -83,11 +83,12 @@ class RBACPolicy:
 
     def capability_allowed(
         self,
+        *,
         user_id: str,
         capability: ActionTypeEnum,
     ) -> bool:
         """
-        Check whether a user may request a capability.
+        Return whether a user may request a capability.
         """
 
         return capability in self.capability_permissions.get(
@@ -97,11 +98,12 @@ class RBACPolicy:
 
     def user_action_allowed(
         self,
+        *,
         user_id: str,
         action: ActionTypeEnum,
     ) -> bool:
         """
-        Check whether a user may perform an action.
+        Return whether a user may perform an action.
         """
 
         return action in self.user_action_permissions.get(
@@ -111,14 +113,20 @@ class RBACPolicy:
 
     def agent_action_allowed(
         self,
+        *,
         agent_id: str,
-        tool_name: str,
+        tool_name: str | None,
         action: ActionTypeEnum,
     ) -> bool:
         """
-        Check whether an agent may perform an action
-        through a specific tool.
+        Return whether an agent may perform an action
+        through the specified tool.
+
+        A concrete tool action requires a tool name.
         """
+
+        if not tool_name:
+            return False
 
         agent_permissions = self.agent_action_permissions.get(
             agent_id,

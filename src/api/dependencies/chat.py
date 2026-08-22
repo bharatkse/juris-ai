@@ -7,12 +7,12 @@ from __future__ import annotations
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.dependencies.action_workflow import get_action_workflow_service
 from src.db.session import get_db_session
 from src.orchestration.orchestrator import AIOrchestrator
 from src.repositories.conversation import ConversationRepository
 from src.repositories.conversation_event import ConversationEventRepository
 from src.runtime.composition import get_ai_orchestrator
-from src.runtime.factories.action_workflow import get_action_workflow_service
 from src.services.action_workflow import ActionWorkflowService
 from src.services.chat import ChatService
 from src.services.conversation import ConversationService
@@ -110,7 +110,7 @@ def get_chat_service(
     orchestrator: AIOrchestrator = Depends(
         get_ai_orchestrator,
     ),
-    action_workflow_service: ActionWorkflowService = Depends(
+    agent_action_workflow_service: ActionWorkflowService = Depends(
         get_action_workflow_service,
     ),
 ) -> ChatService:
@@ -123,5 +123,5 @@ def get_chat_service(
         conversation_service=conversation_service,
         conversation_event_service=conversation_event_service,
         orchestrator=orchestrator,
-        action_workflow_service=action_workflow_service,
+        agent_action_workflow_service=agent_action_workflow_service,
     )

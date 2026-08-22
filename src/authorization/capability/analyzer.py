@@ -1,21 +1,23 @@
 """
-External action capability analysis.
+Capability analysis implementation.
 """
 
 from __future__ import annotations
 
 from src.authorization.capability.classifier import TFIDFCapabilityClassifier
-from src.authorization.capability.examples import EXTERNAL_ACTION_EXAMPLES
-from src.authorization.capability.protocols import CapabilityAnalyzer
+from src.authorization.capability.examples import CAPABILITY_EXAMPLES
+from src.authorization.capability.protocols import CapabilityAnalyzerProtocol
 from src.core.dto.capability import CapabilityAnalysisDTO
+from src.core.enums import ActionTypeEnum
 
 
-class ExternalActionAnalyzer(CapabilityAnalyzer):
+class DefaultCapabilityAnalyzer(CapabilityAnalyzerProtocol):
     """
-    Identifies externally impactful actions requested by the user.
+    Default capability analyzer.
 
-    This analyzer does not determine whether the user is authorized
-    to perform the action.
+    Identifies capabilities requested by natural-language input.
+
+    Classification is independent from authorization and approval.
     """
 
     def __init__(
@@ -23,27 +25,41 @@ class ExternalActionAnalyzer(CapabilityAnalyzer):
         classifier: TFIDFCapabilityClassifier | None = None,
     ) -> None:
         self._classifier = classifier or TFIDFCapabilityClassifier(
-            examples=EXTERNAL_ACTION_EXAMPLES,
+            examples=CAPABILITY_EXAMPLES,
         )
 
     def analyze(
         self,
         content: str,
     ) -> CapabilityAnalysisDTO:
-        matches = self._classifier.classify(content)
+        """
+        Analyze input and identify requested capabilities.
+        """
+
+        matches = self._classifier.classify(
+            content,
+        )
 
         actions = tuple(match.action for match in matches)
 
         return CapabilityAnalysisDTO(
             actions=actions,
-            reason=self._build_reason(actions),
+            reason=self._build_reason(
+                actions,
+            ),
         )
 
     @staticmethod
-    def _build_reason(actions) -> str:
+    def _build_reason(
+        actions: tuple[ActionTypeEnum, ...],
+    ) -> str:
+        """
+        Build a human-readable explanation of the capability analysis.
+        """
+
         if not actions:
-            return "No externally impactful action was identified."
+            return "No supported capability was identified."
 
         capabilities = ", ".join(action.value for action in actions)
 
-        return "Detected externally impactful actions: " f"{capabilities}."
+        return "Detected requested capabilities: " f"{capabilities}."

@@ -4,16 +4,20 @@ Human approval policy.
 
 from __future__ import annotations
 
-from src.core.dto.action import ActionRequestDTO
+from src.core.dto.agent_action import AgentActionResponseDTO
 from src.core.dto.approval import ApprovalPolicyResultDTO
-from src.core.enums import ActionTypeEnum, ApprovalDecisionEnum
+from src.core.enums import ActionTypeEnum, ApprovalPolicyDecisionEnum
 
 
 class ApprovalLifecyclePolicy:
     """
     Determines whether a concrete action requires human approval.
 
-    Approval policy is independent of RBAC and capability analysis.
+    Approval policy is independent of:
+    - capability analysis,
+    - RBAC authorization,
+    - approval persistence,
+    - action execution.
     """
 
     _APPROVAL_REQUIRED_ACTIONS: frozenset[ActionTypeEnum] = frozenset(
@@ -24,19 +28,20 @@ class ApprovalLifecyclePolicy:
 
     def evaluate(
         self,
-        action: ActionRequestDTO,
+        action: AgentActionResponseDTO,
     ) -> ApprovalPolicyResultDTO:
         """
-        Determine whether the action requires human approval.
+        Determine whether the concrete action requires
+        human approval.
         """
 
-        if action.action in self._APPROVAL_REQUIRED_ACTIONS:
+        if action.action_type in self._APPROVAL_REQUIRED_ACTIONS:
             return ApprovalPolicyResultDTO(
-                decision=ApprovalDecisionEnum.REQUIRE_APPROVAL,
-                reason=(f"Action '{action.action}' requires " "human approval."),
+                decision=ApprovalPolicyDecisionEnum.REQUIRE_APPROVAL,
+                reason=(f"Action '{action.action_type.value}' " "requires human approval."),
             )
 
         return ApprovalPolicyResultDTO(
-            decision=ApprovalDecisionEnum.ALLOW,
-            reason=(f"Action '{action.action}' does not require " "human approval."),
+            decision=ApprovalPolicyDecisionEnum.ALLOW,
+            reason=(f"Action '{action.action_type.value}' " "does not require human approval."),
         )

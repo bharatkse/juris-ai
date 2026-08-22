@@ -1,30 +1,40 @@
 """
-Protocols for human approval.
+Approval lifecycle protocols.
 """
 
 from __future__ import annotations
 
 from typing import Protocol
 
-from src.core.dto.action import ActionResponseDTO
-from src.core.dto.approval import ApprovalResponseDTO
+from src.core.dto.agent_action import AgentActionResponseDTO
+from src.core.dto.approval import ApprovalDecisionRequestDTO, ApprovalResponseDTO
 
 
-class ApprovalLifecycle(Protocol):
+class ApprovalLifecycleProtocol(Protocol):
     """
-    Defines the human approval lifecycle contract.
+    Defines the contract for the approval lifecycle service.
+
+    The lifecycle service owns:
+    - approval creation,
+    - approval retrieval,
+    - approval validation,
+    - approval decision processing.
+
+    It does not own:
+    - authorization,
+    - approval policy evaluation,
+    - action execution.
     """
 
     async def create(
         self,
         *,
-        action: ActionResponseDTO,
+        action: AgentActionResponseDTO,
         requested_by: str,
     ) -> ApprovalResponseDTO:
         """
-        Create a human approval request for a persisted action.
+        Create a new approval request.
         """
-
         ...
 
     async def get(
@@ -34,7 +44,6 @@ class ApprovalLifecycle(Protocol):
         """
         Retrieve an approval request.
         """
-
         ...
 
     async def validate(
@@ -42,40 +51,18 @@ class ApprovalLifecycle(Protocol):
         approval_id: str,
     ) -> ApprovalResponseDTO:
         """
-        Validate that an approval is currently executable.
+        Validate an approved request for execution.
         """
-
         ...
 
-    async def approve(
+    async def process(
         self,
+        *,
         approval_id: str,
+        request: ApprovalDecisionRequestDTO,
+        user_id: str,
     ) -> ApprovalResponseDTO:
         """
-        Approve a waiting approval request.
+        Process a human approval decision.
         """
-
-        ...
-
-    async def reject(
-        self,
-        approval_id: str,
-    ) -> ApprovalResponseDTO:
-        """
-        Reject a waiting approval request.
-        """
-
-        ...
-
-    async def edit(
-        self,
-        approval_id: str,
-    ) -> ApprovalResponseDTO:
-        """
-        Mark the current approval as edited.
-
-        The existing approval becomes invalid for execution.
-        A new approval cycle is required for the edited action.
-        """
-
         ...

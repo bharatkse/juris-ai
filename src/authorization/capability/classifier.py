@@ -1,5 +1,10 @@
 """
-TF-IDF based external action classification.
+TF-IDF based capability classification.
+
+Capability classification identifies which supported action types
+appear to be requested by the input.
+
+It does not perform authorization, approval, or execution.
 """
 
 from __future__ import annotations
@@ -13,15 +18,21 @@ from src.core.enums import ActionTypeEnum
 
 class TFIDFCapabilityClassifier:
     """
-    Classifies natural-language requests into supported external
-    actions using TF-IDF and cosine similarity.
+    Classifies natural-language input into supported action types.
 
-    This classifier identifies requested actions only.
-    It does not perform authorization or approval decisions.
+    Classification is responsible only for identifying the capabilities
+    requested by the input.
+
+    It does not:
+    - authorize the requester,
+    - evaluate RBAC permissions,
+    - evaluate approval requirements,
+    - execute actions.
     """
 
     def __init__(
         self,
+        *,
         examples: dict[ActionTypeEnum, tuple[str, ...]],
         threshold: float = 0.35,
     ) -> None:
@@ -37,21 +48,25 @@ class TFIDFCapabilityClassifier:
 
         self._threshold = threshold
 
-        self._actions: list[ActionTypeEnum] = []
+        action_types: list[ActionTypeEnum] = []
         documents: list[str] = []
 
-        for action, action_examples in examples.items():
-            if not action_examples:
-                continue
-
+        for action_type, action_examples in examples.items():
             for example in action_examples:
-                self._actions.append(action)
+                example = example.strip()
+
+                if not example:
+                    continue
+
+                action_types.append(action_type)
                 documents.append(example)
 
         if not documents:
             raise ValueError(
                 "Capability examples cannot contain empty action sets.",
             )
+
+        self._action_types = action_types
 
         self._vectorizer = TfidfVectorizer(
             lowercase=True,
@@ -68,10 +83,15 @@ class TFIDFCapabilityClassifier:
         content: str,
     ) -> tuple[CapabilityMatchDTO, ...]:
         """
-        Identify externally impactful actions requested by the user.
+        Identify supported action types requested by the input.
+
+        Returns at most one match for each action type, using the
+        highest similarity score found for that action type.
         """
 
-        if not content.strip():
+        content = content.strip()
+
+        if not content:
             return ()
 
         content_vector = self._vectorizer.transform(
@@ -83,26 +103,28 @@ class TFIDFCapabilityClassifier:
             self._matrix,
         )[0]
 
-        matches: dict[ActionTypeEnum, float] = {}
+        best_scores: dict[ActionTypeEnum, float] = {}
 
-        for action, score in zip(
-            self._actions,
+        for action_type, score in zip(
+            self._action_types,
             similarities,
             strict=False,
         ):
-            current_score = matches.get(
-                action,
+            score = float(score)
+
+            current_score = best_scores.get(
+                action_type,
                 0.0,
             )
 
             if score > current_score:
-                matches[action] = float(score)
+                best_scores[action_type] = score
 
         return tuple(
             CapabilityMatchDTO(
-                action=action,
+                action_type=action_type,
                 score=score,
             )
-            for action, score in matches.items()
+            for action_type, score in best_scores.items()
             if score >= self._threshold
         )

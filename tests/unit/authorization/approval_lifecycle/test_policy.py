@@ -1,7 +1,7 @@
 import pytest
 
 from src.authorization.approval_lifecycle.policy import ApprovalLifecyclePolicy
-from src.core.dto.action import ActionRequestDTO
+from src.core.dto.agent_action import AgentActionRequestDTO
 from src.core.enums import ActionTypeEnum, ApprovalDecisionEnum
 
 
@@ -12,8 +12,8 @@ def policy() -> ApprovalLifecyclePolicy:
 
 def create_action(
     action: ActionTypeEnum,
-) -> ActionRequestDTO:
-    return ActionRequestDTO(
+) -> AgentActionRequestDTO:
+    return AgentActionRequestDTO(
         tool_name="test-tool",
         action=action,
         arguments={},
