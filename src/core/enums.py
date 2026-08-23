@@ -232,7 +232,7 @@ class ActionTypeEnum(StrEnum):
     SUBMIT = "submit"
     EXTERNAL = "external"
     AGENT_CALL = "agent_call"
-    TOOL = "tool"
+    TOOL_CALL = "tool"
 
 
 class AgentActionStatusEnum(StrEnum):

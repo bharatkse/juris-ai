@@ -96,7 +96,7 @@ class AgentActionFactory(BaseFactory):
     # Action target
     # ------------------------------------------------------------------
 
-    action_type = ActionTypeEnum.TOOL
+    action_type = ActionTypeEnum.TOOL_CALL
 
     tool_name = "test_tool"
 

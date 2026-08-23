@@ -23,6 +23,7 @@ pytest_plugins = [
     "tests.fixtures.clients.storage",
     "tests.fixtures.clients.llm",
     "tests.fixtures.clients.groq",
+    "tests.fixtures.authorization",
 ]
 
 
