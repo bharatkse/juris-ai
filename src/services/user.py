@@ -78,7 +78,7 @@ class UserService(BaseService):
 
         user = User(
             **data,
-            hashed_password=self._password_service.hash(
+            password_hash=self._password_service.hash(
                 request.password,
             ),
         )

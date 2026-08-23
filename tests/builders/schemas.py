@@ -15,7 +15,11 @@ from src.api.schemas.chat import (
     ConversationEventResponse,
 )
 from src.api.schemas.conversation import ConversationResponse, CreateConversationRequest
-from src.api.schemas.user import CreateUserRequest, UpdateUserRequest, UserResponse
+from src.api.schemas.user import (
+    RegisterNewUserRequest,
+    UpdateUserProfileRequest,
+    UserResponse,
+)
 from src.core.enums import GenderEnum, MessageRoleEnum
 from src.core.schemas.response import (
     AIUsageModel,
@@ -32,7 +36,7 @@ from tests.helpers.identifiers import unknown_conversation_id
 
 def build_create_user_request(
     **kwargs: Any,
-) -> CreateUserRequest:
+) -> RegisterNewUserRequest:
     data = {
         "email": "john@example.com",
         "password": "Password@123",
@@ -45,12 +49,12 @@ def build_create_user_request(
     }
     data.update(kwargs)
 
-    return CreateUserRequest(**data)
+    return RegisterNewUserRequest(**data)
 
 
 def build_update_user_request(
     **kwargs: Any,
-) -> UpdateUserRequest:
+) -> UpdateUserProfileRequest:
     data = {
         "first_name": None,
         "last_name": None,
@@ -60,7 +64,7 @@ def build_update_user_request(
     }
     data.update(kwargs)
 
-    return UpdateUserRequest(**data)
+    return UpdateUserProfileRequest(**data)
 
 
 def build_create_conversation_request(

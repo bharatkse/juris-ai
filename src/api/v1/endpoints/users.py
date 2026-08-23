@@ -7,7 +7,11 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, status
 
 from src.api.dependencies.user import get_user_service
-from src.api.schemas.user import CreateUserRequest, UpdateUserRequest, UserResponse
+from src.api.schemas.user import (
+    RegisterNewUserRequest,
+    UpdateUserProfileRequest,
+    UserResponse,
+)
 from src.core.logger import get_logger
 from src.core.response import ApiResponse
 from src.core.types import UserId
@@ -25,22 +29,22 @@ router = APIRouter(
     "",
     response_model=None,
     status_code=status.HTTP_201_CREATED,
-    summary="Create a new user",
+    summary="Register a new user",
 )
-async def create_user(
-    request: CreateUserRequest,
+async def user_registration(
+    request: RegisterNewUserRequest,
     service: UserService = Depends(
         get_user_service,
     ),
 ) -> ApiResponse:
     """
-    Create a new user.
+    Registering  a new user.
     """
 
     logger.info(
-        "Creating user.",
+        "Registering  a new user.",
         extra={
-            "operation": "create_user",
+            "operation": "user_registration",
             "email": request.email,
         },
     )
@@ -54,7 +58,7 @@ async def create_user(
             user,
             from_attributes=True,
         ),
-        message="User created successfully.",
+        message="User registered successfully.",
         status_code=status.HTTP_201_CREATED,
     )
 
@@ -62,22 +66,22 @@ async def create_user(
 @router.get(
     "/{user_id}",
     response_model=None,
-    summary="Retrieve a user",
+    summary="Retrieve a user details",
 )
-async def get_user(
+async def get_user_details(
     user_id: UserId,
     service: UserService = Depends(
         get_user_service,
     ),
 ) -> ApiResponse:
     """
-    Retrieve a user.
+    Retrieve a user details.
     """
 
     logger.info(
-        "Retrieving user.",
+        "Retrieving user details.",
         extra={
-            "operation": "get_user",
+            "operation": "get_user_details",
             "user_id": str(user_id),
         },
     )
@@ -91,30 +95,30 @@ async def get_user(
             user,
             from_attributes=True,
         ),
-        message="User retrieved successfully.",
+        message="User details retrieved successfully.",
     )
 
 
 @router.patch(
     "/{user_id}",
     response_model=None,
-    summary="Update a user",
+    summary="Update a user profile",
 )
-async def update_user(
+async def update_user_profile(
     user_id: UserId,
-    request: UpdateUserRequest,
+    request: UpdateUserProfileRequest,
     service: UserService = Depends(
         get_user_service,
     ),
 ) -> ApiResponse:
     """
-    Update a user.
+    Update a user profile.
     """
 
     logger.info(
-        "Updating user.",
+        "Updating user profile.",
         extra={
-            "operation": "update_user",
+            "operation": "update_user_profile",
             "user_id": str(user_id),
         },
     )
@@ -129,5 +133,5 @@ async def update_user(
             user,
             from_attributes=True,
         ),
-        message="User updated successfully.",
+        message="User profile updated successfully.",
     )

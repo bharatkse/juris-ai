@@ -4,7 +4,7 @@ Repository fixtures.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -134,6 +134,11 @@ def mock_user_repository() -> MagicMock:
     Return a mocked user repository.
     """
 
-    return MagicMock(
+    repository = MagicMock(
         spec=UserRepository,
     )
+
+    repository.get_by_email = AsyncMock()
+    repository.get = AsyncMock()
+
+    return repository

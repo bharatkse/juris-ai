@@ -28,7 +28,7 @@ class User(PrimaryKeyMixin, TimestampMixin, Base):
         index=True,
         nullable=False,
     )
-    hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
 
     first_name: Mapped[str] = mapped_column(String(50), nullable=True)
     last_name: Mapped[str] = mapped_column(String(50), nullable=True)

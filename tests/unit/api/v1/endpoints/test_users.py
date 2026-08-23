@@ -9,7 +9,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi import status
 
-from src.api.v1.endpoints.users import create_user, get_user, update_user
+from src.api.v1.endpoints.users import (
+    get_user_details,
+    update_user_profile,
+    user_registration,
+)
 from src.core.response import ApiResponse
 from tests.builders.schemas import build_create_user_request, build_update_user_request
 from tests.factories.user import UserFactory
@@ -37,7 +41,7 @@ async def test_create_user(
         return_value=user,
     )
 
-    response = await create_user(
+    response = await user_registration(
         request=request,
         service=service,
     )
@@ -79,7 +83,7 @@ async def test_get_user(
         return_value=user,
     )
 
-    response = await get_user(
+    response = await get_user_details(
         user_id=user.id,
         service=service,
     )
@@ -123,7 +127,7 @@ async def test_update_user(
         return_value=user,
     )
 
-    response = await update_user(
+    response = await update_user_profile(
         user_id=user.id,
         request=request,
         service=service,
