@@ -12,9 +12,9 @@ from src.core.enums import GenderEnum
 from src.core.types import UserId
 
 
-class CreateUserRequest(BaseModel):
+class RegisterNewUserRequest(BaseModel):
     """
-    Request payload for creating a user.
+    Request payload for registering a user.
     """
 
     model_config = ConfigDict(
@@ -56,7 +56,7 @@ class CreateUserRequest(BaseModel):
     date_of_birth: date | None = None
 
     @model_validator(mode="after")
-    def validate_passwords(self) -> CreateUserRequest:
+    def validate_passwords(self) -> RegisterNewUserRequest:
         """
         Ensure both passwords match.
         """
@@ -69,9 +69,9 @@ class CreateUserRequest(BaseModel):
         return self
 
 
-class UpdateUserRequest(BaseModel):
+class UpdateUserProfileRequest(BaseModel):
     """
-    Request payload for updating a user.
+    Request payload for updating a user profile.
     """
 
     model_config = ConfigDict(

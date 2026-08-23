@@ -40,7 +40,7 @@ class UserFactory(BaseFactory):
         lambda _: fake.unique.email(),
     )
 
-    hashed_password = factory.LazyFunction(
+    password_hash = factory.LazyFunction(
         lambda: fake.sha256(raw_output=False),
     )
 

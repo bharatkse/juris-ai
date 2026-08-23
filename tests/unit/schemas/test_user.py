@@ -9,7 +9,11 @@ from datetime import date, datetime
 import pytest
 from pydantic import ValidationError
 
-from src.api.schemas.user import CreateUserRequest, UpdateUserRequest, UserResponse
+from src.api.schemas.user import (
+    RegisterNewUserRequest,
+    UpdateUserProfileRequest,
+    UserResponse,
+)
 from src.core.enums import GenderEnum
 from tests.builders.schemas import build_create_user_request, build_update_user_request
 from tests.factories.user import UserFactory
@@ -63,7 +67,7 @@ def test_create_user_request_rejects_extra_fields() -> None:
     with pytest.raises(
         ValidationError,
     ):
-        CreateUserRequest(
+        RegisterNewUserRequest(
             email="john@example.com",
             password="Password@123",
             confirm_password="Password@123",
@@ -79,7 +83,7 @@ def test_create_user_request_requires_email() -> None:
     with pytest.raises(
         ValidationError,
     ):
-        CreateUserRequest(
+        RegisterNewUserRequest(
             password="Password@123",
             confirm_password="Password@123",
         )
@@ -93,7 +97,7 @@ def test_create_user_request_requires_password() -> None:
     with pytest.raises(
         ValidationError,
     ):
-        CreateUserRequest(
+        RegisterNewUserRequest(
             email="john@example.com",
             confirm_password="Password@123",
         )
@@ -107,7 +111,7 @@ def test_create_user_request_requires_confirm_password() -> None:
     with pytest.raises(
         ValidationError,
     ):
-        CreateUserRequest(
+        RegisterNewUserRequest(
             email="john@example.com",
             password="Password@123",
         )
@@ -165,7 +169,7 @@ def test_update_user_request_rejects_extra_fields() -> None:
     with pytest.raises(
         ValidationError,
     ):
-        UpdateUserRequest(
+        UpdateUserProfileRequest(
             first_name="John",
             unknown="value",
         )

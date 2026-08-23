@@ -61,7 +61,7 @@ async def test_create_creates_user(
     created_user = mock_user_repository.create.await_args.args[0]
 
     assert created_user.email == "john@example.com"
-    assert created_user.hashed_password == "hashed-password"
+    assert created_user.password_hash == "hashed-password"
 
     user_service.commit.assert_awaited_once_with()
     user_service.rollback.assert_not_awaited()
@@ -132,7 +132,7 @@ async def test_create_hashes_password(
 
     created_user = mock_user_repository.create.await_args.args[0]
 
-    assert created_user.hashed_password == "hashed-password"
+    assert created_user.password_hash == "hashed-password"
 
 
 @pytest.mark.asyncio

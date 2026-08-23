@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from src.services.auth import AuthenticationService
 from src.services.chat import ChatService
 from src.services.conversation import ConversationService
 from src.services.conversation_event import ConversationEventService
@@ -84,6 +85,17 @@ def document_service(
 
 
 @pytest.fixture
+def authentication_service(
+    mock_user_repository: MagicMock,
+    mock_password_service: MagicMock,
+) -> AuthenticationService:
+    return AuthenticationService(
+        user_repository=mock_user_repository,
+        password_service=mock_password_service,
+    )
+
+
+@pytest.fixture
 def mock_conversation_service() -> MagicMock:
     """
     Return a mocked conversation service.
@@ -103,3 +115,15 @@ def mock_conversation_event_service() -> MagicMock:
     return MagicMock(
         spec=ConversationEventService,
     )
+
+
+@pytest.fixture
+def mock_password_service() -> MagicMock:
+    """
+    Provide a mocked PasswordService.
+    """
+
+    service = MagicMock()
+    service.verify_password = MagicMock()
+
+    return service
