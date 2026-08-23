@@ -1,0 +1,95 @@
+from __future__ import annotations
+
+from unittest.mock import MagicMock, Mock
+
+import pytest
+
+from src.authorization.approval_lifecycle.policy import ApprovalLifecyclePolicy
+from src.authorization.capability.analyzer import DefaultCapabilityAnalyzer
+from src.authorization.capability.classifier import TFIDFCapabilityClassifier
+from src.authorization.rbac.policy import RBACPolicy
+from src.authorization.rbac.resolver import RBACService
+from src.core.enums import ActionTypeEnum
+
+
+@pytest.fixture
+def approval_policy() -> ApprovalLifecyclePolicy:
+    """
+    Create an approval lifecycle policy.
+    """
+
+    return ApprovalLifecyclePolicy()
+
+
+@pytest.fixture
+def mock_classifier() -> MagicMock:
+    """
+    Return a mocked capability classifier.
+    """
+
+    return MagicMock()
+
+
+@pytest.fixture
+def analyzer(
+    mock_classifier: MagicMock,
+) -> DefaultCapabilityAnalyzer:
+    """
+    Return a capability analyzer with an injected classifier.
+    """
+
+    return DefaultCapabilityAnalyzer(
+        classifier=mock_classifier,
+    )
+
+
+@pytest.fixture
+def examples() -> dict[ActionTypeEnum, tuple[str, ...]]:
+    """
+    Return capability examples used by the classifier tests.
+    """
+
+    return {
+        ActionTypeEnum.SEND: (
+            "send an email",
+            "send a message",
+            "email the document",
+        ),
+        ActionTypeEnum.READ: (
+            "read the document",
+            "view the document",
+            "get document details",
+        ),
+    }
+
+
+@pytest.fixture
+def classifier(
+    examples: dict[ActionTypeEnum, tuple[str, ...]],
+) -> TFIDFCapabilityClassifier:
+    """
+    Create a capability classifier.
+    """
+
+    return TFIDFCapabilityClassifier(
+        examples=examples,
+        threshold=0.35,
+    )
+
+
+@pytest.fixture
+def policy() -> RBACPolicy:
+    """Return the default RBAC policy."""
+    return RBACPolicy.default()
+
+
+@pytest.fixture
+def mock_policy() -> Mock:
+    """Return a mocked RBAC policy."""
+    return Mock(spec=RBACPolicy)
+
+
+@pytest.fixture
+def rbac_service(mock_policy: Mock) -> RBACService:
+    """Return an RBAC service using the mocked policy."""
+    return RBACService(policy=mock_policy)
