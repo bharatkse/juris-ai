@@ -26,4 +26,7 @@ def PrefixedId(prefix: str) -> type[Annotated[str, Any]]:
 
 UserId = PrefixedId("user")
 ConversationId = PrefixedId("conv")
-ConversationEventId = PrefixedId("event")
+ConversationEventId = PrefixedId("evnt")
+AgentActionId = PrefixedId("actn")
+ApprovalId = PrefixedId("appr")
+DocumentId = PrefixedId("doct")

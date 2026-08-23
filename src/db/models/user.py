@@ -13,6 +13,8 @@ from src.db.base import Base
 from src.db.mixins import PrimaryKeyMixin, TimestampMixin
 
 if TYPE_CHECKING:
+    from .agent_action import AgentAction
+    from .approval import Approval
     from .conversation import Conversation
 
 
@@ -37,6 +39,21 @@ class User(PrimaryKeyMixin, TimestampMixin, Base):
 
     conversations: Mapped[list["Conversation"]] = relationship(
         back_populates="user",
+        cascade="all, delete-orphan",
+    )
+
+    agent_actions: Mapped[list["AgentAction"]] = relationship(
+        back_populates="user",
+    )
+
+    requested_approvals: Mapped[list["Approval"]] = relationship(
+        foreign_keys="Approval.requested_by",
+        back_populates="requester",
+    )
+
+    approved_approvals: Mapped[list["Approval"]] = relationship(
+        foreign_keys="Approval.approved_by",
+        back_populates="approver",
     )
 
     def __repr__(self) -> str:

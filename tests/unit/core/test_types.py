@@ -91,10 +91,10 @@ def test_conversation_event_id_accepts_valid_identifier() -> None:
         id: ConversationEventId
 
     model = Model(
-        id="event_" + "c" * 32,
+        id="evnt_" + "c" * 32,
     )
 
-    assert model.id == "event_" + "c" * 32
+    assert model.id == "evnt_" + "c" * 32
 
 
 def test_prefixed_id_uses_requested_prefix() -> None:
@@ -103,13 +103,13 @@ def test_prefixed_id_uses_requested_prefix() -> None:
     """
 
     class Model(BaseModel):
-        id: PrefixedId("doc")
+        id: PrefixedId("doct")
 
     model = Model(
-        id="doc_" + "d" * 32,
+        id="doct_" + "d" * 32,
     )
 
-    assert model.id == "doc_" + "d" * 32
+    assert model.id == "doct_" + "d" * 32
 
     with pytest.raises(
         ValidationError,

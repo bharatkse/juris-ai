@@ -9,6 +9,8 @@ from unittest.mock import MagicMock
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.repositories.agent_action import AgentActionRepository
+from src.repositories.approval import ApprovalRepository
 from src.repositories.conversation import ConversationRepository
 from src.repositories.conversation_event import ConversationEventRepository
 from src.repositories.document import DocumentRepository
@@ -63,6 +65,32 @@ def document_repository(
     """
 
     return DocumentRepository(
+        session=db_session,
+    )
+
+
+@pytest.fixture
+def agent_action_repository(
+    db_session: AsyncSession,
+) -> AgentActionRepository:
+    """
+    Return a Agent Action repository.
+    """
+
+    return AgentActionRepository(
+        session=db_session,
+    )
+
+
+@pytest.fixture
+def approval_repository(
+    db_session: AsyncSession,
+) -> ApprovalRepository:
+    """
+    Return a approval repository.
+    """
+
+    return ApprovalRepository(
         session=db_session,
     )
 

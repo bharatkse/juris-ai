@@ -41,7 +41,7 @@ class ConversationEventFactory(BaseFactory):
         )
 
     id = factory.LazyFunction(
-        lambda: generate_prefixed_uuid_pk("event"),
+        lambda: generate_prefixed_uuid_pk("evnt"),
     )
 
     conversation = factory.SubFactory(
