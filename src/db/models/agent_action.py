@@ -7,9 +7,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
+from sqlalchemy import JSON as JSONB
 from sqlalchemy import Enum as PgEnum
 from sqlalchemy import ForeignKey, Index, String, Text
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.core.dto.agent_action import AgentActionRequestDTO, AgentActionResponseDTO
