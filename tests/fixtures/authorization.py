@@ -9,6 +9,7 @@ from src.authorization.capability.analyzer import DefaultCapabilityAnalyzer
 from src.authorization.capability.classifier import TFIDFCapabilityClassifier
 from src.authorization.rbac.policy import RBACPolicy
 from src.authorization.rbac.resolver import RBACService
+from src.authorization.service import AuthorizationService
 from src.core.enums import ActionTypeEnum
 
 
@@ -93,3 +94,47 @@ def mock_policy() -> Mock:
 def rbac_service(mock_policy: Mock) -> RBACService:
     """Return an RBAC service using the mocked policy."""
     return RBACService(policy=mock_policy)
+
+
+@pytest.fixture
+def mock_capability_analyzer() -> MagicMock:
+    """
+    Provide a mocked capability analyzer.
+    """
+
+    return MagicMock()
+
+
+@pytest.fixture
+def mock_rbac() -> MagicMock:
+    """
+    Provide a mocked RBAC service.
+    """
+
+    return MagicMock()
+
+
+@pytest.fixture
+def mock_execute_gate() -> MagicMock:
+    """
+    Provide a mocked RBAC execute gate.
+    """
+
+    return MagicMock()
+
+
+@pytest.fixture
+def authorization_service(
+    mock_capability_analyzer: MagicMock,
+    mock_rbac: MagicMock,
+    mock_execute_gate: MagicMock,
+) -> AuthorizationService:
+    """
+    Build the authorization service.
+    """
+
+    return AuthorizationService(
+        capability_analyzer=mock_capability_analyzer,
+        rbac=mock_rbac,
+        execute_gate=mock_execute_gate,
+    )
