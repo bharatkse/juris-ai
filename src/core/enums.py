@@ -1,6 +1,8 @@
 """
 All enumerations used across the application.
-Using str-based enums keeps JSON serialisation automatic.
+
+Str-based enums provide JSON-friendly serialization while keeping
+application state explicit and type-safe.
 """
 
 from enum import StrEnum
@@ -37,20 +39,17 @@ class MessageRoleEnum(StrEnum):
 
 
 class EventTypeEnum(StrEnum):
+    """
+    Supported conversation event types.
+    """
+
     USER = "user"
-
     ASSISTANT = "assistant"
-
     SYSTEM = "system"
-
     TOOL_CALL = "tool_call"
-
     TOOL_RESULT = "tool_result"
-
     RETRIEVAL = "retrieval"
-
     RERANK = "rerank"
-
     PLANNER = "planner"
 
 
@@ -79,7 +78,6 @@ class AgentTypeEnum(StrEnum):
     """
 
     LEGAL = "legal"
-
     CONTRACT = "contract"
 
 
@@ -113,15 +111,10 @@ class IntentEnum(StrEnum):
     """
 
     GENERAL = "general"
-
     LEGAL_RESEARCH = "legal_research"
-
     CONTRACT_REVIEW = "contract_review"
-
     CONTRACT_ANALYSIS = "contract_analysis"
-
     CLAUSE_EXTRACTION = "clause_extraction"
-
     RISK_ANALYSIS = "risk_analysis"
 
 
@@ -129,8 +122,8 @@ class ExecutionModeEnum(StrEnum):
     """
     Supported execution modes.
 
-    Execution mode is part of the planning contract. The runtime
-    execution topology is derived from the plan dependencies and
+    The execution mode is part of the planning contract.
+    Runtime topology is derived from plan dependencies and
     executed by LangGraph.
     """
 
@@ -153,7 +146,7 @@ class ExecutionStatusEnum(StrEnum):
 
 class RetrievalSourceEnum(StrEnum):
     """
-    Source of retrieved content.
+    Sources of retrieved content.
     """
 
     WEB = "web"
@@ -177,9 +170,126 @@ class AttachmentTypeEnum(StrEnum):
 
 class RequestSourceEnum(StrEnum):
     """
-    Source of the orchestration request.
+    Sources of orchestration requests.
     """
 
     CHAT = "chat"
     API = "api"
     TOOL = "tool"
+
+
+# ============================================================================
+# Authorization
+# ============================================================================
+
+
+class AuthorizationDecisionEnum(StrEnum):
+    """
+    Result of an authorization evaluation.
+
+    This represents whether an actor is permitted to perform
+    a requested operation.
+    """
+
+    ALLOW = "allow"
+    DENY = "deny"
+
+
+class ApprovalPolicyDecisionEnum(StrEnum):
+    """
+    Result of evaluating whether an authorized action requires
+    human approval.
+
+    This is a policy decision, not the lifecycle state of an
+    approval request.
+    """
+
+    ALLOW = "allow"
+    REQUIRE_APPROVAL = "require_approval"
+
+
+# ============================================================================
+# Agent Actions
+# ============================================================================
+
+
+class ActionTypeEnum(StrEnum):
+    """
+    Categories of executable actions.
+
+    AGENT_CALL represents agent-to-agent execution and allows
+    the same action authorization path to be used for both
+    tool actions and agent interactions.
+    """
+
+    GENERAL = "general"
+    READ = "read"
+    ANALYZE = "analyze"
+    GENERATE = "generate"
+    UPDATE = "update"
+    DELETE = "delete"
+    SEND = "send"
+    SUBMIT = "submit"
+    EXTERNAL = "external"
+    AGENT_CALL = "agent_call"
+
+
+class AgentActionStatusEnum(StrEnum):
+    """
+    Lifecycle state of a persisted executable agent action.
+    """
+
+    DRAFT = "draft"
+    PENDING_APPROVAL = "pending_approval"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    EXECUTING = "executing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    EXPIRED = "expired"
+
+
+# ============================================================================
+# Human Approval
+# ============================================================================
+
+
+class ApprovalStatusEnum(StrEnum):
+    """
+    Lifecycle state of a persisted human approval request.
+
+    An Approval record exists only when human approval is required.
+    """
+
+    WAITING = "waiting"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    EDITED = "edited"
+    EXPIRED = "expired"
+
+
+class ApprovalDecisionEnum(StrEnum):
+    """
+    Decision submitted by a human for an approval request.
+
+    This is intentionally separate from ApprovalStatusEnum:
+    a decision is an input, while status is persisted state.
+    """
+
+    APPROVE = "approve"
+    REJECT = "reject"
+    EDIT = "edit"
+
+
+# ============================================================================
+# Actors
+# ============================================================================
+
+
+class ActorTypeEnum(StrEnum):
+    """
+    Actor responsible for initiating an executable action.
+    """
+
+    USER = "user"
+    AGENT = "agent"

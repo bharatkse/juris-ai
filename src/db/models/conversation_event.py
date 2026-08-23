@@ -15,6 +15,7 @@ from src.db.base import Base
 from src.db.mixins import PrimaryKeyMixin, TimestampMixin
 
 if TYPE_CHECKING:
+    from .agent_action import AgentAction
     from .conversation import Conversation
     from .conversation_event import ConversationEvent
 
@@ -56,7 +57,7 @@ class ConversationEvent(
         ),
     )
 
-    _id_prefix = "event"
+    _id_prefix = "evnt"
 
     conversation_id: Mapped[str] = mapped_column(
         ForeignKey("conversations.id"),
@@ -105,6 +106,11 @@ class ConversationEvent(
 
     child_events: Mapped[list[ConversationEvent]] = relationship(
         back_populates="parent_event",
+    )
+
+    agent_actions: Mapped[list[AgentAction]] = relationship(
+        back_populates="event",
+        cascade="all, delete-orphan",
     )
 
     def __repr__(self) -> str:
