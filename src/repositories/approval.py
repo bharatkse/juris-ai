@@ -4,6 +4,7 @@ Approval persistence repository.
 
 from __future__ import annotations
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db.models.approval import Approval
@@ -60,10 +61,10 @@ class ApprovalRepository(
         approval_id: str,
     ) -> Approval | None:
         """
-        Retrieve an active approval entity by ID.
+        Retrieve an approval by ID.
         """
 
-        statement = self.active_select().where(
+        statement = select(self._model).where(
             self._model.id == approval_id,
         )
 

@@ -4,6 +4,7 @@ Agent action persistence repository.
 
 from __future__ import annotations
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db.models.agent_action import AgentAction
@@ -46,7 +47,9 @@ class AgentActionRepository(BaseRepository[AgentAction]):
         Persist and return an agent action entity.
         """
 
-        await self.persist(entity)
+        await self.persist(
+            entity,
+        )
 
         return entity
 
@@ -55,14 +58,16 @@ class AgentActionRepository(BaseRepository[AgentAction]):
         action_id: str,
     ) -> AgentAction | None:
         """
-        Retrieve an active agent action by ID.
+        Retrieve an agent action by ID.
         """
 
-        statement = self.active_select().where(
+        statement = select(self._model).where(
             self._model.id == action_id,
         )
 
-        result = await self._session.execute(statement)
+        result = await self._session.execute(
+            statement,
+        )
 
         return result.scalar_one_or_none()
 
@@ -71,11 +76,13 @@ class AgentActionRepository(BaseRepository[AgentAction]):
         execution_id: str,
     ) -> list[AgentAction]:
         """
-        Retrieve active agent actions belonging to an execution.
+        Retrieve agent actions belonging to an execution.
+
+        Results are ordered by creation time.
         """
 
         statement = (
-            self.active_select()
+            select(self._model)
             .where(
                 self._model.execution_id == execution_id,
             )
@@ -84,6 +91,10 @@ class AgentActionRepository(BaseRepository[AgentAction]):
             )
         )
 
-        result = await self._session.execute(statement)
+        result = await self._session.execute(
+            statement,
+        )
 
-        return list(result.scalars().all())
+        return list(
+            result.scalars().all(),
+        )

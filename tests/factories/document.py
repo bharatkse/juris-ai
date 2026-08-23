@@ -22,7 +22,7 @@ class DocumentFactory(BaseFactory):
         model = Document
 
     id = factory.LazyFunction(
-        lambda: generate_prefixed_uuid_pk("doc"),
+        lambda: generate_prefixed_uuid_pk("doct"),
     )
 
     conversation = factory.SubFactory(
