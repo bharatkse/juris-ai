@@ -1,7 +1,7 @@
 """
 AI orchestrator.
 
-Coordinates the complete AI request lifecycle.
+Coordinates the AI request lifecycle.
 """
 
 from __future__ import annotations
@@ -9,10 +9,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from src.core.dto.agent import AgentContextDTO, AgentResponseDTO
+from src.core.dto.agent_action import AgentActionRequestDTO
 from src.core.dto.conversation import ConversationDTO
 from src.core.dto.message import MessageDTO
 from src.core.enums import ExecutionStatusEnum, MessageRoleEnum
-from src.core.exceptions.execution import ExecutionError
 from src.core.logger import get_logger
 from src.observability.tracing import span
 from src.orchestration.schemas.context import (
@@ -27,17 +27,38 @@ from src.orchestration.schemas.request import OrchestratorRequest
 from src.orchestration.schemas.response import OrchestratorResponse
 
 if TYPE_CHECKING:
+    from src.authorization.service import AuthorizationService
     from src.execution.aggregation.response import ResponseAggregator
     from src.execution.executor import Executor
     from src.execution.validation.response import ResponseValidator
     from src.planning.planner import ExecutionPlanner
+    from src.services.action_workflow import ActionWorkflowService
 
 log = get_logger(__name__)
 
 
 class AIOrchestrator:
     """
-    Coordinates the complete AI request lifecycle.
+    Coordinates the AI request lifecycle.
+
+    Responsibilities:
+
+    - Build orchestration context.
+    - Authorize the user request.
+    - Create the execution plan.
+    - Execute the plan.
+    - Validate agent responses.
+    - Aggregate the execution result.
+    - Return the final response and any proposed action.
+
+    The orchestrator does not:
+
+    - persist actions,
+    - perform action authorization,
+    - create approval requests,
+    - wait for human approval,
+    - execute tools directly,
+    - resume an execution session after approval.
     """
 
     def __init__(
@@ -47,19 +68,45 @@ class AIOrchestrator:
         executor: Executor,
         validator: ResponseValidator,
         aggregator: ResponseAggregator,
+        authorization: AuthorizationService,
     ) -> None:
         self._planner = planner
         self._executor = executor
         self._validator = validator
         self._aggregator = aggregator
+        self._authorization = authorization
 
     async def handle(
         self,
         *,
         request: OrchestratorRequest,
+        action_workflow_service: ActionWorkflowService,
     ) -> OrchestratorResponse:
         """
         Execute the complete orchestration lifecycle.
+
+        Normal chat:
+
+            request
+                -> authorize request
+                -> plan
+                -> execute
+                -> validate
+                -> aggregate
+                -> response
+
+        Action:
+
+            request
+                -> authorize request
+                -> plan
+                -> execute
+                -> validate
+                -> aggregate
+                -> response + AgentActionRequestDTO
+
+        Action persistence, action authorization, and approval
+        processing are handled by ActionWorkflowService.
         """
 
         log.info(
@@ -69,6 +116,7 @@ class AIOrchestrator:
                 "request_id": str(request.request_id),
                 "conversation_id": str(request.conversation_id),
                 "user_id": str(request.user_id),
+                "event_id": request.current_event_id,
             },
         )
 
@@ -77,6 +125,7 @@ class AIOrchestrator:
             attributes={
                 "request.id": str(request.request_id),
                 "conversation.id": str(request.conversation_id),
+                "event.id": request.request_id,
             },
         ) as current_span:
             try:
@@ -94,6 +143,29 @@ class AIOrchestrator:
                         "attachment_count": len(request.attachments),
                     },
                 )
+
+                # ---------------------------------------------------------
+                # 1. Request-level authorization
+                # ---------------------------------------------------------
+
+                self._authorization.authorize_request(
+                    user_id=request.user_id,
+                    message=request.message,
+                )
+
+                log.debug(
+                    "Request authorization completed.",
+                    extra={
+                        "operation": "authorize_request",
+                        "request_id": str(request.request_id),
+                        "conversation_id": str(request.conversation_id),
+                        "user_id": str(request.user_id),
+                    },
+                )
+
+                # ---------------------------------------------------------
+                # 2. Planning
+                # ---------------------------------------------------------
 
                 execution_plan = await self._planner.create_plan(
                     context=orchestration_context,
@@ -124,34 +196,56 @@ class AIOrchestrator:
                     },
                 )
 
+                # ---------------------------------------------------------
+                # 3. Build execution context
+                # ---------------------------------------------------------
+
                 conversation = self._build_conversation(
                     request=request,
                 )
 
-                log.debug(
-                    "Execution conversation built.",
-                    extra={
-                        "operation": "build_conversation",
-                        "request_id": str(request.request_id),
-                        "conversation_id": str(request.conversation_id),
-                        "message_count": len(conversation.messages),
-                    },
-                )
-
                 context = AgentContextDTO(
+                    user_id=request.user_id,
+                    execution_id=str(request.current_event_id),
+                    thread_id=str(request.request_id),
+                    conversation_event_id=request.current_event_id,
                     uploaded_files=tuple(request.attachments),
                 )
+
+                # ---------------------------------------------------------
+                # 4. Execute reasoning workflow
+                # ---------------------------------------------------------
 
                 execution_result = await self._executor.execute(
                     request_id=request.request_id,
                     conversation=conversation,
                     plan=execution_plan,
                     context=context,
+                    action_workflow_service=action_workflow_service,
                 )
 
                 if execution_result.state.status is ExecutionStatusEnum.FAILED:
-                    raise ExecutionError(
-                        message="Execution failed.",
+                    failed_steps = [
+                        step
+                        for step in execution_result.state.steps.values()
+                        if step.status is ExecutionStatusEnum.FAILED
+                    ]
+
+                    log.error(
+                        "Execution failed.",
+                        extra={
+                            "operation": "orchestrate_execution_failed",
+                            "request_id": str(request.request_id),
+                            "conversation_id": str(request.conversation_id),
+                            "failed_steps": [
+                                {
+                                    "step_id": step.step_id,
+                                    "error": step.error,
+                                    "retry_count": step.retry_count,
+                                }
+                                for step in failed_steps
+                            ],
+                        },
                     )
 
                 log.info(
@@ -163,6 +257,10 @@ class AIOrchestrator:
                         "mode": execution_plan.mode,
                     },
                 )
+
+                # ---------------------------------------------------------
+                # 5. Extract and validate agent responses
+                # ---------------------------------------------------------
 
                 agent_responses = self._extract_agent_responses(
                     execution_result=execution_result,
@@ -182,6 +280,12 @@ class AIOrchestrator:
                     },
                 )
 
+                # ---------------------------------------------------------
+                # 6. Aggregate
+                #
+                # This produces the final draft response.
+                # ---------------------------------------------------------
+
                 aggregation_result = await self._aggregator.aggregate(
                     responses=agent_responses,
                 )
@@ -195,26 +299,45 @@ class AIOrchestrator:
                     },
                 )
 
+                # ---------------------------------------------------------
+                # 7. Build response
+                # ---------------------------------------------------------
+
+                action_request: AgentActionRequestDTO | None = execution_result.action
+
                 orchestrator_response = OrchestratorResponse(
                     conversation_id=request.conversation_id,
                     content=aggregation_result.response.content,
                     citations=aggregation_result.response.citations,
                     sources=aggregation_result.response.sources,
                     usage=aggregation_result.response.metadata.usage,
+                    action=action_request,
+                    approval=execution_result.approval,
                 )
 
+                if action_request is None:
+                    log.info(
+                        "Normal chat response completed.",
+                        extra={
+                            "operation": "orchestrate",
+                            "request_id": str(request.request_id),
+                            "conversation_id": str(request.conversation_id),
+                            "action_required": False,
+                        },
+                    )
+
+                    return orchestrator_response
+
                 log.info(
-                    "AI orchestration completed.",
+                    "Concrete action proposed.",
                     extra={
-                        "operation": "orchestrate",
+                        "operation": "action_proposed",
                         "request_id": str(request.request_id),
                         "conversation_id": str(request.conversation_id),
-                        "citation_count": len(
-                            orchestrator_response.citations,
-                        ),
-                        "source_count": len(
-                            orchestrator_response.sources,
-                        ),
+                        "event_id": request.current_event_id,
+                        "tool_name": action_request.tool_name,
+                        "action_type": action_request.action_type.value,
+                        "agent_id": action_request.agent_id,
                     },
                 )
 
@@ -230,6 +353,7 @@ class AIOrchestrator:
                         "user_id": str(request.user_id),
                     },
                 )
+
                 raise
 
     @staticmethod

@@ -15,9 +15,11 @@ from src.core.dto.agent import (
     AgentResponseDTO,
     AgentStreamChunkDTO,
 )
+from src.core.dto.agent_action import AgentActionRequestDTO
 from src.core.dto.clients.llm import LLMRequestDTO
 from src.core.dto.tool import RetrievedContentDTO, ToolRequestDTO
-from src.core.enums import MessageRoleEnum
+from src.core.enums import ActorTypeEnum, MessageRoleEnum
+from src.core.schemas.agent import AgentResponseSchema
 from src.core.schemas.message import AgentMessageSchema
 from src.tools.retrieval import RetrieverTool
 
@@ -57,20 +59,43 @@ class BaseAgent:
     ) -> AgentResponseDTO:
         """
         Execute the agent.
+
+        The LLM returns a structured agent response so that
+        concrete actions can be represented explicitly.
         """
 
         llm_request = await self._build_llm_request(
             request=request,
         )
 
-        response = await self._llm.generate(
+        response = await self._llm.generate_structured(
             request=llm_request,
+            response_model=AgentResponseSchema,
         )
+
+        action = None
+
+        if response.action is not None:
+            action = AgentActionRequestDTO(
+                execution_id=request.context.execution_id,
+                thread_id=request.context.thread_id,
+                conversation_event_id=request.context.conversation_event_id,
+                agent_id=self.metadata.name,
+                action_type=response.action.action_type,
+                actor_type=ActorTypeEnum.AGENT,
+                tool_name=response.action.tool_name,
+                target_agent_id=response.action.target_agent_id,
+                resource_type=response.action.resource_type,
+                resource_id=response.action.resource_id,
+                parameters=response.action.parameters,
+                reason=response.action.reason,
+            )
 
         return AgentResponseDTO(
             agent_name=self.metadata.name,
             content=response.content,
             metadata=response.metadata,
+            action=action,
         )
 
     async def stream(

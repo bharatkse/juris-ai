@@ -9,9 +9,10 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 
-from src.api.dependencies.auth import get_authentication_service
+from src.api.dependencies.auth import get_authentication_service, get_current_user
 from src.api.schemas.auth import LoginResponse, LogoutResponse, RefreshTokenRequest
 from src.core.response import ApiResponse
+from src.db.models.user import User
 from src.services.auth import AuthenticationService
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,8 @@ router = APIRouter(
     "/login",
     response_model=None,
     status_code=status.HTTP_200_OK,
+    summary="Authenticate user",
+    description=("Authenticate a user using email and password " "and issue a JWT access token."),
 )
 async def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
@@ -95,12 +98,10 @@ async def login(
         user.id,
     )
 
-    return ApiResponse(
-        data=LoginResponse(
-            access_token=access_token,
-            expires_in=expires_in,
-        ),
-        message="Authentication successful.",
+    return LoginResponse(
+        access_token=access_token,
+        token_type="bearer",
+        expires_in=expires_in,
     )
 
 
@@ -108,7 +109,9 @@ async def login(
     "/logout",
     response_model=None,
 )
-async def logout() -> ApiResponse[LogoutResponse]:
+async def logout(
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[LogoutResponse]:
     """
     Log out the current client.
 

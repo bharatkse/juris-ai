@@ -10,6 +10,7 @@ from typing import Annotated, Any, TypedDict
 from uuid import UUID
 
 from src.core.dto.agent import AgentContextDTO
+from src.core.dto.agent_action import AgentActionRequestDTO
 from src.core.dto.conversation import ConversationDTO
 from src.core.dto.planning import ExecutionPlanDTO
 from src.core.enums import ExecutionStatusEnum
@@ -52,11 +53,17 @@ class ExecutionGraphState(TypedDict):
 
     This allows multiple parallel nodes to safely emit updates to the
     same channels.
+
+    The action field contains only the concrete action proposed by an
+    agent. Action persistence, authorization, approval-policy evaluation,
+    and approval-request creation are handled after graph execution by
+    ExecutionSession through ActionWorkflowService.
     """
 
     request_id: UUID
 
     conversation: ConversationDTO
+
     context: AgentContextDTO
 
     plan: ExecutionPlanDTO
@@ -70,3 +77,5 @@ class ExecutionGraphState(TypedDict):
         list[ExecutionArtifactUpdate],
         add,
     ]
+
+    action: AgentActionRequestDTO | None

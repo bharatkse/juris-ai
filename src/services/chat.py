@@ -4,6 +4,7 @@ Chat service.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING
 from uuid import UUID
@@ -15,24 +16,41 @@ from src.core.enums import MessageRoleEnum
 from src.core.logger import get_logger
 from src.core.schemas.conversation import ConversationMessageSchema
 from src.core.types import ConversationEventId, ConversationId, UserId
-from src.orchestration.orchestrator import AIOrchestrator
 from src.orchestration.schemas.request import OrchestratorRequest
 from src.services.base import BaseService
-from src.services.conversation import ConversationService
-from src.services.conversation_event import ConversationEventService
 from src.services.internal_dto.chat import ChatResultDTO
 from src.services.internal_dto.stream import ChatStreamChunkDTO
 
 if TYPE_CHECKING:
     from src.core.dto.tool import ToolFileDTO
     from src.db.models.conversation import Conversation as ConversationModel
+    from src.orchestration.orchestrator import AIOrchestrator
+    from src.services.action_workflow import ActionWorkflowService
+    from src.services.conversation import ConversationService
+    from src.services.conversation_event import ConversationEventService
 
 logger = get_logger(__name__)
 
 
 class ChatService(BaseService):
     """
-    Coordinates chat interactions and owns the database transaction.
+    Coordinates chat interactions.
+
+    Responsibilities:
+    - Persist conversation events.
+    - Build the orchestration request.
+    - Delegate reasoning, planning, execution, and action workflow
+      to AIOrchestrator.
+    - Return approval-required responses without blocking.
+
+    ChatService does not:
+    - perform planning,
+    - execute agents,
+    - authorize actions directly,
+    - evaluate approval policy,
+    - prepare actions directly,
+    - execute concrete actions,
+    - wait for human approval.
     """
 
     def __init__(
@@ -42,14 +60,13 @@ class ChatService(BaseService):
         conversation_service: ConversationService,
         conversation_event_service: ConversationEventService,
         orchestrator: AIOrchestrator,
+        action_workflow_service: ActionWorkflowService,
     ) -> None:
-        super().__init__(
-            session=session,
-        )
-
+        super().__init__(session)
         self._conversation_service = conversation_service
         self._conversation_event_service = conversation_event_service
         self._orchestrator = orchestrator
+        self._action_workflow_service = action_workflow_service
 
     async def chat(
         self,
@@ -63,14 +80,7 @@ class ChatService(BaseService):
         """
         Process a chat request.
 
-        ChatService owns the transaction boundary:
-
-        1. Create the user event.
-        2. Execute orchestration.
-        3. Create the assistant event.
-        4. Commit the transaction.
-
-        Any failure rolls back the entire transaction.
+        Human approval is never awaited inside the request.
         """
 
         logger.info(
@@ -89,12 +99,20 @@ class ChatService(BaseService):
         )
 
         try:
+            # ---------------------------------------------------------
+            # 1. Persist user message
+            # ---------------------------------------------------------
+
             user_event = await self._conversation_event_service.create(
                 conversation_id=conversation.id,
                 request_id=request_id,
                 role=MessageRoleEnum.USER,
                 content=message,
             )
+
+            # ---------------------------------------------------------
+            # 2. Build orchestration request
+            # ---------------------------------------------------------
 
             orchestration_request = await self._build_chat_request(
                 conversation=conversation,
@@ -104,22 +122,41 @@ class ChatService(BaseService):
                 files=files,
             )
 
-            response = await self._orchestrator.handle(
+            # ---------------------------------------------------------
+            # 3. Delegate orchestration
+            # ---------------------------------------------------------
+
+            result = await self._orchestrator.handle(
                 request=orchestration_request,
+                action_workflow_service=self._action_workflow_service,
             )
+
+            # ---------------------------------------------------------
+            # 4. Persist assistant response
+            #
+            # The assistant event is also persisted when HITL approval
+            # is required so the approval state is available in
+            # conversation history.
+            # ---------------------------------------------------------
+
+            metadata = result.metadata.model_dump(
+                mode="json",
+            )
+
+            if result.approval is not None:
+                metadata["approval"] = result.approval.model_dump(
+                    mode="json",
+                )
 
             assistant_event = await self._conversation_event_service.create(
                 conversation_id=conversation.id,
                 request_id=request_id,
                 parent_event_id=user_event.id,
                 role=MessageRoleEnum.ASSISTANT,
-                content=response.content,
-                metadata=response.metadata.model_dump(
-                    mode="json",
-                ),
+                content=result.content,
+                metadata=metadata,
             )
 
-            # ChatService owns the transaction.
             await self.commit()
 
             logger.info(
@@ -131,6 +168,8 @@ class ChatService(BaseService):
                     "user_id": str(user_id),
                     "user_event_id": str(user_event.id),
                     "assistant_event_id": str(assistant_event.id),
+                    "action_required": result.action is not None,
+                    "approval_required": result.approval is not None,
                 },
             )
 
@@ -138,7 +177,8 @@ class ChatService(BaseService):
                 conversation=conversation,
                 user_event=user_event,
                 assistant_event=assistant_event,
-                response=response,
+                response=result,
+                approval=result.approval,
             )
 
         except Exception:
@@ -168,8 +208,8 @@ class ChatService(BaseService):
         """
         Stream a chat response.
 
-        The transaction remains open until the final assistant
-        event is persisted successfully.
+        Action processing happens inside the orchestrator after the
+        final orchestration result is produced.
         """
 
         logger.info(
@@ -205,6 +245,7 @@ class ChatService(BaseService):
 
             stream = self._orchestrator.stream(
                 request=orchestration_request,
+                action_workflow_service=self._action_workflow_service,
             )
 
             final_response: AgentResponseDTO | None = None
@@ -220,19 +261,31 @@ class ChatService(BaseService):
                     "Streaming completed without a final response.",
                 )
 
+            # ---------------------------------------------------------
+            # Persist assistant response
+            #
+            # Approval information is stored in the assistant event
+            # metadata so it is available in conversation history.
+            # ---------------------------------------------------------
+
+            metadata = final_response.metadata.model_dump(
+                mode="json",
+            )
+
+            if final_response.approval is not None:
+                metadata["approval"] = final_response.approval.model_dump(
+                    mode="json",
+                )
+
             assistant_event = await self._conversation_event_service.create(
                 conversation_id=conversation.id,
                 request_id=request_id,
                 parent_event_id=user_event.id,
                 role=MessageRoleEnum.ASSISTANT,
                 content=final_response.content,
-                metadata=final_response.metadata.model_dump(
-                    mode="json",
-                ),
+                metadata=metadata,
             )
 
-            # Commit only after the complete response has been
-            # successfully persisted.
             await self.commit()
 
             logger.info(
@@ -244,8 +297,24 @@ class ChatService(BaseService):
                     "user_id": str(user_id),
                     "user_event_id": str(user_event.id),
                     "assistant_event_id": str(assistant_event.id),
+                    "approval_required": final_response.approval is not None,
                 },
             )
+
+        except asyncio.CancelledError:
+            await self.rollback()
+
+            logger.info(
+                "Chat stream cancelled.",
+                extra={
+                    "operation": "stream_chat",
+                    "request_id": str(request_id),
+                    "conversation_id": str(conversation_id),
+                    "user_id": str(user_id),
+                },
+            )
+
+            raise
 
         except Exception:
             await self.rollback()
@@ -295,4 +364,5 @@ class ChatService(BaseService):
             message=message,
             history=history,
             attachments=files,
+            current_event_id=current_event_id,
         )

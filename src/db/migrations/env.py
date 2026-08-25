@@ -39,7 +39,7 @@ if config.config_file_name:
     fileConfig(config.config_file_name)
 
 # Use application configuration instead of alembic.ini
-config.set_main_option("sqlalchemy.url", settings.alembic_database_url)
+config.set_main_option("sqlalchemy.url", settings.database_url)
 
 # Metadata used for autogenerate
 target_metadata = Base.metadata
@@ -59,7 +59,7 @@ def run_migrations_offline() -> None:
     """Run migrations without creating a database connection."""
 
     context.configure(
-        url=settings.alembic_database_url,
+        url=settings.database_url,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},

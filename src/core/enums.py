@@ -8,6 +8,20 @@ application state explicit and type-safe.
 from enum import StrEnum
 
 
+class JWTAlgorithmEnum(StrEnum):
+    """
+    Supported JWT signing algorithms.
+    """
+
+    HS256 = "HS256"
+    HS384 = "HS384"
+    HS512 = "HS512"
+
+    RS256 = "RS256"
+    RS384 = "RS384"
+    RS512 = "RS512"
+
+
 class EnvironmentEnum(StrEnum):
     DEVELOPMENT = "development"
     STAGING = "staging"

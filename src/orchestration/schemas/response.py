@@ -7,8 +7,12 @@ orchestrator after planning, execution, validation, and aggregation.
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.core.dto.agent_action import AgentActionRequestDTO
+from src.core.enums import ApprovalStatusEnum
 from src.core.types import ConversationId
 
 
@@ -127,9 +131,26 @@ class AgentResponse(ResponsePayload):
     agent_name: str
 
 
+class ApprovalResponse(BaseModel):
+    """
+    Human approval information returned by the orchestrator.
+    """
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+    )
+
+    approval_id: str
+    status: ApprovalStatusEnum
+    expires_at: datetime
+
+
 class OrchestratorResponse(ResponsePayload):
     """
     Final response returned by the AI orchestrator.
     """
 
     conversation_id: ConversationId
+    approval: ApprovalResponse | None = None
+    action: AgentActionRequestDTO | None = None

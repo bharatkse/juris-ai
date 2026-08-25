@@ -36,10 +36,7 @@ class ConversationService(BaseService):
         session: AsyncSession,
         repository: ConversationRepository,
     ) -> None:
-        super().__init__(
-            session=session,
-        )
-
+        super().__init__(session)
         self._repository = repository
 
     async def create(

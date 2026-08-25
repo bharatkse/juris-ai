@@ -11,8 +11,18 @@ from typing import Any, Literal
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from src.core.constants import DEFAULT_APP_NAME, DEFAULT_APP_VERSION, TEST_DB_URL
-from src.core.enums import CacheBackendEnum, EnvironmentEnum, GroqModelEnum
+from src.core.constants import (
+    DEFAULT_APP_NAME,
+    DEFAULT_APP_VERSION,
+    DEFAULT_JWT_ACCESS_TOKEN_EXPIRE_MINUTES,
+    TEST_DB_URL,
+)
+from src.core.enums import (
+    CacheBackendEnum,
+    EnvironmentEnum,
+    GroqModelEnum,
+    JWTAlgorithmEnum,
+)
 
 
 class Settings(BaseSettings):
@@ -114,7 +124,7 @@ class Settings(BaseSettings):
     # External Services
     # --------------------------------------------------------------------------
     GROQ_API_KEY: SecretStr | None = None
-    GROQ_MODEL: GroqModelEnum = GroqModelEnum.LLAMA_3_3_70B
+    GROQ_MODEL: GroqModelEnum = GroqModelEnum.GPT_OSS_120B
 
     BRAVE_API_KEY: SecretStr | None = None
 
@@ -131,6 +141,13 @@ class Settings(BaseSettings):
     OTEL_EXPORTER_OTLP_ENDPOINT: str = "http://localhost:4318/v1/traces"
     OTEL_APP_VERSION: str = "0.1.0"
     OTEL_EXPORTER_OTLP_PROTOCOL: str | None = None
+
+    # --------------------------------------------------------------------------
+    # Authentication
+    # --------------------------------------------------------------------------
+    JWT_ALGORITHM: str = JWTAlgorithmEnum.HS256
+    access_token_expire_minutes: int = DEFAULT_JWT_ACCESS_TOKEN_EXPIRE_MINUTES
+    JWT_SECRET_KEY: SecretStr
 
     # --------------------------------------------------------------------------
     # Pydantic Configuration
@@ -180,7 +197,7 @@ class Settings(BaseSettings):
     # --------------------------------------------------------------------------
 
     @property
-    def database_url(self) -> str:
+    def async_database_url(self) -> str:
         if self.is_testing:
             return self.TEST_DATABASE_URL
 
@@ -195,9 +212,20 @@ class Settings(BaseSettings):
             raise NotImplementedError
 
     @property
-    def alembic_database_url(self) -> str:
+    def database_url(self) -> str:
+        if self.is_testing:
+            return self.TEST_DATABASE_URL
+
         return (
             f"postgresql+psycopg://"
+            f"{self.DB_USER}:{self.DB_PASSWORD}"
+            f"@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+        )
+
+    @property
+    def langgraph_database_url(self):
+        return (
+            f"postgresql://"
             f"{self.DB_USER}:{self.DB_PASSWORD}"
             f"@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
         )
@@ -225,6 +253,14 @@ class Settings(BaseSettings):
     @property
     def brave_api_key(self) -> str:
         return self.BRAVE_API_KEY.get_secret_value()
+
+    @property
+    def jwt_secret_key(self):
+        return self.JWT_SECRET_KEY.get_secret_value()
+
+    @property
+    def jwt_algorithm(self):
+        return self.JWT_ALGORITHM
 
     # --------------------------------------------------------------------------
     # Validation Helpers

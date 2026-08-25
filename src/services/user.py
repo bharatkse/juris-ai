@@ -33,10 +33,7 @@ class UserService(BaseService):
         repository: UserRepository,
         password_service: PasswordService,
     ) -> None:
-        super().__init__(
-            session=session,
-        )
-
+        super().__init__(session)
         self._repository = repository
         self._password_service = password_service
 

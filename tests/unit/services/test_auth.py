@@ -28,7 +28,7 @@ async def test_authenticate_returns_user_for_valid_credentials(
     )
 
     mock_user_repository.get_by_email.return_value = user
-    mock_password_service.verify_password.return_value = True
+    mock_password_service.verify.return_value = True
 
     result = await authentication_service.authenticate(
         email=user.email,
@@ -41,7 +41,7 @@ async def test_authenticate_returns_user_for_valid_credentials(
         user.email,
     )
 
-    mock_password_service.verify_password.assert_called_once_with(
+    mock_password_service.verify.assert_called_once_with(
         "correct-password",
         user.password_hash,
     )
@@ -68,7 +68,7 @@ async def test_authenticate_raises_when_user_does_not_exist(
             password="password",
         )
 
-    mock_password_service.verify_password.assert_not_called()
+    mock_password_service.verify.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -86,7 +86,7 @@ async def test_authenticate_raises_for_invalid_password(
     )
 
     mock_user_repository.get_by_email.return_value = user
-    mock_password_service.verify_password.return_value = False
+    mock_password_service.verify.return_value = False
 
     with pytest.raises(
         ValueError,
@@ -97,7 +97,7 @@ async def test_authenticate_raises_for_invalid_password(
             password="wrong-password",
         )
 
-    mock_password_service.verify_password.assert_called_once_with(
+    mock_password_service.verify.assert_called_once_with(
         "wrong-password",
         user.password_hash,
     )
@@ -118,7 +118,7 @@ async def test_authenticate_raises_for_inactive_user(
     )
 
     mock_user_repository.get_by_email.return_value = user
-    mock_password_service.verify_password.return_value = True
+    mock_password_service.verify.return_value = True
 
     with pytest.raises(
         PermissionError,
@@ -129,7 +129,7 @@ async def test_authenticate_raises_for_inactive_user(
             password="correct-password",
         )
 
-    mock_password_service.verify_password.assert_called_once_with(
+    mock_password_service.verify.assert_called_once_with(
         "correct-password",
         user.password_hash,
     )
@@ -151,7 +151,7 @@ async def test_authenticate_raises_when_password_verification_fails(
     )
 
     mock_user_repository.get_by_email.return_value = user
-    mock_password_service.verify_password.side_effect = RuntimeError(
+    mock_password_service.verify.side_effect = RuntimeError(
         "password backend unavailable",
     )
 
@@ -164,7 +164,7 @@ async def test_authenticate_raises_when_password_verification_fails(
             password="password",
         )
 
-    mock_password_service.verify_password.assert_called_once_with(
+    mock_password_service.verify.assert_called_once_with(
         "password",
         user.password_hash,
     )

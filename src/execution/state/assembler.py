@@ -4,6 +4,7 @@ Execution state assembler.
 
 from __future__ import annotations
 
+from src.core.dto.agent_action import AgentActionRequestDTO
 from src.core.enums import ExecutionStatusEnum
 from src.execution.graph.state import ExecutionGraphState
 from src.execution.schemas.memory import ExecutionMemorySchema
@@ -15,7 +16,13 @@ class ExecutionStateAssembler:
     Converts LangGraph runtime state into execution-domain state.
 
     The assembler is the boundary between LangGraph's immutable
-    update-oriented state and the execution runtime's mutable state.
+    update-oriented state and the execution runtime's domain state.
+
+    The assembler does not:
+        - authorize actions,
+        - evaluate approval policy,
+        - create approvals,
+        - execute actions.
     """
 
     def assemble_state(
@@ -80,3 +87,25 @@ class ExecutionStateAssembler:
             )
 
         return memory
+
+    def assemble_action(
+        self,
+        *,
+        graph_state: ExecutionGraphState,
+    ) -> AgentActionRequestDTO | None:
+        """
+        Return the proposed action produced by the execution graph.
+
+        This is only a proposed action. It has not been:
+
+        - persisted as an AgentAction,
+        - authorized,
+        - evaluated for HITL approval,
+        - approved,
+        - executed.
+
+        Those responsibilities belong to the action workflow and
+        approval lifecycle.
+        """
+
+        return graph_state.get("action")

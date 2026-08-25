@@ -146,7 +146,7 @@ def test_database_url_returns_postgres_url() -> None:
         LANGSMITH_TRACING_V2=False,
     )
 
-    assert settings.database_url == (
+    assert settings.async_database_url == (
         "postgresql+asyncpg://" "postgres:password" "@localhost:5432" "/legal_ai"
     )
 
@@ -166,7 +166,7 @@ def test_database_url_raises_for_production() -> None:
     with pytest.raises(
         NotImplementedError,
     ):
-        _ = settings.database_url
+        _ = settings.async_database_url
 
 
 def test_alembic_database_url() -> None:
@@ -175,7 +175,7 @@ def test_alembic_database_url() -> None:
     """
 
     settings = Settings(
-        ENVIRONMENT=EnvironmentEnum.TESTING,
+        ENVIRONMENT=EnvironmentEnum.DEVELOPMENT,
         DB_HOST="localhost",
         DB_PORT=5432,
         DB_NAME="legal_ai",
@@ -185,7 +185,7 @@ def test_alembic_database_url() -> None:
         LANGSMITH_TRACING_V2=False,
     )
 
-    assert settings.alembic_database_url == (
+    assert settings.database_url == (
         "postgresql+psycopg://" "postgres:password" "@localhost:5432/legal_ai"
     )
 
@@ -287,6 +287,7 @@ def test_validate_configuration_requires_database_configuration() -> None:
         Settings(
             ENVIRONMENT=EnvironmentEnum.DEVELOPMENT,
             SECRET_KEY="secret",
+            JWT_SECRET_KEY="jwt-secret",
             _env_file=None,
             LANGSMITH_TRACING=False,
             LANGSMITH_TRACING_V2=False,
@@ -310,6 +311,7 @@ def test_validate_configuration_requires_groq_api_key(monkeypatch) -> None:
             DB_NAME="legal_ai",
             DB_USER="postgres",
             DB_PASSWORD="password",
+            JWT_SECRET_KEY="jwt-secret",
             _env_file=None,
             LANGSMITH_TRACING=False,
             LANGSMITH_TRACING_V2=False,

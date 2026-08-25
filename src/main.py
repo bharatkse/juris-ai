@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
 from src.api.exception_handlers import register_exception_handlers
@@ -20,6 +21,7 @@ from src.core.logger import get_logger, setup_logging
 from src.core.response import ApiResponse
 from src.middleware.request_context import RequestContextMiddleware
 from src.observability.telemetry import configure_telemetry, shutdown_telemetry
+from src.runtime.composition import create_ai_orchestrator
 
 logger = get_logger(__name__)
 
@@ -79,15 +81,6 @@ async def startup() -> None:
     initialize_storage()
     initialize_observability()
 
-    #
-    # Future initialization:
-    #
-    # - Database connectivity
-    # - Database migrations
-    # - Vector database
-    # - AI model warm-up
-    #
-
     logger.info(
         "Application started successfully.",
     )
@@ -105,16 +98,29 @@ async def shutdown() -> None:
 
 @asynccontextmanager
 async def lifespan(
-    _: FastAPI,
+    app: FastAPI,
 ):
     """
-    Manage the application lifecycle.
+    Manage application lifecycle and runtime resources.
     """
 
     await startup()
 
     try:
-        yield
+        async with AsyncPostgresSaver.from_conn_string(
+            settings.langgraph_database_url,
+        ) as checkpointer:
+            await checkpointer.setup()
+
+            app.state.ai_orchestrator = create_ai_orchestrator(
+                checkpointer=checkpointer,
+            )
+
+            logger.info(
+                "AI orchestrator initialized.",
+            )
+
+            yield
 
     finally:
         await shutdown()

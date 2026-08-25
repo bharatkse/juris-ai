@@ -75,6 +75,7 @@ class ExecutionStepDTO:
     arguments: dict[str, Any] = field(
         default_factory=dict,
     )
+    # action: dict[str, Any] | None = None
 
 
 @dataclass(slots=True, frozen=True)

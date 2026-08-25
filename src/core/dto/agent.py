@@ -7,6 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from src.core.dto.agent_action import AgentActionRequestDTO
 from src.core.dto.conversation import ConversationDTO
 from src.core.dto.response import CitationDTO, SourceDTO, UsageDTO
 from src.core.dto.tool import ToolFileDTO
@@ -18,6 +19,10 @@ class AgentContextDTO:
     Runtime context supplied to an agent.
     """
 
+    user_id: str
+    execution_id: str
+    thread_id: str
+    conversation_event_id: str
     uploaded_files: tuple[
         ToolFileDTO,
         ...,
@@ -58,6 +63,7 @@ class AgentResponseDTO:
 
     content: str
     agent_name: str
+    action: AgentActionRequestDTO | None = None
     citations: tuple[CitationDTO, ...] = ()
 
     sources: tuple[SourceDTO, ...] = ()

@@ -5,7 +5,6 @@ Unit tests for agent domain models.
 from __future__ import annotations
 
 from src.core.dto.agent import (
-    AgentContextDTO,
     AgentMetadataDTO,
     AgentRequestDTO,
     AgentResponseDTO,
@@ -15,6 +14,7 @@ from src.core.dto.conversation import ConversationDTO
 from src.core.dto.message import MessageDTO
 from src.core.dto.tool import ToolFileDTO
 from src.core.enums import MessageRoleEnum
+from tests.builders.agent import build_agent_context
 
 
 def build_conversation() -> ConversationDTO:
@@ -37,7 +37,7 @@ def test_agent_context_defaults() -> None:
     It should use empty runtime context by default.
     """
 
-    context = AgentContextDTO()
+    context = build_agent_context()
 
     assert context.uploaded_files == ()
     assert context.metadata == {}
@@ -54,7 +54,7 @@ def test_agent_context_accepts_uploaded_files() -> None:
         content_type="application/pdf",
     )
 
-    context = AgentContextDTO(
+    context = build_agent_context(
         uploaded_files=(file,),
         metadata={
             "source": "test",
@@ -77,6 +77,7 @@ def test_agent_request_requires_instruction() -> None:
     request = AgentRequestDTO(
         conversation=conversation,
         instruction="Answer the user's legal question.",
+        context=build_agent_context(),
     )
 
     assert request.conversation is conversation
@@ -92,7 +93,7 @@ def test_agent_request_accepts_context() -> None:
 
     conversation = build_conversation()
 
-    context = AgentContextDTO(
+    context = build_agent_context(
         metadata={
             "source": "test",
         },

@@ -58,13 +58,14 @@ def test_get_chat_service(
     mock_chat_service: MagicMock,
 ) -> None:
     """
-    It should create a chat service.
+    It should create a chat service with all required dependencies.
     """
 
     session = MagicMock()
     conversation_service = MagicMock()
     conversation_event_service = MagicMock()
     orchestrator = MagicMock()
+    action_workflow_service = MagicMock()
 
     service = MagicMock()
 
@@ -75,6 +76,7 @@ def test_get_chat_service(
         conversation_service=conversation_service,
         conversation_event_service=conversation_event_service,
         orchestrator=orchestrator,
+        agent_action_workflow_service=action_workflow_service,
     )
 
     assert result is service
@@ -84,4 +86,5 @@ def test_get_chat_service(
         conversation_service=conversation_service,
         conversation_event_service=conversation_event_service,
         orchestrator=orchestrator,
+        action_workflow_service=action_workflow_service,
     )

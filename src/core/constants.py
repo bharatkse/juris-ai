@@ -109,8 +109,7 @@ DEFAULT_APP_VERSION = "1.0.0"
 
 # ── API ───────────────────────────────────────────────────────────────────────
 API_VERSION: str = "v1"
-API_TITLE: str = "Legal AI API"
-API_DESCRIPTION: str = "Juris AI is a modern backend service for AI-powered legal assistance"
+API_TITLE: str = "Juris AI"
 HEALTH_ENDPOINT: str = "/health"
 
 # ── Logging ───────────────────────────────────────────────────────────────────
@@ -127,3 +126,37 @@ DEFAULT_CONVERSATION_TITLE: str = "New Conversation"
 
 # Test DB Configuration
 TEST_DB_URL = "sqlite+aiosqlite:///./pytests.db"
+
+
+# Default Auth Configuration
+DEFAULT_JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+
+
+API_DESCRIPTION = """
+## Juris-AI
+
+Juris-AI is an AI-powered legal assistant API supporting:
+
+- User authentication and authorization
+- Conversation management
+- AI-powered chat
+- Document management
+- Agent orchestration
+- Human-in-the-loop approval workflows
+- Agent action authorization and execution
+
+### Authentication
+
+Protected endpoints use JWT Bearer authentication.
+
+Authenticate using:
+
+`POST /api/v1/auth/login`
+
+Then click **Authorize** in Swagger UI and provide the issued
+Bearer token.
+
+### API Version
+
+Current API version: `v1`
+"""

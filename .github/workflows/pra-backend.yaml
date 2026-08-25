@@ -30,6 +30,9 @@ on:
       GROQ_API_KEY:
         required: true
 
+      JWT_SECRET_KEY:
+        required: true
+
 # Default shell to be used for all run steps
 defaults:
   run:
@@ -45,6 +48,7 @@ jobs:
       ENVIRONMENT: ${{ inputs.app-environment }}
       SECRET_KEY: ${{ secrets.SECRET_KEY }}
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      JWT_SECRET_KEY: ${{ secrets.JWT_SECRET_KEY }}
 
     steps:
       - name: Checkout source code

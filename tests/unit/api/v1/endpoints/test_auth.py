@@ -8,12 +8,11 @@ import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from fastapi import HTTPException, status
+from fastapi import HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
 
 from src.api.schemas.auth import RefreshTokenRequest
 from src.api.v1.endpoints.auth import access_token, login, logout
-from src.core.response import ApiResponse
 from tests.factories.user import UserFactory
 
 
@@ -58,16 +57,9 @@ async def test_login_returns_authentication_response() -> None:
         service=service,
     )
 
-    assert isinstance(
-        response,
-        ApiResponse,
-    )
-    assert response.status_code == status.HTTP_200_OK
-
-    response = json.loads(response.body)["data"]
-
-    assert response["access_token"] == "access-token"
-    assert response["expires_in"] == 3600
+    assert response.access_token == "access-token"
+    assert response.token_type == "bearer"
+    assert response.expires_in == 3600
 
     service.authenticate.assert_awaited_once_with(
         email="user@example.com",

@@ -20,6 +20,7 @@ from src.core.constants import (
     HTTP_409_CONFLICT,
     HTTP_500_INTERNAL_SERVER_ERROR,
 )
+from src.core.exceptions.authorization import AuthorizationError
 from src.core.exceptions.base import AppError, DomainError
 from src.core.exceptions.database import DatabaseError
 from src.core.exceptions.httpx import (
@@ -259,3 +260,19 @@ def test_user_not_found_error() -> None:
     assert error.status_code == HTTP_404_NOT_FOUND
     assert error.error_code == "USER_NOT_FOUND"
     assert error.message == "User not found."
+
+
+def test_authorization_error_default_message() -> None:
+    error = AuthorizationError()
+
+    assert str(error) == "User is not authorized to perform this action."
+
+
+def test_authorization_error_custom_message() -> None:
+    error = AuthorizationError("User is not authorized to send emails.")
+
+    assert str(error) == "User is not authorized to send emails."
+
+
+def test_authorization_error_is_exception() -> None:
+    assert issubclass(AuthorizationError, Exception)

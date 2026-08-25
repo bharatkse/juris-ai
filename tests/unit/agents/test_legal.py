@@ -11,8 +11,26 @@ import pytest
 from src.agents.legal import LegalAgent
 from src.core.dto.message import MessageDTO
 from src.core.enums import MessageRoleEnum
+from src.core.schemas.agent import AgentResponseSchema
 from tests.builders.agent import build_agent_request
-from tests.builders.clients.llm import build_llm_response
+
+
+def build_agent_response(
+    *,
+    content: str = "Hello!",
+) -> AgentResponseSchema:
+    """
+    Build a valid structured agent response for tests.
+
+    The current AgentResponseSchema requires action to be
+    explicitly provided, even when no action is required.
+    """
+
+    return AgentResponseSchema(
+        content=content,
+        action=None,
+        metadata={},
+    )
 
 
 def test_init_sets_dependencies(
@@ -29,16 +47,18 @@ def test_init_sets_dependencies(
 
 
 @pytest.mark.asyncio
-async def test_run_calls_generate(
+async def test_run_calls_generate_structured(
     legal_agent: LegalAgent,
     mock_llm_client,
 ) -> None:
     """
-    It should invoke the LLM client.
+    It should invoke the structured LLM generation method.
     """
 
-    mock_llm_client.generate = AsyncMock(
-        return_value=build_llm_response(),
+    mock_llm_client.generate_structured = AsyncMock(
+        return_value=build_agent_response(
+            content="Hello!",
+        ),
     )
 
     request = build_agent_request(
@@ -49,7 +69,7 @@ async def test_run_calls_generate(
         request=request,
     )
 
-    mock_llm_client.generate.assert_awaited_once()
+    mock_llm_client.generate_structured.assert_awaited_once()
 
     assert response.content == "Hello!"
     assert response.agent_name == legal_agent.metadata.name
@@ -64,19 +84,19 @@ async def test_run_passes_expected_messages(
     It should build the expected LLM messages.
     """
 
-    request = build_agent_request(
-        instruction="Answer the user's legal question.",
+    mock_llm_client.generate_structured = AsyncMock(
+        return_value=build_agent_response(),
     )
 
-    mock_llm_client.generate = AsyncMock(
-        return_value=build_llm_response(),
+    request = build_agent_request(
+        instruction="Answer the user's legal question.",
     )
 
     await legal_agent.run(
         request=request,
     )
 
-    llm_request = mock_llm_client.generate.await_args.kwargs["request"]
+    llm_request = mock_llm_client.generate_structured.await_args.kwargs["request"]
 
     messages = llm_request.messages
 
@@ -96,6 +116,10 @@ async def test_run_includes_history(
     It should include conversation history.
     """
 
+    mock_llm_client.generate_structured = AsyncMock(
+        return_value=build_agent_response(),
+    )
+
     request = build_agent_request(
         instruction="Answer the current legal question.",
         messages=[
@@ -114,15 +138,11 @@ async def test_run_includes_history(
         ],
     )
 
-    mock_llm_client.generate = AsyncMock(
-        return_value=build_llm_response(),
-    )
-
     await legal_agent.run(
         request=request,
     )
 
-    llm_request = mock_llm_client.generate.await_args.kwargs["request"]
+    llm_request = mock_llm_client.generate_structured.await_args.kwargs["request"]
 
     messages = llm_request.messages
 
@@ -139,11 +159,12 @@ async def test_run_returns_agent_response(
     mock_llm_client,
 ) -> None:
     """
-    It should map the LLM response to an agent response.
+    It should map the structured LLM response
+    to an agent response.
     """
 
-    mock_llm_client.generate = AsyncMock(
-        return_value=build_llm_response(
+    mock_llm_client.generate_structured = AsyncMock(
+        return_value=build_agent_response(
             content="Legal answer",
         ),
     )
