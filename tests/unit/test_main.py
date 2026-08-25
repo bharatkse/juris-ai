@@ -5,7 +5,8 @@ Unit tests for application entry point.
 from __future__ import annotations
 
 import json
-from unittest.mock import MagicMock, patch
+from contextlib import asynccontextmanager
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -111,6 +112,8 @@ async def test_root_endpoint() -> None:
 
 
 @pytest.mark.asyncio
+@patch("src.main.create_ai_orchestrator")
+@patch("src.main.AsyncPostgresSaver.from_conn_string")
 @patch("src.main.logger")
 @patch("src.main.ensure_dir")
 @patch("src.main.setup_logging")
@@ -118,10 +121,22 @@ async def test_lifespan(
     mock_setup_logging: MagicMock,
     mock_ensure_dir: MagicMock,
     mock_log: MagicMock,
+    mock_from_conn_string: MagicMock,
+    mock_create_ai_orchestrator: MagicMock,
 ) -> None:
     """
     It should perform startup and shutdown tasks.
     """
+
+    checkpointer = AsyncMock()
+
+    @asynccontextmanager
+    async def mock_checkpointer_context(
+        connection_string: str,
+    ):
+        yield checkpointer
+
+    mock_from_conn_string.side_effect = mock_checkpointer_context
 
     app = FastAPI()
 
@@ -146,7 +161,19 @@ async def test_lifespan(
         main.settings.LOG_DIRECTORY,
     )
 
+    checkpointer.setup.assert_awaited_once_with()
+
+    mock_create_ai_orchestrator.assert_called_once_with(
+        checkpointer=checkpointer,
+    )
+
+    assert app.state.ai_orchestrator is mock_create_ai_orchestrator.return_value
+
     assert mock_log.info.call_count == 4
+
+    mock_from_conn_string.assert_called_once_with(
+        main.settings.langgraph_database_url,
+    )
 
 
 @pytest.mark.asyncio
