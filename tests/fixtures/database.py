@@ -18,26 +18,37 @@ from sqlalchemy.ext.asyncio import (
 
 from src.core.constants import TEST_DB_URL
 from src.db.base import Base
+from src.db.models.document_chunk import DocumentChunk
 
 
 @pytest_asyncio.fixture(scope="session")
 async def engine() -> AsyncGenerator[AsyncEngine, None]:
-    """
-    Create the async database engine.
-    """
-
     engine = create_async_engine(
         TEST_DB_URL,
         future=True,
     )
 
+    test_tables = [
+        table for table in Base.metadata.sorted_tables if table.name != DocumentChunk.__tablename__
+    ]
+
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(
+            lambda sync_conn: Base.metadata.create_all(
+                sync_conn,
+                tables=test_tables,
+            )
+        )
 
     yield engine
 
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+        await conn.run_sync(
+            lambda sync_conn: Base.metadata.drop_all(
+                sync_conn,
+                tables=test_tables,
+            )
+        )
 
     await engine.dispose()
 

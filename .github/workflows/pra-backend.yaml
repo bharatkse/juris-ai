@@ -20,6 +20,12 @@ on:
         required: true
         type: string
 
+      searnxg-base-url:
+        description: "Search Engine Base URL."
+        required: true
+        type: string
+        default: http://localhost
+
     secrets:
       CODECOV_TOKEN:
         required: true
@@ -49,6 +55,7 @@ jobs:
       SECRET_KEY: ${{ secrets.SECRET_KEY }}
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       JWT_SECRET_KEY: ${{ secrets.JWT_SECRET_KEY }}
+      SEARXNG_BASE_URL: ${{ inputs.searnxg-base-url }}
 
     steps:
       - name: Checkout source code

@@ -6,10 +6,13 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from src.core.dto.clients.web_search import WebSearchRequestDTO, WebSearchResponseDTO
+from src.core.dto.clients.search_engine import (
+    SearchEngineRequestDTO,
+    SearchEngineResponseDTO,
+)
 
 
-class WebSearchClient(ABC):
+class SearchClient(ABC):
     """
     Base class for all web search providers.
     """
@@ -18,8 +21,8 @@ class WebSearchClient(ABC):
     async def search(
         self,
         *,
-        request: WebSearchRequestDTO,
-    ) -> WebSearchResponseDTO:
+        request: SearchEngineRequestDTO,
+    ) -> SearchEngineResponseDTO:
         """
         Search the web.
 

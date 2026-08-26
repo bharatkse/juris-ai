@@ -77,6 +77,7 @@ class LLMProviderEnum(StrEnum):
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
     OLLAMA = "ollama"
+    LOCAL = "local"
 
 
 class GroqModelEnum(StrEnum):
@@ -84,6 +85,11 @@ class GroqModelEnum(StrEnum):
     LLAMA_3_3_70B = "llama-3.3-70b-versatile"
     GPT_OSS_120B = "openai/gpt-oss-120b"
     GPT_OSS_20B = "openai/gpt-oss-20b"
+
+
+class LLMMODELEnum(StrEnum):
+    QWEN3_4B = "qwen3:4b"
+    QWEN3_8B = "qwen3:8b"
 
 
 class AgentTypeEnum(StrEnum):

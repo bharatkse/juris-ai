@@ -30,6 +30,7 @@ def mock_llm_client() -> LLMClient:
     client.provider = LLMProviderEnum.GROQ.value
     client.model = settings.GROQ_MODEL
 
+    client.run = AsyncMock()
     client.generate = AsyncMock()
     client.stream = MagicMock()
 
@@ -42,9 +43,17 @@ def mock_retriever() -> RetrieverTool:
     Return a mocked retriever tool for agent tests.
     """
 
-    return MagicMock(
+    retriever = MagicMock(
         spec=RetrieverTool,
     )
+
+    retriever.run = AsyncMock(
+        return_value=MagicMock(
+            content=(),
+        ),
+    )
+
+    return retriever
 
 
 @pytest.fixture

@@ -10,7 +10,7 @@ from typing import final
 
 from src.core.exceptions.registry import ToolNotFoundError, ToolRegistrationError
 from src.registry.protocols import ToolRegistryProtocol
-from src.tools.base import BaseTool
+from src.tools.base import Tool
 
 
 @final
@@ -27,13 +27,13 @@ class ToolRegistry(ToolRegistryProtocol):
     ) -> None:
         self._tools: dict[
             str,
-            BaseTool,
+            Tool,
         ] = {}
 
     def register(
         self,
         *,
-        component: BaseTool,
+        component: Tool,
     ) -> None:
         """
         Register a tool.
@@ -43,7 +43,7 @@ class ToolRegistry(ToolRegistryProtocol):
                 If a tool with the same name is already registered.
         """
 
-        name = component.metadata.name
+        name = component.name
 
         if name in self._tools:
             raise ToolRegistrationError(
@@ -56,7 +56,7 @@ class ToolRegistry(ToolRegistryProtocol):
         self,
         *,
         key: str,
-    ) -> BaseTool:
+    ) -> Tool:
         """
         Resolve a tool by name.
 

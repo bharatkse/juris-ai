@@ -15,6 +15,7 @@ from src.db.mixins import PrimaryKeyMixin, TimestampMixin
 
 if TYPE_CHECKING:
     from src.db.models.conversation import Conversation
+    from src.db.models.document_chunk import DocumentChunk
 
 
 class Document(
@@ -94,4 +95,11 @@ class Document(
 
     conversation: Mapped[Conversation] = relationship(
         back_populates="documents",
+    )
+
+    chunks: Mapped[list[DocumentChunk]] = relationship(
+        "DocumentChunk",
+        back_populates="document",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )

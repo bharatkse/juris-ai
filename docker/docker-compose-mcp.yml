@@ -1,0 +1,120 @@
+services:
+
+  # -----------------------------------------------------
+  # Documents MCP server
+  # Accessible inside the network as: documents-server:8001
+  # -----------------------------------------------------
+  documents-server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+
+    container_name: juris_ai_documents_server
+    restart: unless-stopped
+
+    command: python -m src.mcp_servers.documents.server
+
+    ports:
+      - "8001:8001"
+
+    env_file:
+      - ../.env
+
+    volumes:
+      - ../src:/juris_ai/src
+
+    healthcheck:
+      test: ["CMD", "python", "-c",
+        "import socket; socket.create_connection(('localhost', 8001), timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+    networks:
+      - juris_ai_network
+
+
+  # -----------------------------------------------------
+  # Legal search MCP server
+  # Accessible inside the network as: legal-search-server:8002
+  # -----------------------------------------------------
+  legal-search-server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+
+    container_name: juris_ai_legal_search_server
+    restart: unless-stopped
+
+    command: python -m src.mcp_servers.legal_search.server
+
+    ports:
+      - "8002:8002"
+
+    env_file:
+      - ../.env
+
+    volumes:
+      - ../src:/juris_ai/src
+
+    healthcheck:
+      test: ["CMD", "python", "-c",
+        "import socket; socket.create_connection(('localhost', 8002), timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+    networks:
+      - juris_ai_network
+
+
+  # -----------------------------------------------------
+  # RAG MCP server
+  # Accessible inside the network as: rag-server:8003
+  #
+  # Built from a separate Dockerfile (docker/Dockerfile.rag) because
+  # this is the only service that needs sentence-transformers/torch —
+  # keeping that out of the api / documents / legal-search images.
+  # -----------------------------------------------------
+  rag-server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.rag
+
+    container_name: juris_ai_rag_server
+    restart: unless-stopped
+
+    command: python -m src.mcp_servers.rag.server
+
+    ports:
+      - "8003:8003"
+
+    environment:
+      DB_HOST: postgres
+
+    env_file:
+      - ../.env
+
+    volumes:
+      - ../src:/juris_ai/src
+
+    healthcheck:
+      test: ["CMD", "python", "-c",
+        "import socket; socket.create_connection(('localhost', 8003), timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s   # longer — embedding model load on first start
+
+    networks:
+      - juris_ai_network
+
+
+# ============================================================================
+# External Network — same network as docker-compose.yml / docker-compose-infra.yml
+# ============================================================================
+networks:
+  juris_ai_network:
+    external: true

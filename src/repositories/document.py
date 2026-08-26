@@ -41,7 +41,7 @@ class DocumentRepository:
 
         return document
 
-    async def get(
+    async def get_by_id(
         self,
         *,
         document_id: str,
@@ -108,3 +108,6 @@ class DocumentRepository:
             document,
         )
         await self._session.flush()
+
+    async def search(self, query, limit):
+        pass

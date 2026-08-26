@@ -183,15 +183,15 @@ async def test_get_returns_document(
 
     document = DocumentFactory.build()
 
-    mock_document_repository.get.return_value = document
+    mock_document_repository.get_by_id.return_value = document
 
-    found = await document_service.get(
+    found = await document_service.get_by_id(
         document_id=document.id,
     )
 
     assert found is document
 
-    mock_document_repository.get.assert_awaited_once_with(
+    mock_document_repository.get_by_id.assert_awaited_once_with(
         document_id=document.id,
     )
 

@@ -42,7 +42,7 @@ async def test_get_document(
         document=DocumentFactory.build(),
     )
 
-    retrieved_document = await document_repository.get(
+    retrieved_document = await document_repository.get_by_id(
         document_id=document.id,
     )
 
@@ -56,7 +56,7 @@ async def test_get_document_not_found(
     Test retrieving a missing document.
     """
 
-    document = await document_repository.get(
+    document = await document_repository.get_by_id(
         document_id="doc_missing",
     )
 
@@ -129,7 +129,7 @@ async def test_update_document(
 
     assert updated_document.status == DocumentStatusEnum.READY
 
-    retrieved_document = await document_repository.get(
+    retrieved_document = await document_repository.get_by_id(
         document_id=document.id,
     )
 
@@ -153,7 +153,7 @@ async def test_delete_document(
     )
 
     assert (
-        await document_repository.get(
+        await document_repository.get_by_id(
             document_id=document.id,
         )
         is None

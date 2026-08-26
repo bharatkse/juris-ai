@@ -33,7 +33,7 @@ concurrency:
 env:
   PYTHON_VERSION: "3.11.9"
   DEFAULT_ENVIRONMENT: "testing"
-
+  SEARXNG_BASE_URL: "http://localhost"
 
 jobs:
   # ============================================================================
@@ -48,6 +48,7 @@ jobs:
     outputs:
       python-version: ${{ steps.config.outputs.python-version }}
       app-environment: ${{ steps.config.outputs.app-environment }}
+      searnxg-base-url: ${{ steps.config.outputs.searnxg-base-url }}
 
     steps:
       - name: Configure CI
@@ -59,10 +60,12 @@ jobs:
           {
             echo "python-version=${{ env.PYTHON_VERSION }}"
             echo "app-environment=${APP_ENVIRONMENT}"
+            echo "searnxg-base-url=${SEARXNG_BASE_URL}"
           } >> "$GITHUB_OUTPUT"
 
           echo "Python Version : ${{ env.PYTHON_VERSION }}"
           echo "Environment    : ${APP_ENVIRONMENT}"
+          echo "Search Engine Base UR    : ${SEARXNG_BASE_URL}"
 
   # ============================================================================
   # GitHub Actions Validation
@@ -95,6 +98,7 @@ jobs:
     with:
       python-version: ${{ needs.ci-setup.outputs.python-version }}
       app-environment: ${{ needs.ci-setup.outputs.app-environment }}
+      searnxg-base-url: ${{ needs.ci-setup.outputs.searnxg-base-url }}
       working-directory: .
     secrets: inherit
 

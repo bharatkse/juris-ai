@@ -1,159 +1,75 @@
 """
-Knowledge retrieval tool.
+Retrieval tool.
+
+A singleton, built once at startup alongside HybridRetriever's
+embedding/reranker models (factories/rag.py) — same lifetime as the
+rest of the tool registry. allowed_document_ids is read from
+request_context at execute()-time, NOT bound at construction — a
+singleton tool cannot hold a fixed per-request ACL value without
+leaking one requester's permissions onto every subsequent request.
+
+Still never exposed as an execute() parameter an LLM could set: it
+comes from src.core.request_context, populated server-side by
+middleware before the agent ever runs, invisible to and unsettable by
+the model.
 """
 
 from __future__ import annotations
 
-import asyncio
-
-from src.core.dto.tool import ToolMetadataDTO, ToolRequestDTO, ToolResponseDTO
 from src.core.logger import get_logger
-from src.tools.base import BaseTool
-from src.tools.parser import ParserTool
-from src.tools.web_search import WebSearchTool
+from src.core.request_context import get_request_context
+from src.rag.hybrid_retriever import HybridRetriever
+from src.tools.base import Tool
 
-logger = get_logger(__name__)
+log = get_logger(__name__)
 
 
-class RetrieverTool(BaseTool):
+class RetrieverTool(Tool):
     """
-    Retrieve relevant knowledge for the current request.
-
-    The retriever combines multiple independent knowledge sources.
-    Failure of one source must not prevent other sources from
-    returning results.
+    Retrieval tool backed by the hybrid (vector + keyword + rerank)
+    pipeline.
     """
 
-    metadata = ToolMetadataDTO(
-        name="retriever",
-        description=(
-            "Retrieve relevant information from uploaded "
-            "documents and external knowledge sources."
-        ),
+    name = "retriever"
+    description = (
+        "Retrieve relevant document chunks for a query using hybrid "
+        "search (semantic + keyword) with reranking, over indexed "
+        "contracts and legal documents."
     )
 
-    def __init__(
-        self,
-        *,
-        parser_tool: ParserTool,
-        web_search_tool: WebSearchTool,
-    ) -> None:
-        self._parser = parser_tool
-        self._web_search = web_search_tool
+    def __init__(self, *, hybrid_retriever: HybridRetriever) -> None:
+        self._retriever = hybrid_retriever
 
-    async def run(
-        self,
-        *,
-        request: ToolRequestDTO,
-    ) -> ToolResponseDTO:
-        """
-        Retrieve relevant information from all available sources.
+    async def execute(self, *, query: str, top_k: int = 5) -> str:
+        log.debug("RetrieverTool.execute(query=%r, top_k=%d).", query, top_k)
 
-        Individual source failures are isolated so that a failure
-        in one source does not prevent other sources from returning
-        useful information.
-        """
+        allowed_document_ids = get_request_context().allowed_document_ids
 
-        document_result, web_result = await asyncio.gather(
-            self._retrieve_documents(
-                request=request,
-            ),
-            self._retrieve_web(
-                request=request,
-            ),
-            return_exceptions=True,
-        )
-
-        responses: list[ToolResponseDTO] = []
-
-        if isinstance(
-            document_result,
-            ToolResponseDTO,
-        ):
-            responses.append(document_result)
-        else:
-            logger.warning(
-                "Document retrieval failed.",
-                extra={
-                    "operation": "retrieve_documents",
-                    "error": str(document_result),
-                },
+        try:
+            results = await self._retriever.retrieve(
+                query=query,
+                top_k=top_k,
+                allowed_document_ids=allowed_document_ids,
             )
 
-        if isinstance(
-            web_result,
-            ToolResponseDTO,
-        ):
-            responses.append(web_result)
-        else:
-            logger.warning(
-                "Web retrieval failed.",
-                extra={
-                    "operation": "retrieve_web",
-                    "error": str(web_result),
-                },
-            )
+        except Exception:
+            # log.exception alone doesn't page anyone — record_metric
+            # feeds the same dashboards/alerting online_sampler.py
+            # already writes to, so a spike in retrieval failures is
+            # visible without someone having to be watching logs live.
+            from src.observability.metrics import record_metric
 
-        return self._merge_responses(
-            responses=responses,
-        )
+            log.exception("Retrieval failed for query=%r.", query)
+            record_metric("tool.retriever.error", 1, tags={"query_len": str(len(query))})
+            return "Retrieval failed — please try again."
 
-    @staticmethod
-    def _merge_responses(
-        *,
-        responses: list[ToolResponseDTO],
-    ) -> ToolResponseDTO:
-        """
-        Merge successful source responses.
-        """
+        if not results:
+            return "No relevant content found."
 
-        content: list[str] = []
-        metadata: dict = {}
+        lines = [
+            f"[{chunk.document_id} / chunk {chunk.metadata.get('chunk_index')}] "
+            f"(relevance={score:.3f})\n{chunk.text}"
+            for chunk, score in results
+        ]
 
-        for response in responses:
-            content.extend(
-                response.content,
-            )
-            metadata.update(
-                response.metadata,
-            )
-
-        return ToolResponseDTO(
-            content=tuple(content),
-            metadata=metadata,
-        )
-
-    async def _retrieve_documents(
-        self,
-        *,
-        request: ToolRequestDTO,
-    ) -> ToolResponseDTO:
-        """
-        Retrieve information from uploaded documents.
-        """
-
-        if not request.uploaded_files:
-            return ToolResponseDTO()
-
-        return await self._parser.run(
-            request=request,
-        )
-
-    async def _retrieve_web(
-        self,
-        *,
-        request: ToolRequestDTO,
-    ) -> ToolResponseDTO:
-        """
-        Retrieve information from the public web.
-        """
-
-        if not request.parameters.get(
-            "web_search",
-            True,
-        ):
-            return ToolResponseDTO()
-
-        return await self._web_search.run(
-            request=request,
-        )
+        return "\n\n".join(lines)

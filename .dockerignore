@@ -36,13 +36,13 @@ htmlcov/
 .gitignore
 .github/
 
-# Environment files (never bake secrets into image)
+# Environment files
 .env
 .env.*
 !.env.example
 
-# Data directories (mounted as volumes at runtime)
-data/
+# Docker runtime volumes
+docker/.volumes/
 
 # Logs
 logs/
@@ -58,6 +58,3 @@ tests/
 # Local scripts output
 *.log
 *.tmp
-
-postgres-init/
-localstack-init/

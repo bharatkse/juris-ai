@@ -118,7 +118,7 @@ class DocumentService(BaseService):
 
             raise
 
-    async def get(
+    async def get_by_id(
         self,
         *,
         document_id: str,
@@ -127,7 +127,7 @@ class DocumentService(BaseService):
         Retrieve a document.
         """
 
-        return await self._repository.get(
+        return await self._repository.get_by_id(
             document_id=document_id,
         )
 

@@ -9,7 +9,9 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.authorization.approval_lifecycle.protocols import ApprovalLifecycleProtocol
+from src.authorization.approval_lifecycle.protocols import (
+    ApprovalLifecycleServiceProtocol,
+)
 from src.core.dto.agent_action import AgentActionResponseDTO
 from src.core.dto.approval import (
     ApprovalDecisionRequestDTO,
@@ -32,7 +34,7 @@ from src.services.base import BaseService
 logger = get_logger(__name__)
 
 
-class ApprovalLifecycleService(BaseService, ApprovalLifecycleProtocol):
+class ApprovalLifecycleService(BaseService, ApprovalLifecycleServiceProtocol):
     """
     Application service for the complete human approval lifecycle.
 
