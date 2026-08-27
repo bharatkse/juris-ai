@@ -23,7 +23,7 @@ from typing import Protocol, TypeVar, runtime_checkable
 
 from src.agents.base import BaseAgent
 from src.clients.llm.base import LLMClient
-from src.tools.base import BaseTool
+from src.tools.base import Tool
 
 T = TypeVar("T")
 
@@ -101,7 +101,7 @@ class AgentRegistryProtocol(
 
 @runtime_checkable
 class ToolRegistryProtocol(
-    Registry[BaseTool],
+    Registry[Tool],
     Protocol,
 ):
     """

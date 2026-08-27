@@ -30,8 +30,8 @@ package-mode = false
 # -------------------------------------------------
 [tool.poetry.dependencies]
 # Web API framework and ASGI server
-fastapi = "^0.111.0"
-uvicorn = { extras = ["standard"], version = "^0.29.0" }
+fastapi = "^0.116.0"
+uvicorn = { extras = ["standard"], version = "^0.31.1" }
 
 # Authentication and password hashing
 pwdlib = { extras = ["argon2"], version = "^0.3.0" }
@@ -40,7 +40,7 @@ pwdlib = { extras = ["argon2"], version = "^0.3.0" }
 python-multipart = "^0.0.9"
 
 # Data validation and application configuration
-pydantic = "^2.7.1"
+pydantic = { version = "^2.7.1", extras = ["email"] }
 pydantic-settings = "^2.2.1"
 python-dotenv = "^1.0.1"
 
@@ -56,12 +56,26 @@ alembic = "^1.13.1"
 pypdf = "^6.15.0"
 python-docx = "^1.2.0"
 
-# # Vector database for semantic search
+# Embeddings / Vector Search
 # # Replace with `faiss-gpu` when running on CUDA-enabled systems.
 # faiss-cpu = "^1.8.0"
+# SQLAlchemy Vector type + cosine_distance()
+pgvector = ">=0.3,<1.0"
+
+# embedding model (BAAI/bge-small-en-v1.5)
+#   + reranker (BAAI/bge-reranker-base)
+sentence-transformers = "5.1.2"
+onnxruntime = "^1.22"
 
 # Large Language Model (LLM) provider
 groq = "^1.5.0"
+
+# Local LLM Provider
+ollama = "^0.6.2"
+
+
+# MCP
+mcp = { extras = ["cli"], version = "^2.1.0" }
 
 # LLM Provider SDK
 # openai = "^1.30.1"
@@ -79,6 +93,7 @@ redis = "^5.0.4"
 # Async Utilities and HTTP Client
 aiofiles = "^23.2.1"
 httpx = { extras = ["http2"], version = "^0.28.1" }
+trafilatura = "^2.0.0"
 
 # Optional AWS SDK
 # Required only when using S3 as the storage backend.
@@ -91,6 +106,11 @@ opentelemetry-exporter-otlp-proto-http = "^1.44.0"
 opentelemetry-exporter-otlp = "^1.44.0"
 opentelemetry-instrumentation-fastapi = "^0.65b0"
 langsmith = "^0.10.17"
+
+[tool.poetry.group.eval.dependencies]
+ragas = "^0.2"
+datasets = "^2.20"
+
 
 # -------------------------------------------------
 # Development Dependencies

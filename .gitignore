@@ -206,11 +206,9 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
-# LocalStack
-.localstack/
-localstack-data/
-postgres-init/
-localstack-init/
+# Docker volumes and mounted dirs
+docker/.volumes/
+docker/.init/
 
 # SAM CLI
 .sam/

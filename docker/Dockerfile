@@ -1,44 +1,68 @@
-FROM python:3.11-slim
+# ==============================================================================
+# Stage 1: Build Stage (Builder)
+# ==============================================================================
+FROM python:3.11-slim AS builder
 
-# Project root inside container
+# Set WORKDIR to /juris_ai so virtualenv paths match the runtime container
 WORKDIR /juris_ai
 
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONPATH=/juris_ai
+ENV POETRY_VIRTUALENVS_IN_PROJECT=true
 
-# System deps (psycopg)
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy dependency files first (cache-friendly)
+RUN pip install --no-cache-dir poetry
+
 COPY pyproject.toml poetry.lock* ./
 
-RUN pip install --no-cache-dir poetry \
-    && poetry config virtualenvs.create false \
-    && poetry install --no-interaction --no-ansi
-
-# Copy application code
-COPY src /juris_ai/src
-COPY alembic.ini /juris_ai/alembic.ini
-
-# Create directories used at runtime
-# RUN mkdir -p /juris_ai/uploads /juris_ai/chroma_db
-
-# Create required directories
-RUN mkdir -p data/raw data/db data/vector_db data/cache logs
+# Install all dependencies into /juris_ai/.venv
+RUN poetry install --no-interaction --no-ansi --no-root
 
 
+# ==============================================================================
+# Stage 2: Final Runtime Stage
+# ==============================================================================
+FROM python:3.11-slim AS runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/juris_ai \
+    PATH="/juris_ai/.venv/bin:$PATH" \
+    POETRY_VIRTUALENVS_IN_PROJECT=true
+
+WORKDIR /juris_ai
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    libpq-dev \
+    libpq5 \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir poetry
+
+# Create non-root user and runtime directories
 RUN useradd -m -u 1000 appuser \
+    && mkdir -p data/raw data/db data/vector_db data/cache logs \
     && chown -R appuser:appuser /juris_ai
+
+# Copy virtualenv from builder (paths now match /juris_ai/.venv)
+COPY --from=builder --chown=appuser:appuser /juris_ai/.venv /juris_ai/.venv
+
+# Copy project definition files
+COPY --chown=appuser:appuser pyproject.toml poetry.lock* ./
+
+# Copy source code and config
+COPY --chown=appuser:appuser alembic.ini ./alembic.ini
+COPY --chown=appuser:appuser src ./src
+
 USER appuser
 
 EXPOSE 8000
 
-# Healthcheck used by Docker / Compose
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health', timeout=5)"
 
-CMD ["uvicorn","src.main:app","--host","0.0.0.0","--port","8000","--reload","--reload-dir","/juris_ai/src"]
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]

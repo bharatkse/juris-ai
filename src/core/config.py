@@ -22,6 +22,8 @@ from src.core.enums import (
     EnvironmentEnum,
     GroqModelEnum,
     JWTAlgorithmEnum,
+    LLMMODELEnum,
+    LLMProviderEnum,
 )
 
 
@@ -119,6 +121,24 @@ class Settings(BaseSettings):
     ENABLE_DOCS: bool = True
 
     CORS_ORIGINS: list[str] = ["*"]
+
+    # --------------------------------------------------------------------------
+    # Local LLM Configuration
+    # --------------------------------------------------------------------------
+
+    LLM_LOCAL: str = LLMProviderEnum.LOCAL
+    LLM_LOCAL_BASE_URL: str | None = None
+    LLM_LOCAL_MODEL: str = LLMMODELEnum.QWEN3_8B
+
+    # --------------------------------------------------------------------------
+    # Search Engine
+    # --------------------------------------------------------------------------
+    SEARXNG_BASE_URL: str
+    mcp_rag_server_url: str = "http://searxng:8080"
+    web_research_max_concurrency: int = 10
+    web_research_fetch_timeout_seconds: int = 10
+    web_research_max_chars_per_page: int = 2000
+    rag_min_rerank_score: float = 0.5
 
     # --------------------------------------------------------------------------
     # External Services
@@ -261,6 +281,10 @@ class Settings(BaseSettings):
     @property
     def jwt_algorithm(self):
         return self.JWT_ALGORITHM
+
+    @property
+    def searxng_base_url(self):
+        return self.SEARXNG_BASE_URL
 
     # --------------------------------------------------------------------------
     # Validation Helpers

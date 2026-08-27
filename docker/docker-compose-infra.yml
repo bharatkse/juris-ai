@@ -16,6 +16,7 @@ services:
       - "--config=/etc/otelcol-contrib/config.yaml"
 
     volumes:
+      # Source-controlled configuration
       - ../infrastructure/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
 
     ports:
@@ -49,8 +50,11 @@ services:
       - ../.env
 
     volumes:
+      # Source-controlled configuration
       - ../infrastructure/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - prometheus_data:/prometheus
+
+      # Persistent Prometheus TSDB data
+      - ./.volumes/prometheus:/prometheus
 
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
@@ -73,8 +77,11 @@ services:
       - "-config.file=/etc/tempo/tempo.yaml"
 
     volumes:
+      # Source-controlled configuration
       - ../infrastructure/tempo.yaml:/etc/tempo/tempo.yaml:ro
-      - tempo_data:/var/tempo
+
+      # Persistent Tempo trace data
+      - ./.volumes/tempo:/var/tempo
 
     ports:
       - "3200:3200"   # Tempo HTTP API
@@ -96,7 +103,8 @@ services:
       - "3000:3000"
 
     volumes:
-      - grafana_data:/var/lib/grafana
+      # Persistent Grafana state
+      - ./.volumes/grafana:/var/lib/grafana
 
     depends_on:
       prometheus:
@@ -106,16 +114,6 @@ services:
 
     networks:
       - juris_ai_network
-
-
-# ============================================================================
-# Persistent volumes
-# ============================================================================
-
-volumes:
-  prometheus_data:
-  grafana_data:
-  tempo_data:
 
 
 # ============================================================================

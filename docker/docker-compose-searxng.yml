@@ -1,0 +1,38 @@
+services:
+  # -----------------------------------------------------
+  # SearXNG — self-hosted meta-search (google/bing/yahoo)
+  # Accessible inside the network as: searxng:8080
+  # NOT exposed to host by default — internal-only, called
+  # directly via httpx from the api container (see
+  # clients/search/searxng.py). Add a ports: mapping only if
+  # you need to hit it from your own browser for debugging.
+  # -----------------------------------------------------
+  searxng:
+    image: searxng/searxng:latest
+    container_name: juris_ai_searxng
+    restart: unless-stopped
+
+    volumes:
+      - ./docker/searxng/settings.yml:/etc/searxng/settings.yml:ro
+
+    environment:
+      SEARXNG_BASE_URL: http://searxng:8080/
+
+    healthcheck:
+      test: ["CMD", "python3", "-c",
+        "import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz')"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+    networks:
+      - juris_ai_network
+
+# ============================================================================
+# Shared Docker network
+# ============================================================================
+
+networks:
+  juris_ai_network:
+    external: true

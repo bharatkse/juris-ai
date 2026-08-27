@@ -1,0 +1,24 @@
+services:
+
+  # -----------------------------------------------------
+  # Ollama — local LLM inference
+  # Accessible inside the network as: ollama:11434
+  # Accessible from host as:          localhost:11434
+  # -----------------------------------------------------
+  ollama:
+    image: ollama/ollama:latest
+    container_name: juris_ai_ollama
+    restart: unless-stopped
+
+    ports:
+      - "11434:11434"
+
+    volumes:
+      - ./.volumes/ollama:/root/.ollama
+
+    networks:
+      - juris_ai_network
+
+networks:
+  juris_ai_network:
+    external: true

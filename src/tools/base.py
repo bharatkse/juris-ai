@@ -1,42 +1,48 @@
 """
-Base tool contract.
+Tool base class.
 
-Defines the common interface implemented by all AI tools.
+Every tool in this package (document/, messaging/, search_engine/,
+retrieval.py) subclasses this. Kept deliberately minimal — name,
+description, and a single async execute() — matching the project's
+"plain, auditable code paths" preference over a heavier tool-calling
+framework.
 
-A tool performs a single, well-defined operation on behalf of an AI
-agent. Tools are stateless and reusable across multiple agents.
+Read-only vs. side-effecting is NOT distinguished by the type system
+here on purpose: that distinction is enforced by RBACService
+(check_action) and, for side-effecting actions, by the approval
+lifecycle — not by the Tool class itself. See messaging/email.py and
+messaging/slack.py for how send/post methods sit outside execute()
+and require an approval_token, precisely so a plain agent tool-loop
+can't reach them unchecked.
 """
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import Any
 
-from src.core.dto.tool import ToolMetadataDTO, ToolRequestDTO, ToolResponseDTO
 
-
-class BaseTool(ABC):
+class Tool(ABC):
     """
-    Base class for all AI tools.
-
-    Tools are singleton, stateless application services.
+    Abstract base for all agent-callable tools.
     """
 
-    metadata: ToolMetadataDTO
+    name: str
+    description: str
 
     @abstractmethod
-    async def run(
-        self,
-        *,
-        request: ToolRequestDTO,
-    ) -> ToolResponseDTO:
+    async def execute(self, **kwargs: Any) -> str:
         """
-        Execute the tool.
+        Run the tool and return a string result suitable for
+        inclusion in an LLM prompt.
 
-        Args:
-            request:
-                Tool execution request.
-
-        Returns:
-            Tool execution response.
+        Tools with additional gated methods (e.g. EmailTool.send,
+        SlackTool.post) intentionally do NOT route those through
+        execute() — execute() is the surface reachable from an
+        ordinary agent tool-loop; gated actions require an explicit,
+        separate call with an approval token.
         """
         raise NotImplementedError
+
+    def __repr__(self) -> str:
+        return f"<{self.__class__.__name__} name={self.name!r}>"

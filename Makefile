@@ -91,6 +91,7 @@ STACK_NAME :=
 TEMPLATE  :=
 
 STACK_DEPLOY := main
+LLM_MODEL ?= qwen3:4b
 
 # ============================================================================
 # Docker Configuration
@@ -104,6 +105,8 @@ DOCKER_COMPOSE := docker compose \
 DOCKER_COMPOSE_MAIN_FILE       := docker/docker-compose.yml
 DOCKER_COMPOSE_LOCALSTACK_FILE := docker/docker-compose-localstack.yml
 DOCKER_COMPOSE_INFRA_FILE      := docker/docker-compose-infra.yml
+DOCKER_COMPOSE_LLM_FILE        := docker/docker-compose-llm.yml
+DOCKER_COMPOSE_SEARCHXNG_FILE  := docker/docker-compose-searxng.yml
 
 # Complete local Compose definition.
 #
@@ -113,7 +116,9 @@ DOCKER_COMPOSE_INFRA_FILE      := docker/docker-compose-infra.yml
 DOCKER_COMPOSE_ALL_FILES := \
 	-f $(DOCKER_COMPOSE_MAIN_FILE) \
 	-f $(DOCKER_COMPOSE_LOCALSTACK_FILE) \
-	-f $(DOCKER_COMPOSE_INFRA_FILE)
+	-f $(DOCKER_COMPOSE_INFRA_FILE) \
+	-f $(DOCKER_COMPOSE_LLM_FILE) \
+	-f $(DOCKER_COMPOSE_SEARCHXNG_FILE)
 
 LOCALSTACK_APP_CONTAINER := localstack
 API_APP_CONTAINER        := api
@@ -133,7 +138,7 @@ ifeq ($(MODE),dev)
     COMPOSE_FILES  := -f $(DOCKER_COMPOSE_MAIN_FILE)
     APP_CONTAINERS := $(API_APP_CONTAINER)
   else ifeq ($(FILES),both)
-    COMPOSE_FILES  := -f $(DOCKER_COMPOSE_LOCALSTACK_FILE) -f $(DOCKER_COMPOSE_MAIN_FILE)
+    COMPOSE_FILES  := -f $(DOCKER_COMPOSE_LOCALSTACK_FILE) -f $(DOCKER_COMPOSE_LLM_FILE) -f $(DOCKER_COMPOSE_MAIN_FILE) -f $(DOCKER_COMPOSE_SEARCHXNG_FILE)
     APP_CONTAINERS := $(API_APP_CONTAINER)
   else
 	COMPOSE_FILES  := -f $(DOCKER_COMPOSE_LOCALSTACK_FILE)
@@ -379,6 +384,54 @@ infra-ps: ## Show observability infrastructure containers
 	  otel-collector \
 	  prometheus \
 	  grafana
+
+# ============================================================================
+# Docker - LLM Infrastructure
+#
+# Services:
+#   - Ollama
+#
+# Ollama provides local LLM inference for Juris-AI.
+# The LLM infrastructure has an independent lifecycle from the application.
+# ============================================================================
+
+.PHONY: llm-build llm-up llm-down llm-restart llm-logs llm-ps llm-pull
+
+llm-build: docker-networks ## Pull LLM infrastructure images
+	@$(DOCKER_COMPOSE) $(DOCKER_COMPOSE_LLM_FILE) \
+	  pull \
+	  ollama
+
+llm-up: docker-networks ## Start Ollama and ensure the configured model is available
+	@$(DOCKER_COMPOSE) $(DOCKER_COMPOSE_LLM_FILE) \
+	  up -d \
+	  ollama
+	@$(MAKE) llm-pull
+
+llm-pull: ## Pull the configured local LLM model into Ollama
+	@echo "Pulling Ollama model: $(LLM_MODEL)"
+	@docker exec juris_ai_ollama \
+	  ollama pull $(LLM_MODEL)
+
+llm-down: ## Stop Ollama LLM infrastructure
+	@$(DOCKER_COMPOSE) $(DOCKER_COMPOSE_LLM_FILE) \
+	  stop \
+	  ollama
+
+llm-restart: ## Restart Ollama LLM infrastructure
+	@$(DOCKER_COMPOSE) $(DOCKER_COMPOSE_LLM_FILE) \
+	  restart \
+	  ollama
+
+llm-logs: ## Follow Ollama LLM infrastructure logs
+	@$(DOCKER_COMPOSE) $(DOCKER_COMPOSE_LLM_FILE) \
+	  logs -f \
+	  ollama
+
+llm-ps: ## Show Ollama LLM infrastructure container
+	@$(DOCKER_COMPOSE) $(DOCKER_COMPOSE_LLM_FILE) \
+	  ps \
+	  ollama
 
 # ============================================================================
 # Poetry / Python
@@ -693,7 +746,7 @@ dev: ## Start complete local development environment
 .PHONY: project-tree
 
 project-tree: ## Show current project directory
-	tree -a -I '__pycache__|*.pyc|.git|.pytest_cache|.venv|.vscode|.aws-sam|localstack*|node_modules|htmlcov|*.egg-info|dist|build|tests|.ruff_cache|.mypy_cache'
+	tree -a -I '__pycache__|*.pyc|.git|.pytest_cache|.volumes|.venv|.vscode|.aws-sam|localstack*|node_modules|htmlcov|*.egg-info|dist|build|tests|.ruff_cache|.mypy_cache'
 
 # ============================================================================
 # Help

@@ -1,31 +1,53 @@
 services:
 
+  # -----------------------------------------------------
+  # Redis — application cache / execution state
+  # Accessible inside the network as: redis:6379
+  # Accessible from host as:          localhost:6379
+  # -----------------------------------------------------
   redis:
     image: redis:7-alpine
-    container_name: legal_ai_redis
+    container_name: juris_ai_redis
     restart: unless-stopped
+
     ports:
       - "6379:6379"
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+
+    command:
+      redis-server
+      --appendonly yes
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+
     volumes:
-      - redis_data:/data
+      - ./.volumes/redis:/data
+
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
+
     networks:
       - juris_ai_network
 
+
+  # -----------------------------------------------------
   # FastAPI API service
+  # Accessible from host as: localhost:8001
+  # Accessible inside the network as: api:8000
+  # -----------------------------------------------------
   api:
     build:
       context: ..
       dockerfile: docker/Dockerfile
+
     container_name: juris_ai_api
     restart: unless-stopped
+
     ports:
       - "8001:8000"
+
     environment:
       DB_HOST: postgres
 
@@ -60,10 +82,9 @@ services:
       - juris_ai_network
 
 
-volumes:
-  redis_data:
-
+# ============================================================================
+# External Network
+# ============================================================================
 networks:
   juris_ai_network:
-    # driver: bridge
     external: true

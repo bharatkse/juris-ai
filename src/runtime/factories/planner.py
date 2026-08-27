@@ -16,6 +16,7 @@ No business logic belongs in this module.
 
 from __future__ import annotations
 
+from src.core.enums import LLMProviderEnum
 from src.planning.llm_planner import LLMPlanGenerator
 from src.planning.planner import ExecutionPlanner
 from src.planning.prompts.planning import PlanningPromptBuilder
@@ -28,7 +29,7 @@ def create_planner(*, clients: ClientContainer) -> ExecutionPlanner:
     return ExecutionPlanner(
         template_registry=PlanTemplateRegistry(),
         llm_planner=LLMPlanGenerator(
-            llm_client=clients.llm_client,
+            llm_client=clients.llm_resolver.get(LLMProviderEnum.LOCAL),
             prompt_builder=PlanningPromptBuilder(),
         ),
         validator=ExecutionPlanValidator(),

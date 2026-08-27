@@ -6,9 +6,10 @@ services:
   # Accessible from host as:          localhost:5432
   # -----------------------------------------------------
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     container_name: juris_ai_postgres
     restart: unless-stopped
+
     env_file:
       - ../.env
 
@@ -21,12 +22,15 @@ services:
       - "5432:5432"
 
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-      # Drop any *.sql / *.sh init scripts here — runs on first boot only
-      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+      - ./.volumes/postgres:/var/lib/postgresql/data
+      - ./.init/postgres:/docker-entrypoint-initdb.d:ro
 
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-juris} -d ${DB_NAME:-jurisai}"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${DB_USER:-juris} -d ${DB_NAME:-jurisai}"
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -38,10 +42,10 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '1.0'
+          cpus: "1.0"
           memory: 512M
         reservations:
-          cpus: '0.25'
+          cpus: "0.25"
           memory: 128M
 
 
@@ -53,13 +57,14 @@ services:
     image: localstack/localstack:4.12.0
     container_name: juris_ai_localstack
     restart: unless-stopped
+
     depends_on:
       postgres:
         condition: service_healthy
 
     ports:
-      - "4566:4566"       # edge port for AWS SDK
-      - "4510-4559:4510-4559"  # service ports
+      - "4566:4566"
+      - "4510-4559:4510-4559"
 
     environment:
       # --------------------
@@ -71,7 +76,7 @@ services:
       DOCKER_HOST: unix:///var/run/docker.sock
 
       # --------------------
-      # AWS SDK visibility (CRITICAL)
+      # AWS SDK visibility
       # Visible to Lambda containers
       # --------------------
       AWS_ENDPOINT_URL: http://localstack:4566
@@ -81,12 +86,23 @@ services:
       # --------------------
       # Enabled services
       # --------------------
-      SERVICES: s3,apigateway,cloudformation,logs,iam,sts,cloudwatch,secretsmanager,ssm,cognito-idp,ecs,elasticache,ec2
+      SERVICES: >-
+        s3,
+        apigateway,
+        cloudformation,
+        logs,
+        iam,
+        sts,
+        cloudwatch,
+        secretsmanager,
+        ssm,
+        cognito-idp,
+        ecs,
+        elasticache,
+        ec2
 
       # --------------------
-      # Seed the DB connection string into Secrets Manager
-      # so the app reads it exactly as it would in AWS.
-      # The bootstrap script below fires after LocalStack is healthy.
+      # Seed DB connection string into Secrets Manager
       # --------------------
       DB_USER: ${DB_USER:-juris}
       DB_PASSWORD: ${DB_PASSWORD:-jurispassword}
@@ -102,13 +118,19 @@ services:
       ENFORCE_IAM_POLICIES: "false"
 
     volumes:
-      - ./localstack-data:/var/lib/localstack
+      - ./.volumes/localstack:/var/lib/localstack
       - /var/run/docker.sock:/var/run/docker.sock:z
-      # Bootstrap script — seeds SSM params + Secrets Manager on startup
-      - ./localstack-init:/etc/localstack/init/ready.d:ro
+      # Initialization scripts — source controlled
+      - ./.init/localstack:/etc/localstack/init/ready.d:ro
 
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      test:
+        [
+          "CMD",
+          "curl",
+          "-f",
+          "http://localhost:4566/_localstack/health"
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -116,21 +138,20 @@ services:
 
     networks:
       - juris_ai_network
-    # Resource limits to prevent starvation
+
     deploy:
       resources:
         limits:
-          cpus: '2.5'
+          cpus: "2.5"
           memory: 2.5G
         reservations:
-          cpus: '1.5'
+          cpus: "1.5"
           memory: 1.5G
 
 
-volumes:
-  localstack_data:
-  postgres_data:          # named volume — survives container restarts
-
+# ============================================================================
+# External Network
+# ============================================================================
 networks:
   juris_ai_network:
     external: true

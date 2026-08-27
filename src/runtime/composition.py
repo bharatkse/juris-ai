@@ -36,7 +36,7 @@ def create_ai_orchestrator(
     clients = create_clients(settings=settings)
     registries = create_registries()
 
-    register_tools(clients=clients, registries=registries)
+    register_tools(clients=clients, registries=registries, approval_service=authorization)
     register_agents(clients=clients, registries=registries)
 
     return AIOrchestrator(

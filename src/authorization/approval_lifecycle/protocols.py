@@ -10,7 +10,7 @@ from src.core.dto.agent_action import AgentActionResponseDTO
 from src.core.dto.approval import ApprovalDecisionRequestDTO, ApprovalResponseDTO
 
 
-class ApprovalLifecycleProtocol(Protocol):
+class ApprovalLifecycleServiceProtocol(Protocol):
     """
     Defines the contract for the approval lifecycle service.
 
