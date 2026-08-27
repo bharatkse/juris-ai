@@ -6,13 +6,17 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from src.api.dependencies.chat import (
+from adapters.persistence.sqlalchemy.repositories.conversation import (
+    ConversationRepository,
+)
+from adapters.persistence.sqlalchemy.repositories.conversation_event import (
+    ConversationEventRepository,
+)
+from api.dependencies.chat import (
     get_chat_service,
     get_conversation_event_repository,
     get_conversation_repository,
 )
-from src.repositories.conversation import ConversationRepository
-from src.repositories.conversation_event import ConversationEventRepository
 
 
 def test_get_conversation_repository() -> None:
@@ -53,7 +57,7 @@ def test_get_conversation_event_repository() -> None:
     assert repository._session is session
 
 
-@patch("src.api.dependencies.chat.ChatService")
+@patch("api.dependencies.chat.ChatService")
 def test_get_chat_service(
     mock_chat_service: MagicMock,
 ) -> None:

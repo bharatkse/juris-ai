@@ -24,14 +24,14 @@ Structured Response
 
 from __future__ import annotations
 
-from src.core.constants import (
+from core.constants import (
     ERROR_LLM,
     ERROR_LLM_PROVIDER,
     ERROR_LLM_RESPONSE,
     ERROR_LLM_STRUCTURED_OUTPUT,
     ERROR_LLM_TIMEOUT,
 )
-from src.core.exceptions.base import AIError
+from core.exceptions.base import AIError
 
 
 class LLMError(AIError):

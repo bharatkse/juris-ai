@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from src.core.enums import (
+from core.enums import (
     ApprovalDecisionEnum,
     ApprovalPolicyDecisionEnum,
     ApprovalStatusEnum,

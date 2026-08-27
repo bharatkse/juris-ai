@@ -28,6 +28,16 @@ RED    := $(shell tput -Txterm setaf 1)
 BOLD   := $(shell tput bold)
 RESET  := $(shell tput -Txterm sgr0)
 
+# -------------------------------------------------
+# Project
+# -------------------------------------------------
+
+PROJECT_ROOT := $(CURDIR)
+PYTHONPATH := $(PROJECT_ROOT)/src
+
+export PYTHONPATH
+
+
 # ============================================================================
 # Environment Detection
 #
@@ -301,7 +311,7 @@ docker-networks: ## Create shared Docker network
 	  || docker network create juris_ai_network
 
 docker-build: ## Build application Docker images
-	@$(DOCKER_COMPOSE) $(COMPOSE_FILES) build
+	@$(DOCKER_COMPOSE) $(COMPOSE_FILES) build --no-cache
 
 docker-up: docker-networks ## Start application Docker services
 	@$(DOCKER_COMPOSE) $(COMPOSE_FILES) up -d

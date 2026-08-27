@@ -8,9 +8,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.api.v1.endpoints.health import health
-from src.core.context import RequestContext
-from src.core.response import ApiResponse
+from api.utilities.api_response import ApiResponse
+from api.v1.endpoints.health import health
+from application.context.request import RequestContext
 
 
 @pytest.mark.asyncio
@@ -34,7 +34,7 @@ async def test_health_returns_application_health() -> None:
 
 
 @pytest.mark.asyncio
-@patch("src.api.v1.endpoints.health.ApiResponse")
+@patch("api.v1.endpoints.health.ApiResponse")
 async def test_health_builds_expected_response(
     mock_api_response: MagicMock,
 ) -> None:
@@ -55,16 +55,16 @@ async def test_health_builds_expected_response(
             context=context,
         )
 
-    from src.api.v1.endpoints.health import settings
+    from api.v1.endpoints.health import settings
 
     mock_api_response.assert_called_once_with(
         success=True,
         status_code=200,
         data={
             "status": "healthy",
-            "service": settings.APP_NAME,
-            "version": settings.APP_VERSION,
-            "environment": settings.ENVIRONMENT,
+            "service": settings.app.APP_NAME,
+            "version": settings.app.APP_VERSION,
+            "environment": settings.app.ENVIRONMENT,
         },
         metadata=expected_metadata,
     )

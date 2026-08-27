@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import UploadFile
 
-from src.core.dto.tool import ToolFileDTO
+from core.dto.tool import ToolFileDTO
 
 
 async def build_tool_files(

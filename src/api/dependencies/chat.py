@@ -7,15 +7,19 @@ from __future__ import annotations
 from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.dependencies.action_workflow import get_action_workflow_service
-from src.db.session import get_db_session
-from src.orchestration.orchestrator import AIOrchestrator
-from src.repositories.conversation import ConversationRepository
-from src.repositories.conversation_event import ConversationEventRepository
-from src.services.action_workflow import ActionWorkflowService
-from src.services.chat import ChatService
-from src.services.conversation import ConversationService
-from src.services.conversation_event import ConversationEventService
+from adapters.persistence.sqlalchemy.repositories.conversation import (
+    ConversationRepository,
+)
+from adapters.persistence.sqlalchemy.repositories.conversation_event import (
+    ConversationEventRepository,
+)
+from adapters.persistence.sqlalchemy.session import get_db_session
+from agentic.orchestration.orchestrator import AIOrchestrator
+from api.dependencies.action_workflow import get_action_workflow_service
+from application.services.action_workflow import ActionWorkflowService
+from application.services.chat import ChatService
+from application.services.conversation import ConversationService
+from application.services.conversation_event import ConversationEventService
 
 # ============================================================================
 # Repositories

@@ -6,10 +6,10 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from src.api.dependencies.conversation import get_conversation_service
+from api.dependencies.conversation import get_conversation_service
 
 
-@patch("src.api.dependencies.conversation.ConversationService")
+@patch("api.dependencies.conversation.ConversationService")
 def test_get_conversation_service(
     mock_conversation_service: MagicMock,
 ) -> None:

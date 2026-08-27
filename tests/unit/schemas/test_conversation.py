@@ -9,8 +9,8 @@ from datetime import datetime
 import pytest
 from pydantic import ValidationError
 
-from src.api.schemas.conversation import ConversationResponse, CreateConversationRequest
-from tests.builders.schemas import build_create_conversation_request
+from api.schemas.conversation import ConversationResponse, CreateConversationRequest
+from tests.builders.api.schemas import build_create_conversation_request
 from tests.factories.conversation import ConversationFactory
 
 

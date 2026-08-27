@@ -6,11 +6,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from src.core.dto.conversation import ConversationDTO
-from src.core.dto.planning import ExecutionPlanDTO
-from src.execution.bus import CollaborationBus
-from src.execution.schemas.memory import ExecutionMemorySchema
-from src.execution.schemas.state import ExecutionStateSchema
+from execution.bus import CollaborationBus
+from execution.schemas.memory import ExecutionMemorySchema
+from execution.schemas.state import ExecutionStateSchema
+
+from core.dto.conversation import ConversationDTO
+from core.dto.planning import ExecutionPlanDTO
 
 
 @dataclass(slots=True, frozen=True)

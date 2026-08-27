@@ -4,7 +4,7 @@ Unit tests for application enums.
 
 from __future__ import annotations
 
-from src.core.enums import (
+from core.enums import (
     CacheBackendEnum,
     EnvironmentEnum,
     EventTypeEnum,

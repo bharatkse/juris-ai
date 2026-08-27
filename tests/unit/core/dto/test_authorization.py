@@ -1,5 +1,5 @@
-from src.core.dto.authorization import AuthorizationRequestDTO, AuthorizationResultDTO
-from src.core.enums import ActionTypeEnum, AuthorizationDecisionEnum
+from core.dto.authorization import AuthorizationRequestDTO, AuthorizationResultDTO
+from core.enums import ActionTypeEnum, AuthorizationDecisionEnum
 
 
 def test_authorization_request() -> None:

@@ -4,7 +4,7 @@ Unit tests for application exceptions.
 
 from __future__ import annotations
 
-from src.core.constants import (
+from core.constants import (
     ERROR_BAD_REQUEST,
     ERROR_CONFLICT,
     ERROR_DOMAIN,
@@ -20,10 +20,10 @@ from src.core.constants import (
     HTTP_409_CONFLICT,
     HTTP_500_INTERNAL_SERVER_ERROR,
 )
-from src.core.exceptions.authorization import AuthorizationError
-from src.core.exceptions.base import AppError, DomainError
-from src.core.exceptions.database import DatabaseError
-from src.core.exceptions.httpx import (
+from core.exceptions.authorization import AuthorizationError
+from core.exceptions.base import AppError, DomainError
+from core.exceptions.database import DatabaseError
+from core.exceptions.httpx import (
     BadRequestError,
     ConflictError,
     ForbiddenError,
@@ -32,12 +32,12 @@ from src.core.exceptions.httpx import (
     UserAlreadyExistsError,
     UserNotFoundError,
 )
-from src.core.exceptions.infrastructure import (
+from core.exceptions.infrastructure import (
     CacheError,
     ConfigurationError,
     PersistenceError,
 )
-from src.core.exceptions.validation import ValidationError
+from core.exceptions.validation import ValidationError
 
 
 def test_app_error_uses_defaults() -> None:

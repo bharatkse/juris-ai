@@ -7,9 +7,11 @@ from __future__ import annotations
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db.session import get_db_session
-from src.repositories.conversation import ConversationRepository
-from src.services.conversation import ConversationService
+from adapters.persistence.sqlalchemy.repositories.conversation import (
+    ConversationRepository,
+)
+from adapters.persistence.sqlalchemy.session import get_db_session
+from application.services.conversation import ConversationService
 
 
 def get_conversation_repository(

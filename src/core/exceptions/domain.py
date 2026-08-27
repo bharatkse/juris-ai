@@ -10,14 +10,14 @@ exception handlers.
 
 from __future__ import annotations
 
-from src.core.constants import (
+from core.constants import (
     ERROR_CONFLICT,
     ERROR_FORBIDDEN,
     ERROR_NOT_FOUND,
     ERROR_UNAUTHORIZED,
     ERROR_VALIDATION,
 )
-from src.core.exceptions.base import DomainError
+from core.exceptions.base import DomainError
 
 
 class DomainValidationError(DomainError):

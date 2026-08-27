@@ -1,6 +1,6 @@
-from src.core.dto.authorization import AuthorizationRequestDTO
-from src.core.enums import ActionTypeEnum
-from tests.builders.agent import build_agent_action_request_dto
+from core.dto.authorization import AuthorizationRequestDTO
+from core.enums import ActionTypeEnum
+from tests.builders.agentic.agent import build_agent_action_request_dto
 
 
 def test_action_request_defaults_arguments_and_reason() -> None:

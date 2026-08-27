@@ -6,7 +6,7 @@ from typing import cast
 
 from fastapi import Request
 
-from src.core.context import RequestContext
+from application.context.request import RequestContext
 
 
 def get_request_context(request: Request) -> RequestContext:

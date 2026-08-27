@@ -9,7 +9,7 @@ from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Any
 
-from src.core.enums import MessageRoleEnum
+from core.enums import MessageRoleEnum
 
 
 @dataclass(slots=True, frozen=True)

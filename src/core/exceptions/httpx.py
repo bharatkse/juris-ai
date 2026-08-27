@@ -10,7 +10,7 @@ These exceptions are intentionally HTTP-agnostic and are translated
 to HTTP responses via global FastAPI exception handlers.
 """
 
-from src.core.constants import (
+from core.constants import (
     ERROR_BAD_REQUEST,
     ERROR_CONFLICT,
     ERROR_FORBIDDEN,
@@ -22,7 +22,7 @@ from src.core.constants import (
     HTTP_404_NOT_FOUND,
     HTTP_409_CONFLICT,
 )
-from src.core.exceptions.base import AppError
+from core.exceptions.base import AppError
 
 
 class BadRequestError(AppError):

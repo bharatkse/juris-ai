@@ -4,7 +4,7 @@ MCP client exceptions.
 
 from __future__ import annotations
 
-from src.core.exceptions.base import AppError
+from core.exceptions.base import AppError
 
 
 class MCPError(AppError):

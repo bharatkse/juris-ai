@@ -7,7 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from src.core.enums import RetrievalSourceEnum
+from core.enums import RetrievalSourceEnum
 
 
 @dataclass(slots=True, frozen=True)

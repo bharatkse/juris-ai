@@ -23,8 +23,8 @@ Response Aggregation
 
 from __future__ import annotations
 
-from src.core.constants import ERROR_ORCHESTRATION
-from src.core.exceptions.base import AIError
+from core.constants import ERROR_ORCHESTRATION
+from core.exceptions.base import AIError
 
 
 class OrchestrationError(AIError):

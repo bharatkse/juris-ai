@@ -8,9 +8,9 @@ from datetime import UTC, datetime
 
 import factory
 
-from src.core.enums import ApprovalStatusEnum
-from src.db.mixins import generate_prefixed_uuid_pk
-from src.db.models.approval import Approval
+from adapters.persistence.sqlalchemy.mixins import generate_prefixed_uuid_pk
+from adapters.persistence.sqlalchemy.models.approval import Approval
+from core.enums import ApprovalStatusEnum
 from tests.factories.agent_action import AgentActionFactory
 from tests.factories.base import BaseFactory
 from tests.factories.user import UserFactory

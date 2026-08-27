@@ -1,4 +1,4 @@
-from src.core.exceptions.base import AppError
+from core.exceptions.base import AppError
 
 
 class DatabaseError(AppError):

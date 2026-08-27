@@ -9,11 +9,11 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 
-from src.api.dependencies.auth import get_authentication_service, get_current_user
-from src.api.schemas.auth import LoginResponse, LogoutResponse, RefreshTokenRequest
-from src.core.response import ApiResponse
-from src.db.models.user import User
-from src.services.auth import AuthenticationService
+from adapters.persistence.sqlalchemy.models.user import User
+from api.dependencies.auth import get_authentication_service, get_current_user
+from api.schemas.auth import LoginResponse, LogoutResponse, RefreshTokenRequest
+from api.utilities.api_response import ApiResponse
+from application.services.auth import AuthenticationService
 
 logger = logging.getLogger(__name__)
 

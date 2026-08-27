@@ -12,16 +12,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
-from src.api.exception_handlers import register_exception_handlers
-from src.api.v1.routers import api_router
-from src.core.config import get_settings
-from src.core.constants import API_DESCRIPTION, API_TITLE
-from src.core.file_system import ensure_dir
-from src.core.logger import get_logger, setup_logging
-from src.core.response import ApiResponse
-from src.middleware.request_context import RequestContextMiddleware
-from src.observability.telemetry import configure_telemetry, shutdown_telemetry
-from src.runtime.composition import create_ai_orchestrator
+from adapters.observability.logger import get_logger, setup_logging
+from adapters.observability.telemetry import configure_telemetry, shutdown_telemetry
+from agentic.runtime.composition import create_ai_orchestrator
+from api.exception_handlers import register_exception_handlers
+from api.middleware.request_context import RequestContextMiddleware
+from api.utilities.api_response import ApiResponse
+from api.v1.routers import api_router
+from config.settings import get_settings
+from core.constants import API_DESCRIPTION, API_TITLE
+from core.utils.file_system import ensure_dir
 
 logger = get_logger(__name__)
 
@@ -34,11 +34,11 @@ def initialize_logging() -> None:
     """
 
     setup_logging(
-        level=settings.LOG_LEVEL,
-        fmt=settings.LOG_FORMAT,
-        log_file=settings.LOG_FILE,
-        max_mb=settings.LOG_MAX_MB,
-        backup_count=settings.LOG_BACKUP_COUNT,
+        level=settings.logging.LOG_LEVEL,
+        fmt=settings.logging.LOG_FORMAT,
+        log_file=settings.logging.LOG_FILE,
+        max_mb=settings.logging.LOG_MAX_MB,
+        backup_count=settings.logging.LOG_BACKUP_COUNT,
     )
 
 
@@ -48,8 +48,8 @@ def initialize_storage() -> None:
     """
 
     for directory in (
-        settings.DATA_DIRECTORY,
-        settings.LOG_DIRECTORY,
+        settings.logging.DATA_DIRECTORY,
+        settings.logging.LOG_DIRECTORY,
     ):
         ensure_dir(directory)
 
@@ -72,9 +72,9 @@ async def startup() -> None:
     logger.info(
         "Application starting.",
         extra={
-            "application": settings.APP_NAME,
-            "version": settings.APP_VERSION,
-            "environment": settings.ENVIRONMENT,
+            "application": settings.app.APP_NAME,
+            "version": settings.app.APP_VERSION,
+            "environment": settings.app.ENVIRONMENT,
         },
     )
 
@@ -136,7 +136,7 @@ def configure_middleware(
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.CORS_ORIGINS,
+        allow_origins=settings.app.CORS_ORIGINS,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -170,10 +170,10 @@ def configure_routes(
         return ApiResponse(
             success=True,
             data={
-                "name": settings.APP_NAME,
-                "version": settings.APP_VERSION,
-                "environment": settings.ENVIRONMENT,
-                "docs": ("/docs" if settings.ENABLE_DOCS else None),
+                "name": settings.app.APP_NAME,
+                "version": settings.app.APP_VERSION,
+                "environment": settings.app.ENVIRONMENT,
+                "docs": ("/docs" if settings.app.ENABLE_DOCS else None),
                 "health": "/api/v1/health",
             },
         )
@@ -186,7 +186,7 @@ def configure_instrumentation(
     Configure framework-level OpenTelemetry instrumentation.
     """
 
-    if not settings.OTEL_TRACING:
+    if not settings.app.OTEL_TRACING:
         return
 
     FastAPIInstrumentor.instrument_app(
@@ -202,10 +202,10 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title=API_TITLE,
         description=API_DESCRIPTION,
-        version=settings.APP_VERSION,
-        docs_url=("/docs" if settings.ENABLE_DOCS else None),
-        redoc_url=("/redoc" if settings.ENABLE_DOCS else None),
-        openapi_url=("/openapi.json" if settings.ENABLE_DOCS else None),
+        version=settings.app.APP_VERSION,
+        docs_url=("/docs" if settings.app.ENABLE_DOCS else None),
+        redoc_url=("/redoc" if settings.app.ENABLE_DOCS else None),
+        openapi_url=("/openapi.json" if settings.app.ENABLE_DOCS else None),
         lifespan=lifespan,
     )
 
@@ -234,9 +234,9 @@ app = create_app()
 if __name__ == "__main__":
     uvicorn.run(
         "main:app",
-        host=settings.HOST,
-        port=settings.PORT,
-        reload=settings.DEBUG,
-        workers=(1 if settings.DEBUG else settings.WORKERS),
-        log_level=settings.LOG_LEVEL.lower(),
+        host=settings.app.HOST,
+        port=settings.app.PORT,
+        reload=settings.app.DEBUG,
+        workers=(1 if settings.app.DEBUG else settings.app.WORKERS),
+        log_level=settings.logging.LOG_LEVEL.lower(),
     )

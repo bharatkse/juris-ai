@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from src.api.v1.routers import api_router
+from api.v1.routers import api_router
 
 
 def test_api_router_has_expected_prefix() -> None:

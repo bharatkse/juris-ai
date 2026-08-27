@@ -6,14 +6,14 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, status
 
-from src.api.dependencies.approval import get_approval_lifecycle_service
-from src.api.dependencies.auth import get_current_user
-from src.api.schemas.approval import ApprovalDecisionRequest, ApprovalResponse
-from src.core.dto.approval import ApprovalDecisionRequestDTO
-from src.core.exceptions.authorization import AuthorizationError
-from src.core.logger import get_logger
-from src.core.response import ApiResponse
-from src.services.approval_lifecycle import ApprovalLifecycleService
+from adapters.observability.logger import get_logger
+from api.dependencies.approval import get_approval_lifecycle_service
+from api.dependencies.auth import get_current_user
+from api.schemas.approval import ApprovalDecisionRequest, ApprovalResponse
+from api.utilities.api_response import ApiResponse
+from application.services.approval_lifecycle import ApprovalLifecycleService
+from core.dto.approval import ApprovalDecisionRequestDTO
+from core.exceptions.authorization import AuthorizationError
 
 logger = get_logger(__name__)
 

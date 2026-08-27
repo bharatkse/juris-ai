@@ -9,20 +9,20 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi import status
 
-from src.api.v1.endpoints.conversations import (
+from api.utilities.api_response import ApiResponse
+from api.v1.endpoints.conversations import (
     archive_conversation,
     create_conversation,
     get_conversation,
 )
-from src.core.exceptions.httpx import NotFoundError as ConversationNotFoundError
-from src.core.response import ApiResponse
-from tests.builders.schemas import build_create_conversation_request
+from core.exceptions.httpx import NotFoundError as ConversationNotFoundError
+from tests.builders.api.schemas import build_create_conversation_request
 from tests.factories.conversation import ConversationFactory
 
 
 @pytest.mark.asyncio
 @patch(
-    "src.api.v1.endpoints.conversations.ConversationResponse.model_validate",
+    "api.v1.endpoints.conversations.ConversationResponse.model_validate",
 )
 async def test_create_conversation(
     mock_model_validate: MagicMock,
@@ -72,7 +72,7 @@ async def test_create_conversation(
 
 @pytest.mark.asyncio
 @patch(
-    "src.api.v1.endpoints.conversations.ConversationResponse.model_validate",
+    "api.v1.endpoints.conversations.ConversationResponse.model_validate",
 )
 async def test_get_conversation(
     mock_model_validate: MagicMock,

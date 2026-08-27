@@ -47,10 +47,10 @@ from __future__ import annotations
 import asyncio
 from typing import Protocol
 
-from src.core.logger import get_logger
-from src.rag.embeddings import EmbeddingProvider
-from src.rag.indexer import Chunk
-from src.rag.reranker import CrossEncoderReranker
+from adapters.observability.logger import get_logger
+from rag.embeddings import EmbeddingProvider
+from rag.indexer import Chunk
+from rag.reranker import CrossEncoderReranker
 
 log = get_logger(__name__)
 

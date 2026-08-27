@@ -11,8 +11,8 @@ import pytest
 from fastapi import HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
 
-from src.api.schemas.auth import RefreshTokenRequest
-from src.api.v1.endpoints.auth import access_token, login, logout
+from api.schemas.auth import RefreshTokenRequest
+from api.v1.endpoints.auth import access_token, login, logout
 from tests.factories.user import UserFactory
 
 

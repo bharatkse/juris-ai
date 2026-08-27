@@ -6,17 +6,17 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, status
 
-from src.api.dependencies.auth import get_current_user
-from src.api.dependencies.conversation import get_conversation_service
-from src.api.schemas.conversation import (
+from adapters.observability.logger import get_logger
+from api.dependencies.auth import get_current_user
+from api.dependencies.conversation import get_conversation_service
+from api.schemas.conversation import (
     ConversationListResponse,
     ConversationResponse,
     CreateConversationRequest,
 )
-from src.core.logger import get_logger
-from src.core.response import ApiResponse
-from src.core.types import ConversationId
-from src.services.conversation import ConversationService
+from api.utilities.api_response import ApiResponse
+from application.services.conversation import ConversationService
+from core.types import ConversationId
 
 logger = get_logger(__name__)
 

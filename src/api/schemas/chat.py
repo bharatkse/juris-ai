@@ -10,9 +10,14 @@ from typing import Any
 from fastapi import File, Form, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.core.enums import MessageRoleEnum
-from src.core.types import ConversationEventId, ConversationId
-from src.orchestration.schemas.response import Citation, ResponseMetadata, Source, Usage
+from agentic.orchestration.schemas.response import (
+    Citation,
+    ResponseMetadata,
+    Source,
+    Usage,
+)
+from core.enums import MessageRoleEnum
+from core.types import ConversationEventId, ConversationId
 
 
 class ChatRequest(BaseModel):

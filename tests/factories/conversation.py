@@ -6,10 +6,10 @@ from __future__ import annotations
 
 import factory
 
-from src.core.constants import DEFAULT_CONVERSATION_TITLE
-from src.core.datetime import utcnow
-from src.db.mixins import generate_prefixed_uuid_pk
-from src.db.models.conversation import Conversation
+from adapters.persistence.sqlalchemy.mixins import generate_prefixed_uuid_pk
+from adapters.persistence.sqlalchemy.models.conversation import Conversation
+from core.constants import DEFAULT_CONVERSATION_TITLE
+from core.utils.datetime import utcnow
 from tests.factories.base import BaseFactory
 from tests.factories.user import UserFactory
 

@@ -7,9 +7,11 @@ from __future__ import annotations
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db.session import get_db_session
-from src.repositories.agent_action import AgentActionRepository
-from src.services.agent_action import AgentActionService
+from adapters.persistence.sqlalchemy.repositories.agent_action import (
+    AgentActionRepository,
+)
+from adapters.persistence.sqlalchemy.session import get_db_session
+from application.services.agent_action import AgentActionService
 
 
 def get_agent_action_repository(

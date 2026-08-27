@@ -6,9 +6,9 @@ from __future__ import annotations
 
 import factory
 
-from src.core.enums import DocumentStatusEnum, StorageTypeEnum
-from src.db.mixins import generate_prefixed_uuid_pk
-from src.db.models.document import Document
+from adapters.persistence.sqlalchemy.mixins import generate_prefixed_uuid_pk
+from adapters.persistence.sqlalchemy.models.document import Document
+from core.enums import DocumentStatusEnum, StorageTypeEnum
 from tests.factories.base import BaseFactory
 from tests.factories.conversation import ConversationFactory
 

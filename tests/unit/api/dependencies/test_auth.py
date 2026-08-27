@@ -9,8 +9,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi import HTTPException
 
-from src.api.dependencies.auth import get_current_user
-from src.db.models.user import User
+from adapters.persistence.sqlalchemy.models.user import User
+from api.dependencies.auth import get_current_user
 from tests.factories.user import UserFactory
 
 
@@ -43,18 +43,18 @@ async def test_get_current_user_returns_active_user() -> None:
 
     with (
         patch(
-            "src.api.dependencies.auth.decode_token",
+            "api.dependencies.auth.decode_token",
             return_value={
                 "sub": user.id,
                 "type": "access",
             },
         ) as mock_decode_token,
         patch(
-            "src.api.dependencies.auth.is_token_type",
+            "api.dependencies.auth.is_token_type",
             return_value=True,
         ) as mock_is_token_type,
         patch(
-            "src.api.dependencies.auth.get_subject",
+            "api.dependencies.auth.get_subject",
             return_value=user.id,
         ) as mock_get_subject,
     ):
@@ -102,7 +102,7 @@ async def test_get_current_user_raises_unauthorized_for_invalid_token() -> None:
     from jose import JWTError
 
     with patch(
-        "src.api.dependencies.auth.decode_token",
+        "api.dependencies.auth.decode_token",
         side_effect=JWTError(),
     ):
         with pytest.raises(HTTPException) as exc_info:
@@ -138,15 +138,15 @@ async def test_get_current_user_raises_unauthorized_for_non_access_token() -> No
 
     with (
         patch(
-            "src.api.dependencies.auth.decode_token",
+            "api.dependencies.auth.decode_token",
             return_value=payload,
         ),
         patch(
-            "src.api.dependencies.auth.is_token_type",
+            "api.dependencies.auth.is_token_type",
             return_value=False,
         ) as mock_is_token_type,
         patch(
-            "src.api.dependencies.auth.get_subject",
+            "api.dependencies.auth.get_subject",
         ) as mock_get_subject,
     ):
         with pytest.raises(HTTPException) as exc_info:
@@ -185,15 +185,15 @@ async def test_get_current_user_raises_unauthorized_when_subject_is_missing() ->
 
     with (
         patch(
-            "src.api.dependencies.auth.decode_token",
+            "api.dependencies.auth.decode_token",
             return_value=payload,
         ),
         patch(
-            "src.api.dependencies.auth.is_token_type",
+            "api.dependencies.auth.is_token_type",
             return_value=True,
         ),
         patch(
-            "src.api.dependencies.auth.get_subject",
+            "api.dependencies.auth.get_subject",
             return_value=None,
         ) as mock_get_subject,
     ):
@@ -238,15 +238,15 @@ async def test_get_current_user_raises_unauthorized_when_user_does_not_exist() -
 
     with (
         patch(
-            "src.api.dependencies.auth.decode_token",
+            "api.dependencies.auth.decode_token",
             return_value=payload,
         ),
         patch(
-            "src.api.dependencies.auth.is_token_type",
+            "api.dependencies.auth.is_token_type",
             return_value=True,
         ),
         patch(
-            "src.api.dependencies.auth.get_subject",
+            "api.dependencies.auth.get_subject",
             return_value=user_id,
         ),
     ):
@@ -290,15 +290,15 @@ async def test_get_current_user_raises_for_inactive_user() -> None:
 
     with (
         patch(
-            "src.api.dependencies.auth.decode_token",
+            "api.dependencies.auth.decode_token",
             return_value=payload,
         ),
         patch(
-            "src.api.dependencies.auth.is_token_type",
+            "api.dependencies.auth.is_token_type",
             return_value=True,
         ),
         patch(
-            "src.api.dependencies.auth.get_subject",
+            "api.dependencies.auth.get_subject",
             return_value=user.id,
         ),
     ):
@@ -332,15 +332,15 @@ async def test_get_current_user_raises_unauthorized_when_token_subject_is_empty(
 
     with (
         patch(
-            "src.api.dependencies.auth.decode_token",
+            "api.dependencies.auth.decode_token",
             return_value=payload,
         ),
         patch(
-            "src.api.dependencies.auth.is_token_type",
+            "api.dependencies.auth.is_token_type",
             return_value=True,
         ),
         patch(
-            "src.api.dependencies.auth.get_subject",
+            "api.dependencies.auth.get_subject",
             return_value=None,
         ),
     ):

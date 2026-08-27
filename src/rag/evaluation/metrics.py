@@ -32,9 +32,9 @@ import json
 import re
 from dataclasses import dataclass
 
-from src.clients.resolver import LLMResolver
-from src.core.enums import LLMProviderEnum
-from src.core.logger import get_logger
+from adapters.clients.resolver import LLMResolver
+from adapters.observability.logger import get_logger
+from core.enums import LLMProviderEnum
 
 log = get_logger(__name__)
 

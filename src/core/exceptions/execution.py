@@ -28,12 +28,8 @@ Response Aggregation
 
 from __future__ import annotations
 
-from src.core.constants import (
-    ERROR_COLLABORATION,
-    ERROR_EXECUTION,
-    ERROR_STEP_EXECUTION,
-)
-from src.core.exceptions.base import AIError
+from core.constants import ERROR_COLLABORATION, ERROR_EXECUTION, ERROR_STEP_EXECUTION
+from core.exceptions.base import AIError
 
 
 class ExecutionError(AIError):
