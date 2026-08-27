@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from src.api.v1.endpoints import approval, auth, chat, conversations, health, users
+from api.v1.endpoints import approval, auth, chat, conversations, health, users
 
 api_router = APIRouter(prefix="/api/v1")
 

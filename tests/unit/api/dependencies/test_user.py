@@ -6,12 +6,12 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from src.api.dependencies.user import (
+from adapters.security.password import PasswordService
+from api.dependencies.user import (
     get_password_service,
     get_user_repository,
     get_user_service,
 )
-from src.security.password import PasswordService
 
 
 def test_get_password_service() -> None:
@@ -27,7 +27,7 @@ def test_get_password_service() -> None:
     )
 
 
-@patch("src.api.dependencies.user.UserRepository")
+@patch("api.dependencies.user.UserRepository")
 def test_get_user_repository(
     mock_user_repository: MagicMock,
 ) -> None:
@@ -51,7 +51,7 @@ def test_get_user_repository(
     )
 
 
-@patch("src.api.dependencies.user.UserService")
+@patch("api.dependencies.user.UserService")
 def test_get_user_service(
     mock_user_service: MagicMock,
 ) -> None:

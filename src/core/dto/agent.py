@@ -7,10 +7,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from src.core.dto.agent_action import AgentActionRequestDTO
-from src.core.dto.conversation import ConversationDTO
-from src.core.dto.response import CitationDTO, SourceDTO, UsageDTO
-from src.core.dto.tool import ToolFileDTO
+from core.dto.agent_action import AgentActionRequestDTO
+from core.dto.conversation import ConversationDTO
+from core.dto.response import CitationDTO, SourceDTO, UsageDTO
+from core.dto.tool import ToolFileDTO
 
 
 @dataclass(slots=True, frozen=True)

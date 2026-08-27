@@ -9,7 +9,7 @@ from typing import Annotated, get_args, get_origin
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from src.core.types import ConversationEventId, ConversationId, PrefixedId, UserId
+from core.types import ConversationEventId, ConversationId, PrefixedId, UserId
 
 
 def test_prefixed_id_returns_annotated_type() -> None:

@@ -7,8 +7,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from src.core.dto.authorization import AuthorizationRequestDTO
-from src.core.enums import ActionTypeEnum, ActorTypeEnum, AgentActionStatusEnum
+from core.dto.authorization import AuthorizationRequestDTO
+from core.enums import ActionTypeEnum, ActorTypeEnum, AgentActionStatusEnum
 
 
 @dataclass(frozen=True, slots=True)

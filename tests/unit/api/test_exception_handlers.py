@@ -9,16 +9,13 @@ from unittest.mock import MagicMock, patch
 from fastapi import FastAPI
 from starlette.requests import Request
 
-from src.api.exception_handlers import (
+from api.exception_handlers import (
     app_exception_handler,
     register_exception_handlers,
     unhandled_exception_handler,
 )
-from src.core.constants import (
-    ERROR_INTERNAL_SERVER_ERROR,
-    HTTP_500_INTERNAL_SERVER_ERROR,
-)
-from src.core.exceptions.base import AppError
+from core.constants import ERROR_INTERNAL_SERVER_ERROR, HTTP_500_INTERNAL_SERVER_ERROR
+from core.exceptions.base import AppError
 
 
 def build_request() -> Request:
@@ -36,7 +33,7 @@ def build_request() -> Request:
     )
 
 
-@patch("src.api.exception_handlers.logger")
+@patch("api.exception_handlers.logger")
 def test_app_exception_handler(
     mock_logger: MagicMock,
 ) -> None:
@@ -73,7 +70,7 @@ def test_app_exception_handler(
     )
 
 
-@patch("src.api.exception_handlers.logger")
+@patch("api.exception_handlers.logger")
 def test_unhandled_exception_handler(
     mock_logger: MagicMock,
 ) -> None:

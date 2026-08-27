@@ -23,13 +23,13 @@ Tool.execute()
 
 from __future__ import annotations
 
-from src.core.constants import (
+from core.constants import (
     ERROR_TOOL,
     ERROR_TOOL_CONFIGURATION,
     ERROR_TOOL_EXECUTION,
     ERROR_TOOL_VALIDATION,
 )
-from src.core.exceptions.base import AIError
+from core.exceptions.base import AIError
 
 
 class ToolError(AIError):

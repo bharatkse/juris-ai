@@ -22,13 +22,13 @@ Agent.run()
 
 from __future__ import annotations
 
-from src.core.constants import (
+from core.constants import (
     ERROR_AGENT,
     ERROR_AGENT_CAPABILITY,
     ERROR_AGENT_COLLABORATION,
     ERROR_AGENT_EXECUTION,
 )
-from src.core.exceptions.base import AIError
+from core.exceptions.base import AIError
 
 
 class AgentError(AIError):

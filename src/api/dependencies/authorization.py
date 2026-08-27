@@ -4,8 +4,8 @@ Authorization API dependencies.
 
 from __future__ import annotations
 
-from src.authorization.service import AuthorizationService
-from src.runtime.factories.authorization import create_authorization
+from agentic.runtime.factories.authorization import create_authorization
+from application.authorization.service import AuthorizationService
 
 
 def get_authorization_service() -> AuthorizationService:

@@ -7,7 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from src.core.enums import MessageRoleEnum
+from core.enums import MessageRoleEnum
 
 
 @dataclass(slots=True, frozen=True)

@@ -7,9 +7,9 @@ from __future__ import annotations
 import factory
 from faker import Faker
 
-from src.core.enums import GenderEnum
-from src.db.mixins import generate_prefixed_uuid_pk
-from src.db.models.user import User
+from adapters.persistence.sqlalchemy.mixins import generate_prefixed_uuid_pk
+from adapters.persistence.sqlalchemy.models.user import User
+from core.enums import GenderEnum
 from tests.factories.base import BaseFactory
 
 fake = Faker()

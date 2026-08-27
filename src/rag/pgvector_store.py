@@ -10,10 +10,12 @@ raw SQL embedded in a client class.
 
 from __future__ import annotations
 
-from src.core.logger import get_logger
-from src.db.session import session_factory
-from src.rag.indexer import Chunk
-from src.repositories.document_chunk import DocumentChunkRepository
+from adapters.observability.logger import get_logger
+from adapters.persistence.sqlalchemy.repositories.document_chunk import (
+    DocumentChunkRepository,
+)
+from adapters.persistence.sqlalchemy.session import session_factory
+from rag.indexer import Chunk
 
 log = get_logger(__name__)
 

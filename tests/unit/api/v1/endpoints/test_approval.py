@@ -10,12 +10,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.api.schemas.approval import ApprovalDecisionRequest
-from src.api.v1.endpoints.approval import process_approval
-from src.core.dto.approval import ApprovalDecisionRequestDTO
-from src.core.enums import ApprovalDecisionEnum
-from src.core.exceptions.authorization import AuthorizationError
-from src.services.approval_lifecycle import ApprovalLifecycleService
+from api.schemas.approval import ApprovalDecisionRequest
+from api.v1.endpoints.approval import process_approval
+from application.services.approval_lifecycle import ApprovalLifecycleService
+from core.dto.approval import ApprovalDecisionRequestDTO
+from core.enums import ApprovalDecisionEnum
+from core.exceptions.authorization import AuthorizationError
 
 
 def build_current_user() -> SimpleNamespace:
@@ -60,7 +60,7 @@ async def test_process_approval_returns_success_response() -> None:
     )
 
     with patch(
-        "src.api.schemas.approval.ApprovalResponse.model_validate",
+        "api.schemas.approval.ApprovalResponse.model_validate",
         return_value={"id": "approval-123"},
     ):
         result = await process_approval(
@@ -123,7 +123,7 @@ async def test_process_approval_passes_edited_payload() -> None:
     )
 
     with patch(
-        "src.api.schemas.approval.ApprovalResponse.model_validate",
+        "api.schemas.approval.ApprovalResponse.model_validate",
         return_value={"id": "approval-123"},
     ):
         await process_approval(

@@ -8,12 +8,14 @@ from unittest.mock import MagicMock
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.dependencies.agent_action import (
+from adapters.persistence.sqlalchemy.repositories.agent_action import (
+    AgentActionRepository,
+)
+from api.dependencies.agent_action import (
     get_agent_action_repository,
     get_agent_action_service,
 )
-from src.repositories.agent_action import AgentActionRepository
-from src.services.agent_action import AgentActionService
+from application.services.agent_action import AgentActionService
 
 
 def test_get_agent_action_repository_returns_repository() -> None:

@@ -4,8 +4,8 @@ Aggregation exceptions.
 
 from __future__ import annotations
 
-from src.core.constants import ERROR_AGGREGATION_FAILED, HTTP_500_INTERNAL_SERVER_ERROR
-from src.core.exceptions.base import AppError
+from core.constants import ERROR_AGGREGATION_FAILED, HTTP_500_INTERNAL_SERVER_ERROR
+from core.exceptions.base import AppError
 
 
 class AggregationError(AppError):

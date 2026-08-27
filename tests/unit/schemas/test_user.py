@@ -9,13 +9,16 @@ from datetime import date, datetime
 import pytest
 from pydantic import ValidationError
 
-from src.api.schemas.user import (
+from api.schemas.user import (
     RegisterNewUserRequest,
     UpdateUserProfileRequest,
     UserResponse,
 )
-from src.core.enums import GenderEnum
-from tests.builders.schemas import build_create_user_request, build_update_user_request
+from core.enums import GenderEnum
+from tests.builders.api.schemas import (
+    build_create_user_request,
+    build_update_user_request,
+)
 from tests.factories.user import UserFactory
 
 

@@ -8,12 +8,12 @@ from unittest.mock import MagicMock
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.dependencies.approval import (
+from adapters.persistence.sqlalchemy.repositories.approval import ApprovalRepository
+from api.dependencies.approval import (
     get_approval_lifecycle_service,
     get_approval_repository,
 )
-from src.repositories.approval import ApprovalRepository
-from src.services.approval_lifecycle import ApprovalLifecycleService
+from application.services.approval_lifecycle import ApprovalLifecycleService
 
 
 def test_get_approval_repository_returns_repository() -> None:

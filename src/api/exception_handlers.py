@@ -6,14 +6,11 @@ from __future__ import annotations
 
 from fastapi import FastAPI, Request
 
-from src.core.constants import (
-    ERROR_INTERNAL_SERVER_ERROR,
-    HTTP_500_INTERNAL_SERVER_ERROR,
-)
-from src.core.exceptions.base import AppError
-from src.core.logger import get_logger
-from src.core.response import ApiResponse
-from src.core.schemas.response import ErrorDetailModel
+from adapters.observability.logger import get_logger
+from api.utilities.api_response import ApiResponse
+from core.constants import ERROR_INTERNAL_SERVER_ERROR, HTTP_500_INTERNAL_SERVER_ERROR
+from core.exceptions.base import AppError
+from core.models.response import ErrorDetailModel
 
 logger = get_logger(__name__)
 

@@ -8,9 +8,9 @@ from uuid import uuid4
 
 import factory
 
-from src.core.enums import MessageRoleEnum
-from src.db.mixins import generate_prefixed_uuid_pk
-from src.db.models.conversation_event import ConversationEvent
+from adapters.persistence.sqlalchemy.mixins import generate_prefixed_uuid_pk
+from adapters.persistence.sqlalchemy.models.conversation_event import ConversationEvent
+from core.enums import MessageRoleEnum
 from tests.factories.base import BaseFactory
 from tests.factories.conversation import ConversationFactory
 

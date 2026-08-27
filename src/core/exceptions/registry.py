@@ -10,14 +10,14 @@ runtime component discovery or registration.
 
 from __future__ import annotations
 
-from src.core.constants import (
+from core.constants import (
     ERROR_AGENT_NOT_FOUND,
     ERROR_AGENT_REGISTRATION,
     ERROR_REGISTRY,
     ERROR_TOOL_NOT_FOUND,
     ERROR_TOOL_REGISTRATION,
 )
-from src.core.exceptions.base import AIError
+from core.exceptions.base import AIError
 
 
 class RegistryError(AIError):

@@ -7,8 +7,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from src.core.enums import AgentTypeEnum, ExecutionModeEnum, IntentEnum
-from src.core.schemas.conversation import ConversationMessageSchema
+from core.enums import AgentTypeEnum, ExecutionModeEnum, IntentEnum
+from core.models.conversation import ConversationMessageSchema
 
 
 @dataclass(slots=True, frozen=True)

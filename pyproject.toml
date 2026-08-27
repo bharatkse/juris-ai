@@ -25,10 +25,26 @@ package-mode = false
 
 
 # -------------------------------------------------
+# Poetry Package Sources
+# -------------------------------------------------
+# PyTorch CPU wheels are used for the default
+# CPU-based application/container environment.
+#
+# GPU deployments can use a separate environment/image
+# with the appropriate CUDA-enabled PyTorch distribution.
+# -------------------------------------------------
+[[tool.poetry.source]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+priority = "explicit"
+
+
+# -------------------------------------------------
 # Runtime Dependencies
 # Packages required to run the application.
 # -------------------------------------------------
 [tool.poetry.dependencies]
+
 # Web API framework and ASGI server
 fastapi = "^0.116.0"
 uvicorn = { extras = ["standard"], version = "^0.31.1" }
@@ -56,50 +72,69 @@ alembic = "^1.13.1"
 pypdf = "^6.15.0"
 python-docx = "^1.2.0"
 
+# -------------------------------------------------
 # Embeddings / Vector Search
-# # Replace with `faiss-gpu` when running on CUDA-enabled systems.
-# faiss-cpu = "^1.8.0"
-# SQLAlchemy Vector type + cosine_distance()
+# -------------------------------------------------
 pgvector = ">=0.3,<1.0"
 
-# embedding model (BAAI/bge-small-en-v1.5)
-#   + reranker (BAAI/bge-reranker-base)
+# Embedding model:
+# BAAI/bge-small-en-v1.5
+#
+# sentence-transformers depends on PyTorch.
+# Explicitly use the CPU PyTorch distribution for the
+# default application environment.
 sentence-transformers = "5.1.2"
+torch = { version = "*", source = "pytorch-cpu" }
+
+# ONNX runtime for CPU inference
 onnxruntime = "^1.22"
 
-# Large Language Model (LLM) provider
+# -------------------------------------------------
+# Large Language Model Providers
+# -------------------------------------------------
 groq = "^1.5.0"
-
-# Local LLM Provider
 ollama = "^0.6.2"
 
-
+# -------------------------------------------------
 # MCP
+# -------------------------------------------------
 mcp = { extras = ["cli"], version = "^2.1.0" }
 
-# LLM Provider SDK
+# -------------------------------------------------
+# Optional LLM Provider SDKs
+# -------------------------------------------------
 # openai = "^1.30.1"
 # anthropic = "^0.28.0"
 
-# Agent/workflow orchestration
+# -------------------------------------------------
+# Agent / Workflow Orchestration
+# -------------------------------------------------
 langgraph = "^1.2.9"
 langgraph-checkpoint-postgres = "^3.0.0"
 scikit-learn = "^1.9.0"
 
-# Optional caching backend
+# -------------------------------------------------
+# Optional Cache Backend
 # Used only when CACHE_BACKEND=redis.
+# -------------------------------------------------
 redis = "^5.0.4"
 
+# -------------------------------------------------
 # Async Utilities and HTTP Client
+# -------------------------------------------------
 aiofiles = "^23.2.1"
 httpx = { extras = ["http2"], version = "^0.28.1" }
 trafilatura = "^2.0.0"
 
+# -------------------------------------------------
 # Optional AWS SDK
 # Required only when using S3 as the storage backend.
+# -------------------------------------------------
 boto3 = "^1.34.101"
 
-# observability
+# -------------------------------------------------
+# Observability
+# -------------------------------------------------
 opentelemetry-api = "^1.44.0"
 opentelemetry-sdk = "^1.44.0"
 opentelemetry-exporter-otlp-proto-http = "^1.44.0"
@@ -107,6 +142,10 @@ opentelemetry-exporter-otlp = "^1.44.0"
 opentelemetry-instrumentation-fastapi = "^0.65b0"
 langsmith = "^0.10.17"
 
+
+# -------------------------------------------------
+# Evaluation Dependencies
+# -------------------------------------------------
 [tool.poetry.group.eval.dependencies]
 ragas = "^0.2"
 datasets = "^2.20"
@@ -118,6 +157,7 @@ datasets = "^2.20"
 # static analysis, and local development.
 # -------------------------------------------------
 [tool.poetry.group.dev.dependencies]
+
 # Testing
 pytest = "^8.3.0"
 pytest-asyncio = "^0.24.0"
@@ -138,14 +178,14 @@ localstack = "^3.4.0"
 aws-sam-cli = { version = "^1.148.0", python = ">=3.10,<3.14" }
 awscli = "^1.34.0"
 
+
 # -------------------------------------------------
 # Ruff Configuration
-# Linting and code formatting settings.
 # -------------------------------------------------
-
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+
 exclude = [
   ".git",
   ".mypy_cache",
@@ -188,11 +228,10 @@ warn_unused_ignores = true
 warn_no_return = true
 strict_equality = true
 
-# Fix for multiple 'src' modules
+# Treat src/ as the source/import root.
 explicit_package_bases = true
 namespace_packages = true
 
-# Exclude paths to avoid duplicate module conflicts
 exclude = ["src/.*/__pycache__", "src/__pycache__", ".venv", "venv", "env"]
 
 # Work around missing type stubs for third-party libraries.
@@ -200,26 +239,30 @@ exclude = ["src/.*/__pycache__", "src/__pycache__", ".venv", "venv", "env"]
 module = ["faiss.*", "fitz.*", "sentence_transformers.*"]
 ignore_missing_imports = true
 
+
 # -------------------------------------------------
 # Pytest Configuration
 # Test discovery, execution, and custom markers.
 # -------------------------------------------------
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]
 asyncio_mode = "auto"
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+
 addopts = "--strict-markers --tb=short -v -p no:langsmith_plugin"
+
 markers = [
   "unit: Unit tests — no I/O, no DB, no external services",
   "integration: Integration tests — use real services",
   "slow: Tests that take more than 5 seconds",
 ]
 
+
 # -------------------------------------------------
 # Coverage Configuration
-# Code coverage collection and reporting settings.
 # -------------------------------------------------
 [tool.coverage.run]
 source = ["src"]
@@ -230,6 +273,7 @@ branch = true
 show_missing = true
 skip_covered = false
 fail_under = 30
+
 exclude_lines = [
   "pragma: no cover",
   "if TYPE_CHECKING:",
@@ -237,9 +281,10 @@ exclude_lines = [
   "if __name__ == .__main__.:",
 ]
 
+
 # -------------------------------------------------
 # Build System
-# Backend used to build and package the project.
+# Backend used to build and manage the project.
 # -------------------------------------------------
 [build-system]
 requires = ["poetry-core"]

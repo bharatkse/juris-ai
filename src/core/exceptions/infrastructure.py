@@ -18,7 +18,7 @@ to HTTP 5xx responses by the application's global exception handlers.
 
 from __future__ import annotations
 
-from src.core.constants import (
+from core.constants import (
     ERROR_CACHE,
     ERROR_CONFIGURATION,
     ERROR_EXTERNAL_SERVICE,
@@ -26,7 +26,7 @@ from src.core.constants import (
     ERROR_PERSISTENCE,
     ERROR_STORAGE,
 )
-from src.core.exceptions.base import InfrastructureError
+from core.exceptions.base import InfrastructureError
 
 
 class PersistenceError(InfrastructureError):

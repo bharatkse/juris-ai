@@ -14,7 +14,7 @@ validated and worth the extra dependency + cost for an offline,
 infrequent CI job (not per-request).
 
 Usage:
-    poetry run python -m src.rag.evaluation.ragas_offline \
+    poetry run python -m rag.evaluation.ragas_offline \
         --dataset eval/golden_dataset.jsonl
 
 Golden dataset format (JSONL, one record per line):
@@ -30,7 +30,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from src.core.logger import get_logger
+from adapters.observability.logger import get_logger
 
 log = get_logger(__name__)
 

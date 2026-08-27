@@ -11,8 +11,8 @@ from __future__ import annotations
 import asyncio
 from abc import ABC, abstractmethod
 
-from src.core.exceptions.rag import EmbeddingError
-from src.core.logger import get_logger
+from adapters.observability.logger import get_logger
+from core.exceptions.rag import EmbeddingError
 
 log = get_logger(__name__)
 

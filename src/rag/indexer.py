@@ -15,10 +15,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Protocol
 
-from src.core.exceptions.rag import RAGError
-from src.core.logger import get_logger
-from src.rag.chunker import chunk_text
-from src.rag.embeddings import EmbeddingProvider
+from adapters.observability.logger import get_logger
+from core.exceptions.rag import RAGError
+from rag.chunker import chunk_text
+from rag.embeddings import EmbeddingProvider
 
 log = get_logger(__name__)
 
@@ -50,7 +50,7 @@ class Chunk:
 class VectorStore(Protocol):
     """
     Minimal vector store contract. Implementations: pgvector-backed
-    store (reusing existing Postgres), or a dedicated vector DB.
+    store (reusing existing Postgres), or a dedicated vector adapters.persistence.sqlalchemy
     """
 
     async def upsert(

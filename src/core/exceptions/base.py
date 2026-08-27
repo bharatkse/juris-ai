@@ -17,7 +17,7 @@ handlers, keeping the exception hierarchy transport-agnostic.
 
 from __future__ import annotations
 
-from src.core.constants import (
+from core.constants import (
     ERROR_AI,
     ERROR_DOMAIN,
     ERROR_INFRASTRUCTURE,

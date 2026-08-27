@@ -6,9 +6,9 @@ from __future__ import annotations
 
 import factory
 
-from src.core.enums import ActionTypeEnum, ActorTypeEnum, AgentActionStatusEnum
-from src.db.mixins import generate_prefixed_uuid_pk
-from src.db.models.agent_action import AgentAction
+from adapters.persistence.sqlalchemy.mixins import generate_prefixed_uuid_pk
+from adapters.persistence.sqlalchemy.models.agent_action import AgentAction
+from core.enums import ActionTypeEnum, ActorTypeEnum, AgentActionStatusEnum
 from tests.factories.base import BaseFactory
 from tests.factories.conversation_event import ConversationEventFactory
 from tests.factories.user import UserFactory

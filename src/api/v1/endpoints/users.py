@@ -6,16 +6,16 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, status
 
-from src.api.dependencies.user import get_user_service
-from src.api.schemas.user import (
+from adapters.observability.logger import get_logger
+from api.dependencies.user import get_user_service
+from api.schemas.user import (
     RegisterNewUserRequest,
     UpdateUserProfileRequest,
     UserResponse,
 )
-from src.core.logger import get_logger
-from src.core.response import ApiResponse
-from src.core.types import UserId
-from src.services.user import UserService
+from api.utilities.api_response import ApiResponse
+from application.services.user import UserService
+from core.types import UserId
 
 logger = get_logger(__name__)
 

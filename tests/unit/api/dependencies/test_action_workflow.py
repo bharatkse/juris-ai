@@ -8,12 +8,12 @@ from unittest.mock import MagicMock
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.dependencies.action_workflow import get_action_workflow_service
-from src.authorization.approval_lifecycle.policy import ApprovalLifecyclePolicy
-from src.authorization.service import AuthorizationService
-from src.services.action_workflow import ActionWorkflowService
-from src.services.agent_action import AgentActionService
-from src.services.approval_lifecycle import ApprovalLifecycleService
+from api.dependencies.action_workflow import get_action_workflow_service
+from application.authorization.approval_lifecycle.policy import ApprovalLifecyclePolicy
+from application.authorization.service import AuthorizationService
+from application.services.action_workflow import ActionWorkflowService
+from application.services.agent_action import AgentActionService
+from application.services.approval_lifecycle import ApprovalLifecycleService
 
 
 def test_get_action_workflow_service_returns_service() -> None:

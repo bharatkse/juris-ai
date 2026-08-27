@@ -12,11 +12,11 @@ import pytest
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from src import main
-from src.middleware.request_context import RequestContextMiddleware
+import main
+from api.middleware.request_context import RequestContextMiddleware
 
 
-@patch("src.main.register_exception_handlers")
+@patch("main.register_exception_handlers")
 def test_create_app(
     mock_register_exception_handlers: MagicMock,
 ) -> None:
@@ -33,7 +33,7 @@ def test_create_app(
 
     assert app.title == main.API_TITLE
     assert app.description == main.API_DESCRIPTION
-    assert app.version == main.settings.APP_VERSION
+    assert app.version == main.settings.app.APP_VERSION
 
     mock_register_exception_handlers.assert_called_once_with(
         app,
@@ -96,27 +96,31 @@ async def test_root_endpoint() -> None:
 
     assert response.status_code == 200
 
-    payload = json.loads(
-        response.body,
-    )
+    # Handle body parsing whether bytes or string
+    body_data = response.body.decode() if isinstance(response.body, bytes) else response.body
+    payload = json.loads(body_data)
 
     assert payload["success"] is True
 
     assert payload["data"] == {
-        "name": main.settings.APP_NAME,
-        "version": main.settings.APP_VERSION,
-        "environment": main.settings.ENVIRONMENT,
-        "docs": ("/docs" if main.settings.ENABLE_DOCS else None),
+        "name": main.settings.app.APP_NAME,
+        "version": main.settings.app.APP_VERSION,
+        "environment": (
+            main.settings.app.ENVIRONMENT.value
+            if hasattr(main.settings.app.ENVIRONMENT, "value")
+            else main.settings.app.ENVIRONMENT
+        ),
+        "docs": ("/docs" if main.settings.app.ENABLE_DOCS else None),
         "health": "/api/v1/health",
     }
 
 
 @pytest.mark.asyncio
-@patch("src.main.create_ai_orchestrator")
-@patch("src.main.AsyncPostgresSaver.from_conn_string")
-@patch("src.main.logger")
-@patch("src.main.ensure_dir")
-@patch("src.main.setup_logging")
+@patch("main.create_ai_orchestrator")
+@patch("main.AsyncPostgresSaver.from_conn_string")
+@patch("main.logger")
+@patch("main.ensure_dir")
+@patch("main.setup_logging")
 async def test_lifespan(
     mock_setup_logging: MagicMock,
     mock_ensure_dir: MagicMock,
@@ -144,21 +148,21 @@ async def test_lifespan(
         pass
 
     mock_setup_logging.assert_called_once_with(
-        level=main.settings.LOG_LEVEL,
-        fmt=main.settings.LOG_FORMAT,
-        log_file=main.settings.LOG_FILE,
-        max_mb=main.settings.LOG_MAX_MB,
-        backup_count=main.settings.LOG_BACKUP_COUNT,
+        level=main.settings.logging.LOG_LEVEL,
+        fmt=main.settings.logging.LOG_FORMAT,
+        log_file=main.settings.logging.LOG_FILE,
+        max_mb=main.settings.logging.LOG_MAX_MB,
+        backup_count=main.settings.logging.LOG_BACKUP_COUNT,
     )
 
     assert mock_ensure_dir.call_count == 2
 
     mock_ensure_dir.assert_any_call(
-        main.settings.DATA_DIRECTORY,
+        main.settings.logging.DATA_DIRECTORY,
     )
 
     mock_ensure_dir.assert_any_call(
-        main.settings.LOG_DIRECTORY,
+        main.settings.logging.LOG_DIRECTORY,
     )
 
     checkpointer.setup.assert_awaited_once_with()
@@ -177,8 +181,8 @@ async def test_lifespan(
 
 
 @pytest.mark.asyncio
-@patch("src.main.ensure_dir")
-@patch("src.main.setup_logging")
+@patch("main.ensure_dir")
+@patch("main.setup_logging")
 async def test_lifespan_propagates_startup_errors(
     mock_setup_logging: MagicMock,
     mock_ensure_dir: MagicMock,

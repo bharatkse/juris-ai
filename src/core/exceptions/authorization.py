@@ -2,7 +2,7 @@
 Authorization-related exceptions.
 """
 
-from src.core.exceptions.base import DomainError
+from core.exceptions.base import DomainError
 
 
 class AuthorizationError(DomainError):

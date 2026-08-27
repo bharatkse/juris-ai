@@ -10,20 +10,20 @@ from collections.abc import AsyncIterator
 from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import StreamingResponse
 
-from src.api.dependencies.auth import get_current_user
-from src.api.dependencies.chat import get_chat_service
-from src.api.helpers.files import build_tool_files
-from src.api.schemas.chat import (
+from adapters.observability.logger import get_logger
+from api.dependencies.auth import get_current_user
+from api.dependencies.chat import get_chat_service
+from api.helpers.files import build_tool_files
+from api.schemas.chat import (
     AIResponse,
     ChatRequest,
     ChatResponse,
     ChatStreamResponse,
     ConversationEventResponse,
 )
-from src.api.streaming import encode_sse_event
-from src.core.logger import get_logger
-from src.core.response import ApiResponse
-from src.services.chat import ChatService
+from api.utilities.api_response import ApiResponse
+from api.utilities.streaming import encode_sse_event
+from application.services.chat import ChatService
 
 logger = get_logger(__name__)
 
@@ -46,7 +46,7 @@ async def chat(
     service: ChatService = Depends(get_chat_service),
 ) -> ApiResponse:
     """
-    Send a message to JurisAI.
+    Send a message to Jurisagentic.
     """
 
     logger.info(

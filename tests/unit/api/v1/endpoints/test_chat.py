@@ -11,18 +11,18 @@ import pytest
 from fastapi import status
 from fastapi.responses import StreamingResponse
 
-from src.api.schemas.chat import ChatStreamResponse, ConversationEventResponse
-from src.api.v1.endpoints.chat import chat, stream_chat
-from src.core.response import ApiResponse
-from tests.builders.chat import build_chat_result, build_chat_stream_chunk
-from tests.builders.schemas import build_chat_request
+from api.schemas.chat import ChatStreamResponse, ConversationEventResponse
+from api.utilities.api_response import ApiResponse
+from api.v1.endpoints.chat import chat, stream_chat
+from tests.builders.api.schemas import build_chat_request
+from tests.builders.application.chat import build_chat_result, build_chat_stream_chunk
 from tests.helpers.identifiers import unknown_user_id
 from tests.helpers.request import build_http_request
 
 
 @pytest.mark.asyncio
 @patch(
-    "src.api.v1.endpoints.chat.ConversationEventResponse.model_validate",
+    "api.v1.endpoints.chat.ConversationEventResponse.model_validate",
     wraps=ConversationEventResponse.model_validate,
 )
 async def test_chat(
@@ -117,7 +117,7 @@ async def test_stream_chat_returns_streaming_response() -> None:
 
 
 @pytest.mark.asyncio
-@patch("src.api.v1.endpoints.chat.encode_sse_event")
+@patch("api.v1.endpoints.chat.encode_sse_event")
 async def test_stream_chat_streams_events(
     mock_encode_sse_event: MagicMock,
 ) -> None:
@@ -177,7 +177,7 @@ async def test_stream_chat_streams_events(
 
 
 @pytest.mark.asyncio
-@patch("src.api.v1.endpoints.chat.logger")
+@patch("api.v1.endpoints.chat.logger")
 async def test_stream_chat_propagates_cancelled_error(
     mock_logger: MagicMock,
 ) -> None:

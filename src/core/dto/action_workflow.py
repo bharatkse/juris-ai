@@ -6,8 +6,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from src.core.dto.agent_action import AgentActionResponseDTO
-from src.core.dto.approval import ApprovalResponseDTO
+from core.dto.agent_action import AgentActionResponseDTO
+from core.dto.approval import ApprovalResponseDTO
 
 
 @dataclass(frozen=True, slots=True)

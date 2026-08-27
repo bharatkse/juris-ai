@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from src.core.enums import MessageRoleEnum
-from src.db.models.conversation import Conversation
-from src.db.models.conversation_event import ConversationEvent
+from adapters.persistence.sqlalchemy.models.conversation import Conversation
+from adapters.persistence.sqlalchemy.models.conversation_event import ConversationEvent
+from core.enums import MessageRoleEnum
 from tests.factories.conversation import ConversationFactory
 from tests.factories.conversation_event import ConversationEventFactory
 

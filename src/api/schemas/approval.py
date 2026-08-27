@@ -9,7 +9,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.core.enums import ApprovalDecisionEnum, ApprovalStatusEnum
+from core.enums import ApprovalDecisionEnum, ApprovalStatusEnum
 
 
 class ApprovalDecisionRequest(BaseModel):

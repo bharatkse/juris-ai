@@ -7,7 +7,7 @@ from __future__ import annotations
 import factory
 from factory.alchemy import SQLAlchemyModelFactory
 
-from src.db.mixins import utcnow
+from adapters.persistence.sqlalchemy.mixins import utcnow
 
 
 class BaseFactory(SQLAlchemyModelFactory):

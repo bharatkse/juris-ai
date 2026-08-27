@@ -6,8 +6,8 @@ from __future__ import annotations
 
 from fastapi import Request
 
-from src.api.dependencies.context import get_request_context
-from src.core.context import RequestContext
+from api.dependencies.context import get_request_context
+from application.context.request import RequestContext
 
 
 def test_get_request_context_returns_request_context() -> None:

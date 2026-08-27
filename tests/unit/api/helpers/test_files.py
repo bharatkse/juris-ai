@@ -9,8 +9,8 @@ from io import BytesIO
 import pytest
 from fastapi import UploadFile
 
-from src.api.helpers.files import build_tool_files
-from src.core.dto.tool import ToolFileDTO
+from api.helpers.files import build_tool_files
+from core.dto.tool import ToolFileDTO
 
 
 @pytest.mark.asyncio

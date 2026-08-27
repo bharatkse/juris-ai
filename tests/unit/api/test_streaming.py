@@ -8,7 +8,7 @@ import json
 
 from pydantic import BaseModel
 
-from src.api.streaming import encode_sse_event
+from api.utilities.streaming import encode_sse_event
 
 
 class DummyEvent(BaseModel):

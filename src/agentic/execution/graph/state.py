@@ -1,0 +1,81 @@
+"""
+LangGraph execution state.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from operator import add
+from typing import Annotated, Any, TypedDict
+from uuid import UUID
+
+from core.dto.agent import AgentContextDTO
+from core.dto.agent_action import AgentActionRequestDTO
+from core.dto.conversation import ConversationDTO
+from core.dto.planning import ExecutionPlanDTO
+from core.enums import ExecutionStatusEnum
+
+
+class ExecutionStepUpdate(TypedDict):
+    """
+    Immutable execution-state update produced by a graph node.
+    """
+
+    step_id: str
+
+    status: ExecutionStatusEnum
+
+    retry_count: int
+
+    started_at: datetime | None
+
+    completed_at: datetime | None
+
+    error: str | None
+
+
+class ExecutionArtifactUpdate(TypedDict):
+    """
+    Immutable execution-memory update produced by a graph node.
+    """
+
+    key: str
+
+    value: Any
+
+
+class ExecutionGraphState(TypedDict):
+    """
+    LangGraph runtime state.
+
+    Graph state contains immutable/update-oriented values rather than
+    mutable ExecutionStateSchema or ExecutionMemorySchema instances.
+
+    This allows multiple parallel nodes to safely emit updates to the
+    same channels.
+
+    The action field contains only the concrete action proposed by an
+    agent. Action persistence, authorization, approval-policy evaluation,
+    and approval-request creation are handled after graph execution by
+    ExecutionSession through ActionWorkflowService.
+    """
+
+    request_id: UUID
+
+    conversation: ConversationDTO
+
+    context: AgentContextDTO
+
+    plan: ExecutionPlanDTO
+
+    execution_state_updates: Annotated[
+        list[ExecutionStepUpdate],
+        add,
+    ]
+
+    memory_updates: Annotated[
+        list[ExecutionArtifactUpdate],
+        add,
+    ]
+
+    action: AgentActionRequestDTO | None

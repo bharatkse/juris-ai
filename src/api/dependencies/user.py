@@ -7,10 +7,10 @@ from __future__ import annotations
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db.session import get_db_session
-from src.repositories.user import UserRepository
-from src.security.password import PasswordService
-from src.services.user import UserService
+from adapters.persistence.sqlalchemy.repositories.user import UserRepository
+from adapters.persistence.sqlalchemy.session import get_db_session
+from adapters.security.password import PasswordService
+from application.services.user import UserService
 
 
 def get_password_service() -> PasswordService:

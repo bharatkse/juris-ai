@@ -4,8 +4,8 @@ Validation exceptions.
 
 from __future__ import annotations
 
-from src.core.constants import HTTP_422_UNPROCESSABLE_ENTITY
-from src.core.exceptions.base import DomainError
+from core.constants import HTTP_422_UNPROCESSABLE_ENTITY
+from core.exceptions.base import DomainError
 
 
 class ValidationError(DomainError):

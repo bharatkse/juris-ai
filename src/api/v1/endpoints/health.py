@@ -6,12 +6,12 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, status
 
-from src.api.dependencies.context import get_request_context
-from src.core.config import get_settings
-from src.core.context import RequestContext
-from src.core.logger import get_logger
-from src.core.response import ApiResponse
-from src.observability.metrics import metrics
+from adapters.observability.logger import get_logger
+from adapters.observability.metrics import metrics
+from api.dependencies.context import get_request_context
+from api.utilities.api_response import ApiResponse
+from application.context.request import RequestContext
+from config.settings import get_settings
 
 logger = get_logger(__name__)
 
@@ -51,9 +51,9 @@ async def health(
         status_code=status.HTTP_200_OK,
         data={
             "status": "healthy",
-            "service": settings.APP_NAME,
-            "version": settings.APP_VERSION,
-            "environment": settings.ENVIRONMENT,
+            "service": settings.app.APP_NAME,
+            "version": settings.app.APP_VERSION,
+            "environment": settings.app.ENVIRONMENT,
         },
         metadata=context.to_metadata(),
     )

@@ -7,9 +7,9 @@ from __future__ import annotations
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db.session import get_db_session
-from src.repositories.approval import ApprovalRepository
-from src.services.approval_lifecycle import ApprovalLifecycleService
+from adapters.persistence.sqlalchemy.repositories.approval import ApprovalRepository
+from adapters.persistence.sqlalchemy.session import get_db_session
+from application.services.approval_lifecycle import ApprovalLifecycleService
 
 
 def get_approval_repository(

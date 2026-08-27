@@ -9,18 +9,21 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi import status
 
-from src.api.v1.endpoints.users import (
+from api.utilities.api_response import ApiResponse
+from api.v1.endpoints.users import (
     get_user_details,
     update_user_profile,
     user_registration,
 )
-from src.core.response import ApiResponse
-from tests.builders.schemas import build_create_user_request, build_update_user_request
+from tests.builders.api.schemas import (
+    build_create_user_request,
+    build_update_user_request,
+)
 from tests.factories.user import UserFactory
 
 
 @pytest.mark.asyncio
-@patch("src.api.v1.endpoints.users.UserResponse.model_validate")
+@patch("api.v1.endpoints.users.UserResponse.model_validate")
 async def test_create_user(
     mock_model_validate: MagicMock,
 ) -> None:
@@ -64,7 +67,7 @@ async def test_create_user(
 
 
 @pytest.mark.asyncio
-@patch("src.api.v1.endpoints.users.UserResponse.model_validate")
+@patch("api.v1.endpoints.users.UserResponse.model_validate")
 async def test_get_user(
     mock_model_validate: MagicMock,
 ) -> None:
@@ -106,7 +109,7 @@ async def test_get_user(
 
 
 @pytest.mark.asyncio
-@patch("src.api.v1.endpoints.users.UserResponse.model_validate")
+@patch("api.v1.endpoints.users.UserResponse.model_validate")
 async def test_update_user(
     mock_model_validate: MagicMock,
 ) -> None:

@@ -24,9 +24,9 @@ import asyncio
 import math
 from typing import Any
 
-from src.core.exceptions.rag import RerankError
-from src.core.logger import get_logger
-from src.rag.indexer import Chunk
+from adapters.observability.logger import get_logger
+from core.exceptions.rag import RerankError
+from rag.indexer import Chunk
 
 log = get_logger(__name__)
 

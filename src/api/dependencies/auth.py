@@ -9,12 +9,12 @@ from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.dependencies.user import get_user_repository
-from src.db.session import get_db_session
-from src.repositories.user import UserRepository
-from src.security.jwt import decode_token, get_subject, is_token_type
-from src.security.password import PasswordService
-from src.services.auth import AuthenticationService
+from adapters.persistence.sqlalchemy.repositories.user import UserRepository
+from adapters.persistence.sqlalchemy.session import get_db_session
+from adapters.security.jwt import decode_token, get_subject, is_token_type
+from adapters.security.password import PasswordService
+from api.dependencies.user import get_user_repository
+from application.services.auth import AuthenticationService
 
 oauth2_scheme = OAuth2PasswordBearer(
     tokenUrl="/api/v1/auth/login",

@@ -27,12 +27,8 @@ ExecutionPlan
 
 from __future__ import annotations
 
-from src.core.constants import (
-    ERROR_PLAN_GENERATION,
-    ERROR_PLAN_VALIDATION,
-    ERROR_PLANNING,
-)
-from src.core.exceptions.base import AIError
+from core.constants import ERROR_PLAN_GENERATION, ERROR_PLAN_VALIDATION, ERROR_PLANNING
+from core.exceptions.base import AIError
 
 
 class PlanningError(AIError):

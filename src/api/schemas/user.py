@@ -8,8 +8,8 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
-from src.core.enums import GenderEnum
-from src.core.types import UserId
+from core.enums import GenderEnum
+from core.types import UserId
 
 
 class RegisterNewUserRequest(BaseModel):

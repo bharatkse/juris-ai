@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from src.core.datetime import utcnow
+from core.utils.datetime import utcnow
 
 
 def test_utcnow_returns_timezone_aware_datetime() -> None:

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from src.core.enums import ActionTypeEnum, AuthorizationDecisionEnum
+from core.enums import ActionTypeEnum, AuthorizationDecisionEnum
 
 
 @dataclass(frozen=True, slots=True)

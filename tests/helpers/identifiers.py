@@ -6,7 +6,8 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from src.core.types import (
+from adapters.persistence.sqlalchemy.mixins import generate_prefixed_uuid_pk
+from core.types import (
     AgentActionId,
     ApprovalId,
     ConversationEventId,
@@ -14,7 +15,6 @@ from src.core.types import (
     DocumentId,
     UserId,
 )
-from src.db.mixins import generate_prefixed_uuid_pk
 
 
 def unknown_user_id() -> UserId:
