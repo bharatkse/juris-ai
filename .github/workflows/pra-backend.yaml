@@ -24,7 +24,6 @@ on:
         description: "Search Engine Base URL."
         required: true
         type: string
-        default: http://localhost
 
     secrets:
       CODECOV_TOKEN:
