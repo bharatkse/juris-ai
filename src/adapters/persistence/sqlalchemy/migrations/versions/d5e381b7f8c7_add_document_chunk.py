@@ -76,13 +76,6 @@ def upgrade() -> None:
         ["document_id"],
         unique=False,
     )
-    op.drop_index(op.f("checkpoints_thread_id_idx"), table_name="checkpoints")
-    op.drop_table("checkpoints")
-    op.drop_index(op.f("checkpoint_blobs_thread_id_idx"), table_name="checkpoint_blobs")
-    op.drop_table("checkpoint_blobs")
-    op.drop_table("checkpoint_migrations")
-    op.drop_index(op.f("checkpoint_writes_thread_id_idx"), table_name="checkpoint_writes")
-    op.drop_table("checkpoint_writes")
     op.alter_column(
         "agent_actions",
         "parameters",
@@ -131,108 +124,7 @@ def downgrade() -> None:
         type_=postgresql.JSONB(astext_type=sa.Text()),
         existing_nullable=False,
     )
-    op.create_table(
-        "checkpoint_writes",
-        sa.Column("thread_id", sa.TEXT(), autoincrement=False, nullable=False),
-        sa.Column(
-            "checkpoint_ns",
-            sa.TEXT(),
-            server_default=sa.text("''::text"),
-            autoincrement=False,
-            nullable=False,
-        ),
-        sa.Column("checkpoint_id", sa.TEXT(), autoincrement=False, nullable=False),
-        sa.Column("task_id", sa.TEXT(), autoincrement=False, nullable=False),
-        sa.Column("idx", sa.INTEGER(), autoincrement=False, nullable=False),
-        sa.Column("channel", sa.TEXT(), autoincrement=False, nullable=False),
-        sa.Column("type", sa.TEXT(), autoincrement=False, nullable=True),
-        sa.Column("blob", postgresql.BYTEA(), autoincrement=False, nullable=False),
-        sa.Column(
-            "task_path",
-            sa.TEXT(),
-            server_default=sa.text("''::text"),
-            autoincrement=False,
-            nullable=False,
-        ),
-        sa.PrimaryKeyConstraint(
-            "thread_id",
-            "checkpoint_ns",
-            "checkpoint_id",
-            "task_id",
-            "idx",
-            name=op.f("checkpoint_writes_pkey"),
-        ),
-    )
-    op.create_index(
-        op.f("checkpoint_writes_thread_id_idx"),
-        "checkpoint_writes",
-        ["thread_id"],
-        unique=False,
-    )
-    op.create_table(
-        "checkpoint_migrations",
-        sa.Column("v", sa.INTEGER(), autoincrement=False, nullable=False),
-        sa.PrimaryKeyConstraint("v", name=op.f("checkpoint_migrations_pkey")),
-    )
-    op.create_table(
-        "checkpoint_blobs",
-        sa.Column("thread_id", sa.TEXT(), autoincrement=False, nullable=False),
-        sa.Column(
-            "checkpoint_ns",
-            sa.TEXT(),
-            server_default=sa.text("''::text"),
-            autoincrement=False,
-            nullable=False,
-        ),
-        sa.Column("channel", sa.TEXT(), autoincrement=False, nullable=False),
-        sa.Column("version", sa.TEXT(), autoincrement=False, nullable=False),
-        sa.Column("type", sa.TEXT(), autoincrement=False, nullable=False),
-        sa.Column("blob", postgresql.BYTEA(), autoincrement=False, nullable=True),
-        sa.PrimaryKeyConstraint(
-            "thread_id",
-            "checkpoint_ns",
-            "channel",
-            "version",
-            name=op.f("checkpoint_blobs_pkey"),
-        ),
-    )
-    op.create_index(
-        op.f("checkpoint_blobs_thread_id_idx"),
-        "checkpoint_blobs",
-        ["thread_id"],
-        unique=False,
-    )
-    op.create_table(
-        "checkpoints",
-        sa.Column("thread_id", sa.TEXT(), autoincrement=False, nullable=False),
-        sa.Column(
-            "checkpoint_ns",
-            sa.TEXT(),
-            server_default=sa.text("''::text"),
-            autoincrement=False,
-            nullable=False,
-        ),
-        sa.Column("checkpoint_id", sa.TEXT(), autoincrement=False, nullable=False),
-        sa.Column("parent_checkpoint_id", sa.TEXT(), autoincrement=False, nullable=True),
-        sa.Column("type", sa.TEXT(), autoincrement=False, nullable=True),
-        sa.Column(
-            "checkpoint",
-            postgresql.JSONB(astext_type=sa.Text()),
-            autoincrement=False,
-            nullable=False,
-        ),
-        sa.Column(
-            "metadata",
-            postgresql.JSONB(astext_type=sa.Text()),
-            server_default=sa.text("'{}'::jsonb"),
-            autoincrement=False,
-            nullable=False,
-        ),
-        sa.PrimaryKeyConstraint(
-            "thread_id", "checkpoint_ns", "checkpoint_id", name=op.f("checkpoints_pkey")
-        ),
-    )
-    op.create_index(op.f("checkpoints_thread_id_idx"), "checkpoints", ["thread_id"], unique=False)
+
     op.drop_index(op.f("ix_document_chunks_document_id"), table_name="document_chunks")
     op.drop_index("document_chunks_tsv_idx", table_name="document_chunks", postgresql_using="gin")
     op.drop_index(

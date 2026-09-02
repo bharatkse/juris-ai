@@ -177,3 +177,26 @@ async def test_run_returns_agent_response(
 
     assert response.content == "Legal answer"
     assert response.agent_name == legal_agent.metadata.name
+
+
+@pytest.mark.asyncio
+async def test_run_passes_retrieved_context_to_the_prompt(
+    legal_agent: LegalAgent,
+    mock_llm_client,
+    mock_retriever,
+) -> None:
+    """It should use the Tool.execute interface and include RAG content."""
+
+    mock_retriever.execute = AsyncMock(return_value="Relevant contract clause.")
+    mock_llm_client.generate_structured = AsyncMock(return_value=build_agent_response())
+
+    await legal_agent.run(
+        request=build_agent_request(
+            instruction="Answer the user's legal question.",
+        ),
+    )
+
+    mock_retriever.execute.assert_awaited_once_with(query="Hello")
+
+    llm_request = mock_llm_client.generate_structured.await_args.kwargs["request"]
+    assert "Relevant contract clause." in [message.content for message in llm_request.messages]

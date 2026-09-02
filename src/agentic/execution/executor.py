@@ -17,7 +17,7 @@ from core.dto.conversation import ConversationDTO
 from core.dto.planning import ExecutionPlanDTO
 
 if TYPE_CHECKING:
-    from services.action_workflow import ActionWorkflowService
+    from application.services.action_workflow import ActionWorkflowService
 
 
 class Executor:

@@ -217,3 +217,8 @@ docker/.init/
 
 # TEST DB
 pytests.db
+
+
+./.process_dataset
+
+localstack-data

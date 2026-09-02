@@ -12,7 +12,7 @@ from agentic.execution.graph.builder import ExecutionGraphBuilder
 from agentic.execution.graph.factory import ExecutionGraphFactory
 from agentic.execution.retry import RetryClassifier
 from agentic.execution.state import ExecutionStateAssembler
-from agentic.runtime.containers import RegistryContainer
+from runtime.containers import RegistryContainer
 
 
 def create_executor(

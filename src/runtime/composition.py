@@ -10,14 +10,14 @@ from adapters.observability.langsmith import configure_langsmith
 from agentic.execution.aggregation.response import ResponseAggregator
 from agentic.execution.validation.response import ResponseValidator
 from agentic.orchestration.orchestrator import AIOrchestrator
-from agentic.runtime.factories.agents import register_agents
-from agentic.runtime.factories.authorization import create_authorization
-from agentic.runtime.factories.clients import create_clients
-from agentic.runtime.factories.executor import create_executor
-from agentic.runtime.factories.planner import create_planner
-from agentic.runtime.factories.registries import create_registries
-from agentic.runtime.factories.tools import register_tools
 from config.settings import get_settings
+from runtime.factories.agents import register_agents
+from runtime.factories.authorization import create_authorization
+from runtime.factories.clients import create_clients
+from runtime.factories.executor import create_executor
+from runtime.factories.planner import create_planner
+from runtime.factories.registries import create_registries
+from runtime.factories.tools import register_tools
 
 
 def create_ai_orchestrator(

@@ -158,7 +158,7 @@ async def test_lifespan(
     assert mock_ensure_dir.call_count == 2
 
     mock_ensure_dir.assert_any_call(
-        main.settings.logging.DATA_DIRECTORY,
+        main.settings.logging.PROCESS_DATA_DIRECTORY,
     )
 
     mock_ensure_dir.assert_any_call(

@@ -21,8 +21,8 @@ from agentic.planning.planner import ExecutionPlanner
 from agentic.planning.prompts.planning import PlanningPromptBuilder
 from agentic.planning.templates import PlanTemplateRegistry
 from agentic.planning.validator import ExecutionPlanValidator
-from agentic.runtime.containers import ClientContainer
 from core.enums import LLMProviderEnum
+from runtime.containers import ClientContainer
 
 
 def create_planner(*, clients: ClientContainer) -> ExecutionPlanner:

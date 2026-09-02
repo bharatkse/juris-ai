@@ -47,11 +47,7 @@ def mock_retriever() -> RetrieverTool:
         spec=RetrieverTool,
     )
 
-    retriever.run = AsyncMock(
-        return_value=MagicMock(
-            content=(),
-        ),
-    )
+    retriever.execute = AsyncMock(return_value="No relevant content found.")
 
     return retriever
 

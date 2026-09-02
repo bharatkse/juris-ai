@@ -1,174 +1,226 @@
 """
-DocumentChunk repository.
+Document chunk repository.
 
-Owns all persistence for RAG chunks — vector upsert, vector search,
-keyword (full-text) search, and deletion. Previously this logic lived
-directly inside PgVectorStore/KeywordStore as hand-written raw SQL
-(text()); moved here to match how the rest of the project accesses
-the database (DocumentRepository, etc. all own their table's queries
-as a repository, not embedded in a client/service class).
+Provides persistence operations for textual document chunks.
 
-PgVectorStore and KeywordStore (rag/pgvector_store.py,
-rag/keyword_store.py) now become thin adapters satisfying the
-VectorStore protocol expected by VectorIndexer/HybridRetriever, and
-delegate the actual query work to this repository.
+A DocumentChunk represents extracted textual content belonging to a
+source document. Embedding representations are persisted separately
+through DocumentChunkEmbeddingRepository.
 """
 
 from __future__ import annotations
 
-from sqlalchemy import select
-from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.exc import SQLAlchemyError
+from collections.abc import Sequence
+
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.sql import func
 
-from adapters.observability.logger import get_logger
-from adapters.persistence.sqlalchemy.models.document_chunk import DocumentChunk
-from core.exceptions.rag import VectorStoreError
-
-log = get_logger(__name__)
+from adapters.persistence.sqlalchemy.models.document_chunk import (
+    DocumentChunk,
+)
 
 
 class DocumentChunkRepository:
     """
-    Repository for the document_chunks table.
+    Repository for persisted document chunks.
+
+    This repository intentionally has no knowledge of embeddings,
+    embedding models, vector dimensions, or vector search.
     """
 
-    def __init__(self, *, session: AsyncSession) -> None:
-        self._session = session
-
-    async def upsert_many(
+    def __init__(
         self,
         *,
-        rows: list[dict],
+        session: AsyncSession,
     ) -> None:
         """
-        rows: list of dicts with keys id, document_id, text,
-        chunk_metadata, embedding_model, embedding.
+        Initialize the repository.
+
+        Args:
+            session:
+                Active asynchronous SQLAlchemy session.
         """
 
-        if not rows:
-            return
+        self._session = session
 
-        try:
-            for row in rows:
-                stmt = pg_insert(DocumentChunk).values(**row)
-                stmt = stmt.on_conflict_do_update(
-                    index_elements=[DocumentChunk.id],
-                    set_={
-                        "text": stmt.excluded.text,
-                        "chunk_metadata": stmt.excluded.chunk_metadata,
-                        "embedding_model": stmt.excluded.embedding_model,
-                        "embedding": stmt.excluded.embedding,
-                    },
-                )
-                await self._session.execute(stmt)
-
-            await self._session.commit()
-
-        except SQLAlchemyError as exc:
-            await self._session.rollback()
-            log.exception("Failed to upsert %d chunk row(s).", len(rows))
-            raise VectorStoreError(message="Failed to write chunks to vector store.") from exc
-
-        log.debug("Upserted %d chunk row(s).", len(rows))
-
-    async def vector_search(
+    async def get_by_id(
         self,
         *,
-        vector: list[float],
-        top_k: int,
-        allowed_document_ids: set[str] | None = None,
-        embedding_model: str | None = None,
-    ) -> list[tuple[DocumentChunk, float]]:
+        chunk_id: str,
+    ) -> DocumentChunk | None:
         """
-        embedding_model: when provided, restricts the search to
-        chunks embedded with that exact model. Cosine distance is
-        only meaningful between vectors from the same embedding
-        space — comparing a query vector against chunks embedded by a
-        different (e.g. previously swapped-out) model produces
-        numerically valid but semantically meaningless scores with no
-        error to signal it. This filter is what makes an embedding
-        model migration safe: old and new vectors coexist in the same
-        table without silently cross-contaminating similarity scores.
+        Retrieve a document chunk by identifier.
+
+        Args:
+            chunk_id:
+                DocumentChunk identifier.
+
+        Returns:
+            The matching chunk, or None when it does not exist.
         """
 
-        if allowed_document_ids is not None and not allowed_document_ids:
-            return []
+        result = await self._session.execute(
+            select(DocumentChunk).where(
+                DocumentChunk.id == chunk_id,
+            ),
+        )
 
-        try:
-            distance = DocumentChunk.embedding.cosine_distance(vector)
+        return result.scalar_one_or_none()
 
-            stmt = select(DocumentChunk, (1 - distance).label("score")).order_by(distance)
-
-            if allowed_document_ids is not None:
-                stmt = stmt.where(DocumentChunk.document_id.in_(allowed_document_ids))
-
-            if embedding_model is not None:
-                stmt = stmt.where(DocumentChunk.embedding_model == embedding_model)
-
-            stmt = stmt.limit(top_k)
-
-            result = await self._session.execute(stmt)
-            rows = result.all()
-
-        except SQLAlchemyError as exc:
-            log.exception("Vector search failed.")
-            raise VectorStoreError(message="Vector search failed.") from exc
-
-        return [(row.DocumentChunk, float(row.score)) for row in rows]
-
-    async def keyword_search(
+    async def list_by_document_id(
         self,
         *,
-        query: str,
-        top_k: int,
-        allowed_document_ids: set[str] | None = None,
-    ) -> list[tuple[DocumentChunk, float]]:
-        if allowed_document_ids is not None and not allowed_document_ids:
-            return []
+        document_id: str,
+    ) -> Sequence[DocumentChunk]:
+        """
+        Retrieve all chunks belonging to a document.
 
-        try:
-            tsquery = func.plainto_tsquery("english", query)
-            rank = func.ts_rank(DocumentChunk.text_tsv, tsquery).label("score")
+        Args:
+            document_id:
+                Source document identifier.
 
-            stmt = (
-                select(DocumentChunk, rank)
-                .where(DocumentChunk.text_tsv.op("@@")(tsquery))
-                .order_by(rank.desc())
+        Returns:
+            Document chunks ordered by creation time.
+        """
+
+        result = await self._session.execute(
+            select(DocumentChunk)
+            .where(
+                DocumentChunk.document_id == document_id,
             )
+            .order_by(
+                DocumentChunk.created_at,
+            ),
+        )
 
-            if allowed_document_ids is not None:
-                stmt = stmt.where(DocumentChunk.document_id.in_(allowed_document_ids))
+        return result.scalars().all()
 
-            stmt = stmt.limit(top_k)
+    async def create(
+        self,
+        *,
+        chunk_id: str,
+        text: str,
+        chunk_metadata: dict,
+        document_id: str | None,
+    ) -> DocumentChunk:
+        """
+        Create a document chunk.
 
-            result = await self._session.execute(stmt)
-            rows = result.all()
+        Args:
+            chunk_id:
+                Identifier of the chunk.
 
-        except SQLAlchemyError as exc:
-            log.exception("Keyword search failed for query=%r.", query)
-            raise VectorStoreError(message="Keyword search failed.") from exc
+            document_id:
+                Source document identifier.
 
-        return [(row.DocumentChunk, float(row.score)) for row in rows]
+            text:
+                Extracted textual content.
 
-    async def delete_by_document_id(self, *, document_id: str) -> int:
-        try:
-            result = await self._session.execute(
-                select(DocumentChunk).where(DocumentChunk.document_id == document_id)
-            )
-            chunks = result.scalars().all()
+            chunk_metadata:
+                Metadata associated with the chunk.
 
-            for chunk in chunks:
-                await self._session.delete(chunk)
+        Returns:
+            The newly created DocumentChunk entity.
+        """
 
-            await self._session.commit()
+        chunk = DocumentChunk(
+            id=chunk_id,
+            document_id=document_id,
+            text=text,
+            chunk_metadata=chunk_metadata,
+        )
 
-        except SQLAlchemyError as exc:
-            await self._session.rollback()
-            log.exception("Failed to delete chunks for document '%s'.", document_id)
-            raise VectorStoreError(
-                message=f"Failed to delete chunks for document '{document_id}'."
-            ) from exc
+        self._session.add(chunk)
 
-        return len(chunks)
+        await self._session.flush()
+
+        return chunk
+
+    async def update(
+        self,
+        *,
+        chunk: DocumentChunk,
+        text: str,
+        chunk_metadata: dict,
+    ) -> DocumentChunk:
+        """
+        Update the textual content and metadata of a chunk.
+
+        Args:
+            chunk:
+                Existing DocumentChunk entity.
+
+            text:
+                Updated textual content.
+
+            chunk_metadata:
+                Updated chunk metadata.
+
+        Returns:
+            Updated DocumentChunk entity.
+        """
+
+        chunk.text = text
+        chunk.chunk_metadata = chunk_metadata
+
+        await self._session.flush()
+
+        return chunk
+
+    async def delete_by_id(
+        self,
+        *,
+        chunk_id: str,
+    ) -> bool:
+        """
+        Delete a single document chunk.
+
+        Associated embeddings are removed through the database
+        foreign-key cascade.
+
+        Args:
+            chunk_id:
+                DocumentChunk identifier.
+
+        Returns:
+            True when a chunk was deleted, otherwise False.
+        """
+
+        result = await self._session.execute(
+            delete(DocumentChunk).where(
+                DocumentChunk.id == chunk_id,
+            ),
+        )
+
+        await self._session.flush()
+
+        return bool(result.rowcount)
+
+    async def delete_by_document_id(
+        self,
+        *,
+        document_id: str,
+    ) -> int:
+        """
+        Delete all chunks belonging to a document.
+
+        Associated embeddings are removed through the database
+        foreign-key cascade.
+
+        Args:
+            document_id:
+                Source document identifier.
+
+        Returns:
+            Number of deleted chunks.
+        """
+
+        result = await self._session.execute(
+            delete(DocumentChunk).where(
+                DocumentChunk.document_id == document_id,
+            ),
+        )
+
+        await self._session.flush()
+
+        return result.rowcount or 0

@@ -53,14 +53,7 @@ class RetrieverTool(Tool):
             )
 
         except Exception:
-            # log.exception alone doesn't page anyone — record_metric
-            # feeds the same dashboards/alerting online_sampler.py
-            # already writes to, so a spike in retrieval failures is
-            # visible without someone having to be watching logs live.
-            from observability.metrics import record_metric
-
             log.exception("Retrieval failed for query=%r.", query)
-            record_metric("tool.retriever.error", 1, tags={"query_len": str(len(query))})
             return "Retrieval failed — please try again."
 
         if not results:

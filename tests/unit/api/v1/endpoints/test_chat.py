@@ -11,13 +11,85 @@ import pytest
 from fastapi import status
 from fastapi.responses import StreamingResponse
 
+from api.dependencies.authorization import bind_document_acl
 from api.schemas.chat import ChatStreamResponse, ConversationEventResponse
 from api.utilities.api_response import ApiResponse
-from api.v1.endpoints.chat import chat, stream_chat
+from api.v1.endpoints.chat import chat, router, stream_chat
+from application.authorization.service import AuthorizationService
+from application.context.request import bind_request_context
 from tests.builders.api.schemas import build_chat_request
-from tests.builders.application.chat import build_chat_result, build_chat_stream_chunk
+from tests.builders.application.chat import (
+    build_chat_result,
+    build_chat_stream_chunk,
+)
 from tests.helpers.identifiers import unknown_user_id
 from tests.helpers.request import build_http_request
+
+
+def _build_authorization_service() -> MagicMock:
+    """
+    Build an authorization service with a resolved document ACL.
+    """
+
+    authorization_service = MagicMock(
+        spec=AuthorizationService,
+    )
+
+    authorization_service.get_allowed_document_ids.return_value = {
+        "document-1",
+        "document-2",
+    }
+
+    return authorization_service
+
+
+async def _bind_test_acl(
+    *,
+    http_request,
+    chat_request,
+    current_user,
+) -> MagicMock:
+    """
+    Bind request context and resolve the document ACL.
+
+    Direct endpoint function calls bypass FastAPI's dependency injection,
+    so the ACL dependency must be executed explicitly in unit tests.
+    """
+
+    authorization_service = _build_authorization_service()
+
+    bind_request_context(
+        request_id=http_request.state.context.request_id,
+        conversation_id=str(chat_request.conversation_id),
+    ).__enter__()
+
+    await bind_document_acl(
+        current_user=current_user,
+        authorization_service=authorization_service,
+    )
+
+    return authorization_service
+
+
+def test_chat_route_binds_document_acl() -> None:
+    """
+    It should require ACL resolution before the chat route can run.
+    """
+
+    route = next(route for route in router.routes if getattr(route, "path", None) == "/chat")
+
+    stream_route = next(
+        route for route in router.routes if getattr(route, "path", None) == "/chat/stream"
+    )
+
+    route_dependencies = {dependency.call for dependency in route.dependent.dependencies}
+
+    stream_route_dependencies = {
+        dependency.call for dependency in stream_route.dependent.dependencies
+    }
+
+    assert bind_document_acl in route_dependencies
+    assert bind_document_acl in stream_route_dependencies
 
 
 @pytest.mark.asyncio
@@ -45,12 +117,23 @@ async def test_chat(
 
     http_request = build_http_request()
 
-    response = await chat(
-        http_request=http_request,
-        chat_request=request,
-        current_user=current_user,
-        service=service,
-    )
+    authorization_service = _build_authorization_service()
+
+    with bind_request_context(
+        request_id=http_request.state.context.request_id,
+        conversation_id=str(request.conversation_id),
+    ):
+        await bind_document_acl(
+            current_user=current_user,
+            authorization_service=authorization_service,
+        )
+
+        response = await chat(
+            http_request=http_request,
+            chat_request=request,
+            current_user=current_user,
+            service=service,
+        )
 
     assert isinstance(
         response,
@@ -65,6 +148,10 @@ async def test_chat(
         message=request.message,
         request_id=http_request.state.context.request_id,
         files=(),
+    )
+
+    authorization_service.get_allowed_document_ids.assert_called_once_with(
+        user_id=current_user.id,
     )
 
     assert mock_model_validate.call_count == 2
@@ -96,13 +183,26 @@ async def test_stream_chat_returns_streaming_response() -> None:
 
     service = MagicMock()
     service.stream_chat.return_value = stream()
+
     http_request = build_http_request()
-    response = await stream_chat(
-        http_request=http_request,
-        chat_request=request,
-        current_user=current_user,
-        service=service,
-    )
+
+    authorization_service = _build_authorization_service()
+
+    with bind_request_context(
+        request_id=http_request.state.context.request_id,
+        conversation_id=str(request.conversation_id),
+    ):
+        await bind_document_acl(
+            current_user=current_user,
+            authorization_service=authorization_service,
+        )
+
+        response = await stream_chat(
+            http_request=http_request,
+            chat_request=request,
+            current_user=current_user,
+            service=service,
+        )
 
     assert isinstance(
         response,
@@ -114,6 +214,10 @@ async def test_stream_chat_returns_streaming_response() -> None:
     assert response.headers["Cache-Control"] == "no-cache"
     assert response.headers["Connection"] == "keep-alive"
     assert response.headers["X-Accel-Buffering"] == "no"
+
+    authorization_service.get_allowed_document_ids.assert_called_once_with(
+        user_id=current_user.id,
+    )
 
 
 @pytest.mark.asyncio
@@ -137,20 +241,33 @@ async def test_stream_chat_streams_events(
 
     service = MagicMock()
     service.stream_chat.return_value = stream()
+
     http_request = build_http_request()
+
     mock_encode_sse_event.return_value = "data: test\n\n"
 
-    response = await stream_chat(
-        http_request=http_request,
-        chat_request=request,
-        current_user=current_user,
-        service=service,
-    )
+    authorization_service = _build_authorization_service()
 
-    body = []
+    with bind_request_context(
+        request_id=http_request.state.context.request_id,
+        conversation_id=str(request.conversation_id),
+    ):
+        await bind_document_acl(
+            current_user=current_user,
+            authorization_service=authorization_service,
+        )
 
-    async for item in response.body_iterator:
-        body.append(item)
+        response = await stream_chat(
+            http_request=http_request,
+            chat_request=request,
+            current_user=current_user,
+            service=service,
+        )
+
+        body = []
+
+        async for item in response.body_iterator:
+            body.append(item)
 
     assert body == ["data: test\n\n"]
 
@@ -160,6 +277,10 @@ async def test_stream_chat_streams_events(
         message=request.message,
         request_id=http_request.state.context.request_id,
         files=(),
+    )
+
+    authorization_service.get_allowed_document_ids.assert_called_once_with(
+        user_id=current_user.id,
     )
 
     mock_encode_sse_event.assert_called_once()
@@ -196,19 +317,36 @@ async def test_stream_chat_propagates_cancelled_error(
 
     service = MagicMock()
     service.stream_chat.return_value = stream()
-    http_request = build_http_request()
-    response = await stream_chat(
-        http_request=http_request,
-        chat_request=request,
-        current_user=current_user,
-        service=service,
-    )
 
-    with pytest.raises(
-        asyncio.CancelledError,
+    http_request = build_http_request()
+
+    authorization_service = _build_authorization_service()
+
+    with bind_request_context(
+        request_id=http_request.state.context.request_id,
+        conversation_id=str(request.conversation_id),
     ):
-        async for _ in response.body_iterator:
-            pass
+        await bind_document_acl(
+            current_user=current_user,
+            authorization_service=authorization_service,
+        )
+
+        response = await stream_chat(
+            http_request=http_request,
+            chat_request=request,
+            current_user=current_user,
+            service=service,
+        )
+
+        with pytest.raises(
+            asyncio.CancelledError,
+        ):
+            async for _ in response.body_iterator:
+                pass
+
+    authorization_service.get_allowed_document_ids.assert_called_once_with(
+        user_id=current_user.id,
+    )
 
     mock_logger.info.assert_any_call(
         "Client disconnected from chat stream.",

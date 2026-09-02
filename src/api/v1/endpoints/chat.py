@@ -12,6 +12,7 @@ from fastapi.responses import StreamingResponse
 
 from adapters.observability.logger import get_logger
 from api.dependencies.auth import get_current_user
+from api.dependencies.authorization import bind_document_acl
 from api.dependencies.chat import get_chat_service
 from api.helpers.files import build_tool_files
 from api.schemas.chat import (
@@ -43,6 +44,7 @@ async def chat(
     http_request: Request,
     chat_request: ChatRequest = Depends(ChatRequest.as_form),
     current_user=Depends(get_current_user),
+    _: None = Depends(bind_document_acl),
     service: ChatService = Depends(get_chat_service),
 ) -> ApiResponse:
     """
@@ -107,6 +109,7 @@ async def stream_chat(
     http_request: Request,
     chat_request: ChatRequest = Depends(ChatRequest.as_form),
     current_user=Depends(get_current_user),
+    _: None = Depends(bind_document_acl),
     service: ChatService = Depends(get_chat_service),
 ) -> StreamingResponse:
     """

@@ -18,9 +18,8 @@ from __future__ import annotations
 
 import random
 
-from observability.metrics import record_metric
-
 from adapters.observability.logger import get_logger
+from adapters.observability.metrics import record_metric
 from rag.evaluation.metrics import RAGEvaluator
 
 log = get_logger(__name__)

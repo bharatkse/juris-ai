@@ -1,5 +1,5 @@
 """
-Unit tests for reusable type aliases.
+Unit tests for reusable identifier types.
 """
 
 from __future__ import annotations
@@ -9,7 +9,13 @@ from typing import Annotated, get_args, get_origin
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from core.types import ConversationEventId, ConversationId, PrefixedId, UserId
+from core.types import (
+    ConversationEventId,
+    ConversationId,
+    DocumentId,
+    UserId,
+    _prefixed_id_field,
+)
 
 
 def test_prefixed_id_returns_annotated_type() -> None:
@@ -17,7 +23,7 @@ def test_prefixed_id_returns_annotated_type() -> None:
     It should return an Annotated string type.
     """
 
-    prefixed_id = PrefixedId(
+    prefixed_id = _prefixed_id_field(
         "test",
     )
 
@@ -97,13 +103,13 @@ def test_conversation_event_id_accepts_valid_identifier() -> None:
     assert model.id == "evnt_" + "c" * 32
 
 
-def test_prefixed_id_uses_requested_prefix() -> None:
+def test_document_id_enforces_prefix() -> None:
     """
-    It should enforce the configured identifier prefix.
+    It should enforce the document identifier prefix.
     """
 
     class Model(BaseModel):
-        id: PrefixedId("doct")
+        id: DocumentId
 
     model = Model(
         id="doct_" + "d" * 32,

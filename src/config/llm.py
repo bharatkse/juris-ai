@@ -20,7 +20,9 @@ class LLMSettings(BaseAppSettings):
     web_research_max_concurrency: int = 10
     web_research_fetch_timeout_seconds: int = 10
     web_research_max_chars_per_page: int = 2000
-    rag_min_rerank_score: float = 0.5
+    rag_min_rerank_score: float = 0.3
+    rag_chunk_size: int = 800
+    rag_chunk_overlap: int = 100
 
     # External APIs
     GROQ_API_KEY: SecretStr | None = None

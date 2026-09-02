@@ -14,6 +14,14 @@ lifecycle — not by the Tool class itself. See messaging/email.py and
 messaging/slack.py for how send/post methods sit outside execute()
 and require an approval_token, precisely so a plain agent tool-loop
 can't reach them unchecked.
+
+All tools in this package are process-lifetime singletons, built
+once at startup (see runtime/factories/tools.py). Any per-request
+data a tool needs (DB session, RBAC-resolved document ACL) is read at
+execute()-time — a session factory opened fresh per call, ACL read
+from request_context — never held as instance state, and
+never a parameter of execute() itself if it's security-sensitive
+(see retrieval.py's docstring for why).
 """
 
 from __future__ import annotations

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from agentic.registry.agent import AgentRegistry
 from agentic.registry.tool import ToolRegistry
-from agentic.runtime.containers import RegistryContainer
+from runtime.containers import RegistryContainer
 
 
 def create_registries() -> RegistryContainer:

@@ -82,14 +82,13 @@ def get_password_service() -> PasswordService:
 
 def get_authentication_service(
     db: AsyncSession = Depends(get_db_session),
-    password_service=Depends(
+    password_service: PasswordService = Depends(
         get_password_service,
     ),
 ) -> AuthenticationService:
     """
-    Build authentication service.
+    Build the authentication service for route dependencies.
     """
-
     user_repository = UserRepository(
         session=db,
     )

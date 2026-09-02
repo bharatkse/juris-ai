@@ -25,7 +25,6 @@ happens.
 from __future__ import annotations
 
 from adapters.persistence.sqlalchemy.session import session_factory
-from agentic.runtime.containers import ClientContainer, RegistryContainer
 from agentic.tools.document.document_lookup import DocumentLookupTool
 from agentic.tools.document.parser import ParserTool
 from agentic.tools.messaging.email import EmailTool
@@ -36,6 +35,7 @@ from agentic.tools.search_engine.web_research import WebResearchTool
 from application.authorization.approval_lifecycle.protocols import (
     ApprovalLifecycleServiceProtocol,
 )
+from runtime.containers import ClientContainer, RegistryContainer
 
 
 def register_tools(

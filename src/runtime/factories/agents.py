@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from agentic.agents.contract import ContractAgent
 from agentic.agents.legal import LegalAgent
-from agentic.runtime.containers import ClientContainer, RegistryContainer
+from runtime.containers import ClientContainer, RegistryContainer
 
 
 def register_agents(*, clients: ClientContainer, registries: RegistryContainer) -> None:
