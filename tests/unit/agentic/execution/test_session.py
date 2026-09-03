@@ -13,9 +13,13 @@ from agentic.execution.config import ExecutionTimeoutPolicy
 from agentic.execution.schemas.memory import ExecutionMemorySchema
 from agentic.execution.schemas.state import ExecutionStateSchema
 from agentic.execution.session import ExecutionSession
-from core.enums import ExecutionStatusEnum
+from core.dto.agent_action import AgentActionResponseDTO
+from core.enums import ActionTypeEnum, AgentActionStatusEnum, ExecutionStatusEnum
 from core.exceptions.execution import ExecutionError
-from tests.builders.agentic.agent import build_agent_context
+from tests.builders.agentic.agent import (
+    build_agent_action_request_dto,
+    build_agent_context,
+)
 from tests.builders.agentic.execution import build_graph_state
 from tests.builders.agentic.planning import build_plan
 from tests.builders.application.conversation import build_conversation
@@ -124,6 +128,98 @@ async def test_execute_session(
 
     assert result.action is None
     assert result.approval is None
+
+
+@pytest.mark.asyncio
+async def test_execute_session_passes_tenant_id_to_action_workflow(
+    mock_action_workflow_service: MagicMock,
+) -> None:
+    """
+    It should pass the tenant identifier through the real runtime workflow.
+    """
+
+    request_id = unknown_request_id()
+    conversation = build_conversation()
+    plan = build_plan()
+    context = build_agent_context(
+        user_id="user-123",
+        execution_id="execution-123",
+        thread_id="thread-123",
+        conversation_event_id="event-123",
+    )
+
+    action_request = build_agent_action_request_dto(
+        execution_id="execution-123",
+        thread_id="thread-123",
+        conversation_event_id="event-123",
+        agent_id="agent-123",
+        action_type=ActionTypeEnum.TOOL_CALL,
+        tool_name="lookup_document",
+    )
+
+    action_response = AgentActionResponseDTO(
+        action_id="actn-123",
+        execution_id="execution-123",
+        thread_id="thread-123",
+        conversation_event_id="event-123",
+        agent_id="agent-123",
+        action_type=ActionTypeEnum.TOOL_CALL,
+        actor_type=action_request.actor_type,
+        tool_name="lookup_document",
+        target_agent_id=None,
+        resource_type=None,
+        resource_id=None,
+        parameters={},
+        reason="",
+        status=AgentActionStatusEnum.DRAFT,
+        fingerprint="abc123",
+    )
+
+    graph_state = build_graph_state(
+        request_id=request_id,
+        plan=plan,
+    )
+    graph_state["action"] = action_request
+
+    graph = MagicMock()
+    graph.ainvoke = AsyncMock(return_value=graph_state)
+
+    graph_factory = MagicMock()
+    graph_factory.create.return_value = graph
+
+    state_assembler = MagicMock()
+    state_assembler.assemble_state.return_value = ExecutionStateSchema(
+        request_id=request_id,
+        status=ExecutionStatusEnum.COMPLETED,
+    )
+    state_assembler.assemble_memory.return_value = ExecutionMemorySchema(
+        artifacts={},
+    )
+    state_assembler.assemble_action.return_value = action_request
+
+    preparation_result = MagicMock()
+    preparation_result.action = action_response
+    preparation_result.approval = None
+    mock_action_workflow_service.prepare = AsyncMock(return_value=preparation_result)
+
+    session = ExecutionSession(
+        request_id=request_id,
+        conversation=conversation,
+        context=context,
+        plan=plan,
+        graph_factory=graph_factory,
+        state_assembler=state_assembler,
+        timeout_policy=ExecutionTimeoutPolicy(),
+        action_workflow_service=mock_action_workflow_service,
+    )
+
+    await session.execute()
+
+    mock_action_workflow_service.prepare.assert_awaited_once_with(
+        user_id="user-123",
+        tenant_id="user-123",
+        action=action_request,
+    )
 
 
 @pytest.mark.asyncio

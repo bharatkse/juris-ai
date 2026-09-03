@@ -88,6 +88,8 @@ torch = { version = "*", source = "pytorch-cpu" }
 
 # ONNX runtime for CPU inference
 onnxruntime = "^1.22"
+# Required by sentence-transformers when CrossEncoder uses backend="onnx".
+optimum = { extras = ["onnxruntime"], version = "1.23.3" }
 
 # -------------------------------------------------
 # Large Language Model Providers
@@ -166,6 +168,7 @@ pytest-mock = "^3.15.1"
 factory-boy = "^3.3.3"
 faker = "^40.35.0"
 aiosqlite = "^0.22.1"
+types-aiofiles = "^25.1.0.20260518"
 
 # Code quality
 ruff = "^0.8.0"
@@ -231,7 +234,7 @@ strict_equality = true
 # Treat src/ as the source/import root.
 explicit_package_bases = true
 namespace_packages = true
-
+mypy_path = ["src"]
 exclude = ["src/.*/__pycache__", "src/__pycache__", ".venv", "venv", "env"]
 
 # Work around missing type stubs for third-party libraries.
@@ -247,7 +250,12 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+
+
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+
+
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
@@ -258,6 +266,7 @@ markers = [
   "unit: Unit tests — no I/O, no DB, no external services",
   "integration: Integration tests — use real services",
   "slow: Tests that take more than 5 seconds",
+  "smoke: smoke tests for critical application workflows",
 ]
 
 

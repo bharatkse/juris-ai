@@ -6,25 +6,16 @@ from __future__ import annotations
 
 import pytest
 
-pytest_plugins = [
-    "tests.fixtures.environment",
-    "tests.fixtures.faker",
-    "tests.fixtures.adapters.database",
-    "tests.fixtures.adapters.repositories",
-    "tests.fixtures.adapters.clients.storage",
-    "tests.fixtures.adapters.clients.llm",
-    "tests.fixtures.adapters.clients.groq",
-    "tests.fixtures.adapters.security",
-    "tests.fixtures.factories.config",
-    "tests.fixtures.factories.conversation",
-    "tests.fixtures.api.client",
-    "tests.fixtures.application.services",
-    "tests.fixtures.application.authorization",
-    "tests.fixtures.agentic.orchestrator",
-    "tests.fixtures.agentic.planning",
-    "tests.fixtures.agentic.execution",
-    "tests.fixtures.agentic.agents",
-]
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    for item in items:
+        path = str(item.path)
+
+        if "/tests/unit/" in path:
+            item.add_marker(pytest.mark.unit)
+
+        elif "/tests/smoke/" in path:
+            item.add_marker(pytest.mark.smoke)
 
 
 @pytest.fixture(autouse=True)

@@ -19,7 +19,7 @@ from core.dto.agent import (
 from core.dto.agent_action import AgentActionRequestDTO
 from core.dto.clients.llm import LLMRequestDTO
 from core.dto.tool import RetrievedContentDTO, ToolRequestDTO
-from core.enums import ActorTypeEnum, MessageRoleEnum
+from core.enums import ActorTypeEnum, MessageRoleEnum, RetrievalSourceEnum
 from core.models.agent import AgentResponseSchema
 from core.models.message import AgentMessageSchema
 
@@ -136,13 +136,26 @@ class BaseAgent:
         if self._retriever is None:
             return ()
 
-        response = await self._retriever.run(
-            request=self._build_tool_request(
-                request=request,
-            ),
+        tool_request = self._build_tool_request(
+            request=request,
+        )
+        content = await self._retriever.execute(
+            query=tool_request.query,
         )
 
-        return response.content
+        if content in {
+            "No relevant content found.",
+            "Retrieval failed — please try again.",
+        }:
+            return ()
+
+        return (
+            RetrievedContentDTO(
+                source=RetrievalSourceEnum.DOCUMENT,
+                source_name=self._retriever.name,
+                content=content,
+            ),
+        )
 
     @staticmethod
     def _build_tool_request(

@@ -111,6 +111,14 @@ class DocumentStatusEnum(StrEnum):
     READY = "ready"
     FAILED = "failed"
     DELETED = "deleted"
+    INDEXED = "indexed"
+
+
+class DocumentSourceEnum(StrEnum):
+    FILE = "file"
+    WEBSITE = "website"
+    TEXT = "text"
+    CLOUD_STORAGE = "cloud_storage"
 
 
 class StorageTypeEnum(StrEnum):

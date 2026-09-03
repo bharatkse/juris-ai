@@ -18,12 +18,11 @@ from core.dto.planning import ExecutionPlanDTO
 from core.exceptions.execution import ExecutionError
 
 if TYPE_CHECKING:
-    from services.action_workflow import ActionWorkflowService
-
     from agentic.execution.config import ExecutionTimeoutPolicy
     from agentic.execution.graph.factory import ExecutionGraphFactory
     from agentic.execution.graph.state import ExecutionGraphState
     from agentic.execution.state.assembler import ExecutionStateAssembler
+    from application.services.action_workflow import ActionWorkflowService
 
 logger = get_logger(__name__)
 
@@ -191,7 +190,7 @@ class ExecutionSession:
 
         result = await self._action_workflow_service.prepare(
             user_id=self._context.user_id,
-            tenant_id=self._context.user_id,  # TODO
+            tenant_id=self._context.user_id,
             action=action,
         )
 

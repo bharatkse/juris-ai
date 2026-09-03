@@ -1,6 +1,19 @@
+"""
+Document chunk persistence model.
+
+A DocumentChunk represents extracted textual content belonging to a
+source document.
+
+The chunk itself is intentionally independent of any embedding model.
+Embeddings are persisted separately so that different embedding models
+or embedding dimensions can be introduced without changing the
+semantic representation of the chunk.
+"""
+
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any
 
-from pgvector.sqlalchemy import Vector
 from sqlalchemy import Computed, ForeignKey, Index, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -10,6 +23,9 @@ from adapters.persistence.sqlalchemy.mixins import PrimaryKeyMixin, TimestampMix
 
 if TYPE_CHECKING:
     from adapters.persistence.sqlalchemy.models.document import Document
+    from adapters.persistence.sqlalchemy.models.document_chunk_embedding import (
+        DocumentChunkEmbedding,
+    )
 
 
 class DocumentChunk(
@@ -17,7 +33,15 @@ class DocumentChunk(
     TimestampMixin,
     Base,
 ):
+    """
+    Persisted textual chunk extracted from a source document.
+
+    DocumentChunk contains source/provenance information and textual
+    content only. It does not depend on a particular embedding model.
+    """
+
     __tablename__ = "document_chunks"
+
     _id_prefix = "dchk"
 
     document_id: Mapped[str] = mapped_column(
@@ -26,7 +50,7 @@ class DocumentChunk(
             "documents.id",
             ondelete="CASCADE",
         ),
-        nullable=False,
+        nullable=True,
         index=True,
     )
 
@@ -48,16 +72,6 @@ class DocumentChunk(
         server_default="{}",
     )
 
-    embedding_model: Mapped[str] = mapped_column(
-        String,
-        nullable=False,
-    )
-
-    embedding: Mapped[list[float] | None] = mapped_column(
-        Vector(384),
-        nullable=True,
-    )
-
     text_tsv: Mapped[Any] = mapped_column(
         TSVECTOR,
         Computed(
@@ -67,20 +81,19 @@ class DocumentChunk(
         nullable=True,
     )
 
-    document: Mapped["Document"] = relationship(
+    document: Mapped[Document | None] = relationship(
         "Document",
         back_populates="chunks",
     )
 
+    embeddings: Mapped[list[DocumentChunkEmbedding]] = relationship(
+        "DocumentChunkEmbedding",
+        back_populates="chunk",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
     __table_args__ = (
-        Index(
-            "document_chunks_embedding_idx",
-            "embedding",
-            postgresql_using="hnsw",
-            postgresql_ops={
-                "embedding": "vector_cosine_ops",
-            },
-        ),
         Index(
             "document_chunks_tsv_idx",
             "text_tsv",

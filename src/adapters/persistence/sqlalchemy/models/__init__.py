@@ -8,6 +8,7 @@ from .conversation import Conversation
 from .conversation_event import ConversationEvent
 from .document import Document
 from .document_chunk import DocumentChunk
+from .document_chunk_embedding import DocumentChunkEmbedding
 from .user import User
 
 __all__ = [
@@ -16,6 +17,7 @@ __all__ = [
     "ConversationEvent",
     "Document",
     "DocumentChunk",
+    "DocumentChunkEmbedding",
     "AgentAction",
     "Approval",
 ]

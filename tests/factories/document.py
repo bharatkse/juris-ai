@@ -8,7 +8,11 @@ import factory
 
 from adapters.persistence.sqlalchemy.mixins import generate_prefixed_uuid_pk
 from adapters.persistence.sqlalchemy.models.document import Document
-from core.enums import DocumentStatusEnum, StorageTypeEnum
+from core.enums import (
+    DocumentSourceEnum,
+    DocumentStatusEnum,
+    StorageTypeEnum,
+)
 from tests.factories.base import BaseFactory
 from tests.factories.conversation import ConversationFactory
 
@@ -32,6 +36,8 @@ class DocumentFactory(BaseFactory):
     conversation_id = factory.SelfAttribute(
         "conversation.id",
     )
+
+    source_type = DocumentSourceEnum.FILE
 
     original_filename = factory.Sequence(
         lambda n: f"document_{n}.pdf",

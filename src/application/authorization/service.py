@@ -128,3 +128,20 @@ class AuthorizationService:
         return self._execute_gate.authorize(
             request,
         )
+
+    def get_allowed_document_ids(
+        self,
+        *,
+        user_id: str,
+    ) -> set[str] | None:
+        """
+        Resolve the current user's allowed document IDs for the request.
+
+        This project has not implemented a persisted per-user document ACL model yet,
+        so the runtime default is unrestricted access for the current request unless a
+        concrete ACL layer is added later. The fail-closed guarantee remains in the
+        request context: a missing dependency binding still raises at runtime instead of
+        silently permitting full access.
+        """
+
+        return None

@@ -1,32 +1,79 @@
 """
-Reusable application type aliases.
+Reusable application identifier types.
+
+This module provides strongly typed identifier aliases used across the
+application. All identifiers are represented as strings and validated
+using a common prefixed-UUID format.
 """
 
-from typing import Annotated, Any
+from __future__ import annotations
+
+from typing import Annotated, TypeAlias
 
 from pydantic import Field
 
 
-def PrefixedId(prefix: str) -> type[Annotated[str, Any]]:
+def _prefixed_id_field(
+    prefix: str,
+) -> Field:
     """
-    Return a reusable annotated string type for prefixed UUID identifiers.
+    Build the Pydantic field metadata for a prefixed identifier.
 
-    Example:
-        UserId = PrefixedId("user")
-        ConversationId = PrefixedId("conv")
+    The identifier must follow the format:
+
+        {prefix}_{32 lowercase hexadecimal characters}
+
+    Args:
+        prefix: The required identifier prefix.
+
+    Returns:
+        Pydantic field metadata containing the validation pattern and
+        identifier description.
     """
-    return Annotated[
-        str,
-        Field(
-            pattern=rf"^{prefix}_[0-9a-f]{{32}}$",
-            description=f"{prefix} identifier.",
-        ),
-    ]
+
+    return Field(
+        pattern=rf"^{prefix}_[0-9a-f]{{32}}$",
+        description=f"{prefix} identifier.",
+    )
 
 
-UserId = PrefixedId("user")
-ConversationId = PrefixedId("conv")
-ConversationEventId = PrefixedId("evnt")
-AgentActionId = PrefixedId("actn")
-ApprovalId = PrefixedId("appr")
-DocumentId = PrefixedId("doct")
+UserId: TypeAlias = Annotated[
+    str,
+    _prefixed_id_field("user"),
+]
+"""Unique identifier for a user."""
+
+
+ConversationId: TypeAlias = Annotated[
+    str,
+    _prefixed_id_field("conv"),
+]
+"""Unique identifier for a conversation."""
+
+
+ConversationEventId: TypeAlias = Annotated[
+    str,
+    _prefixed_id_field("evnt"),
+]
+"""Unique identifier for a conversation event."""
+
+
+AgentActionId: TypeAlias = Annotated[
+    str,
+    _prefixed_id_field("actn"),
+]
+"""Unique identifier for an agent action."""
+
+
+ApprovalId: TypeAlias = Annotated[
+    str,
+    _prefixed_id_field("appr"),
+]
+"""Unique identifier for an approval request."""
+
+
+DocumentId: TypeAlias = Annotated[
+    str,
+    _prefixed_id_field("doct"),
+]
+"""Unique identifier for a document."""

@@ -11,6 +11,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from api.middleware.request_context import RequestContextMiddleware
+from application.context.request import get_request_context
 
 
 @pytest.mark.asyncio
@@ -117,6 +118,41 @@ async def test_dispatch_calls_next_once() -> None:
     call_next.assert_awaited_once_with(
         request,
     )
+
+
+@pytest.mark.asyncio
+async def test_dispatch_binds_contextvar_for_acl_scoped_tools() -> None:
+    """
+    It should bind the request-scoped ContextVar used by ACL-aware tools.
+    """
+
+    middleware = RequestContextMiddleware(
+        app=AsyncMock(),
+    )
+
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/",
+            "headers": [],
+        },
+    )
+
+    async def call_next(
+        request: Request,
+    ) -> Response:
+        context = get_request_context()
+        assert context is request.state.context
+        assert context.request_id == request.state.context.request_id
+        return Response()
+
+    response = await middleware.dispatch(
+        request,
+        call_next,
+    )
+
+    assert response.status_code == 200
 
 
 @pytest.mark.asyncio

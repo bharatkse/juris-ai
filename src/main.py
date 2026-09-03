@@ -14,7 +14,6 @@ from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
 from adapters.observability.logger import get_logger, setup_logging
 from adapters.observability.telemetry import configure_telemetry, shutdown_telemetry
-from agentic.runtime.composition import create_ai_orchestrator
 from api.exception_handlers import register_exception_handlers
 from api.middleware.request_context import RequestContextMiddleware
 from api.utilities.api_response import ApiResponse
@@ -22,6 +21,7 @@ from api.v1.routers import api_router
 from config.settings import get_settings
 from core.constants import API_DESCRIPTION, API_TITLE
 from core.utils.file_system import ensure_dir
+from runtime.composition import create_ai_orchestrator
 
 logger = get_logger(__name__)
 
@@ -48,7 +48,7 @@ def initialize_storage() -> None:
     """
 
     for directory in (
-        settings.logging.DATA_DIRECTORY,
+        settings.logging.PROCESS_DATA_DIRECTORY,
         settings.logging.LOG_DIRECTORY,
     ):
         ensure_dir(directory)

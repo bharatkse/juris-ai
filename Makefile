@@ -638,7 +638,7 @@ cf-delete: ## Clean local Docker/SAM resources
 # Testing
 # ============================================================================
 
-.PHONY: test test-unit test-integration test-e2e \
+.PHONY: test test-unit test-integration test-smoke test-e2e \
         test-cov test-failed test-path test-watch
 
 PYTEST := $(POETRY) run pytest
@@ -676,6 +676,15 @@ test-e2e: ## Run e2e tests [TARGET=<path>]
 		$(PYTEST) "tests/e2e/$(TARGET)" -v; \
 	fi
 
+test-smoke: ## Run smoke tests [TARGET=<path>]
+	@if [ -z "$(TARGET)" ]; then \
+		$(PYTEST) tests/smoke -v -s; \
+	elif [ -e "$(TARGET)" ]; then \
+		$(PYTEST) "$(TARGET)" -v -s; \
+	else \
+		$(PYTEST) "tests/smoke/$(TARGET)" -v -s; \
+	fi
+
 test-cov: ## Run unit tests with coverage [TARGET=<path>]
 	@$(PYTEST) tests/unit$(if $(TARGET),/$(TARGET),) \
 	  -v \
@@ -707,7 +716,7 @@ clean-local: ## Remove SAM artifacts and LocalStack persistent data
 	@echo "$(CYAN)Cleaning SAM artifacts and LocalStack data...$(RESET)"
 	@rm -rf .aws-sam
 	@docker run --rm \
-	  -v "$$(pwd)/localstack-data:/var/lib/localstack" \
+	  -v "$$(pwd)/docker/.init/localstack:/var/lib/localstack" \
 	  alpine \
 	  sh -c "rm -rf /var/lib/localstack/*"
 
@@ -756,7 +765,7 @@ dev: ## Start complete local development environment
 .PHONY: project-tree
 
 project-tree: ## Show current project directory
-	tree -a -I '__pycache__|*.pyc|.git|.pytest_cache|.volumes|.venv|.vscode|.aws-sam|localstack*|node_modules|htmlcov|*.egg-info|dist|build|tests|.ruff_cache|.mypy_cache'
+	tree -a -I '__pycache__|*.pyc|.git|.pytest_cache|.volumes|.venv|.vscode|.aws-sam|localstack*|node_modules|htmlcov|*.egg-info|dist|build|.ruff_cache|.mypy_cache'
 
 # ============================================================================
 # Help
