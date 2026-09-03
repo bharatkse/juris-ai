@@ -291,10 +291,7 @@ class RAGRetrievalRepository:
         if top_k <= 0:
             return []
 
-        ts_query = func.websearch_to_tsquery(
-            "english",
-            query,
-        )
+        ts_query = self._build_keyword_ts_query(query)
 
         score = func.ts_rank(
             DocumentChunk.text_tsv,
@@ -467,10 +464,7 @@ class RAGRetrievalRepository:
         if top_k <= 0:
             return
 
-        ts_query = func.websearch_to_tsquery(
-            "english",
-            query,
-        )
+        ts_query = self._build_keyword_ts_query(query)
 
         score = func.ts_rank(
             DocumentChunk.text_tsv,
@@ -512,3 +506,19 @@ class RAGRetrievalRepository:
                 chunk,
                 float(score),
             )
+
+    @staticmethod
+    def _build_keyword_ts_query(query: str):
+        terms = [
+            term.strip(".,?!:;()[]{}\"'") for term in query.split() if term.strip(".,?!:;()[]{}\"'")
+        ]
+
+        if not terms:
+            return func.websearch_to_tsquery("english", query)
+
+        keyword_query = " OR ".join(terms)
+
+        return func.websearch_to_tsquery(
+            "english",
+            keyword_query,
+        )

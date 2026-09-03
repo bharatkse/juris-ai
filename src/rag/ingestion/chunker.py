@@ -60,6 +60,10 @@ _SENTENCE_BOUNDARY = re.compile(
     r"[.!?](?=\s+|$)",
 )
 
+_LEGAL_PROVISION_BOUNDARY = re.compile(
+    r"(?m)^\s*\([a-h]\)\s+",
+)
+
 
 @dataclass(slots=True)
 class _ChunkState:
@@ -173,7 +177,7 @@ class TextChunker:
                 carry_mime_type = block.mime_type
 
                 (
-                    complete_sentences,
+                    complete_segments,
                     sentence_carry,
                 ) = self._extract_complete_sentences(
                     sentence_carry,
@@ -183,12 +187,12 @@ class TextChunker:
                 # Process completed sentences.
                 # ---------------------------------------------------------
 
-                for sentence in complete_sentences:
-                    if not sentence:
+                for segment in complete_segments:
+                    if not segment:
                         continue
 
                     yield from self._append_sentence(
-                        sentence=sentence,
+                        sentence=segment,
                         state=state,
                         source=carry_source or block.source,
                         mime_type=(carry_mime_type or block.mime_type),
@@ -375,6 +379,81 @@ class TextChunker:
             )
 
             state.chunk_sequence += 1
+
+    def _extract_complete_segments(
+        self,
+        text: str,
+    ) -> tuple[list[str], str]:
+        """
+        Extract complete logical/legal segments from text.
+
+        Legal provisions such as ``(a)``, ``(b)``, etc. are treated as
+        stronger boundaries than sentence punctuation.
+
+        PDF/parser block boundaries are deliberately ignored. Therefore a
+        legal provision can continue across multiple ParsedBlock objects.
+
+        For ordinary prose without legal provision boundaries, sentence
+        boundaries are used.
+        """
+
+        normalized = text.strip()
+
+        if not normalized:
+            return [], ""
+
+        # -------------------------------------------------------------
+        # Find legal provision boundaries.
+        #
+        # Example:
+        #
+        # (a) access means ...
+        # (b) addressee means ...
+        #
+        # The text belonging to (a) therefore ends immediately before (b).
+        # -------------------------------------------------------------
+
+        provision_matches = list(
+            _LEGAL_PROVISION_BOUNDARY.finditer(normalized),
+        )
+
+        if provision_matches:
+            segments: list[str] = []
+
+            # Anything before the first legal provision is ordinary text.
+            prefix = normalized[: provision_matches[0].start()].strip()
+
+            if prefix:
+                prefix_sentences, _ = self._extract_complete_sentences(
+                    prefix,
+                )
+                segments.extend(prefix_sentences)
+
+            # A provision is complete when the next provision begins.
+            for index, match in enumerate(provision_matches):
+                start = match.start()
+
+                if index + 1 < len(provision_matches):
+                    end = provision_matches[index + 1].start()
+                    segment = normalized[start:end].strip()
+
+                    if segment:
+                        segments.append(segment)
+                else:
+                    # The final provision may continue into the next
+                    # ParsedBlock, so retain it as carry.
+                    tail = normalized[start:].strip()
+                    return segments, tail
+
+            return segments, ""
+
+        # -------------------------------------------------------------
+        # No legal provision found.
+        #
+        # Fall back to the existing sentence-aware behavior.
+        # -------------------------------------------------------------
+
+        return self._extract_complete_sentences(normalized)
 
     def _extract_complete_sentences(
         self,

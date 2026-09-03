@@ -41,6 +41,7 @@ from rag.protocols.reranker import RerankerProtocol
 logger = get_logger(__name__)
 
 DEFAULT_RERANKER_MODEL = "BAAI/bge-reranker-base"
+DEFAULT_RETRIEVAL_WEIGHT = 0.40
 
 
 class CrossEncoderReranker(RerankerProtocol):
@@ -50,7 +51,13 @@ class CrossEncoderReranker(RerankerProtocol):
     The reranker operates on RetrievalResult objects so the complete
     retrieval representation is preserved throughout reranking.
 
-    Only the relevance score is replaced.
+    The final ranking combines:
+
+        80% cross-encoder relevance
+        20% original retrieval rank
+
+    This prevents the cross-encoder from completely discarding strong
+    first-stage retrieval signals from vector/keyword/RRF retrieval.
     """
 
     def __init__(
@@ -58,6 +65,7 @@ class CrossEncoderReranker(RerankerProtocol):
         *,
         model_name: str = DEFAULT_RERANKER_MODEL,
         raw_output_is_logit: bool = True,
+        retrieval_weight: float = DEFAULT_RETRIEVAL_WEIGHT,
     ) -> None:
         """
         Configure the cross-encoder reranker.
@@ -69,6 +77,10 @@ class CrossEncoderReranker(RerankerProtocol):
             raw_output_is_logit:
                 Whether model output is an unbounded logit requiring
                 sigmoid normalization.
+
+            retrieval_weight:
+                Weight assigned to the original retrieval ranking.
+                The remaining weight is assigned to the cross-encoder.
         """
 
         if not model_name.strip():
@@ -76,8 +88,14 @@ class CrossEncoderReranker(RerankerProtocol):
                 "Reranker model name cannot be empty.",
             )
 
+        if not 0.0 <= retrieval_weight <= 1.0:
+            raise ValueError(
+                "retrieval_weight must be between 0.0 and 1.0.",
+            )
+
         self._model_name = model_name
         self._raw_output_is_logit = raw_output_is_logit
+        self._retrieval_weight = retrieval_weight
         self._model: Any | None = None
 
         logger.info(
@@ -85,6 +103,7 @@ class CrossEncoderReranker(RerankerProtocol):
             extra={
                 "model": model_name,
                 "raw_output_is_logit": raw_output_is_logit,
+                "retrieval_weight": retrieval_weight,
             },
         )
 
@@ -146,6 +165,22 @@ class CrossEncoderReranker(RerankerProtocol):
         z = math.exp(value)
         return z / (1.0 + z)
 
+    @staticmethod
+    def _retrieval_rank_score(
+        *,
+        rank: int,
+        candidate_count: int,
+    ) -> float:
+        """
+        Convert the original retrieval rank into a normalized [0, 1]
+        score.
+
+        The first candidate receives 1.0 and the last candidate receives
+        0.0 when multiple candidates are present.
+        """
+
+        return 1.0 - ((rank - 1) / max(candidate_count - 1, 1))
+
     async def rerank(
         self,
         *,
@@ -156,9 +191,9 @@ class CrossEncoderReranker(RerankerProtocol):
         """
         Rerank retrieval candidates using the cross-encoder.
 
-        The existing RetrievalResult objects are preserved. Only the
-        score is replaced with the normalized cross-encoder relevance
-        score.
+        The existing RetrievalResult objects are preserved. The final
+        score combines the normalized cross-encoder relevance with the
+        original retrieval rank.
 
         Args:
             query:
@@ -218,14 +253,34 @@ class CrossEncoderReranker(RerankerProtocol):
                     ),
                 )
 
-            reranked = [
-                result.with_score(score)
-                for result, score in zip(
+            candidate_count = len(candidates)
+            reranked: list[RetrievalResult] = []
+
+            for rank, (
+                result,
+                cross_encoder_score,
+            ) in enumerate(
+                zip(
                     candidates,
                     scores,
                     strict=True,
+                ),
+                start=1,
+            ):
+                retrieval_score = self._retrieval_rank_score(
+                    rank=rank,
+                    candidate_count=candidate_count,
                 )
-            ]
+
+                combined_score = (
+                    1.0 - self._retrieval_weight
+                ) * cross_encoder_score + self._retrieval_weight * retrieval_score
+
+                reranked.append(
+                    result.with_score(
+                        combined_score,
+                    ),
+                )
 
             reranked.sort(
                 key=lambda result: result.score,

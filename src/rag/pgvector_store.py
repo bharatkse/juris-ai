@@ -28,10 +28,11 @@ This adapter does NOT:
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import Any
 
 from adapters.observability.logger import get_logger
+from adapters.persistence.sqlalchemy.repositories.rag_retrieval import RAGRetrievalRepository
+from adapters.persistence.sqlalchemy.session import session_factory as default_session_factory
 from application.services.rag_index_persistence import (
     RAGIndexPersistenceService,
 )
@@ -66,7 +67,7 @@ class PgVectorStore(VectorStoreProtocol):
         self,
         *,
         index_persistence_service: RAGIndexPersistenceProtocol | None = None,
-        retrieval_repository_factory: Callable[[], Any] | None = None,
+        session_factory: Any | None = None,
     ) -> None:
         """
         Initialize the PostgreSQL/pgvector adapter.
@@ -76,8 +77,8 @@ class PgVectorStore(VectorStoreProtocol):
                 Application capability responsible for coordinating
                 chunk and embedding persistence.
 
-            retrieval_repository_factory:
-                Factory returning a configured RAG retrieval repository.
+            session_factory:
+                Factory returning a configured SQLAlchemy session.
 
                 The factory is injectable so this adapter does not own
                 SQLAlchemy session construction.
@@ -85,7 +86,7 @@ class PgVectorStore(VectorStoreProtocol):
 
         self._index_persistence_service = index_persistence_service or RAGIndexPersistenceService()
 
-        self._retrieval_repository_factory = retrieval_repository_factory
+        self._session_factory = session_factory or default_session_factory
 
     async def upsert(
         self,
@@ -207,21 +208,19 @@ class PgVectorStore(VectorStoreProtocol):
         if not embedding_model.strip():
             return []
 
-        if self._retrieval_repository_factory is None:
-            raise RAGError(
-                message=("PGVector retrieval repository factory " "is not configured."),
-            )
-
         try:
-            repository = self._retrieval_repository_factory()
+            async with self._session_factory() as session:
+                repository = RAGRetrievalRepository(
+                    session=session,
+                )
 
-            rows = await repository.vector_search(
-                vector=vector,
-                embedding_model=embedding_model,
-                top_k=top_k,
-                source_ids=allowed_source_ids,
-                metadata_filters=metadata_filters,
-            )
+                rows = await repository.vector_search(
+                    vector=vector,
+                    embedding_model=embedding_model,
+                    top_k=top_k,
+                    source_ids=allowed_source_ids,
+                    metadata_filters=metadata_filters,
+                )
 
         except RAGError:
             logger.exception(

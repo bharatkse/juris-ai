@@ -31,7 +31,7 @@ from rag.pgvector_store import PgVectorStore
 from rag.reranker import CrossEncoderReranker
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-RAW_DATASETS_DIR = PROJECT_ROOT / "raw_datasets"
+RAW_DATASETS_DIR = PROJECT_ROOT / "tests/datasets/rag/raw_datasets"
 
 
 @dataclass(frozen=True)
@@ -178,9 +178,7 @@ async def rag_smoke_environment() -> RAGSmokeEnvironment:
         session=session,
     )
 
-    retrieval_vector_store = PgVectorStore(
-        retrieval_repository_factory=lambda: retrieval_repository,
-    )
+    retrieval_vector_store = PgVectorStore()
 
     embedding_provider = SentenceTransformerEmbeddingProvider()
 

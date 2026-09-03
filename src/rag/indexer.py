@@ -133,7 +133,7 @@ class RAGIndexer(RAGIndexerProtocol):
                 If embedding generation or persistence fails.
         """
 
-        if not source_id.strip():
+        if source_id and not source_id.strip():
             raise ValueError(
                 "source_id must not be empty.",
             )

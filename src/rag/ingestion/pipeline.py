@@ -29,11 +29,11 @@ from collections.abc import Iterator
 from typing import Generic, TypeVar
 
 from adapters.observability.logger import get_logger
+from rag.ingestion.chunker import TextChunker
 from rag.ingestion.exceptions import IngestionError
 from rag.ingestion.models import IngestionChunk, ParsedBlock
 from rag.ingestion.parsers.protocol import ParserProtocol
 from rag.ingestion.sanitizer import SecuritySanitizer
-from rag.ingestion.text_chunker import TextChunker
 from rag.ingestion.validator import ContentValidator
 
 logger = get_logger(__name__)

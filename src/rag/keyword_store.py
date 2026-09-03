@@ -42,7 +42,7 @@ from adapters.observability.logger import get_logger
 from adapters.persistence.sqlalchemy.repositories.rag_retrieval import (
     RAGRetrievalRepository,
 )
-from adapters.persistence.sqlalchemy.session import session_factory
+from adapters.persistence.sqlalchemy.session import session_factory as default_session_factory
 from core.exceptions.rag import RAGError
 from rag.models import (
     Chunk,
@@ -64,12 +64,12 @@ class PostgresKeywordStore(KeywordStoreProtocol):
     No separate keyword-index persistence operation is required.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, session_factory: Any | None = None) -> None:
         """
         Initialize the PostgreSQL keyword-search adapter.
         """
 
-        self._session_factory = session_factory
+        self._session_factory = session_factory or default_session_factory
 
     async def query(
         self,

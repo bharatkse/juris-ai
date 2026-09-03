@@ -8,6 +8,11 @@ The evaluation case preserves the actual output of the frozen RAG
 retrieval pipeline rather than reducing retrieval results to plain
 text.
 
+The model supports both:
+
+    - retrieval evaluation using expected sources/evidence
+    - answer evaluation using reference answer/contexts
+
 The model does not depend on any concrete LLM provider or evaluation
 framework.
 """
@@ -16,7 +21,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from rag.indexer import RetrievalResult
+from rag.models import RetrievalResult
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,9 +50,24 @@ class EvaluationCase:
             representations without changing the RAG retrieval
             workflow.
 
+        expected_sources:
+            Source identifiers expected to contain relevant evidence
+            for the query.
+
+            These are used as retrieval ground truth and are preferred
+            over exact chunk IDs because chunk IDs may change when the
+            corpus is re-chunked.
+
+        expected_evidence:
+            Stable evidence text representing the relevant legal
+            evidence expected to be retrieved for the query.
+
+            This is used as retrieval ground truth without depending
+            on unstable chunk identifiers.
+
         reference_answer:
             Optional expected answer used by evaluations that require
-            ground truth.
+            answer ground truth.
 
         reference_contexts:
             Optional expected/relevant context text used by evaluations
@@ -56,10 +76,21 @@ class EvaluationCase:
 
     query: str
     answer: str
+
     retrieval_results: list[RetrievalResult] = field(
         default_factory=list,
     )
+
+    expected_sources: list[str] = field(
+        default_factory=list,
+    )
+
+    expected_evidence: list[str] = field(
+        default_factory=list,
+    )
+
     reference_answer: str | None = None
+
     reference_contexts: list[str] | None = None
 
     @property
