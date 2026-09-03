@@ -1,7 +1,7 @@
 """
-Document chunk persistence model.
+Knowledge chunk persistence model.
 
-A DocumentChunk represents extracted textual content belonging to a
+A KnowledgeChunk represents extracted textual content belonging to a
 source document.
 
 The chunk itself is intentionally independent of any embedding model.
@@ -22,13 +22,13 @@ from adapters.persistence.sqlalchemy.base import Base
 from adapters.persistence.sqlalchemy.mixins import PrimaryKeyMixin, TimestampMixin
 
 if TYPE_CHECKING:
-    from adapters.persistence.sqlalchemy.models.document import Document
-    from adapters.persistence.sqlalchemy.models.document_chunk_embedding import (
-        DocumentChunkEmbedding,
+    from adapters.persistence.sqlalchemy.models.knowledge_embedding import (
+        KnowledgeEmbedding,
     )
+    from adapters.persistence.sqlalchemy.models.knowledge_sources import KnowledgeSource
 
 
-class DocumentChunk(
+class KnowledgeChunk(
     PrimaryKeyMixin,
     TimestampMixin,
     Base,
@@ -36,21 +36,21 @@ class DocumentChunk(
     """
     Persisted textual chunk extracted from a source document.
 
-    DocumentChunk contains source/provenance information and textual
+    KnowledgeChunk contains source/provenance information and textual
     content only. It does not depend on a particular embedding model.
     """
 
-    __tablename__ = "document_chunks"
+    __tablename__ = "knowledge_chunks"
 
-    _id_prefix = "dchk"
+    _id_prefix = "kchn"
 
-    document_id: Mapped[str] = mapped_column(
+    knowledge_source_id: Mapped[str] = mapped_column(
         String,
         ForeignKey(
-            "documents.id",
+            "knowledge_sources.id",
             ondelete="CASCADE",
         ),
-        nullable=True,
+        nullable=False,
         index=True,
     )
 
@@ -81,13 +81,13 @@ class DocumentChunk(
         nullable=True,
     )
 
-    document: Mapped[Document | None] = relationship(
-        "Document",
+    knowledge_source: Mapped[KnowledgeSource | None] = relationship(
+        "KnowledgeSource",
         back_populates="chunks",
     )
 
-    embeddings: Mapped[list[DocumentChunkEmbedding]] = relationship(
-        "DocumentChunkEmbedding",
+    embeddings: Mapped[list[KnowledgeEmbedding]] = relationship(
+        "KnowledgeEmbedding",
         back_populates="chunk",
         cascade="all, delete-orphan",
         passive_deletes=True,
@@ -95,7 +95,7 @@ class DocumentChunk(
 
     __table_args__ = (
         Index(
-            "document_chunks_tsv_idx",
+            "knowledge_chunks_tsv_idx",
             "text_tsv",
             postgresql_using="gin",
         ),

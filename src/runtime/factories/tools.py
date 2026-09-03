@@ -6,7 +6,7 @@ register_agents/create_planner) — not per-request. Every tool built
 here is a process-lifetime singleton.
 
 This is a correction from an earlier version of this file that took
-a per-request `session: AsyncSession` and `allowed_document_ids`
+a per-request `session: AsyncSession` and `allowed_library_files_ids`
 directly — that only works if register_tools() itself runs per
 request, which conflicts with composition.py calling it once at
 startup. A bound AsyncSession shared across concurrent requests is
@@ -16,17 +16,17 @@ construction time onto every later request.
 
 Per-request values (DB session lifecycle, ACL) now live at the
 call boundary instead: tools take a session FACTORY (opened fresh per
-method call) and read allowed_document_ids from
-core.request_context at execute()-time. See tools/document/
-document_lookup.py and tools/retrieval.py for where that actually
+method call) and read allowed_library_files_ids from
+core.request_context at execute()-time. See tools/library_files/
+library_file_lookup.py and tools/retrieval.py for where that actually
 happens.
 """
 
 from __future__ import annotations
 
 from adapters.persistence.sqlalchemy.session import session_factory
-from agentic.tools.document.document_lookup import DocumentLookupTool
-from agentic.tools.document.parser import ParserTool
+from agentic.tools.library_files.file_lookup import LibraryFileLookupTool
+from agentic.tools.library_files.parser import ParserTool
 from agentic.tools.messaging.email import EmailTool
 from agentic.tools.messaging.slack import SlackTool
 from agentic.tools.retrieval import RetrieverTool
@@ -44,7 +44,7 @@ def register_tools(
     registries: RegistryContainer,
     approval_service: ApprovalLifecycleServiceProtocol,
 ) -> None:
-    document_lookup = DocumentLookupTool(session_factory=session_factory)
+    library_file_lookup = LibraryFileLookupTool(session_factory=session_factory)
     parser = ParserTool()
 
     retriever = RetrieverTool(hybrid_retriever=clients.hybrid_retriever)
@@ -69,7 +69,7 @@ def register_tools(
     )
 
     for tool in (
-        document_lookup,
+        library_file_lookup,
         parser,
         retriever,
         web_research,

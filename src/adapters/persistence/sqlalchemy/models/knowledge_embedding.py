@@ -1,11 +1,11 @@
 """
-Document chunk embedding persistence model.
+Knowledge chunk embedding persistence model.
 
-Stores vector representations of document chunks independently from
+Stores vector representations of knowledge chunks independently from
 the textual chunk itself.
 
 This allows the same chunk to be represented by different embedding
-models without coupling DocumentChunk to a specific embedding model.
+models without coupling KnowledgeChunk to a specific embedding model.
 """
 
 from __future__ import annotations
@@ -20,28 +20,28 @@ from adapters.persistence.sqlalchemy.base import Base
 from adapters.persistence.sqlalchemy.mixins import PrimaryKeyMixin, TimestampMixin
 
 if TYPE_CHECKING:
-    from adapters.persistence.sqlalchemy.models.document_chunk import DocumentChunk
+    from adapters.persistence.sqlalchemy.models.knowledge_chunk import KnowledgeChunk
 
 
-class DocumentChunkEmbedding(
+class KnowledgeEmbedding(
     PrimaryKeyMixin,
     TimestampMixin,
     Base,
 ):
     """
-    Vector representation of a document chunk.
+    Vector representation of a knowledge chunk.
 
     The textual chunk remains independent of the embedding model.
     """
 
-    __tablename__ = "document_chunk_embeddings"
+    __tablename__ = "knowledge_embeddings"
 
-    _id_prefix = "demb"
+    _id_prefix = "kemb"
 
     chunk_id: Mapped[str] = mapped_column(
         String,
         ForeignKey(
-            "document_chunks.id",
+            "knowledge_chunks.id",
             ondelete="CASCADE",
         ),
         nullable=False,
@@ -64,8 +64,8 @@ class DocumentChunkEmbedding(
         nullable=False,
     )
 
-    chunk: Mapped[DocumentChunk] = relationship(
-        "DocumentChunk",
+    chunk: Mapped[KnowledgeChunk] = relationship(
+        "KnowledgeChunk",
         back_populates="embeddings",
     )
 
@@ -73,10 +73,10 @@ class DocumentChunkEmbedding(
         UniqueConstraint(
             "chunk_id",
             "embedding_model",
-            name="uq_document_chunk_embedding_model",
+            name="uq_knowledge_chunk_embedding_model",
         ),
         Index(
-            "document_chunk_embeddings_embedding_idx",
+            "knowledge_chunk_embeddings_embedding_idx",
             "embedding",
             postgresql_using="hnsw",
             postgresql_ops={

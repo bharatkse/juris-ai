@@ -1,11 +1,11 @@
 """
-Document chunk repository.
+Knowledge chunk repository.
 
-Provides persistence operations for textual document chunks.
+Provides persistence operations for textual knowledge chunks.
 
-A DocumentChunk represents extracted textual content belonging to a
+A KnowledgeChunk represents extracted textual content belonging to a
 source document. Embedding representations are persisted separately
-through DocumentChunkEmbeddingRepository.
+through KnowledgeEmbeddingRepository.
 """
 
 from __future__ import annotations
@@ -15,14 +15,14 @@ from collections.abc import Sequence
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from adapters.persistence.sqlalchemy.models.document_chunk import (
-    DocumentChunk,
+from adapters.persistence.sqlalchemy.models.knowledge_chunk import (
+    KnowledgeChunk,
 )
 
 
-class DocumentChunkRepository:
+class KnowledgeChunkRepository:
     """
-    Repository for persisted document chunks.
+    Repository for persisted knowledge chunks.
 
     This repository intentionally has no knowledge of embeddings,
     embedding models, vector dimensions, or vector search.
@@ -47,71 +47,66 @@ class DocumentChunkRepository:
         self,
         *,
         chunk_id: str,
-    ) -> DocumentChunk | None:
+    ) -> KnowledgeChunk | None:
         """
-        Retrieve a document chunk by identifier.
+        Retrieve a knowledge chunk by identifier.
 
         Args:
             chunk_id:
-                DocumentChunk identifier.
+                KnowledgeChunk identifier.
 
         Returns:
             The matching chunk, or None when it does not exist.
         """
 
         result = await self._session.execute(
-            select(DocumentChunk).where(
-                DocumentChunk.id == chunk_id,
+            select(KnowledgeChunk).where(
+                KnowledgeChunk.id == chunk_id,
             ),
         )
 
         return result.scalar_one_or_none()
 
-    async def list_by_document_id(
+    async def list_by_knowledge_source_id(
         self,
         *,
-        document_id: str,
-    ) -> Sequence[DocumentChunk]:
+        knowledge_source_id: str,
+    ) -> Sequence[KnowledgeChunk]:
         """
-        Retrieve all chunks belonging to a document.
+        Retrieve all chunks belonging to a knowledge base.
 
         Args:
-            document_id:
-                Source document identifier.
+            knowledge_source_id:
+                Knowledge source identifier.
 
         Returns:
-            Document chunks ordered by creation time.
+            Knowledge chunks ordered by creation time.
         """
 
         result = await self._session.execute(
-            select(DocumentChunk)
+            select(KnowledgeChunk)
             .where(
-                DocumentChunk.document_id == document_id,
+                KnowledgeChunk.knowledge_source_id == knowledge_source_id,
             )
             .order_by(
-                DocumentChunk.created_at,
+                KnowledgeChunk.created_at,
             ),
         )
 
         return result.scalars().all()
 
     async def create(
-        self,
-        *,
-        chunk_id: str,
-        text: str,
-        chunk_metadata: dict,
-        document_id: str | None,
-    ) -> DocumentChunk:
+        self, *, chunk_id: str, text: str, chunk_metadata: dict, knowledge_source_id: str
+    ) -> KnowledgeChunk:
         """
-        Create a document chunk.
+        Create a knowledge chunk.
 
         Args:
             chunk_id:
                 Identifier of the chunk.
 
-            document_id:
-                Source document identifier.
+            knowledge_source_id:
+                Knowledge source identifier.
 
             text:
                 Extracted textual content.
@@ -120,12 +115,12 @@ class DocumentChunkRepository:
                 Metadata associated with the chunk.
 
         Returns:
-            The newly created DocumentChunk entity.
+            The newly created KnowledgeChunk entity.
         """
 
-        chunk = DocumentChunk(
+        chunk = KnowledgeChunk(
             id=chunk_id,
-            document_id=document_id,
+            knowledge_source_id=knowledge_source_id,
             text=text,
             chunk_metadata=chunk_metadata,
         )
@@ -139,16 +134,16 @@ class DocumentChunkRepository:
     async def update(
         self,
         *,
-        chunk: DocumentChunk,
+        chunk: KnowledgeChunk,
         text: str,
         chunk_metadata: dict,
-    ) -> DocumentChunk:
+    ) -> KnowledgeChunk:
         """
         Update the textual content and metadata of a chunk.
 
         Args:
             chunk:
-                Existing DocumentChunk entity.
+                Existing KnowledgeChunk entity.
 
             text:
                 Updated textual content.
@@ -157,7 +152,7 @@ class DocumentChunkRepository:
                 Updated chunk metadata.
 
         Returns:
-            Updated DocumentChunk entity.
+            Updated KnowledgeChunk entity.
         """
 
         chunk.text = text
@@ -180,15 +175,15 @@ class DocumentChunkRepository:
 
         Args:
             chunk_id:
-                DocumentChunk identifier.
+                KnowledgeChunk identifier.
 
         Returns:
             True when a chunk was deleted, otherwise False.
         """
 
         result = await self._session.execute(
-            delete(DocumentChunk).where(
-                DocumentChunk.id == chunk_id,
+            delete(KnowledgeChunk).where(
+                KnowledgeChunk.id == chunk_id,
             ),
         )
 
@@ -196,28 +191,28 @@ class DocumentChunkRepository:
 
         return bool(result.rowcount)
 
-    async def delete_by_document_id(
+    async def delete_by_knowledge_source_id(
         self,
         *,
-        document_id: str,
+        knowledge_source_id: str,
     ) -> int:
         """
-        Delete all chunks belonging to a document.
+        Delete all chunks belonging to a knowledge source.
 
         Associated embeddings are removed through the database
         foreign-key cascade.
 
         Args:
-            document_id:
-                Source document identifier.
+            knowledge_source_id:
+                Knowledge source identifier.
 
         Returns:
             Number of deleted chunks.
         """
 
         result = await self._session.execute(
-            delete(DocumentChunk).where(
-                DocumentChunk.document_id == document_id,
+            delete(KnowledgeChunk).where(
+                KnowledgeChunk.knowledge_source_id == knowledge_source_id,
             ),
         )
 

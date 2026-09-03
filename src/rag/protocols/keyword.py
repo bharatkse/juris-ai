@@ -3,7 +3,7 @@ Keyword-search capability contract.
 
 Defines the interface required for keyword/full-text retrieval.
 
-Keyword indexing is derived from persisted DocumentChunk.text through
+Keyword indexing is derived from persisted KnowledgeChunk.text through
 the database's configured full-text-search representation. Therefore
 the keyword-store capability does not expose a separate persistence
 operation.
@@ -22,7 +22,7 @@ class KeywordStoreProtocol(Protocol):
     """
     Capability contract for keyword/full-text search retrieval.
 
-    Keyword-search persistence is handled as part of DocumentChunk
+    Keyword-search persistence is handled as part of KnowledgeChunk
     persistence. The keyword store is therefore responsible only for
     querying the persisted keyword-search representation.
 

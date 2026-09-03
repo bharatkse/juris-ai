@@ -195,15 +195,6 @@ class HybridRetriever:
                 ),
             )
 
-            for rank, result in enumerate(fused_results[:20], start=1):
-                extra = {
-                    "rank": rank,
-                    "chunk_id": str(result.chunk.id),
-                    "source_id": result.chunk.source_id,
-                    "text": result.chunk.text[:300],
-                }
-                print("HYBRID FUSED RESULT", extra)
-
             if not fused_results:
                 logger.debug(
                     "Hybrid retrieval returned no candidates.",

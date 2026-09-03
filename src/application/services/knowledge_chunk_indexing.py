@@ -44,7 +44,7 @@ from rag.protocols.indexer import RAGIndexerProtocol
 logger = get_logger(__name__)
 
 
-class DocumentIndexingService:
+class KnowledgeIndexingService:
     """
     Application service coordinating document ingestion and RAG indexing.
 

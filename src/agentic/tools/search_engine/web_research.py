@@ -53,7 +53,7 @@ class WebResearchTool(Tool):
         limit: int = 5,
         engines: tuple[str, ...] = DEFAULT_ENGINES,
     ) -> str:
-        log.debug("WebResearchTool.execute(query=%r, limit=%d).", query, limit)
+        log.debug("WebResearchTool.execute(limit=%d, query_length=%d).", limit, len(query))
 
         try:
             # Fetch more than `limit` from search since dedup may
@@ -66,7 +66,7 @@ class WebResearchTool(Tool):
             )
 
         except ClientConnectionError:
-            log.exception("SearXNG search failed for query=%r.", query)
+            log.exception("SearXNG search failed.")
             return "Web search failed — please try again."
 
         deduped = normalize_and_dedupe(raw_results, limit=limit)

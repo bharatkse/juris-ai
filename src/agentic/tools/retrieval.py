@@ -41,7 +41,7 @@ class RetrieverTool(Tool):
         self._retriever = hybrid_retriever
 
     async def execute(self, *, query: str, top_k: int = 5) -> str:
-        log.debug("RetrieverTool.execute(query=%r, top_k=%d).", query, top_k)
+        log.debug("RetrieverTool.execute(top_k=%d, query_length=%d).", top_k, len(query))
 
         allowed_document_ids = get_request_context().allowed_document_ids
 
@@ -49,11 +49,11 @@ class RetrieverTool(Tool):
             results = await self._retriever.retrieve(
                 query=query,
                 top_k=top_k,
-                allowed_document_ids=allowed_document_ids,
+                allowed_source_ids=allowed_document_ids,
             )
 
         except Exception:
-            log.exception("Retrieval failed for query=%r.", query)
+            log.exception("Retrieval failed.")
             return "Retrieval failed — please try again."
 
         if not results:

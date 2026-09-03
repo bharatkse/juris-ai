@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 def create_clients(*, settings: Settings) -> ClientContainer:
     llm_resolver: LLMResolver = build_llm_resolver(settings=settings)
     mcp_registry: MCPServerRegistry = build_mcp_registry(settings=settings)
+    rag_pipeline = build_rag_pipeline(settings=settings)
 
     return ClientContainer(
         llm_resolver=llm_resolver,
@@ -29,5 +30,5 @@ def create_clients(*, settings: Settings) -> ClientContainer:
         content_fetcher=build_content_fetcher(settings=settings),
         # Loads the embedding + reranker models exactly once, here,
         # at process startup.
-        hybrid_retriever=build_rag_pipeline(settings=settings),
+        hybrid_retriever=rag_pipeline.hybrid_retriever,
     )

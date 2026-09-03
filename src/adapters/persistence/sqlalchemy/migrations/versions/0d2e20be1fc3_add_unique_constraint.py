@@ -1,7 +1,7 @@
 """Add unique constraint
 
 Revision ID: 0d2e20be1fc3
-Revises: fe9044f09312
+Revises: 726400d95008
 Create Date: 2026-08-11 22:59:05.294234
 
 """
@@ -13,7 +13,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "0d2e20be1fc3"
-down_revision: str | Sequence[str] | None = "fe9044f09312"
+down_revision: str | Sequence[str] | None = "726400d95008"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

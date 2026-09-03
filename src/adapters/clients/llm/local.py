@@ -114,13 +114,7 @@ class LocalLLMClient(LLMClient):
             "LLM request details.",
             extra={
                 "response_format": request.response_format,
-                "messages": [
-                    {
-                        "role": message.role.value,
-                        "content": message.content,
-                    }
-                    for message in request.messages
-                ],
+                "message_count": len(request.messages),
             },
         )
 

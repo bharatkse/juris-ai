@@ -58,7 +58,7 @@ class PostgresKeywordStore(KeywordStoreProtocol):
     """
     PostgreSQL implementation of keyword-search retrieval.
 
-    PostgreSQL full-text indexing is derived from DocumentChunk.text
+    PostgreSQL full-text indexing is derived from KnowledgeChunk.text
     through the persisted text_tsv representation.
 
     No separate keyword-index persistence operation is required.
@@ -125,13 +125,7 @@ class PostgresKeywordStore(KeywordStoreProtocol):
         )
 
         if allowed_source_ids is not None:
-            effective_metadata_filters["source_id"] = (
-                next(
-                    iter(allowed_source_ids),
-                )
-                if len(allowed_source_ids) == 1
-                else None
-            )
+            effective_metadata_filters["source_id"] = allowed_source_ids
 
         try:
             async with self._session_factory() as session:

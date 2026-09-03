@@ -2,7 +2,7 @@
 Offline RAG indexing entry point.
 
 Discovers supported legal source files and delegates each document to
-DocumentIndexingService.
+KnowledgeIndexingService.
 
 Flow:
 
@@ -10,7 +10,7 @@ Flow:
         ↓
     DocumentSource
         ↓
-    DocumentIndexingService
+    KnowledgeIndexingService
         ↓
     DocumentIngestionProtocol
         ↓
@@ -26,7 +26,7 @@ Flow:
         ↓
     ┌──────────────────────────────┐
     ↓                              ↓
-DocumentChunk            DocumentChunkEmbedding
+KnowledgeChunk            KnowledgeEmbedding
     ↓                              ↓
 PostgreSQL FTS/BM25              pgvector
 
@@ -61,13 +61,14 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import sys
 from collections.abc import Iterator
 from pathlib import Path
 
 from adapters.observability.logger import get_logger
-from application.services.document_indexing import (
-    DocumentIndexingService,
+from application.services.knowledge_chunk_indexing import (
+    KnowledgeIndexingService,
 )
 from core.exceptions.rag import RAGError
 from rag.embeddings import (
@@ -190,12 +191,12 @@ def _build_source(
     resolved_path = path.resolve()
 
     return DocumentSource(
-        id=None,
+        id=f"doct_{hashlib.sha256(str(resolved_path).encode('utf-8')).hexdigest()[:59]}",
         location=str(resolved_path),
     )
 
 
-def _build_indexing_service() -> DocumentIndexingService:
+def _build_indexing_service() -> KnowledgeIndexingService:
     """
     Build the concrete document-indexing dependency graph.
 
@@ -213,18 +214,18 @@ def _build_indexing_service() -> DocumentIndexingService:
 
         OfflineIngestionService
                     ↓
-        DocumentIndexingService
+        KnowledgeIndexingService
                     ↓
                 RAGIndexer
 
     Keyword/BM25 retrieval is intentionally not wired here.
 
     PostgreSQL full-text/BM25 search operates over the persisted
-    DocumentChunk representation and is exposed separately through
+    KnowledgeChunk representation and is exposed separately through
     PostgresKeywordStore.
 
     Returns:
-        Fully configured DocumentIndexingService.
+        Fully configured KnowledgeIndexingService.
     """
 
     from application.services.offline_ingestion import (
@@ -242,7 +243,7 @@ def _build_indexing_service() -> DocumentIndexingService:
 
     ingestion_service = OfflineIngestionService()
 
-    return DocumentIndexingService(
+    return KnowledgeIndexingService(
         ingestion_service=ingestion_service,
         indexer=indexer,
     )
@@ -256,7 +257,7 @@ async def _run(
     Execute the asynchronous offline RAG indexing workflow.
 
     This function owns corpus-level iteration and delegates each
-    document to DocumentIndexingService.
+    document to KnowledgeIndexingService.
 
     Args:
         source_dir:

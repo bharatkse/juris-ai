@@ -16,7 +16,7 @@ def generate_prefixed_uuid_pk(prefix: str) -> str:
     Generate a UUID-based primary key with the given prefix.
 
     Args:
-        prefix: String prefix (e.g., 'user', 'document')
+        prefix: String prefix (e.g., 'user', 'LibraryFile')
 
     Returns:
         Prefixed UUID string (e.g., 'user_a1b2c3d4...')

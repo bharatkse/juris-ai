@@ -72,8 +72,29 @@ ApprovalId: TypeAlias = Annotated[
 """Unique identifier for an approval request."""
 
 
-DocumentId: TypeAlias = Annotated[
+LibraryFileId: TypeAlias = Annotated[
     str,
-    _prefixed_id_field("doct"),
+    _prefixed_id_field("libf"),
 ]
-"""Unique identifier for a document."""
+"""Unique identifier for a library file."""
+
+
+KnowledgeSourceId: TypeAlias = Annotated[
+    str,
+    _prefixed_id_field("ksrc"),
+]
+"""Unique identifier for a knowledge source."""
+
+
+KnowledgeChunkId: TypeAlias = Annotated[
+    str,
+    _prefixed_id_field("kchn"),
+]
+"""Unique identifier for a knowledge chunk."""
+
+
+KnowledgeEmbeddingId: TypeAlias = Annotated[
+    str,
+    _prefixed_id_field("kemb"),
+]
+"""Unique identifier for a knowledge embedding."""
