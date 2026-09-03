@@ -1,7 +1,7 @@
 """add langgraph checkpoint tables
 
 Revision ID: 8f3a1c2e7b91
-Revises: eaa8d6dcafcc
+Revises: c32228f9bd67
 Create Date: 2026-09-01
 
 Creates the PostgreSQL tables required by the LangGraph
@@ -20,7 +20,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = "8f3a1c2e7b91"
-down_revision: str | Sequence[str] | None = "eaa8d6dcafcc"
+down_revision: str | Sequence[str] | None = "c32228f9bd67"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

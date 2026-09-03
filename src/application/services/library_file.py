@@ -1,5 +1,5 @@
 """
-Document service.
+LibraryFile service.
 """
 
 from __future__ import annotations
@@ -9,29 +9,47 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from adapters.clients.storage.base import StorageClient
 from adapters.observability.logger import get_logger
-from adapters.persistence.sqlalchemy.models.document import Document
-from adapters.persistence.sqlalchemy.repositories.document import DocumentRepository
+from adapters.persistence.sqlalchemy.models.library_file import LibraryFile
+from adapters.persistence.sqlalchemy.repositories.library_file import (
+    LibraryFileRepository,
+)
 from application.services.base import BaseService
-from core.dto.clients.storage import DeleteRequestDTO, StoredObjectDTO, UploadRequestDTO
-from core.enums import DocumentStatusEnum
+from core.dto.clients.storage import (
+    DeleteRequestDTO,
+    StoredObjectDTO,
+    UploadRequestDTO,
+)
+from core.enums import LibraryFileStatusEnum
 from core.exceptions.client import ClientProviderError, ClientResponseError
 
 log = get_logger(__name__)
 
 
-class DocumentService(BaseService):
+class LibraryFileService(BaseService):
     """
-    Manage uploaded documents.
+    Manage user-uploaded files.
+
+    This service owns the upload/storage lifecycle and persistence
+    of LibraryFile metadata.
+
+    It does not own:
+        - document parsing
+        - chunking
+        - embeddings
+        - vector search
+        - RAG
+        - LLM context construction
     """
 
     def __init__(
         self,
         *,
         session: AsyncSession,
-        repository: DocumentRepository,
+        repository: LibraryFileRepository,
         storage: StorageClient,
     ) -> None:
         super().__init__(session)
+
         self._repository = repository
         self._storage = storage
 
@@ -40,22 +58,26 @@ class DocumentService(BaseService):
         *,
         conversation_id: str,
         uploads: list[UploadRequestDTO],
-    ) -> list[Document]:
+    ) -> list[LibraryFile]:
         """
-        Upload documents and persist metadata.
+        Upload files and persist their metadata.
+
+        Uploaded files remain transactional user artifacts.
+        Any subsequent document understanding or context-engineering
+        workflow is handled outside this service.
         """
 
         if not uploads:
             return []
 
         log.info(
-            "Uploading %d document(s) for conversation '%s'.",
+            "Uploading %d file(s) for conversation '%s'.",
             len(uploads),
             conversation_id,
         )
 
         uploaded_objects: list[StoredObjectDTO] = []
-        documents: list[Document] = []
+        library_files: list[LibraryFile] = []
 
         try:
             async with self._session.begin():
@@ -66,12 +88,11 @@ class DocumentService(BaseService):
 
                     stored = response.object
 
-                    uploaded_objects.append(
-                        stored,
-                    )
+                    uploaded_objects.append(stored)
 
-                    document = Document(
+                    library_file = LibraryFile(
                         conversation_id=conversation_id,
+                        source_type=request.source_type,
                         original_filename=request.filename,
                         filename=stored.filename,
                         mime_type=stored.content_type,
@@ -79,24 +100,22 @@ class DocumentService(BaseService):
                         checksum=stored.checksum,
                         storage_type=self._storage.storage_type,
                         storage_path=stored.storage_path,
-                        status=DocumentStatusEnum.UPLOADED,
+                        status=LibraryFileStatusEnum.UPLOADED,
                     )
 
                     await self._repository.create(
-                        document=document,
+                        library_file=library_file,
                     )
 
-                    documents.append(
-                        document,
-                    )
+                    library_files.append(library_file)
 
             log.info(
-                "Uploaded %d document(s) for conversation '%s'.",
-                len(documents),
+                "Uploaded %d file(s) for conversation '%s'.",
+                len(library_files),
                 conversation_id,
             )
 
-            return documents
+            return library_files
 
         except (
             ClientProviderError,
@@ -104,7 +123,7 @@ class DocumentService(BaseService):
             SQLAlchemyError,
         ):
             log.exception(
-                "Failed to upload document(s) for conversation '%s'.",
+                "Failed to upload file(s) for conversation '%s'.",
                 conversation_id,
             )
 
@@ -117,27 +136,48 @@ class DocumentService(BaseService):
     async def get_by_id(
         self,
         *,
-        document_id: str,
-    ) -> Document | None:
+        library_file_id: str,
+    ) -> LibraryFile | None:
         """
-        Retrieve a document.
+        Retrieve an uploaded file by identifier.
         """
 
         return await self._repository.get_by_id(
-            document_id=document_id,
+            library_file_id=library_file_id,
         )
 
     async def list(
         self,
         *,
         conversation_id: str,
-    ) -> list[Document]:
+    ) -> list[LibraryFile]:
         """
-        Retrieve all documents for a conversation.
+        Retrieve all uploaded files for a conversation.
         """
 
         return await self._repository.list_by_conversation(
             conversation_id=conversation_id,
+        )
+
+    async def delete(
+        self,
+        *,
+        library_file: LibraryFile,
+    ) -> None:
+        """
+        Delete an uploaded file from storage and persistence.
+        """
+
+        if library_file.storage_path:
+            await self._storage.delete(
+                request=DeleteRequestDTO(
+                    object_id=library_file.id,
+                    filename=library_file.filename,
+                ),
+            )
+
+        await self._repository.delete(
+            library_file,
         )
 
     async def _cleanup_uploads(
@@ -146,7 +186,7 @@ class DocumentService(BaseService):
         uploaded_objects: list[StoredObjectDTO],
     ) -> None:
         """
-        Remove uploaded files after a failed transaction.
+        Remove uploaded files from storage after a failed transaction.
         """
 
         for stored in uploaded_objects:

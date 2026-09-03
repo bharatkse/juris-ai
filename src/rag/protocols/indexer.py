@@ -9,7 +9,7 @@ and vector persistence through the configured capabilities.
 
 Keyword/BM25 retrieval is intentionally outside this indexing
 capability. PostgreSQL full-text/BM25 indexing is derived from
-the persisted DocumentChunk representation.
+the persisted KnowledgeChunk representation.
 """
 
 from __future__ import annotations

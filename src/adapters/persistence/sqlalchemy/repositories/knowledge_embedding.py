@@ -1,15 +1,15 @@
 """
-Document chunk embedding repository.
+Knowledge chunk embedding repository.
 
 Provides persistence operations for embedding representations of
-document chunks.
+knowledge chunks.
 
-A single textual DocumentChunk may have multiple embedding
-representations, one for each embedding model.
+A single KnowledgeChunk may have multiple embedding representations,
+one for each embedding model.
 
 For example:
 
-    DocumentChunk
+    KnowledgeChunk
         ├── bge-small-en-v1.5
         ├── embedding-model-b
         └── embedding-model-c
@@ -25,24 +25,24 @@ from collections.abc import Sequence
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from adapters.persistence.sqlalchemy.models.document_chunk import (
-    DocumentChunk,
+from adapters.persistence.sqlalchemy.models.knowledge_chunk import (
+    KnowledgeChunk,
 )
-from adapters.persistence.sqlalchemy.models.document_chunk_embedding import (
-    DocumentChunkEmbedding,
+from adapters.persistence.sqlalchemy.models.knowledge_embedding import (
+    KnowledgeEmbedding,
 )
 
 
-class DocumentChunkEmbeddingRepository:
+class KnowledgeEmbeddingRepository:
     """
-    Repository for document chunk embedding representations.
+    Repository for knowledge chunk embedding representations.
 
     The identity of an embedding representation is:
 
         (chunk_id, embedding_model)
 
     This allows the same textual chunk to be embedded by multiple
-    models and later compared during RAG evaluation.
+    models.
     """
 
     def __init__(
@@ -64,21 +64,14 @@ class DocumentChunkEmbeddingRepository:
         self,
         *,
         embedding_id: str,
-    ) -> DocumentChunkEmbedding | None:
+    ) -> KnowledgeEmbedding | None:
         """
         Retrieve an embedding representation by identifier.
-
-        Args:
-            embedding_id:
-                Embedding entity identifier.
-
-        Returns:
-            The matching embedding, or None when it does not exist.
         """
 
         result = await self._session.execute(
-            select(DocumentChunkEmbedding).where(
-                DocumentChunkEmbedding.id == embedding_id,
+            select(KnowledgeEmbedding).where(
+                KnowledgeEmbedding.id == embedding_id,
             ),
         )
 
@@ -89,25 +82,15 @@ class DocumentChunkEmbeddingRepository:
         *,
         chunk_id: str,
         embedding_model: str,
-    ) -> DocumentChunkEmbedding | None:
+    ) -> KnowledgeEmbedding | None:
         """
         Retrieve an embedding for a specific chunk and model.
-
-        Args:
-            chunk_id:
-                DocumentChunk identifier.
-
-            embedding_model:
-                Name of the embedding model.
-
-        Returns:
-            Matching embedding representation, or None.
         """
 
         result = await self._session.execute(
-            select(DocumentChunkEmbedding).where(
-                DocumentChunkEmbedding.chunk_id == chunk_id,
-                DocumentChunkEmbedding.embedding_model == embedding_model,
+            select(KnowledgeEmbedding).where(
+                KnowledgeEmbedding.chunk_id == chunk_id,
+                KnowledgeEmbedding.embedding_model == embedding_model,
             ),
         )
 
@@ -117,25 +100,18 @@ class DocumentChunkEmbeddingRepository:
         self,
         *,
         chunk_id: str,
-    ) -> Sequence[DocumentChunkEmbedding]:
+    ) -> Sequence[KnowledgeEmbedding]:
         """
         Retrieve all embedding representations for a chunk.
-
-        Args:
-            chunk_id:
-                DocumentChunk identifier.
-
-        Returns:
-            All embeddings associated with the chunk.
         """
 
         result = await self._session.execute(
-            select(DocumentChunkEmbedding)
+            select(KnowledgeEmbedding)
             .where(
-                DocumentChunkEmbedding.chunk_id == chunk_id,
+                KnowledgeEmbedding.chunk_id == chunk_id,
             )
             .order_by(
-                DocumentChunkEmbedding.created_at,
+                KnowledgeEmbedding.created_at,
             ),
         )
 
@@ -146,30 +122,30 @@ class DocumentChunkEmbeddingRepository:
         *,
         chunk_id: str,
         embedding_model: str,
-        embedding: list[float],
-    ) -> DocumentChunkEmbedding:
+        vector: list[float],
+    ) -> KnowledgeEmbedding:
         """
         Create an embedding representation.
 
         Args:
             chunk_id:
-                DocumentChunk identifier.
+                KnowledgeChunk identifier.
 
             embedding_model:
                 Model that generated the vector.
 
-            embedding:
+            vector:
                 Vector representation.
 
         Returns:
-            Newly created embedding entity.
+            Newly created KnowledgeEmbedding entity.
         """
 
-        entity = DocumentChunkEmbedding(
+        entity = KnowledgeEmbedding(
             chunk_id=chunk_id,
             embedding_model=embedding_model,
-            embedding_dimension=len(embedding),
-            embedding=embedding,
+            embedding_dimension=len(vector),
+            embedding=vector,
         )
 
         self._session.add(entity)
@@ -181,24 +157,14 @@ class DocumentChunkEmbeddingRepository:
     async def update(
         self,
         *,
-        embedding: DocumentChunkEmbedding,
+        embedding: KnowledgeEmbedding,
         vector: list[float],
-    ) -> DocumentChunkEmbedding:
+    ) -> KnowledgeEmbedding:
         """
         Update an existing embedding representation.
 
         The embedding model is not changed because it forms part of
         the representation identity.
-
-        Args:
-            embedding:
-                Existing embedding entity.
-
-            vector:
-                New vector representation.
-
-        Returns:
-            Updated embedding entity.
         """
 
         embedding.embedding = vector
@@ -214,11 +180,11 @@ class DocumentChunkEmbeddingRepository:
         chunk_id: str,
         embedding_model: str,
         vector: list[float],
-    ) -> DocumentChunkEmbedding:
+    ) -> KnowledgeEmbedding:
         """
         Create or update an embedding representation.
 
-        The `(chunk_id, embedding_model)` pair uniquely identifies the
+        The (chunk_id, embedding_model) pair uniquely identifies the
         representation.
         """
 
@@ -236,7 +202,7 @@ class DocumentChunkEmbeddingRepository:
         return await self.create(
             chunk_id=chunk_id,
             embedding_model=embedding_model,
-            embedding=vector,
+            vector=vector,
         )
 
     async def delete_by_chunk_id(
@@ -246,18 +212,11 @@ class DocumentChunkEmbeddingRepository:
     ) -> int:
         """
         Delete all embeddings belonging to a chunk.
-
-        Args:
-            chunk_id:
-                DocumentChunk identifier.
-
-        Returns:
-            Number of deleted embeddings.
         """
 
         result = await self._session.execute(
-            delete(DocumentChunkEmbedding).where(
-                DocumentChunkEmbedding.chunk_id == chunk_id,
+            delete(KnowledgeEmbedding).where(
+                KnowledgeEmbedding.chunk_id == chunk_id,
             ),
         )
 
@@ -272,18 +231,11 @@ class DocumentChunkEmbeddingRepository:
     ) -> int:
         """
         Delete all embeddings generated by an embedding model.
-
-        Args:
-            embedding_model:
-                Model whose representations should be removed.
-
-        Returns:
-            Number of deleted embedding records.
         """
 
         result = await self._session.execute(
-            delete(DocumentChunkEmbedding).where(
-                DocumentChunkEmbedding.embedding_model == embedding_model,
+            delete(KnowledgeEmbedding).where(
+                KnowledgeEmbedding.embedding_model == embedding_model,
             ),
         )
 
@@ -297,8 +249,8 @@ class DocumentChunkEmbeddingRepository:
         vector: list[float],
         embedding_model: str,
         top_k: int,
-        allowed_document_ids: set[str] | None = None,
-    ) -> list[tuple[DocumentChunkEmbedding, float]]:
+        allowed_knowledge_source_ids: set[str] | None = None,
+    ) -> list[tuple[KnowledgeEmbedding, float]]:
         """
         Search embedding representations using cosine similarity.
 
@@ -316,43 +268,44 @@ class DocumentChunkEmbeddingRepository:
             top_k:
                 Maximum number of results.
 
-            allowed_document_ids:
-                Optional document scope restriction.
+            allowed_knowledge_source_ids:
+                Optional knowledge-source scope restriction.
 
         Returns:
-            Matching embedding entities with cosine similarity scores.
+            Matching KnowledgeEmbedding entities with cosine
+            similarity scores.
         """
 
         statement = select(
-            DocumentChunkEmbedding,
+            KnowledgeEmbedding,
             (
                 1
-                - DocumentChunkEmbedding.embedding.cosine_distance(
+                - KnowledgeEmbedding.embedding.cosine_distance(
                     vector,
                 )
             ).label("score"),
         ).where(
-            DocumentChunkEmbedding.embedding_model == embedding_model,
+            KnowledgeEmbedding.embedding_model == embedding_model,
         )
 
-        if allowed_document_ids:
+        if allowed_knowledge_source_ids:
             statement = statement.join(
-                DocumentChunkEmbedding.chunk,
+                KnowledgeEmbedding.chunk,
             ).where(
-                DocumentChunkEmbedding.chunk.has(
-                    DocumentChunk.document_id.in_(allowed_document_ids),
+                KnowledgeEmbedding.chunk.has(
+                    KnowledgeChunk.knowledge_source_id.in_(
+                        allowed_knowledge_source_ids,
+                    ),
                 ),
             )
 
         statement = statement.order_by(
-            DocumentChunkEmbedding.embedding.cosine_distance(
+            KnowledgeEmbedding.embedding.cosine_distance(
                 vector,
             ),
         ).limit(top_k)
 
-        result = await self._session.execute(
-            statement,
-        )
+        result = await self._session.execute(statement)
 
         return [
             (

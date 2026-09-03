@@ -191,11 +191,11 @@ class PgVectorStore(VectorStoreProtocol):
         The repository returns:
 
             (
-                DocumentChunkEmbedding,
+                KnowledgeEmbedding,
                 similarity_score,
             )
 
-        The embedding entity exposes its associated DocumentChunk
+        The embedding entity exposes its associated KnowledgeChunk
         through the eagerly loaded `chunk` relationship.
         """
 

@@ -19,7 +19,7 @@ from adapters.persistence.sqlalchemy.repositories.conversation import (
 from adapters.persistence.sqlalchemy.repositories.conversation_event import (
     ConversationEventRepository,
 )
-from adapters.persistence.sqlalchemy.repositories.document import DocumentRepository
+from adapters.persistence.sqlalchemy.repositories.library_file import LibraryFileRepository
 from adapters.persistence.sqlalchemy.repositories.user import UserRepository
 
 
@@ -63,14 +63,14 @@ def user_repository(
 
 
 @pytest.fixture
-def document_repository(
+def upload_file_repository(
     db_session: AsyncSession,
-) -> DocumentRepository:
+) -> LibraryFileRepository:
     """
-    Return a document repository.
+    Return a upload file repository.
     """
 
-    return DocumentRepository(
+    return LibraryFileRepository(
         session=db_session,
     )
 
@@ -102,13 +102,13 @@ def approval_repository(
 
 
 @pytest.fixture
-def mock_document_repository() -> MagicMock:
+def mock_upload_file_repository() -> MagicMock:
     """
-    Return a mocked document repository.
+    Return a mocked upload file repository.
     """
 
     return MagicMock(
-        spec=DocumentRepository,
+        spec=LibraryFileRepository,
     )
 
 

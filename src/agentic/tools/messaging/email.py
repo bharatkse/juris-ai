@@ -43,7 +43,7 @@ class EmailTool(Tool, GatedMCPTool):
     description = "Read email, and draft/send email (send requires approval)."
 
     async def read(self, *, query: str, limit: int = 10) -> str:
-        log.debug("EmailTool.read(query=%r, limit=%d).", query, limit)
+        log.debug("EmailTool.read(limit=%d, query_length=%d).", limit, len(query))
 
         return await self._call_mcp(
             server_name=GMAIL_SERVER_NAME,

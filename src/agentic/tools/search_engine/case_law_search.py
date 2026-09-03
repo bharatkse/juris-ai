@@ -11,7 +11,7 @@ from __future__ import annotations
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from adapters.observability.logger import get_logger
-from adapters.persistence.sqlalchemy.repositories.document import DocumentRepository
+from adapters.persistence.sqlalchemy.repositories.knowledge_sources import KnowledgeSourceRepository
 from agentic.tools.base import Tool
 from agentic.tools.search_engine.web_research import WebResearchTool
 from application.context.request import get_request_context
@@ -23,7 +23,7 @@ log = get_logger(__name__)
 class CaseLawSearchTool(Tool):
     """
     Search external case law (via WebResearchTool) and internal
-    contracts (via DocumentRepository, ACL-scoped).
+    contracts (via KnowledgeSourceRepository, ACL-scoped).
     """
 
     name = "case_law_search"
@@ -42,7 +42,9 @@ class CaseLawSearchTool(Tool):
         self._session_factory = session_factory
 
     async def search_case_law(self, *, query: str, limit: int = 5) -> str:
-        log.debug("CaseLawSearchTool.search_case_law(query=%r).", query)
+        log.debug(
+            "CaseLawSearchTool.search_case_law(limit=%d, query_length=%d).", limit, len(query)
+        )
 
         return await self._web_research_tool.execute(
             query=f"case law {query}",
@@ -50,23 +52,27 @@ class CaseLawSearchTool(Tool):
         )
 
     async def search_contracts(self, *, query: str, limit: int = 5) -> str:
-        log.debug("CaseLawSearchTool.search_contracts(query=%r).", query)
+        log.debug(
+            "CaseLawSearchTool.search_contracts(limit=%d, query_length=%d).", limit, len(query)
+        )
 
-        allowed_document_ids = get_request_context().allowed_document_ids
+        allowed_knowledge_source_ids = get_request_context().allowed_knowledge_source_ids
 
         try:
-            fetch_limit = limit * 3 if allowed_document_ids is not None else limit
+            fetch_limit = limit * 3 if allowed_knowledge_source_ids is not None else limit
 
             async with self._session_factory() as session:
-                repository = DocumentRepository(session=session)
-                documents = await repository.search(query=query, limit=fetch_limit)
+                repository = KnowledgeSourceRepository(session=session)
+                knowledge_sources = await repository.search(query=query, limit=fetch_limit)
 
         except DomainError:
-            log.exception("Repository error searching contracts (query=%r).", query)
+            log.exception("Repository error searching contracts.")
             return "Contract search failed — please try again."
 
         allowed = [
-            d for d in documents if allowed_document_ids is None or d.id in allowed_document_ids
+            d
+            for d in knowledge_sources
+            if allowed_knowledge_source_ids is None or d.id in allowed_knowledge_source_ids
         ][:limit]
 
         if not allowed:

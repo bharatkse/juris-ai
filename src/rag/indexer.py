@@ -18,13 +18,13 @@ Flow:
         ↓
     ┌──────────────────────────────┐
     ↓                              ↓
-DocumentChunk            DocumentChunkEmbedding
+KnowledgeChunk            KnowledgeEmbedding
     ↓                              ↓
 PostgreSQL FTS/BM25          pgvector
 
 Keyword/BM25 retrieval is a read-only capability and is intentionally
 not part of the indexing orchestration. PostgreSQL full-text/BM25
-indexing is maintained from the persisted DocumentChunk representation.
+indexing is maintained from the persisted KnowledgeChunk representation.
 
 This module does not:
     - parse documents
@@ -231,8 +231,8 @@ class RAGIndexer(RAGIndexerProtocol):
         Its implementation delegates to the application persistence
         service, which coordinates:
 
-            - DocumentChunk persistence
-            - DocumentChunkEmbedding persistence
+            - KnowledgeChunk persistence
+            - KnowledgeEmbedding persistence
             - transaction management
 
         Returns:

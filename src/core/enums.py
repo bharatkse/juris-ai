@@ -101,9 +101,19 @@ class AgentTypeEnum(StrEnum):
     CONTRACT = "contract"
 
 
-class DocumentStatusEnum(StrEnum):
+class LibraryFileStatusEnum(StrEnum):
     """
-    Document processing status.
+    Upload file processing status.
+    """
+
+    UPLOADED = "uploaded"
+    READY = "ready"
+    FAILED = "failed"
+
+
+class KnowledgeStatusEnum(StrEnum):
+    """
+    Knowledge source processing status.
     """
 
     UPLOADED = "uploaded"
@@ -111,10 +121,16 @@ class DocumentStatusEnum(StrEnum):
     READY = "ready"
     FAILED = "failed"
     DELETED = "deleted"
-    INDEXED = "indexed"
 
 
-class DocumentSourceEnum(StrEnum):
+class LibraryFileSourceEnum(StrEnum):
+    FILE = "file"
+    WEBSITE = "website"
+    TEXT = "text"
+    CLOUD_STORAGE = "cloud_storage"
+
+
+class KnowledgeSourceEnum(StrEnum):
     FILE = "file"
     WEBSITE = "website"
     TEXT = "text"

@@ -3,9 +3,9 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import select
 
-from adapters.persistence.sqlalchemy.models.document_chunk import DocumentChunk
-from adapters.persistence.sqlalchemy.models.document_chunk_embedding import (
-    DocumentChunkEmbedding,
+from adapters.persistence.sqlalchemy.models.knowledge_chunk import KnowledgeChunk
+from adapters.persistence.sqlalchemy.models.knowledge_embedding import (
+    KnowledgeEmbedding,
 )
 from adapters.persistence.sqlalchemy.session import session_factory
 
@@ -44,7 +44,7 @@ class TestRAGIngestion:
             for source_id, result in zip(source_ids, results, strict=False):
                 # -------------------------------------------------
                 # Verify indexing result returned by
-                # DocumentIndexingService.
+                # KnowledgeIndexingService.
                 # -------------------------------------------------
 
                 assert result.chunk_count > 0, (
@@ -72,15 +72,15 @@ class TestRAGIngestion:
                 # -------------------------------------------------
 
                 chunks_result = await session.execute(
-                    select(DocumentChunk).where(
-                        DocumentChunk.chunk_metadata["source_id"].as_string() == source_id
+                    select(KnowledgeChunk).where(
+                        KnowledgeChunk.chunk_metadata["source_id"].as_string() == source_id
                     )
                 )
 
                 chunks = chunks_result.scalars().all()
 
                 assert chunks, (
-                    "Offline ingestion completed but no DocumentChunk "
+                    "Offline ingestion completed but no KnowledgeChunk "
                     f"records were persisted for source {source_id!r}."
                 )
 
@@ -92,7 +92,7 @@ class TestRAGIngestion:
                 chunk_ids = [chunk.id for chunk in chunks]
 
                 assert len(chunk_ids) == len(set(chunk_ids)), (
-                    "Duplicate DocumentChunk IDs were persisted " f"for source {source_id!r}."
+                    "Duplicate KnowledgeChunk IDs were persisted " f"for source {source_id!r}."
                 )
 
                 for chunk in chunks:
@@ -118,8 +118,8 @@ class TestRAGIngestion:
                 # -------------------------------------------------
 
                 embeddings_result = await session.execute(
-                    select(DocumentChunkEmbedding).where(
-                        DocumentChunkEmbedding.chunk_id.in_(chunk_ids),
+                    select(KnowledgeEmbedding).where(
+                        KnowledgeEmbedding.chunk_id.in_(chunk_ids),
                     )
                 )
 
@@ -127,7 +127,7 @@ class TestRAGIngestion:
 
                 assert embeddings, (
                     "Offline ingestion completed but no "
-                    "DocumentChunkEmbedding records were persisted "
+                    "KnowledgeEmbedding records were persisted "
                     f"for source {source_id!r}."
                 )
 
@@ -143,8 +143,7 @@ class TestRAGIngestion:
                 embedding_ids = [embedding.id for embedding in embeddings]
 
                 assert len(embedding_ids) == len(set(embedding_ids)), (
-                    "Duplicate DocumentChunkEmbedding IDs were "
-                    f"persisted for source {source_id!r}."
+                    "Duplicate KnowledgeEmbedding IDs were " f"persisted for source {source_id!r}."
                 )
 
                 embedding_chunk_ids = [embedding.chunk_id for embedding in embeddings]

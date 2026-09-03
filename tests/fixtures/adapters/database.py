@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from adapters.persistence.sqlalchemy.base import Base
-from adapters.persistence.sqlalchemy.models.document_chunk import DocumentChunk
+from adapters.persistence.sqlalchemy.models.knowledge_chunk import KnowledgeChunk
 from core.constants import TEST_DB_URL
 
 
@@ -29,7 +29,7 @@ async def engine() -> AsyncGenerator[AsyncEngine, None]:
     )
 
     test_tables = [
-        table for table in Base.metadata.sorted_tables if table.name != DocumentChunk.__tablename__
+        table for table in Base.metadata.sorted_tables if table.name != KnowledgeChunk.__tablename__
     ]
 
     async with engine.begin() as conn:

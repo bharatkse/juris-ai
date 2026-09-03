@@ -39,10 +39,10 @@ class SearxngClient:
         limit: int = 5,
     ) -> list[SearchEngineResultDTO]:
         log.debug(
-            "SearXNG search query=%r engines=%s limit=%d.",
-            query,
+            "SearXNG search engines=%s limit=%d query_length=%d.",
             engines,
             limit,
+            len(query),
         )
 
         try:
@@ -57,10 +57,8 @@ class SearxngClient:
             response.raise_for_status()
 
         except httpx.HTTPError as exc:
-            log.exception("SearXNG search failed for query=%r.", query)
-            raise ClientConnectionError(
-                message=f"SearXNG search failed for query '{query}'."
-            ) from exc
+            log.exception("SearXNG search failed.")
+            raise ClientConnectionError(message="SearXNG search failed.") from exc
 
         payload = response.json()
         raw_results = payload.get("results", [])[:limit]

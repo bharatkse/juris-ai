@@ -8,17 +8,17 @@ import pytest_asyncio
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from adapters.persistence.sqlalchemy.models.document_chunk import (
-    DocumentChunk,
+from adapters.persistence.sqlalchemy.models.knowledge_chunk import (
+    KnowledgeChunk,
 )
-from adapters.persistence.sqlalchemy.models.document_chunk_embedding import (
-    DocumentChunkEmbedding,
+from adapters.persistence.sqlalchemy.models.knowledge_embedding import (
+    KnowledgeEmbedding,
 )
 from adapters.persistence.sqlalchemy.repositories.rag_retrieval import (
     RAGRetrievalRepository,
 )
 from adapters.persistence.sqlalchemy.session import session_factory
-from application.services.document_indexing import DocumentIndexingService
+from application.services.knowledge_chunk_indexing import KnowledgeIndexingService
 from application.services.offline_ingestion import OfflineIngestionService
 from rag.chunk_mapper import ChunkMapper
 from rag.embeddings import SentenceTransformerEmbeddingProvider
@@ -47,7 +47,7 @@ class RAGSmokeEnvironment:
     source_ids: tuple[str, ...]
     sources: tuple[DocumentSource, ...]
 
-    indexing_service: DocumentIndexingService
+    indexing_service: KnowledgeIndexingService
 
     embedding_provider: SentenceTransformerEmbeddingProvider
     retrieval_vector_store: PgVectorStore
@@ -93,7 +93,7 @@ def _find_legal_documents() -> tuple[Path, ...]:
     return candidates
 
 
-def _build_indexing_service() -> DocumentIndexingService:
+def _build_indexing_service() -> KnowledgeIndexingService:
     """
     Build the existing production ingestion/indexing pipeline.
 
@@ -112,7 +112,7 @@ def _build_indexing_service() -> DocumentIndexingService:
 
     ingestion_service = OfflineIngestionService()
 
-    return DocumentIndexingService(
+    return KnowledgeIndexingService(
         ingestion_service=ingestion_service,
         chunk_mapper=ChunkMapper(),
         indexer=indexer,
@@ -234,8 +234,8 @@ async def _cleanup_rag_smoke_data(
 
     async with session_factory() as session:
         chunk_ids_result = await session.execute(
-            select(DocumentChunk.id).where(
-                DocumentChunk.chunk_metadata["source_id"]
+            select(KnowledgeChunk.id).where(
+                KnowledgeChunk.chunk_metadata["source_id"]
                 .as_string()
                 .in_(
                     source_ids,
@@ -251,14 +251,14 @@ async def _cleanup_rag_smoke_data(
             return
 
         await session.execute(
-            delete(DocumentChunkEmbedding).where(
-                DocumentChunkEmbedding.chunk_id.in_(chunk_ids),
+            delete(KnowledgeEmbedding).where(
+                KnowledgeEmbedding.chunk_id.in_(chunk_ids),
             )
         )
 
         await session.execute(
-            delete(DocumentChunk).where(
-                DocumentChunk.id.in_(chunk_ids),
+            delete(KnowledgeChunk).where(
+                KnowledgeChunk.id.in_(chunk_ids),
             )
         )
 

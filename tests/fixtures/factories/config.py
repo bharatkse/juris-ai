@@ -8,7 +8,7 @@ import pytest
 
 from tests.factories.conversation import ConversationFactory
 from tests.factories.conversation_event import ConversationEventFactory
-from tests.factories.document import DocumentFactory
+from tests.factories.upload_file import LibraryFileFactory
 from tests.factories.user import UserFactory
 
 
@@ -24,7 +24,7 @@ def configure_factories(
         UserFactory,
         ConversationFactory,
         ConversationEventFactory,
-        DocumentFactory,
+        LibraryFileFactory,
     )
 
     for factory_class in factories:

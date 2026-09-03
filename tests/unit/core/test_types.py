@@ -10,7 +10,7 @@ from pydantic import BaseModel, ValidationError
 from core.types import (
     ConversationEventId,
     ConversationId,
-    DocumentId,
+    LibraryFileId,
     UserId,
     _prefixed_id_field,
 )
@@ -94,19 +94,19 @@ def test_conversation_event_id_accepts_valid_identifier() -> None:
     assert model.id == "evnt_" + "c" * 32
 
 
-def test_document_id_enforces_prefix() -> None:
+def test_upload_file_id_enforces_prefix() -> None:
     """
-    It should enforce the document identifier prefix.
+    It should enforce the upload file identifier prefix.
     """
 
     class Model(BaseModel):
-        id: DocumentId
+        id: LibraryFileId
 
     model = Model(
-        id="doct_" + "d" * 32,
+        id="libf_" + "d" * 32,
     )
 
-    assert model.id == "doct_" + "d" * 32
+    assert model.id == "libf_" + "d" * 32
 
     with pytest.raises(
         ValidationError,
@@ -122,7 +122,7 @@ def test_document_id_enforces_prefix() -> None:
         (UserId, "user"),
         (ConversationId, "conv"),
         (ConversationEventId, "evnt"),
-        (DocumentId, "doct"),
+        (LibraryFileId, "libf"),
     ],
 )
 def test_identifier_rejects_wrong_prefix(
