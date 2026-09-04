@@ -13,7 +13,7 @@ from adapters.persistence.sqlalchemy.mixins import (
     SoftDeleteMixin,
     TimestampMixin,
 )
-from adapters.persistence.sqlalchemy.models.library_file import LibraryFile
+from adapters.persistence.sqlalchemy.models.library import Library
 from core.constants import DEFAULT_CONVERSATION_TITLE
 from core.utils.datetime import utcnow
 
@@ -56,7 +56,7 @@ class Conversation(
         order_by="ConversationEvent.created_at",
     )
 
-    library_files: Mapped[list["LibraryFile"]] = relationship(
+    library: Mapped[list["Library"]] = relationship(
         back_populates="conversation",
         cascade="all, delete-orphan",
     )

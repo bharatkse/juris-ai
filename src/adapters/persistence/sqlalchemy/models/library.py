@@ -8,8 +8,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from adapters.persistence.sqlalchemy.base import Base
 from adapters.persistence.sqlalchemy.mixins import PrimaryKeyMixin, TimestampMixin
 from core.enums import (
-    LibraryFileSourceEnum,
-    LibraryFileStatusEnum,
+    LibrarySourceEnum,
+    LibraryStatusEnum,
     StorageTypeEnum,
 )
 
@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from adapters.persistence.sqlalchemy.models.conversation import Conversation
 
 
-class LibraryFile(
+class Library(
     PrimaryKeyMixin,
     TimestampMixin,
     Base,
@@ -25,16 +25,16 @@ class LibraryFile(
     """
     Persisted metadata for a user/API-uploaded file.
 
-    LibraryFile represents only files supplied to the application
+    Library represents only files supplied to the application
     through an upload boundary.
 
     It is not a knowledge source and is never persisted as part
     of the global knowledge/RAG corpus.
     """
 
-    __tablename__ = "library_files"
+    __tablename__ = "library"
 
-    _id_prefix = "upld"
+    _id_prefix = "liby"
 
     conversation_id: Mapped[str | None] = mapped_column(
         ForeignKey(
@@ -45,10 +45,10 @@ class LibraryFile(
         index=True,
     )
 
-    source_type: Mapped[LibraryFileSourceEnum] = mapped_column(
+    source_type: Mapped[LibrarySourceEnum] = mapped_column(
         Enum(
-            LibraryFileSourceEnum,
-            name="library_file_source",
+            LibrarySourceEnum,
+            name="library_source",
         ),
         nullable=False,
         index=True,
@@ -93,16 +93,16 @@ class LibraryFile(
         index=True,
     )
 
-    status: Mapped[LibraryFileStatusEnum] = mapped_column(
+    status: Mapped[LibraryStatusEnum] = mapped_column(
         Enum(
-            LibraryFileStatusEnum,
-            name="library_file_status",
+            LibraryStatusEnum,
+            name="library_status",
         ),
         nullable=False,
-        default=LibraryFileStatusEnum.UPLOADED,
+        default=LibraryStatusEnum.UPLOADED,
         index=True,
     )
 
     conversation: Mapped[Conversation | None] = relationship(
-        back_populates="library_files",
+        back_populates="library",
     )

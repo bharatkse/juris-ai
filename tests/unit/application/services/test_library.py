@@ -1,5 +1,5 @@
 """
-LibraryFile service.
+Library service.
 """
 
 from __future__ import annotations
@@ -9,9 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from adapters.clients.storage.base import StorageClient
 from adapters.observability.logger import get_logger
-from adapters.persistence.sqlalchemy.models.library_file import LibraryFile
-from adapters.persistence.sqlalchemy.repositories.library_file import (
-    LibraryFileRepository,
+from adapters.persistence.sqlalchemy.models.library import Library
+from adapters.persistence.sqlalchemy.repositories.library import (
+    LibraryRepository,
 )
 from application.services.base import BaseService
 from core.dto.clients.storage import (
@@ -19,18 +19,18 @@ from core.dto.clients.storage import (
     StoredObjectDTO,
     UploadRequestDTO,
 )
-from core.enums import LibraryFileStatusEnum
+from core.enums import LibraryStatusEnum
 from core.exceptions.client import ClientProviderError, ClientResponseError
 
 log = get_logger(__name__)
 
 
-class LibraryFileService(BaseService):
+class LibraryService(BaseService):
     """
     Manage user-uploaded files.
 
     This service owns the upload/storage lifecycle and persistence
-    of LibraryFile metadata.
+    of Library metadata.
 
     It does not own:
         - document parsing
@@ -45,7 +45,7 @@ class LibraryFileService(BaseService):
         self,
         *,
         session: AsyncSession,
-        repository: LibraryFileRepository,
+        repository: LibraryRepository,
         storage: StorageClient,
     ) -> None:
         super().__init__(session)
@@ -58,7 +58,7 @@ class LibraryFileService(BaseService):
         *,
         conversation_id: str,
         uploads: list[UploadRequestDTO],
-    ) -> list[LibraryFile]:
+    ) -> list[Library]:
         """
         Upload files and persist their metadata.
 
@@ -77,7 +77,7 @@ class LibraryFileService(BaseService):
         )
 
         uploaded_objects: list[StoredObjectDTO] = []
-        library_files: list[LibraryFile] = []
+        library: list[Library] = []
 
         try:
             async with self._session.begin():
@@ -90,7 +90,7 @@ class LibraryFileService(BaseService):
 
                     uploaded_objects.append(stored)
 
-                    library_file = LibraryFile(
+                    library = Library(
                         conversation_id=conversation_id,
                         source_type=request.source_type,
                         original_filename=request.filename,
@@ -100,22 +100,22 @@ class LibraryFileService(BaseService):
                         checksum=stored.checksum,
                         storage_type=self._storage.storage_type,
                         storage_path=stored.storage_path,
-                        status=LibraryFileStatusEnum.UPLOADED,
+                        status=LibraryStatusEnum.UPLOADED,
                     )
 
                     await self._repository.create(
-                        library_file=library_file,
+                        library=library,
                     )
 
-                    library_files.append(library_file)
+                    library.append(library)
 
             log.info(
                 "Uploaded %d file(s) for conversation '%s'.",
-                len(library_files),
+                len(library),
                 conversation_id,
             )
 
-            return library_files
+            return library
 
         except (
             ClientProviderError,
@@ -136,21 +136,21 @@ class LibraryFileService(BaseService):
     async def get_by_id(
         self,
         *,
-        library_file_id: str,
-    ) -> LibraryFile | None:
+        library_id: str,
+    ) -> Library | None:
         """
         Retrieve an uploaded file by identifier.
         """
 
         return await self._repository.get_by_id(
-            library_file_id=library_file_id,
+            library_id=library_id,
         )
 
     async def list(
         self,
         *,
         conversation_id: str,
-    ) -> list[LibraryFile]:
+    ) -> list[Library]:
         """
         Retrieve all uploaded files for a conversation.
         """
@@ -162,22 +162,22 @@ class LibraryFileService(BaseService):
     async def delete(
         self,
         *,
-        library_file: LibraryFile,
+        library: Library,
     ) -> None:
         """
         Delete an uploaded file from storage and persistence.
         """
 
-        if library_file.storage_path:
+        if library.storage_path:
             await self._storage.delete(
                 request=DeleteRequestDTO(
-                    object_id=library_file.id,
-                    filename=library_file.filename,
+                    object_id=library.id,
+                    filename=library.filename,
                 ),
             )
 
         await self._repository.delete(
-            library_file,
+            library,
         )
 
     async def _cleanup_uploads(

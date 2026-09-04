@@ -7,26 +7,26 @@ from __future__ import annotations
 import factory
 
 from adapters.persistence.sqlalchemy.mixins import generate_prefixed_uuid_pk
-from adapters.persistence.sqlalchemy.models.library_file import LibraryFile
+from adapters.persistence.sqlalchemy.models.library import Library
 from core.enums import (
-    LibraryFileSourceEnum,
-    LibraryFileStatusEnum,
+    LibrarySourceEnum,
+    LibraryStatusEnum,
     StorageTypeEnum,
 )
 from tests.factories.base import BaseFactory
 from tests.factories.conversation import ConversationFactory
 
 
-class LibraryFileFactory(BaseFactory):
+class LibraryFactory(BaseFactory):
     """
-    Factory for LibraryFile ORM model.
+    Factory for Library ORM model.
     """
 
     class Meta:
-        model = LibraryFile
+        model = Library
 
     id = factory.LazyFunction(
-        lambda: generate_prefixed_uuid_pk("libf"),
+        lambda: generate_prefixed_uuid_pk("liby"),
     )
 
     conversation = factory.SubFactory(
@@ -37,7 +37,7 @@ class LibraryFileFactory(BaseFactory):
         "conversation.id",
     )
 
-    source_type = LibraryFileSourceEnum.FILE
+    source_type = LibrarySourceEnum.FILE
 
     original_filename = factory.Sequence(
         lambda n: f"document_{n}.pdf",
@@ -61,4 +61,4 @@ class LibraryFileFactory(BaseFactory):
         lambda n: f"{n:064x}",
     )
 
-    status = LibraryFileStatusEnum.UPLOADED
+    status = LibraryStatusEnum.UPLOADED

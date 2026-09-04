@@ -72,7 +72,7 @@ ApprovalId: TypeAlias = Annotated[
 """Unique identifier for an approval request."""
 
 
-LibraryFileId: TypeAlias = Annotated[
+LibraryId: TypeAlias = Annotated[
     str,
     _prefixed_id_field("libf"),
 ]
