@@ -38,7 +38,6 @@ class VectorStoreProtocol(Protocol):
         vector: list[float],
         top_k: int,
         embedding_model: str,
-        allowed_source_ids: set[str] | None = None,
     ) -> list[RetrievalResult]:
         """
         Retrieve vector-search candidates.

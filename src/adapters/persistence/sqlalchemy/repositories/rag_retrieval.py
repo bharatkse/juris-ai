@@ -59,7 +59,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from typing import Any
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
@@ -678,8 +678,9 @@ class RAGRetrievalRepository:
             return statement
 
         return statement.where(
-            KnowledgeChunk.knowledge_source_id.in_(
-                source_ids,
+            or_(
+                KnowledgeChunk.knowledge_source_id.in_(source_ids),
+                KnowledgeChunk.chunk_metadata["source_id"].as_string().in_(source_ids),
             ),
         )
 

@@ -1,304 +1,367 @@
 {
-  "name": "legal-retrieval-v1",
-  "metadata": {
-    "version": "1",
-    "purpose": "retrieval-quality evaluation",
-    "sources": [
-      "it_act_2000.pdf",
-      "reservation-1985.pdf"
-    ],
-    "ground_truth_policy": "expected_evidence is primary; expected_sources is fallback"
+  "name": "legal-retrieval-gold-v1",
+  "version": "1.1",
+  "purpose": "Deterministic retrieval evaluation against the supplied legal corpus",
+  "sources": [
+    "it_act_2000.pdf",
+    "reservation-1985.pdf"
+  ],
+  "ground_truth_policy": {
+    "primary": "expected_evidence",
+    "fallback": "expected_sources",
+    "query_time_source_filter": false,
+    "evidence_match": "case expected_evidence must occur within a retrieved chunk; matching is case-insensitive after whitespace normalization",
+    "section_metadata": "authoritative provision identified from the supplied statute PDF",
+    "status": "gold-candidate; freeze after source-text audit"
   },
   "cases": [
     {
+      "id": "it-001",
       "query": "What is the territorial extent of the Information Technology Act, 2000?",
-      "answer": "",
       "expected_sources": [
         "it_act_2000.pdf"
       ],
       "expected_evidence": [
         "It shall extend to the whole of India"
-      ]
+      ],
+      "section": "1(2)",
+      "evidence_match": "contains"
     },
     {
+      "id": "it-002",
       "query": "What does access mean under the Information Technology Act, 2000?",
-      "answer": "",
       "expected_sources": [
         "it_act_2000.pdf"
       ],
       "expected_evidence": [
         "gaining entry into, instructing or communicating with the logical, arithmetical, or memory function resources of a computer"
-      ]
+      ],
+      "section": "2(1)(a)",
+      "evidence_match": "contains"
     },
     {
+      "id": "it-003",
       "query": "What makes an electronic signature reliable under the Information Technology Act?",
-      "answer": "",
       "expected_sources": [
         "it_act_2000.pdf"
       ],
       "expected_evidence": [
         "the signature creation data or the authentication data are, within the context in which they are used, linked to the signatory"
-      ]
+      ],
+      "section": "3A",
+      "evidence_match": "contains"
     },
     {
+      "id": "it-004",
       "query": "When does the Information Technology Act recognize information as satisfying a writing requirement in electronic form?",
-      "answer": "",
       "expected_sources": [
         "it_act_2000.pdf"
       ],
       "expected_evidence": [
         "rendered or made available in an electronic form"
-      ]
+      ],
+      "section": "4",
+      "evidence_match": "contains"
     },
     {
+      "id": "it-005",
       "query": "When is a signature requirement satisfied by an electronic signature?",
-      "answer": "",
       "expected_sources": [
         "it_act_2000.pdf"
       ],
       "expected_evidence": [
         "authenticated by means of electronic signature"
-      ]
+      ],
+      "section": "5",
+      "evidence_match": "contains"
     },
     {
+      "id": "it-006",
       "query": "When is an electronic record dispatched under section 13?",
-      "answer": "",
       "expected_sources": [
         "it_act_2000.pdf"
       ],
       "expected_evidence": [
         "the dispatch of an electronic record occurs when it enters a computer resource outside the control of the originator"
-      ]
+      ],
+      "section": "13(1)",
+      "evidence_match": "contains"
     },
     {
+      "id": "it-007",
       "query": "When is an electronic record received if the addressee has designated a computer resource?",
-      "answer": "",
       "expected_sources": [
         "it_act_2000.pdf"
       ],
       "expected_evidence": [
         "receipt occurs at the time when the electronic record enters the designated computer resource"
-      ]
+      ],
+      "section": "13(2)(a)(i)",
+      "evidence_match": "contains"
     },
     {
+      "id": "it-008",
       "query": "When is an electronic record considered secure?",
-      "answer": "",
       "expected_sources": [
         "it_act_2000.pdf"
       ],
       "expected_evidence": [
         "such record shall be deemed to be a secure electronic record from such point of time to the time of verification"
-      ]
+      ],
+      "section": "14",
+      "evidence_match": "contains"
     },
     {
+      "id": "it-009",
       "query": "What conditions make an electronic signature a secure electronic signature?",
-      "answer": "",
       "expected_sources": [
         "it_act_2000.pdf"
       ],
       "expected_evidence": [
         "the signature creation data, at the time of affixing signature, was under the exclusive control of signatory"
-      ]
+      ],
+      "section": "15",
+      "evidence_match": "contains"
     },
     {
+      "id": "it-010",
       "query": "What must a subscriber do to generate a key pair?",
-      "answer": "",
       "expected_sources": [
         "it_act_2000.pdf"
       ],
       "expected_evidence": [
         "the subscriber shall generate that key pair by applying the security procedure"
-      ]
+      ],
+      "section": "40",
+      "evidence_match": "contains"
     },
     {
+      "id": "it-011",
       "query": "When is a subscriber deemed to have accepted a Digital Signature Certificate?",
-      "answer": "",
       "expected_sources": [
         "it_act_2000.pdf"
       ],
       "expected_evidence": [
         "A subscriber shall be deemed to have accepted a Digital Signature Certificate if he publishes or authorises the publication"
-      ]
+      ],
+      "section": "41(1)",
+      "evidence_match": "contains"
     },
     {
+      "id": "it-012",
       "query": "What must a subscriber do if a private key has been compromised?",
-      "answer": "",
       "expected_sources": [
         "it_act_2000.pdf"
       ],
       "expected_evidence": [
         "the subscriber shall communicate the same without any delay to the Certifying Authority"
-      ]
+      ],
+      "section": "42(2)",
+      "evidence_match": "contains"
     },
     {
+      "id": "it-013",
       "query": "What conduct is covered by section 43 concerning unauthorized access?",
-      "answer": "",
       "expected_sources": [
         "it_act_2000.pdf"
       ],
       "expected_evidence": [
         "without permission of the owner or any other person who is in charge of a computer"
-      ]
+      ],
+      "section": "43",
+      "evidence_match": "contains"
     },
     {
+      "id": "it-014",
       "query": "When is publication of an electronic signature certificate prohibited?",
-      "answer": "",
       "expected_sources": [
         "it_act_2000.pdf"
       ],
       "expected_evidence": [
         "the certificate has been revoked or suspended"
-      ]
+      ],
+      "section": "73(1)(c)",
+      "evidence_match": "contains"
     },
     {
+      "id": "it-015",
       "query": "When does the Information Technology Act apply to an offence committed outside India?",
-      "answer": "",
       "expected_sources": [
         "it_act_2000.pdf"
       ],
       "expected_evidence": [
         "the act or conduct constituting the offence or contravention involves a computer, computer system or computer network located in India"
-      ]
+      ],
+      "section": "75(2)",
+      "evidence_match": "contains"
     },
     {
+      "id": "hl-001",
       "query": "What is a handloom under the Handlooms Act, 1985?",
-      "answer": "",
       "expected_sources": [
         "reservation-1985.pdf"
       ],
       "expected_evidence": [
         "handloom means any loom, other than power loom"
-      ]
+      ],
+      "section": "2(b)",
+      "evidence_match": "contains"
     },
     {
+      "id": "hl-002",
       "query": "When may the Central Government reserve an article for exclusive production by handlooms?",
-      "answer": "",
       "expected_sources": [
         "reservation-1985.pdf"
       ],
       "expected_evidence": [
         "after considering the recommendations made to it by the Advisory Committee"
-      ]
+      ],
+      "section": "3(1)",
+      "evidence_match": "contains"
     },
     {
+      "id": "hl-003",
       "query": "Why is the Advisory Committee constituted under the Handlooms Act?",
-      "answer": "",
       "expected_sources": [
         "reservation-1985.pdf"
       ],
       "expected_evidence": [
         "determining the nature of any article or class of articles that may be reserved for exclusive production by handlooms"
-      ]
+      ],
+      "section": "4",
+      "evidence_match": "contains"
     },
     {
+      "id": "hl-004",
       "query": "What factors must the Advisory Committee consider?",
-      "answer": "",
       "expected_sources": [
         "reservation-1985.pdf"
       ],
       "expected_evidence": [
         "the article or class of articles which is being produced traditionally by handlooms"
-      ]
+      ],
+      "section": "4",
+      "evidence_match": "contains"
     },
     {
+      "id": "hl-005",
       "query": "What is prohibited once an article has been reserved exclusively for handlooms?",
-      "answer": "",
       "expected_sources": [
         "reservation-1985.pdf"
       ],
       "expected_evidence": [
         "such article or class of articles shall not, on and from the date of reservation, be produced by any loom, other than handloom"
-      ]
+      ],
+      "section": "3(1)",
+      "evidence_match": "contains"
     },
     {
+      "id": "hl-006",
       "query": "What information or samples can the Central Government require from a manufacturer?",
-      "answer": "",
       "expected_sources": [
         "reservation-1985.pdf"
       ],
       "expected_evidence": [
         "require any manufacturer to furnish"
-      ]
+      ],
+      "section": "6",
+      "evidence_match": "contains"
     },
     {
+      "id": "hl-007",
       "query": "What powers does an authorised officer have to inspect a manufacturer's premises?",
-      "answer": "",
       "expected_sources": [
         "reservation-1985.pdf"
       ],
       "expected_evidence": [
         "may enter, at all reasonable times, any place or premises of any manufacturer"
-      ]
+      ],
+      "section": "7",
+      "evidence_match": "contains"
     },
     {
+      "id": "hl-008",
       "query": "When may an authorised officer search and seize under the Handlooms Act?",
-      "answer": "",
       "expected_sources": [
         "reservation-1985.pdf"
       ],
       "expected_evidence": [
         "he may enter into and search such place or premises"
-      ]
+      ],
+      "section": "7",
+      "evidence_match": "contains"
     },
     {
+      "id": "hl-009",
       "query": "Which procedural law applies to searches and seizures under the Handlooms Act?",
-      "answer": "",
       "expected_sources": [
         "reservation-1985.pdf"
       ],
       "expected_evidence": [
         "The provisions of the Code of Criminal Procedure, 1973, relating to searches and seizures shall, so far as may be, apply"
-      ]
+      ],
+      "section": "8",
+      "evidence_match": "contains"
     },
     {
+      "id": "hl-010",
       "query": "What is the penalty for producing articles in contravention of an order under section 3?",
-      "answer": "",
       "expected_sources": [
         "reservation-1985.pdf"
       ],
       "expected_evidence": [
         "punishable with imprisonment for a term which may extend to three months"
-      ]
+      ],
+      "section": "10",
+      "evidence_match": "contains"
     },
     {
+      "id": "hl-011",
       "query": "What constitutes a false statement under the Handlooms Act?",
-      "answer": "",
       "expected_sources": [
         "reservation-1985.pdf"
       ],
       "expected_evidence": [
         "makes any statement or furnishes any information which is false in any material particular"
-      ]
+      ],
+      "section": "12",
+      "evidence_match": "contains"
     },
     {
+      "id": "hl-012",
       "query": "Are offences punishable under the Handlooms Act cognizable?",
-      "answer": "",
       "expected_sources": [
         "reservation-1985.pdf"
       ],
       "expected_evidence": [
         "every offence punishable under this Act shall be cognizable"
-      ]
+      ],
+      "section": "14",
+      "evidence_match": "contains"
     },
     {
+      "id": "hl-013",
       "query": "What protection does the Handlooms Act provide for actions taken in good faith?",
-      "answer": "",
       "expected_sources": [
         "reservation-1985.pdf"
       ],
       "expected_evidence": [
         "No suit, prosecution or other legal proceeding shall lie against the Central Government, State Government or any officer or employee"
-      ]
+      ],
+      "section": "17",
+      "evidence_match": "contains"
     },
     {
+      "id": "hl-014",
       "query": "When can the Central Government exempt an article reserved for handlooms?",
-      "answer": "",
       "expected_sources": [
         "reservation-1985.pdf"
       ],
       "expected_evidence": [
         "the demand for any article or class of articles reserved by an order under section 3 outside India is such that it is not possible for the handloom industry to meet such demand"
-      ]
+      ],
+      "section": "18",
+      "evidence_match": "contains"
     }
   ]
 }

@@ -18,7 +18,6 @@ from __future__ import annotations
 
 from adapters.observability.logger import get_logger
 from agentic.tools.base import Tool
-from application.context.request import get_request_context
 from rag.hybrid_retriever import HybridRetriever
 
 log = get_logger(__name__)
@@ -43,13 +42,10 @@ class RetrieverTool(Tool):
     async def execute(self, *, query: str, top_k: int = 5) -> str:
         log.debug("RetrieverTool.execute(top_k=%d, query_length=%d).", top_k, len(query))
 
-        allowed_document_ids = get_request_context().allowed_document_ids
-
         try:
             results = await self._retriever.retrieve(
                 query=query,
                 top_k=top_k,
-                allowed_source_ids=allowed_document_ids,
             )
 
         except Exception:

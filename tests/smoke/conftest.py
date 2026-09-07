@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -8,12 +9,7 @@ import pytest_asyncio
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from adapters.persistence.sqlalchemy.models.knowledge_chunk import (
-    KnowledgeChunk,
-)
-from adapters.persistence.sqlalchemy.models.knowledge_embedding import (
-    KnowledgeEmbedding,
-)
+from adapters.persistence.sqlalchemy.models.knowledge_sources import KnowledgeSource
 from adapters.persistence.sqlalchemy.repositories.rag_retrieval import (
     RAGRetrievalRepository,
 )
@@ -136,14 +132,21 @@ async def rag_smoke_environment() -> RAGSmokeEnvironment:
 
     source_paths = _find_legal_documents()
 
-    source_ids = tuple(str(source_path.resolve()) for source_path in source_paths)
+    source_path_keys = {
+        str(
+            f"ksrc_{hashlib.sha256(str(source_path.resolve()).encode('utf-8')).hexdigest()[:32]}"
+        ): str(source_path.resolve())
+        for source_path in source_paths
+    }
+
+    source_ids = list(source_path_keys.keys())
 
     sources = tuple(
         DocumentSource(
-            id=source_id,
-            location=source_id,
+            id=pk,
+            location=location_id,
         )
-        for source_id in source_ids
+        for pk, location_id in source_path_keys.items()
     )
 
     indexing_service = _build_indexing_service()
@@ -233,32 +236,24 @@ async def _cleanup_rag_smoke_data(
         return
 
     async with session_factory() as session:
-        chunk_ids_result = await session.execute(
-            select(KnowledgeChunk.id).where(
-                KnowledgeChunk.chunk_metadata["source_id"]
-                .as_string()
-                .in_(
+        knowledge_source_ids_result = await session.execute(
+            select(KnowledgeSource.id).where(
+                KnowledgeSource.id.in_(
                     source_ids,
                 ),
             )
         )
 
-        chunk_ids = list(
-            chunk_ids_result.scalars().all(),
+        knowledge_source_ids = list(
+            knowledge_source_ids_result.scalars().all(),
         )
 
-        if not chunk_ids:
+        if not knowledge_source_ids:
             return
 
         await session.execute(
-            delete(KnowledgeEmbedding).where(
-                KnowledgeEmbedding.chunk_id.in_(chunk_ids),
-            )
-        )
-
-        await session.execute(
-            delete(KnowledgeChunk).where(
-                KnowledgeChunk.id.in_(chunk_ids),
+            delete(KnowledgeSource).where(
+                KnowledgeSource.id.in_(knowledge_source_ids),
             )
         )
 

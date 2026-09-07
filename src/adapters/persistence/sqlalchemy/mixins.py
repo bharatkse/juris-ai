@@ -2,12 +2,12 @@
 Reusable SQLAlchemy mixins.
 """
 
-import uuid
 from datetime import datetime
 
 from sqlalchemy import DateTime, String, event
 from sqlalchemy.orm import Mapped, Mapper, declared_attr, mapped_column
 
+from core.types import prefixed_id_field
 from core.utils.datetime import utcnow
 
 
@@ -21,7 +21,7 @@ def generate_prefixed_uuid_pk(prefix: str) -> str:
     Returns:
         Prefixed UUID string (e.g., 'user_a1b2c3d4...')
     """
-    return f"{prefix}_{uuid.uuid4().hex}"
+    return prefixed_id_field(prefix)
 
 
 class PrimaryKeyMixin:

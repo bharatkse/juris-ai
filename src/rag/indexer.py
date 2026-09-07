@@ -303,7 +303,6 @@ class RAGIndexer(RAGIndexerProtocol):
         """
         Validate that a chunk belongs to the current source.
         """
-
         if chunk.source_id != source_id:
             raise RAGError(
                 message=(

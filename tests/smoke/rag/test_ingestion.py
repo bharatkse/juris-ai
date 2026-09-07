@@ -66,9 +66,8 @@ class TestRAGIngestion:
                 #
                 # source_id is stored as provenance metadata.
                 #
-                # document_id is an optional FK to documents.id and
-                # remains NULL because offline ingestion does not
-                # create a Document entity.
+                # Every persisted knowledge chunk belongs to the
+                # KnowledgeSource established during ingestion.
                 # -------------------------------------------------
 
                 chunks_result = await session.execute(
@@ -98,14 +97,18 @@ class TestRAGIngestion:
                 for chunk in chunks:
                     assert chunk.id
 
-                    # Offline ingestion does not create a Document row.
-                    assert chunk.document_id is None
+                    assert chunk.knowledge_source_id
+                    assert chunk.knowledge_source_id.startswith("ksrc_")
 
                     assert chunk.text.strip()
 
                     assert chunk.chunk_metadata is not None
 
                     assert chunk.chunk_metadata["source_id"] == source_id
+
+                    assert chunk.chunk_metadata["knowledge_source_id"] == (
+                        chunk.knowledge_source_id
+                    )
 
                     assert chunk.chunk_metadata["source"] == "file"
 

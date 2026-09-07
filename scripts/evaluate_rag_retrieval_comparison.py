@@ -15,7 +15,7 @@ from rag.pgvector_store import PgVectorStore
 from runtime.factories.rag import build_rag_pipeline
 
 DATASET_PATH = Path(
-    "tests/datasets/rag/evaluation/legal_retrieval_v1.json",
+    "tests/datasets/rag/evaluation/legal_retrieval_gold_v1.json",
 )
 TOP_K = 5
 
@@ -35,15 +35,11 @@ class VectorRetriever:
         *,
         query: str,
         top_k: int,
-        allowed_source_ids: set[str] | None = None,
     ) -> list[RetrievalResult]:
         embedding = await self._embedding_provider.embed_one(query)
 
         return await self._vector_store.query(
-            vector=embedding.vector,
-            top_k=top_k,
-            embedding_model=embedding.model_name,
-            allowed_source_ids=allowed_source_ids,
+            vector=embedding.vector, top_k=top_k, embedding_model=embedding.model_name
         )
 
 
@@ -60,12 +56,10 @@ class KeywordRetriever:
         *,
         query: str,
         top_k: int,
-        allowed_source_ids: set[str] | None = None,
     ) -> list[RetrievalResult]:
         return await self._keyword_store.query(
             query=query,
             top_k=top_k,
-            allowed_source_ids=allowed_source_ids,
         )
 
 

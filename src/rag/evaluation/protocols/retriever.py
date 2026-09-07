@@ -30,7 +30,6 @@ class RetrieverProtocol(Protocol):
         *,
         query: str,
         top_k: int,
-        allowed_source_ids: set[str] | None = None,
     ) -> list:
         """
         Retrieve ranked results for an evaluation query.

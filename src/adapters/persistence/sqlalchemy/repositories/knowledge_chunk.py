@@ -117,6 +117,8 @@ class KnowledgeChunkRepository:
         Returns:
             The newly created KnowledgeChunk entity.
         """
+        if not chunk_id.startswith("kchn_"):
+            chunk_id = f"kchn_{chunk_id[:59]}"
 
         chunk = KnowledgeChunk(
             id=chunk_id,

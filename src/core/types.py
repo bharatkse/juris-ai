@@ -8,27 +8,27 @@ using a common prefixed-UUID format.
 
 from __future__ import annotations
 
+import uuid
 from typing import Annotated, TypeAlias
 
 from pydantic import Field
 
 
-def _prefixed_id_field(
-    prefix: str,
-) -> Field:
+def prefixed_id_field(prefix: str) -> str:
     """
-    Build the Pydantic field metadata for a prefixed identifier.
-
-    The identifier must follow the format:
-
-        {prefix}_{32 lowercase hexadecimal characters}
-
-    Args:
-        prefix: The required identifier prefix.
+    Generate a prefixed identifier.
 
     Returns:
-        Pydantic field metadata containing the validation pattern and
-        identifier description.
+        Identifier in the format:
+        {prefix}_{32 lowercase hexadecimal characters}.
+    """
+
+    return f"{prefix}_{uuid.uuid4().hex}"
+
+
+def prefixed_id_validator(prefix: str) -> Field:
+    """
+    Build Pydantic field metadata for a prefixed identifier.
     """
 
     return Field(
@@ -39,62 +39,45 @@ def _prefixed_id_field(
 
 UserId: TypeAlias = Annotated[
     str,
-    _prefixed_id_field("user"),
+    prefixed_id_validator("user"),
 ]
-"""Unique identifier for a user."""
-
 
 ConversationId: TypeAlias = Annotated[
     str,
-    _prefixed_id_field("conv"),
+    prefixed_id_validator("conv"),
 ]
-"""Unique identifier for a conversation."""
-
 
 ConversationEventId: TypeAlias = Annotated[
     str,
-    _prefixed_id_field("evnt"),
+    prefixed_id_validator("evnt"),
 ]
-"""Unique identifier for a conversation event."""
-
 
 AgentActionId: TypeAlias = Annotated[
     str,
-    _prefixed_id_field("actn"),
+    prefixed_id_validator("actn"),
 ]
-"""Unique identifier for an agent action."""
-
 
 ApprovalId: TypeAlias = Annotated[
     str,
-    _prefixed_id_field("appr"),
+    prefixed_id_validator("appr"),
 ]
-"""Unique identifier for an approval request."""
-
 
 LibraryId: TypeAlias = Annotated[
     str,
-    _prefixed_id_field("libf"),
+    prefixed_id_validator("liby"),
 ]
-"""Unique identifier for a library file."""
-
 
 KnowledgeSourceId: TypeAlias = Annotated[
     str,
-    _prefixed_id_field("ksrc"),
+    prefixed_id_validator("ksrc"),
 ]
-"""Unique identifier for a knowledge source."""
-
 
 KnowledgeChunkId: TypeAlias = Annotated[
     str,
-    _prefixed_id_field("kchn"),
+    prefixed_id_validator("kchn"),
 ]
-"""Unique identifier for a knowledge chunk."""
-
 
 KnowledgeEmbeddingId: TypeAlias = Annotated[
     str,
-    _prefixed_id_field("kemb"),
+    prefixed_id_validator("kemb"),
 ]
-"""Unique identifier for a knowledge embedding."""

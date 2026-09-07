@@ -18,13 +18,11 @@ class StubRetriever:
         *,
         query: str,
         top_k: int,
-        allowed_source_ids: set[str] | None = None,
     ) -> list[RetrievalResult]:
         self.calls.append(
             {
                 "query": query,
                 "top_k": top_k,
-                "allowed_source_ids": allowed_source_ids,
             }
         )
 
@@ -96,7 +94,6 @@ async def test_runner_retrieves_and_evaluates_each_case() -> None:
     assert len(retriever.calls) == 2
     assert retriever.calls[0]["query"] == "What is consideration?"
     assert retriever.calls[0]["top_k"] == 5
-    assert retriever.calls[0]["allowed_source_ids"] is None
 
     assert retriever.calls[1]["query"] == "What is breach of contract?"
     assert retriever.calls[1]["top_k"] == 5

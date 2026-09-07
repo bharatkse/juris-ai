@@ -45,7 +45,6 @@ class KeywordStoreProtocol(Protocol):
         *,
         query: str,
         top_k: int,
-        allowed_source_ids: set[str] | None = None,
     ) -> list[RetrievalResult]:
         """
         Retrieve keyword-search candidates.
@@ -56,10 +55,6 @@ class KeywordStoreProtocol(Protocol):
 
             top_k:
                 Maximum number of candidates to return.
-
-            allowed_source_ids:
-                Optional set of source identifiers restricting the
-                retrieval scope.
 
         Returns:
             Keyword-search retrieval results.

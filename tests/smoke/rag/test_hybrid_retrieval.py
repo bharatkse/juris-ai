@@ -1,6 +1,14 @@
 from __future__ import annotations
 
+import math
+
 import pytest
+
+from rag.models import (
+    Chunk,
+    EmbeddingRepresentation,
+    RetrievalResult,
+)
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
@@ -11,14 +19,13 @@ class TestRAGHybridRetrieval:
         rag_smoke_environment,
     ) -> None:
         """
-        Verify hybrid retrieval can retrieve relevant chunks
-        from the multi-document legal corpus.
+        Verify hybrid retrieval returns relevant legal chunks
+        from the indexed corpus.
         """
 
         results = await rag_smoke_environment.hybrid_retriever.retrieve(
             query="What is the purpose of this Act?",
             top_k=5,
-            allowed_source_ids=None,
         )
 
         assert results
@@ -27,61 +34,156 @@ class TestRAGHybridRetrieval:
         for result in results:
             assert result.chunk.id
             assert result.chunk.text.strip()
-            assert result.chunk.source_id
+
+            # Source provenance is returned by RAG.
+            assert result.chunk.metadata.get("knowledge_source_id")
+
             assert result.score is not None
             assert 0.0 <= result.score <= 1.0
             assert result.embeddings
 
-    async def test_hybrid_retrieval_respects_top_k(
+    async def test_retrieval_respects_top_k(
         self,
         rag_smoke_environment,
     ) -> None:
-        """
-        Verify hybrid retrieval does not return more results
-        than requested.
-        """
+        """Verify final retrieval never exceeds top_k."""
 
         top_k = 3
 
         results = await rag_smoke_environment.hybrid_retriever.retrieve(
             query="reservation of articles for production",
             top_k=top_k,
-            allowed_source_ids=None,
         )
 
         assert len(results) <= top_k
 
-    async def test_hybrid_retrieval_respects_top_k_one(
+    async def test_retrieval_with_top_k_one(
         self,
         rag_smoke_environment,
     ) -> None:
-        """
-        Verify top_k=1 returns at most one result.
-        """
+        """Verify top_k=1 returns at most one result."""
 
         results = await rag_smoke_environment.hybrid_retriever.retrieve(
             query="reservation production",
             top_k=1,
-            allowed_source_ids=None,
         )
 
         assert len(results) <= 1
+
+    async def test_top_k_zero_returns_empty(
+        self,
+        rag_smoke_environment,
+    ) -> None:
+        """Verify top_k=0 short-circuits retrieval."""
+
+        results = await rag_smoke_environment.hybrid_retriever.retrieve(
+            query="legal act",
+            top_k=0,
+        )
+
+        assert results == []
+
+    async def test_negative_top_k_returns_empty(
+        self,
+        rag_smoke_environment,
+    ) -> None:
+        """Verify negative top_k short-circuits retrieval."""
+
+        results = await rag_smoke_environment.hybrid_retriever.retrieve(
+            query="legal act",
+            top_k=-1,
+        )
+
+        assert results == []
+
+    async def test_empty_query_returns_empty(
+        self,
+        rag_smoke_environment,
+    ) -> None:
+        """Verify an empty query does not invoke retrieval."""
+
+        results = await rag_smoke_environment.hybrid_retriever.retrieve(
+            query="",
+            top_k=5,
+        )
+
+        assert results == []
+
+    async def test_whitespace_query_returns_empty(
+        self,
+        rag_smoke_environment,
+    ) -> None:
+        """Verify a whitespace-only query returns no results."""
+
+        results = await rag_smoke_environment.hybrid_retriever.retrieve(
+            query="   \t\n ",
+            top_k=5,
+        )
+
+        assert results == []
+
+    async def test_zero_fusion_candidates_returns_empty(
+        self,
+        rag_smoke_environment,
+    ) -> None:
+        """Verify fusion_candidates=0 short-circuits retrieval."""
+
+        results = await rag_smoke_environment.hybrid_retriever.retrieve(
+            query="legal act",
+            top_k=5,
+            fusion_candidates=0,
+        )
+
+        assert results == []
+
+    async def test_negative_fusion_candidates_returns_empty(
+        self,
+        rag_smoke_environment,
+    ) -> None:
+        """Verify negative fusion_candidates short-circuits retrieval."""
+
+        results = await rag_smoke_environment.hybrid_retriever.retrieve(
+            query="legal act",
+            top_k=5,
+            fusion_candidates=-1,
+        )
+
+        assert results == []
+
+    async def test_large_top_k_is_safe(
+        self,
+        rag_smoke_environment,
+    ) -> None:
+        """
+        Verify requesting more results than the corpus can provide
+        remains safe.
+        """
+
+        results = await rag_smoke_environment.hybrid_retriever.retrieve(
+            query="legal act",
+            top_k=10_000,
+        )
+
+        assert len(results) <= 10_000
+
+        for result in results:
+            assert result.chunk.id
+            assert result.chunk.text.strip()
 
     async def test_hybrid_results_are_ranked_by_reranker_score(
         self,
         rag_smoke_environment,
     ) -> None:
         """
-        Verify hybrid results are returned in descending
-        reranker-score order.
-        """
+        Verify final results are ordered by the reranker's score.
 
-        source_id = rag_smoke_environment.source_ids[1]
+        RRF determines candidate ordering only. The final returned
+        ordering is determined by the reranker.
+        """
 
         results = await rag_smoke_environment.hybrid_retriever.retrieve(
             query="handlooms reservation production",
             top_k=5,
-            allowed_source_ids={source_id},
         )
 
         assert results
@@ -97,14 +199,11 @@ class TestRAGHybridRetrieval:
         self,
         rag_smoke_environment,
     ) -> None:
-        """
-        Verify hybrid retrieval does not return duplicate chunks.
-        """
+        """Verify vector/keyword overlap is deduplicated."""
 
         results = await rag_smoke_environment.hybrid_retriever.retrieve(
             query="handlooms reservation",
             top_k=10,
-            allowed_source_ids=None,
         )
 
         assert results
@@ -113,19 +212,93 @@ class TestRAGHybridRetrieval:
 
         assert len(chunk_ids) == len(set(chunk_ids))
 
-    async def test_hybrid_results_preserve_embedding_metadata(
+    async def test_results_preserve_chunk_identity(
+        self,
+        rag_smoke_environment,
+    ) -> None:
+        """Verify returned chunks retain their persisted identity."""
+
+        results = await rag_smoke_environment.hybrid_retriever.retrieve(
+            query="reservation production",
+            top_k=5,
+        )
+
+        assert results
+
+        for result in results:
+            assert result.chunk.id
+            assert isinstance(result.chunk.id, str)
+
+    async def test_results_preserve_chunk_text(
+        self,
+        rag_smoke_environment,
+    ) -> None:
+        """Verify returned chunks contain non-empty source text."""
+
+        results = await rag_smoke_environment.hybrid_retriever.retrieve(
+            query="reservation production",
+            top_k=5,
+        )
+
+        assert results
+
+        for result in results:
+            assert result.chunk.text
+            assert result.chunk.text.strip()
+
+    async def test_results_preserve_knowledge_source_provenance(
         self,
         rag_smoke_environment,
     ) -> None:
         """
-        Verify hybrid retrieval preserves embedding metadata
-        from vector retrieval.
+        Verify RAG returns knowledge_source_id as output provenance.
+
+        The source ID is metadata on the returned result; it is not
+        supplied as a query-time retrieval filter.
         """
+
+        results = await rag_smoke_environment.hybrid_retriever.retrieve(
+            query="legal act",
+            top_k=10,
+        )
+
+        assert results
+
+        for result in results:
+            knowledge_source_id = result.chunk.metadata.get(
+                "knowledge_source_id",
+            )
+
+            assert knowledge_source_id
+            assert isinstance(knowledge_source_id, str)
+
+    async def test_results_have_valid_scores(
+        self,
+        rag_smoke_environment,
+    ) -> None:
+        """Verify reranker scores are finite and normalized."""
+
+        results = await rag_smoke_environment.hybrid_retriever.retrieve(
+            query="reservation production",
+            top_k=10,
+        )
+
+        assert results
+
+        for result in results:
+            assert result.score is not None
+            assert math.isfinite(result.score)
+            assert 0.0 <= result.score <= 1.0
+
+    async def test_results_preserve_embedding_metadata(
+        self,
+        rag_smoke_environment,
+    ) -> None:
+        """Verify embedding metadata survives hybrid retrieval."""
 
         results = await rag_smoke_environment.hybrid_retriever.retrieve(
             query="articles reserved for production",
             top_k=5,
-            allowed_source_ids=None,
         )
 
         assert results
@@ -137,280 +310,15 @@ class TestRAGHybridRetrieval:
                 assert embedding.model_name
                 assert embedding.dimension > 0
 
-    async def test_hybrid_retrieval_respects_first_source_filter(
+    async def test_results_contain_non_empty_embedding_vectors(
         self,
         rag_smoke_environment,
     ) -> None:
-        """
-        Verify hybrid retrieval can be restricted to the
-        first indexed legal source.
-        """
-
-        source_id = rag_smoke_environment.source_ids[0]
-
-        results = await rag_smoke_environment.hybrid_retriever.retrieve(
-            query="electronic records electronic signatures",
-            top_k=10,
-            allowed_source_ids={source_id},
-        )
-
-        assert results
-
-        returned_source_ids = {result.chunk.source_id for result in results}
-
-        assert returned_source_ids == {source_id}
-
-    async def test_hybrid_retrieval_respects_second_source_filter(
-        self,
-        rag_smoke_environment,
-    ) -> None:
-        """
-        Verify hybrid retrieval can be restricted to the
-        second indexed legal source.
-        """
-
-        assert (
-            len(
-                rag_smoke_environment.source_ids,
-            )
-            >= 2
-        )
-
-        source_id = rag_smoke_environment.source_ids[1]
-
-        results = await rag_smoke_environment.hybrid_retriever.retrieve(
-            query="handlooms reservation production",
-            top_k=10,
-            allowed_source_ids={source_id},
-        )
-
-        assert results
-
-        returned_source_ids = {result.chunk.source_id for result in results}
-
-        assert returned_source_ids == {source_id}
-
-    async def test_hybrid_retrieval_does_not_leak_between_sources(
-        self,
-        rag_smoke_environment,
-    ) -> None:
-        """
-        Verify source filtering prevents chunks from another
-        legal document from appearing in the result set.
-        """
-
-        assert (
-            len(
-                rag_smoke_environment.source_ids,
-            )
-            >= 2
-        )
-
-        source_a = rag_smoke_environment.source_ids[0]
-        source_b = rag_smoke_environment.source_ids[1]
-
-        results = await rag_smoke_environment.hybrid_retriever.retrieve(
-            query="handlooms reservation production",
-            top_k=10,
-            allowed_source_ids={source_b},
-        )
-
-        assert results
-
-        returned_source_ids = {result.chunk.source_id for result in results}
-
-        assert source_b in returned_source_ids
-        assert source_a not in returned_source_ids
-
-    async def test_hybrid_retrieval_filtered_results_respect_top_k(
-        self,
-        rag_smoke_environment,
-    ) -> None:
-        """
-        Verify source filtering and top_k constraints are
-        applied together.
-        """
-
-        source_id = rag_smoke_environment.source_ids[1]
-
-        results = await rag_smoke_environment.hybrid_retriever.retrieve(
-            query="handlooms reservation production",
-            top_k=2,
-            allowed_source_ids={source_id},
-        )
-
-        assert len(results) <= 2
-
-        if results:
-            returned_source_ids = {result.chunk.source_id for result in results}
-
-            assert returned_source_ids == {source_id}
-
-    async def test_hybrid_retrieval_without_source_filter_can_search_all_documents(
-        self,
-        rag_smoke_environment,
-    ) -> None:
-        """
-        Verify hybrid retrieval can operate across the entire
-        indexed legal corpus when no source filter is provided.
-        """
-
-        results = await rag_smoke_environment.hybrid_retriever.retrieve(
-            query="legal act",
-            top_k=10,
-            allowed_source_ids=None,
-        )
-
-        assert results
-
-        returned_source_ids = {result.chunk.source_id for result in results}
-
-        assert returned_source_ids
-
-        assert returned_source_ids.issubset(
-            set(rag_smoke_environment.source_ids),
-        )
-
-    async def test_hybrid_retrieval_with_empty_source_filter_returns_no_results(
-        self,
-        rag_smoke_environment,
-    ) -> None:
-        """
-        Verify an explicitly empty source filter means
-        "match no sources".
-        """
-
-        results = await rag_smoke_environment.hybrid_retriever.retrieve(
-            query="legal act",
-            top_k=10,
-            allowed_source_ids=set(),
-        )
-
-        assert results == []
-
-    async def test_hybrid_retrieval_with_nonexistent_source_returns_no_results(
-        self,
-        rag_smoke_environment,
-    ) -> None:
-        """
-        Verify filtering by a source ID that is not indexed
-        returns no results.
-        """
-
-        nonexistent_source_id = "/nonexistent/legal/document.pdf"
-
-        results = await rag_smoke_environment.hybrid_retriever.retrieve(
-            query="legal act",
-            top_k=10,
-            allowed_source_ids={nonexistent_source_id},
-        )
-
-        assert results == []
-
-    async def test_hybrid_retrieval_handles_no_matching_terms(
-        self,
-        rag_smoke_environment,
-    ) -> None:
-        """
-        Verify hybrid retrieval safely handles a query containing
-        terms that do not exist in the indexed corpus.
-
-        Vector retrieval is semantic and may still return nearest
-        neighbors, so an empty result set is not required.
-        """
-
-        results = await rag_smoke_environment.hybrid_retriever.retrieve(
-            query="xyzzy_nonexistent_legal_term_987654",
-            top_k=10,
-            allowed_source_ids=None,
-        )
-
-        assert len(results) <= 10
-
-        for result in results:
-            assert result.chunk.id
-            assert result.chunk.text.strip()
-            assert result.chunk.source_id
-            assert result.score is not None
-
-    async def test_hybrid_retrieval_with_source_filter_and_no_matching_terms_returns_no_results(
-        self,
-        rag_smoke_environment,
-    ) -> None:
-        """
-        Verify source filtering does not manufacture matches when
-        the query contains no matching terms.
-        """
-
-        source_id = rag_smoke_environment.source_ids[0]
-
-        results = await rag_smoke_environment.hybrid_retriever.retrieve(
-            query="xyzzy_nonexistent_legal_term_987654",
-            top_k=10,
-            allowed_source_ids={source_id},
-        )
-
-        assert results == []
-
-    async def test_hybrid_results_preserve_source_provenance(
-        self,
-        rag_smoke_environment,
-    ) -> None:
-        """
-        Verify every hybrid result preserves source provenance
-        in the returned chunk.
-        """
-
-        results = await rag_smoke_environment.hybrid_retriever.retrieve(
-            query="legal act",
-            top_k=10,
-            allowed_source_ids=None,
-        )
-
-        assert results
-
-        expected_source_ids = set(
-            rag_smoke_environment.source_ids,
-        )
-
-        for result in results:
-            assert result.chunk.source_id
-            assert result.chunk.source_id in expected_source_ids
-
-    async def test_hybrid_results_have_valid_scores(
-        self,
-        rag_smoke_environment,
-    ) -> None:
-        """
-        Verify every hybrid result contains a valid normalized
-        reranker score.
-        """
+        """Verify returned embedding representations contain vectors."""
 
         results = await rag_smoke_environment.hybrid_retriever.retrieve(
             query="reservation production",
             top_k=10,
-            allowed_source_ids=None,
-        )
-
-        assert results
-
-        for result in results:
-            assert result.score is not None
-            assert 0.0 <= result.score <= 1.0
-
-    async def test_hybrid_results_have_non_empty_embedding_vectors(
-        self,
-        rag_smoke_environment,
-    ) -> None:
-        """
-        Verify hybrid results contain populated embedding
-        representations rather than empty embedding metadata.
-        """
-
-        results = await rag_smoke_environment.hybrid_retriever.retrieve(
-            query="reservation production",
-            top_k=10,
-            allowed_source_ids=None,
         )
 
         assert results
@@ -421,3 +329,368 @@ class TestRAGHybridRetrieval:
             for embedding in result.embeddings:
                 assert embedding.vector
                 assert len(embedding.vector) == embedding.dimension
+
+    async def test_no_matching_terms_is_safe(
+        self,
+        rag_smoke_environment,
+    ) -> None:
+        """
+        Verify an unknown query is handled safely.
+
+        Vector retrieval is semantic, so results may still be returned.
+        """
+
+        results = await rag_smoke_environment.hybrid_retriever.retrieve(
+            query="xyzzy_nonexistent_legal_term_987654",
+            top_k=10,
+        )
+
+        assert len(results) <= 10
+
+        for result in results:
+            assert result.chunk.id
+            assert result.chunk.text.strip()
+            assert result.chunk.metadata.get("knowledge_source_id")
+            assert result.score is not None
+
+    async def test_punctuation_query_is_safe(
+        self,
+        rag_smoke_environment,
+    ) -> None:
+        """Verify punctuation-heavy queries do not fail."""
+
+        results = await rag_smoke_environment.hybrid_retriever.retrieve(
+            query="Act!!! ??? reservation,,, production...",
+            top_k=5,
+        )
+
+        assert len(results) <= 5
+
+        for result in results:
+            assert result.chunk.id
+            assert result.chunk.text.strip()
+
+    async def test_repeated_terms_are_safe(
+        self,
+        rag_smoke_environment,
+    ) -> None:
+        """Verify repeated query terms are handled safely."""
+
+        results = await rag_smoke_environment.hybrid_retriever.retrieve(
+            query="reservation reservation reservation production production",
+            top_k=5,
+        )
+
+        assert len(results) <= 5
+
+        chunk_ids = [result.chunk.id for result in results]
+
+        assert len(chunk_ids) == len(set(chunk_ids))
+
+
+class TestHybridRetrieverRRF:
+    """
+    Focused unit tests for Reciprocal Rank Fusion.
+
+    These tests do not require the database, embedding model,
+    keyword index, or cross-encoder.
+    """
+
+    @staticmethod
+    def _result(
+        chunk_id: str,
+        score: float,
+        *,
+        embeddings: list[EmbeddingRepresentation] | None = None,
+    ) -> RetrievalResult:
+        return RetrievalResult(
+            chunk=Chunk(
+                id=chunk_id,
+                source_id=None,
+                text=f"chunk {chunk_id}",
+                metadata={
+                    "knowledge_source_id": "ksrc_test",
+                },
+            ),
+            score=score,
+            embeddings=embeddings or [],
+        )
+
+    @staticmethod
+    def _retriever(
+        rrf_k: int = 60,
+    ):
+        class StubEmbeddingProvider:
+            metadata = type(
+                "Metadata",
+                (),
+                {
+                    "model_name": "test-model",
+                },
+            )()
+
+        class StubVectorStore:
+            async def query(self, **kwargs):
+                return []
+
+        class StubKeywordStore:
+            async def query(self, **kwargs):
+                return []
+
+        class StubReranker:
+            async def rerank(self, **kwargs):
+                return []
+
+        from rag.hybrid_retriever import HybridRetriever
+
+        return HybridRetriever(
+            embedding_provider=StubEmbeddingProvider(),
+            vector_store=StubVectorStore(),
+            keyword_store=StubKeywordStore(),
+            reranker=StubReranker(),
+            rrf_k=rrf_k,
+        )
+
+    def test_rrf_fuses_ranked_lists(
+        self,
+    ) -> None:
+        """Verify results from both retrieval strategies are fused."""
+
+        retriever = self._retriever()
+
+        vector_result = self._result("chunk-1", 0.9)
+        keyword_result = self._result("chunk-2", 0.8)
+
+        fused = retriever._reciprocal_rank_fusion(
+            ranked_lists=[
+                [vector_result],
+                [keyword_result],
+            ],
+        )
+
+        assert {result.chunk.id for result in fused} == {
+            "chunk-1",
+            "chunk-2",
+        }
+
+    def test_rrf_rewards_results_present_in_both_rankings(
+        self,
+    ) -> None:
+        """
+        Verify a chunk appearing in both ranked lists receives
+        a combined RRF score and ranks ahead appropriately.
+        """
+
+        retriever = self._retriever()
+
+        shared = self._result("shared", 0.5)
+        vector_only = self._result("vector-only", 0.9)
+
+        fused = retriever._reciprocal_rank_fusion(
+            ranked_lists=[
+                [shared, vector_only],
+                [shared],
+            ],
+        )
+
+        assert fused[0].chunk.id == "shared"
+
+    def test_rrf_deduplicates_same_chunk(
+        self,
+    ) -> None:
+        """Verify a chunk returned by both stores appears once."""
+
+        retriever = self._retriever()
+
+        first = self._result("chunk-1", 0.4)
+        second = self._result("chunk-1", 0.9)
+
+        fused = retriever._reciprocal_rank_fusion(
+            ranked_lists=[
+                [first],
+                [second],
+            ],
+        )
+
+        assert len(fused) == 1
+        assert fused[0].chunk.id == "chunk-1"
+
+    def test_rrf_preserves_higher_retrieval_score(
+        self,
+    ) -> None:
+        """Verify duplicate chunks retain the higher source score."""
+
+        retriever = self._retriever()
+
+        first = self._result("chunk-1", 0.4)
+        second = self._result("chunk-1", 0.9)
+
+        fused = retriever._reciprocal_rank_fusion(
+            ranked_lists=[
+                [first],
+                [second],
+            ],
+        )
+
+        assert fused[0].score == 0.9
+
+    def test_rrf_handles_empty_ranked_lists(
+        self,
+    ) -> None:
+        """Verify empty vector/keyword result lists are safe."""
+
+        retriever = self._retriever()
+
+        fused = retriever._reciprocal_rank_fusion(
+            ranked_lists=[
+                [],
+                [],
+            ],
+        )
+
+        assert fused == []
+
+    def test_rrf_handles_one_empty_ranked_list(
+        self,
+    ) -> None:
+        """Verify fusion still works when one strategy returns nothing."""
+
+        retriever = self._retriever()
+
+        result = self._result("chunk-1", 0.8)
+
+        fused = retriever._reciprocal_rank_fusion(
+            ranked_lists=[
+                [result],
+                [],
+            ],
+        )
+
+        assert len(fused) == 1
+        assert fused[0].chunk.id == "chunk-1"
+
+    def test_rrf_preserves_first_chunk(
+        self,
+    ) -> None:
+        """
+        Verify duplicate-result merging preserves the first
+        RetrievalResult's chunk object.
+        """
+
+        retriever = self._retriever()
+
+        first = self._result("chunk-1", 0.4)
+        second = self._result("chunk-1", 0.9)
+
+        fused = retriever._reciprocal_rank_fusion(
+            ranked_lists=[
+                [first],
+                [second],
+            ],
+        )
+
+        assert fused[0].chunk is first.chunk
+
+    def test_rrf_merges_distinct_embeddings(
+        self,
+    ) -> None:
+        """Verify embeddings from duplicate retrieval results are merged."""
+
+        retriever = self._retriever()
+
+        embedding_a = EmbeddingRepresentation(
+            model_name="model-a",
+            dimension=3,
+            vector=[0.1, 0.2, 0.3],
+        )
+
+        embedding_b = EmbeddingRepresentation(
+            model_name="model-b",
+            dimension=3,
+            vector=[0.4, 0.5, 0.6],
+        )
+
+        first = self._result(
+            "chunk-1",
+            0.4,
+            embeddings=[embedding_a],
+        )
+        second = self._result(
+            "chunk-1",
+            0.9,
+            embeddings=[embedding_b],
+        )
+
+        fused = retriever._reciprocal_rank_fusion(
+            ranked_lists=[
+                [first],
+                [second],
+            ],
+        )
+
+        assert len(fused) == 1
+        assert len(fused[0].embeddings) == 2
+
+        models = {embedding.model_name for embedding in fused[0].embeddings}
+
+        assert models == {
+            "model-a",
+            "model-b",
+        }
+
+    def test_rrf_deduplicates_embedding_metadata(
+        self,
+    ) -> None:
+        """
+        Verify duplicate embeddings are deduplicated by
+        model_name + dimension.
+        """
+
+        retriever = self._retriever()
+
+        embedding_a = EmbeddingRepresentation(
+            model_name="model-a",
+            dimension=3,
+            vector=[0.1, 0.2, 0.3],
+        )
+
+        embedding_b = EmbeddingRepresentation(
+            model_name="model-a",
+            dimension=3,
+            vector=[0.9, 0.8, 0.7],
+        )
+
+        first = self._result(
+            "chunk-1",
+            0.4,
+            embeddings=[embedding_a],
+        )
+        second = self._result(
+            "chunk-1",
+            0.9,
+            embeddings=[embedding_b],
+        )
+
+        fused = retriever._reciprocal_rank_fusion(
+            ranked_lists=[
+                [first],
+                [second],
+            ],
+        )
+
+        assert len(fused) == 1
+        assert len(fused[0].embeddings) == 1
+
+        # First embedding is preserved when the metadata key is identical.
+        assert fused[0].embeddings[0] is embedding_a
+
+    def test_invalid_rrf_k_is_rejected(
+        self,
+    ) -> None:
+        """Verify non-positive RRF constants are rejected."""
+
+        with pytest.raises(ValueError, match="rrf_k"):
+            self._retriever(rrf_k=0)
+
+        with pytest.raises(ValueError, match="rrf_k"):
+            self._retriever(rrf_k=-1)

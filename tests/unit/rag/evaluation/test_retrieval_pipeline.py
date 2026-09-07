@@ -17,7 +17,6 @@ class StubRetriever:
         *,
         query: str,
         top_k: int,
-        allowed_source_ids: set[str] | None = None,
     ) -> list[RetrievalResult]:
         return [
             RetrievalResult(
@@ -123,7 +122,6 @@ async def test_runner_fails_quality_when_retrieval_is_not_relevant() -> None:
             *,
             query: str,
             top_k: int,
-            allowed_source_ids: set[str] | None = None,
         ) -> list[RetrievalResult]:
             return [
                 RetrievalResult(

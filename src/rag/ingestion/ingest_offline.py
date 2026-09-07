@@ -191,7 +191,7 @@ def _build_source(
     resolved_path = path.resolve()
 
     return DocumentSource(
-        id=f"doct_{hashlib.sha256(str(resolved_path).encode('utf-8')).hexdigest()[:59]}",
+        id=f"ksrc_{hashlib.sha256(str(resolved_path).encode('utf-8')).hexdigest()[:32]}",
         location=str(resolved_path),
     )
 
