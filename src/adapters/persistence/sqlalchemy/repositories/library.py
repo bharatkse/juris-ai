@@ -1,9 +1,9 @@
 """
-Upload file repository.
+Library repository.
 
 Provides persistence operations for user/API-uploaded files.
 
-LibraryFile represents transactional user-provided documents.
+Library represents transactional user-provided documents.
 It is intentionally separate from the persistent legal knowledge
 and RAG corpus.
 """
@@ -13,10 +13,10 @@ from __future__ import annotations
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from adapters.persistence.sqlalchemy.models.library_file import LibraryFile
+from adapters.persistence.sqlalchemy.models.library import Library
 
 
-class LibraryFileRepository:
+class LibraryRepository:
     """
     Repository for user-uploaded file persistence.
 
@@ -41,50 +41,50 @@ class LibraryFileRepository:
 
     async def create(
         self,
-        library_file: LibraryFile,
-    ) -> LibraryFile:
+        library: Library,
+    ) -> Library:
         """
         Persist a user-uploaded file.
         """
 
-        self._session.add(library_file)
+        self._session.add(library)
 
         await self._session.flush()
 
-        await self._session.refresh(library_file)
+        await self._session.refresh(library)
 
-        return library_file
+        return library
 
     async def get_by_id(
         self,
         *,
-        library_file_id: str,
-    ) -> LibraryFile | None:
+        library_id: str,
+    ) -> Library | None:
         """
         Retrieve an uploaded file by identifier.
         """
 
         return await self._session.get(
-            LibraryFile,
-            library_file_id,
+            Library,
+            library_id,
         )
 
     async def list_by_conversation(
         self,
         *,
         conversation_id: str,
-    ) -> list[LibraryFile]:
+    ) -> list[Library]:
         """
         Retrieve all uploaded files belonging to a conversation.
         """
 
         result = await self._session.scalars(
-            select(LibraryFile)
+            select(Library)
             .where(
-                LibraryFile.conversation_id == conversation_id,
+                Library.conversation_id == conversation_id,
             )
             .order_by(
-                LibraryFile.created_at.asc(),
+                Library.created_at.asc(),
             ),
         )
 
@@ -92,27 +92,27 @@ class LibraryFileRepository:
 
     async def update(
         self,
-        library_file: LibraryFile,
-    ) -> LibraryFile:
+        library: Library,
+    ) -> Library:
         """
         Persist changes to an uploaded file.
         """
 
         await self._session.flush()
 
-        await self._session.refresh(library_file)
+        await self._session.refresh(library)
 
-        return library_file
+        return library
 
     async def delete(
         self,
-        library_file: LibraryFile,
+        library: Library,
     ) -> None:
         """
         Delete an uploaded file.
         """
 
-        await self._session.delete(library_file)
+        await self._session.delete(library)
 
         await self._session.flush()
 
@@ -121,7 +121,7 @@ class LibraryFileRepository:
         *,
         query: str | None = None,
         limit: int = 10,
-    ) -> list[LibraryFile]:
+    ) -> list[Library]:
         """
         Search uploaded files by persisted file metadata.
 
@@ -132,23 +132,23 @@ class LibraryFileRepository:
         if limit <= 0:
             return []
 
-        statement = select(LibraryFile)
+        statement = select(Library)
 
         if query and query.strip():
             pattern = f"%{query.strip()}%"
 
             statement = statement.where(
                 or_(
-                    LibraryFile.original_filename.ilike(pattern),
-                    LibraryFile.filename.ilike(pattern),
-                    LibraryFile.source_url.ilike(pattern),
-                    LibraryFile.storage_path.ilike(pattern),
+                    Library.original_filename.ilike(pattern),
+                    Library.filename.ilike(pattern),
+                    Library.source_url.ilike(pattern),
+                    Library.storage_path.ilike(pattern),
                 ),
             )
 
         result = await self._session.scalars(
             statement.order_by(
-                LibraryFile.created_at.asc(),
+                Library.created_at.asc(),
             ).limit(limit),
         )
 

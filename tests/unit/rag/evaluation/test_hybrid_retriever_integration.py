@@ -30,7 +30,6 @@ class StubVectorStore:
         vector: list[float],
         top_k: int,
         embedding_model: str,
-        allowed_source_ids: set[str] | None = None,
     ) -> list[RetrievalResult]:
         return [
             RetrievalResult(
@@ -58,7 +57,6 @@ class StubKeywordStore:
         *,
         query: str,
         top_k: int,
-        allowed_source_ids: set[str] | None = None,
     ) -> list[RetrievalResult]:
         return [
             RetrievalResult(
@@ -139,41 +137,29 @@ async def test_hybrid_retriever_works_with_retrieval_evaluation_runner() -> None
 @pytest.mark.asyncio
 async def test_evaluation_runner_does_not_filter_hybrid_retrieval_by_ground_truth() -> None:
     class RecordingVectorStore(StubVectorStore):
-        def __init__(self) -> None:
-            self.allowed_source_ids: set[str] | None = None
-
         async def query(
             self,
             *,
             vector: list[float],
             top_k: int,
             embedding_model: str,
-            allowed_source_ids: set[str] | None = None,
         ) -> list[RetrievalResult]:
-            self.allowed_source_ids = allowed_source_ids
             return await super().query(
                 vector=vector,
                 top_k=top_k,
                 embedding_model=embedding_model,
-                allowed_source_ids=allowed_source_ids,
             )
 
     class RecordingKeywordStore(StubKeywordStore):
-        def __init__(self) -> None:
-            self.allowed_source_ids: set[str] | None = None
-
         async def query(
             self,
             *,
             query: str,
             top_k: int,
-            allowed_source_ids: set[str] | None = None,
         ) -> list[RetrievalResult]:
-            self.allowed_source_ids = allowed_source_ids
             return await super().query(
                 query=query,
                 top_k=top_k,
-                allowed_source_ids=allowed_source_ids,
             )
 
     vector_store = RecordingVectorStore()
@@ -210,6 +196,3 @@ async def test_evaluation_runner_does_not_filter_hybrid_retrieval_by_ground_trut
     )
 
     await runner.evaluate(dataset=dataset)
-
-    assert vector_store.allowed_source_ids is None
-    assert keyword_store.allowed_source_ids is None

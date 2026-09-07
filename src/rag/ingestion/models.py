@@ -61,3 +61,39 @@ class DocumentSource:
     id: str | None
     location: str
     mime_type: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ChunkingProfile:
+    """
+    Configuration selected for a document's adaptive chunking strategy.
+
+    The profile contains chunking policy only. It does not contain
+    document-specific mutable state.
+    """
+
+    target_size: int
+    max_size: int
+    overlap: int
+    preserve_structure: bool = True
+
+    def __post_init__(self) -> None:
+        if self.target_size <= 0:
+            raise ValueError(
+                "target_size must be greater than zero.",
+            )
+
+        if self.max_size < self.target_size:
+            raise ValueError(
+                "max_size must be greater than or equal to target_size.",
+            )
+
+        if self.overlap < 0:
+            raise ValueError(
+                "overlap cannot be negative.",
+            )
+
+        if self.overlap >= self.target_size:
+            raise ValueError(
+                "overlap must be smaller than target_size.",
+            )

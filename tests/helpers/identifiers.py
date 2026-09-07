@@ -12,7 +12,7 @@ from core.types import (
     ApprovalId,
     ConversationEventId,
     ConversationId,
-    LibraryFileId,
+    LibraryId,
     UserId,
 )
 
@@ -73,10 +73,10 @@ def unknown_approval_id() -> ApprovalId:
     )
 
 
-def unknown_upload_file_id() -> LibraryFileId:
+def unknown_library_file_id() -> LibraryId:
     """
     Return a non-existent upload file identifier.
     """
-    return LibraryFileId(
-        generate_prefixed_uuid_pk("upld"),
+    return LibraryId(
+        generate_prefixed_uuid_pk("liby"),
     )

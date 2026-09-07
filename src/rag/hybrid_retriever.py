@@ -120,7 +120,6 @@ class HybridRetriever:
         *,
         query: str,
         top_k: int,
-        allowed_source_ids: set[str] | None = None,
         fusion_candidates: int = DEFAULT_FUSION_CANDIDATES,
     ) -> list[RetrievalResult]:
         """
@@ -136,9 +135,6 @@ class HybridRetriever:
 
             top_k:
                 Maximum number of final results.
-
-            allowed_source_ids:
-                Optional source identifiers restricting retrieval.
 
             fusion_candidates:
                 Number of candidates requested from each retrieval
@@ -164,9 +160,6 @@ class HybridRetriever:
         if fusion_candidates <= 0:
             return []
 
-        if allowed_source_ids is not None and not allowed_source_ids:
-            return []
-
         try:
             query_vector = await self._embedding_provider.embed_one(
                 text=query,
@@ -179,13 +172,8 @@ class HybridRetriever:
                     vector=query_vector,
                     top_k=fusion_candidates,
                     embedding_model=embedding_metadata.model_name,
-                    allowed_source_ids=allowed_source_ids,
                 ),
-                self._keyword_store.query(
-                    query=query,
-                    top_k=fusion_candidates,
-                    allowed_source_ids=allowed_source_ids,
-                ),
+                self._keyword_store.query(query=query, top_k=fusion_candidates),
             )
 
             fused_results = self._reciprocal_rank_fusion(

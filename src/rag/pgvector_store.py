@@ -174,7 +174,6 @@ class PgVectorStore(VectorStoreProtocol):
         vector: list[float],
         top_k: int,
         embedding_model: str,
-        allowed_source_ids: set[str] | None = None,
         metadata_filters: dict[str, Any] | None = None,
     ) -> list[RetrievalResult]:
         """
@@ -218,7 +217,6 @@ class PgVectorStore(VectorStoreProtocol):
                     vector=vector,
                     embedding_model=embedding_model,
                     top_k=top_k,
-                    source_ids=allowed_source_ids,
                     metadata_filters=metadata_filters,
                 )
 
@@ -253,11 +251,12 @@ class PgVectorStore(VectorStoreProtocol):
 
                 rag_chunk = Chunk(
                     id=chunk.id,
-                    source_id=(chunk.chunk_metadata.get("source_id") or chunk.document_id),
+                    source_id=chunk.chunk_metadata.get("source_id"),
                     text=chunk.text,
-                    metadata=dict(
-                        chunk.chunk_metadata or {},
-                    ),
+                    metadata={
+                        **(chunk.chunk_metadata or {}),
+                        "knowledge_source_id": chunk.knowledge_source_id,
+                    },
                 )
 
                 rag_embedding = EmbeddingRepresentation(

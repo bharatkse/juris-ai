@@ -101,7 +101,7 @@ class AgentTypeEnum(StrEnum):
     CONTRACT = "contract"
 
 
-class LibraryFileStatusEnum(StrEnum):
+class LibraryStatusEnum(StrEnum):
     """
     Upload file processing status.
     """
@@ -123,7 +123,7 @@ class KnowledgeStatusEnum(StrEnum):
     DELETED = "deleted"
 
 
-class LibraryFileSourceEnum(StrEnum):
+class LibrarySourceEnum(StrEnum):
     FILE = "file"
     WEBSITE = "website"
     TEXT = "text"

@@ -1,5 +1,5 @@
 """
-Create library_files table.
+Create library table.
 
 Revision ID: c32228f9bd67
 Revises: 2ceb9121ef13
@@ -21,9 +21,9 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     """
-    Create the library_files table and its supporting enum types/indexes.
+    Create the library table and its supporting enum types/indexes.
 
-    LibraryFile stores metadata for files uploaded through the application
+    Library stores metadata for files uploaded through the application
     upload boundary. It is completely separate from the KnowledgeSource
     and its knowledge chunks/embeddings used by the global RAG corpus.
     """
@@ -37,20 +37,20 @@ def upgrade() -> None:
         name="storage_type",
     )
 
-    library_file_source_enum = postgresql.ENUM(
-        # Keep these values synchronized with LibraryFileSourceEnum.
+    library_source_enum = postgresql.ENUM(
+        # Keep these values synchronized with LibrarySourceEnum.
         # Replace/add values if the enum definition contains additional members.
         "USER",
-        name="library_file_source",
+        name="library_source",
     )
 
-    library_file_status_enum = postgresql.ENUM(
+    library_status_enum = postgresql.ENUM(
         "UPLOADED",
         "PROCESSING",
         "READY",
         "FAILED",
         "DELETED",
-        name="library_file_status",
+        name="library_status",
     )
 
     bind = op.get_bind()
@@ -60,18 +60,18 @@ def upgrade() -> None:
         checkfirst=True,
     )
 
-    library_file_source_enum.create(
+    library_source_enum.create(
         bind,
         checkfirst=True,
     )
 
-    library_file_status_enum.create(
+    library_status_enum.create(
         bind,
         checkfirst=True,
     )
 
     op.create_table(
-        "library_files",
+        "library",
         sa.Column(
             "conversation_id",
             sa.String(length=64),
@@ -81,7 +81,7 @@ def upgrade() -> None:
             "source_type",
             postgresql.ENUM(
                 "USER",
-                name="library_file_source",
+                name="library_source",
                 create_type=False,
             ),
             nullable=False,
@@ -137,7 +137,7 @@ def upgrade() -> None:
                 "READY",
                 "FAILED",
                 "DELETED",
-                name="library_file_status",
+                name="library_status",
                 create_type=False,
             ),
             nullable=False,
@@ -160,39 +160,39 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(
             ["conversation_id"],
             ["conversations.id"],
-            name=op.f("fk_library_files_conversation_id_conversations"),
+            name=op.f("fk_library_conversation_id_conversations"),
             ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint(
             "id",
-            name=op.f("pk_library_files"),
+            name=op.f("pk_library"),
         ),
     )
 
     op.create_index(
-        op.f("ix_library_files_conversation_id"),
-        "library_files",
+        op.f("ix_library_conversation_id"),
+        "library",
         ["conversation_id"],
         unique=False,
     )
 
     op.create_index(
-        op.f("ix_library_files_source_type"),
-        "library_files",
+        op.f("ix_library_source_type"),
+        "library",
         ["source_type"],
         unique=False,
     )
 
     op.create_index(
-        op.f("ix_library_files_checksum"),
-        "library_files",
+        op.f("ix_library_checksum"),
+        "library",
         ["checksum"],
         unique=False,
     )
 
     op.create_index(
-        op.f("ix_library_files_status"),
-        "library_files",
+        op.f("ix_library_status"),
+        "library",
         ["status"],
         unique=False,
     )
@@ -200,42 +200,42 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """
-    Remove the library_files table and its supporting enum types.
+    Remove the library table and its supporting enum types.
     """
 
     op.drop_index(
-        op.f("ix_library_files_status"),
-        table_name="library_files",
+        op.f("ix_library_status"),
+        table_name="library",
     )
 
     op.drop_index(
-        op.f("ix_library_files_checksum"),
-        table_name="library_files",
+        op.f("ix_library_checksum"),
+        table_name="library",
     )
 
     op.drop_index(
-        op.f("ix_library_files_source_type"),
-        table_name="library_files",
+        op.f("ix_library_source_type"),
+        table_name="library",
     )
 
     op.drop_index(
-        op.f("ix_library_files_conversation_id"),
-        table_name="library_files",
+        op.f("ix_library_conversation_id"),
+        table_name="library",
     )
 
-    op.drop_table("library_files")
+    op.drop_table("library")
 
     bind = op.get_bind()
 
     postgresql.ENUM(
-        name="library_file_status",
+        name="library_status",
     ).drop(
         bind,
         checkfirst=True,
     )
 
     postgresql.ENUM(
-        name="library_file_source",
+        name="library_source",
     ).drop(
         bind,
         checkfirst=True,

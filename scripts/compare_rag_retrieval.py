@@ -17,7 +17,7 @@ from rag.keyword_store import PostgresKeywordStore
 from rag.pgvector_store import PgVectorStore
 from rag.reranker import CrossEncoderReranker
 
-DATASET_PATH = "tests/datasets/rag/evaluation/legal_retrieval_v1.json"
+DATASET_PATH = "tests/datasets/rag/evaluation/legal_retrieval_gold_v1.json"
 TOP_K = 5
 
 

@@ -35,15 +35,21 @@ It does NOT:
 from __future__ import annotations
 
 import hashlib
+from pathlib import PurePosixPath
 
 from adapters.observability.logger import get_logger
+from adapters.persistence.sqlalchemy.models.knowledge_sources import KnowledgeSource
 from adapters.persistence.sqlalchemy.repositories.knowledge_chunk import (
     KnowledgeChunkRepository,
 )
 from adapters.persistence.sqlalchemy.repositories.knowledge_embedding import (
     KnowledgeEmbeddingRepository,
 )
+from adapters.persistence.sqlalchemy.repositories.knowledge_sources import (
+    KnowledgeSourceRepository,
+)
 from adapters.persistence.sqlalchemy.session import session_factory
+from core.enums import KnowledgeSourceEnum, KnowledgeStatusEnum
 from core.exceptions.rag import RAGError
 from rag.models import Chunk
 from rag.protocols.index_persistence import RAGIndexPersistenceProtocol
@@ -120,6 +126,38 @@ class RAGIndexPersistenceService(RAGIndexPersistenceProtocol):
                     session=session,
                 )
 
+                source_repository = KnowledgeSourceRepository(
+                    session=session,
+                )
+
+                knowledge_source_id = self._knowledge_source_id(
+                    chunks[0].source_id,
+                )
+
+                if knowledge_source_id is None:
+                    raise RAGError(
+                        message="Knowledge source identity must not be empty.",
+                    )
+
+                knowledge_source = await source_repository.get_by_id(
+                    knowledge_source_id=knowledge_source_id,
+                )
+
+                if knowledge_source is None:
+                    source_location = chunks[0].metadata.get("source_id") or chunks[0].source_id
+                    filename = PurePosixPath(source_location).name[:255]
+                    knowledge_source = await source_repository.create(
+                        KnowledgeSource(
+                            id=knowledge_source_id,
+                            source_type=KnowledgeSourceEnum.FILE,
+                            original_filename=filename or None,
+                            filename=filename or None,
+                            mime_type=chunks[0].metadata.get("mime_type"),
+                            storage_path=source_location,
+                            status=KnowledgeStatusEnum.READY,
+                        ),
+                    )
+
                 for chunk, vector in zip(
                     chunks,
                     vectors,
@@ -132,16 +170,19 @@ class RAGIndexPersistenceService(RAGIndexPersistenceProtocol):
                     chunk_metadata = {
                         **chunk.metadata,
                         "source_id": chunk.source_id,
+                        "knowledge_source_id": knowledge_source_id,
                     }
 
                     if persisted_chunk is None:
                         await chunk_repository.create(
                             chunk_id=chunk.id,
-                            document_id=None,
+                            knowledge_source_id=knowledge_source_id,
                             text=chunk.text,
                             chunk_metadata=chunk_metadata,
                         )
                     else:
+                        persisted_chunk.knowledge_source_id = knowledge_source_id
+
                         await chunk_repository.update(
                             chunk=persisted_chunk,
                             text=chunk.text,
@@ -229,13 +270,9 @@ class RAGIndexPersistenceService(RAGIndexPersistenceProtocol):
                 )
 
     @staticmethod
-    def _document_id(source_id: str | None) -> str | None:
+    def _knowledge_source_id(source_id: str | None) -> str | None:
         """
-        Return a deterministic document ID for a source identity.
-
-        This helper is retained for callers that need deterministic
-        parent-document identity. It does not imply that a document
-        record must exist for every persisted chunk.
+        Return a deterministic KnowledgeSource ID for a source identity.
         """
 
         if not source_id:

@@ -32,7 +32,7 @@ async def test_build_tool_files_converts_uploaded_file() -> None:
     It should convert an uploaded file into a ToolFileDTO.
     """
 
-    upload_file = UploadFile(
+    library_file = UploadFile(
         filename="contract.pdf",
         file=BytesIO(b"contract content"),
         headers={
@@ -41,7 +41,7 @@ async def test_build_tool_files_converts_uploaded_file() -> None:
     )
 
     result = await build_tool_files(
-        [upload_file],
+        [library_file],
     )
 
     assert result == (

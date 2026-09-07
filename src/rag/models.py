@@ -58,6 +58,12 @@ class RetrievalResult:
         default_factory=list,
     )
 
+    @property
+    def knowledge_source_id(self) -> str | None:
+        """Return the source identity discovered from indexed knowledge."""
+
+        return self.chunk.metadata.get("knowledge_source_id") or self.chunk.source_id
+
     def with_score(
         self,
         score: float,

@@ -16,9 +16,9 @@ Flow:
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Iterable, Iterator
 
+from core.types import prefixed_id_field
 from rag.ingestion.models import DocumentSource, IngestionChunk
 from rag.models import Chunk
 
@@ -76,10 +76,7 @@ class ChunkMapper:
                 "chunk.text must not be empty.",
             )
 
-        chunk_id = self._build_chunk_id(
-            source=source,
-            sequence=chunk.sequence,
-        )
+        chunk_id = self._build_chunk_id()
 
         metadata: dict[str, str] = {
             "sequence": str(chunk.sequence),
@@ -92,6 +89,9 @@ class ChunkMapper:
         if source.location:
             metadata["source_id"] = source.location
 
+        if source.id:
+            metadata["knowledge_source_id"] = source.id
+
         return Chunk(
             id=chunk_id,
             source_id=source.id,
@@ -100,11 +100,7 @@ class ChunkMapper:
         )
 
     @staticmethod
-    def _build_chunk_id(
-        *,
-        source: str,
-        sequence: int,
-    ) -> str:
+    def _build_chunk_id() -> str:
         """
         Build a deterministic chunk identifier.
 
@@ -112,8 +108,4 @@ class ChunkMapper:
         allowing downstream upsert operations to remain idempotent.
         """
 
-        identity = f"{source}:{sequence}"
-
-        return hashlib.sha256(
-            identity.encode("utf-8"),
-        ).hexdigest()
+        return prefixed_id_field("kchn")

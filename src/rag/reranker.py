@@ -41,7 +41,7 @@ from rag.protocols.reranker import RerankerProtocol
 logger = get_logger(__name__)
 
 DEFAULT_RERANKER_MODEL = "BAAI/bge-reranker-base"
-DEFAULT_RETRIEVAL_WEIGHT = 0.40
+DEFAULT_RETRIEVAL_WEIGHT = 0.20
 
 
 class CrossEncoderReranker(RerankerProtocol):

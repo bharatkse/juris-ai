@@ -12,7 +12,7 @@ from application.services.auth import AuthenticationService
 from application.services.chat import ChatService
 from application.services.conversation import ConversationService
 from application.services.conversation_event import ConversationEventService
-from application.services.library_file import LibraryFileService
+from application.services.library import LibraryService
 from application.services.user import UserService
 
 
@@ -79,16 +79,16 @@ def chat_service(
 
 
 @pytest.fixture
-def upload_file_service(
+def library_file_service(
     mock_async_session: AsyncMock,
     mock_document_repository: MagicMock,
     mock_storage_client: MagicMock,
-) -> LibraryFileService:
+) -> LibraryService:
     """
     Return an upload file service.
     """
 
-    return LibraryFileService(
+    return LibraryService(
         session=mock_async_session,
         repository=mock_document_repository,
         storage=mock_storage_client,

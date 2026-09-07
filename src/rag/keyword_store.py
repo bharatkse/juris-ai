@@ -76,7 +76,6 @@ class PostgresKeywordStore(KeywordStoreProtocol):
         *,
         query: str,
         top_k: int,
-        allowed_source_ids: set[str] | None = None,
         metadata_filters: dict[str, Any] | None = None,
     ) -> list[RetrievalResult]:
         """
@@ -101,11 +100,6 @@ class PostgresKeywordStore(KeywordStoreProtocol):
 
             top_k:
                 Maximum number of results to return.
-
-            allowed_source_ids:
-                Optional source/document identifiers restricting
-                the search scope.
-
         Returns:
             RAG retrieval results.
 
@@ -123,9 +117,6 @@ class PostgresKeywordStore(KeywordStoreProtocol):
         effective_metadata_filters = dict(
             metadata_filters or {},
         )
-
-        if allowed_source_ids is not None:
-            effective_metadata_filters["source_id"] = allowed_source_ids
 
         try:
             async with self._session_factory() as session:
@@ -169,11 +160,12 @@ class PostgresKeywordStore(KeywordStoreProtocol):
             for chunk, score in rows:
                 rag_chunk = Chunk(
                     id=chunk.id,
-                    source_id=(chunk.chunk_metadata.get("source_id") or chunk.document_id),
+                    source_id=chunk.chunk_metadata.get("source_id"),
                     text=chunk.text,
-                    metadata=dict(
-                        chunk.chunk_metadata or {},
-                    ),
+                    metadata={
+                        **(chunk.chunk_metadata or {}),
+                        "knowledge_source_id": chunk.knowledge_source_id,
+                    },
                 )
 
                 embeddings = [
