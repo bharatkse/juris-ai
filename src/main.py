@@ -21,7 +21,7 @@ from api.v1.routers import api_router
 from config.settings import get_settings
 from core.constants import API_DESCRIPTION, API_TITLE
 from core.utils.file_system import ensure_dir
-from runtime.composition import create_ai_orchestrator
+from wiring.composition import create_ai_orchestrator
 
 logger = get_logger(__name__)
 

@@ -18,7 +18,7 @@ from __future__ import annotations
 from agentic.agents.contract import ContractAgent
 from agentic.agents.legal import LegalAgent
 from agentic.collaboration.bus import CollaborationBus
-from runtime.containers import ClientContainer, RegistryContainer
+from wiring.containers import ClientContainer, RegistryContainer
 
 
 def register_agents(

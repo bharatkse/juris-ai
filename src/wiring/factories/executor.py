@@ -21,7 +21,7 @@ from agentic.policy.config import AGENT_POLICIES
 from agentic.policy.guard import AgentPolicyGuard
 from agentic.policy.tool_permission import ToolPermissionGuard
 from agentic.tools.runtime.invocation import ToolExecutionService
-from runtime.containers import RegistryContainer
+from wiring.containers import RegistryContainer
 
 
 def create_executor(

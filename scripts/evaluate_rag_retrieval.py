@@ -10,7 +10,7 @@ from rag.evaluation.metrics.precision import PrecisionAtK
 from rag.evaluation.metrics.recall import RecallAtK
 from rag.evaluation.retrieval_evaluator import RetrievalEvaluator
 from rag.evaluation.retrieval_runner import RetrievalEvaluationRunner
-from runtime.factories.rag import build_rag_pipeline
+from wiring.factories.rag import build_rag_pipeline
 
 DATASET_PATH = Path("tests/datasets/rag/evaluation/legal_retrieval_gold_v1.json")
 TOP_K = 5

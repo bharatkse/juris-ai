@@ -12,7 +12,7 @@ from rag.evaluation.retrieval_runner import RetrievalEvaluationRunner
 from rag.keyword_store import PostgresKeywordStore
 from rag.models import RetrievalResult
 from rag.pgvector_store import PgVectorStore
-from runtime.factories.rag import build_rag_pipeline
+from wiring.factories.rag import build_rag_pipeline
 
 DATASET_PATH = Path(
     "tests/datasets/rag/evaluation/legal_retrieval_gold_v1.json",

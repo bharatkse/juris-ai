@@ -12,13 +12,13 @@ from agentic.execution.aggregation.response import ResponseAggregator
 from agentic.execution.validation.response import ResponseValidator
 from agentic.orchestration.orchestrator import AIOrchestrator
 from config.settings import get_settings
-from runtime.factories.agents import register_agents
-from runtime.factories.authorization import create_authorization
-from runtime.factories.clients import create_clients
-from runtime.factories.executor import create_executor
-from runtime.factories.planner import create_planner
-from runtime.factories.registries import create_registries
-from runtime.factories.tools import register_tools
+from wiring.factories.agents import register_agents
+from wiring.factories.authorization import create_authorization
+from wiring.factories.clients import create_clients
+from wiring.factories.executor import create_executor
+from wiring.factories.planner import create_planner
+from wiring.factories.registries import create_registries
+from wiring.factories.tools import register_tools
 
 
 def create_ai_orchestrator(

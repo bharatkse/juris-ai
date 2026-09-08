@@ -35,7 +35,7 @@ from agentic.tools.search_engine.web_research import WebResearchTool
 from application.authorization.approval_lifecycle.protocols import (
     ApprovalLifecycleServiceProtocol,
 )
-from runtime.containers import ClientContainer, RegistryContainer
+from wiring.containers import ClientContainer, RegistryContainer
 
 
 def register_tools(
