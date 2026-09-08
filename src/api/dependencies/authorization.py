@@ -39,7 +39,7 @@ from adapters.persistence.sqlalchemy.models.user import User
 from api.dependencies.auth import get_current_user
 from application.authorization.service import AuthorizationService
 from application.context.request import get_request_context
-from runtime.factories.authorization import create_authorization
+from wiring.factories.authorization import create_authorization
 
 
 def get_authorization_service() -> AuthorizationService:

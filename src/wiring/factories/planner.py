@@ -22,7 +22,7 @@ from agentic.planning.prompts.planning import PlanningPromptBuilder
 from agentic.planning.templates import PlanTemplateRegistry
 from agentic.planning.validator import ExecutionPlanValidator
 from core.enums import LLMProviderEnum
-from runtime.containers import ClientContainer
+from wiring.containers import ClientContainer
 
 
 def create_planner(*, clients: ClientContainer) -> ExecutionPlanner:

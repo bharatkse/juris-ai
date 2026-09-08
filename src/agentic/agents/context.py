@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from agentic.execution.bus import CollaborationBus
+from agentic.collaboration.bus import CollaborationBus
 
 
 @dataclass(slots=True)

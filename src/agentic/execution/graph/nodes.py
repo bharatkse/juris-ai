@@ -1,62 +1,67 @@
 """
 LangGraph execution nodes.
+
+This module contains thin adapters between LangGraph execution state
+and the agent execution service.
+
+AgentExecution owns agent-level execution logic.
+
+AgentExecutionNode only:
+    1. reads graph state
+    2. builds AgentRequestDTO
+    3. starts AgentExecution
+    4. invokes the request-scoped execution handle
+    5. invokes AgentContinuationService for internal tool continuation
+    6. converts the final AgentExecutionResult into graph updates
 """
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from adapters.observability.logger import get_logger
-from adapters.observability.tracing import add_span_event, span
-from agentic.agents.base import BaseAgent
-from agentic.execution.config import ExecutionRetryPolicy
+from agentic.agents.runtime.continuation import AgentContinuationService
 from agentic.execution.graph.state import (
-    ExecutionArtifactUpdate,
+    AgentDecisionUpdate,
     ExecutionGraphState,
     ExecutionStepUpdate,
 )
-from agentic.execution.retry import RetryClassifier
-from agentic.registry.agent import AgentRegistry
 from core.dto.agent import AgentRequestDTO
 from core.dto.planning import ExecutionStepDTO
-from core.enums import ExecutionStatusEnum
 
-logger = get_logger(__name__)
+if TYPE_CHECKING:
+    from agentic.agents.runtime.execution import (
+        AgentExecution,
+        AgentExecutionResult,
+    )
 
 
 class AgentExecutionNode:
     """
-    Executes an eligible execution step within LangGraph.
+    Thin LangGraph adapter for one agent execution.
 
-    Agent reasoning is delegated to the resolved agent.
+    This class intentionally contains no:
 
-    A concrete action produced by the agent is returned as part of
-    the LangGraph state. Action preparation is handled after graph
-    execution by the ExecutionSession through ActionWorkflowService.
+        - retry logic
+        - budget logic
+        - lifecycle logic
+        - decision validation
+        - tool execution
+        - agent delegation
+        - planning
+        - agent reasoning
 
-    This node does not:
-
-    - perform planning,
-    - determine dependency eligibility,
-    - implement authorization rules,
-    - implement approval rules,
-    - persist AgentAction,
-    - execute concrete actions,
-    - wait for human approval,
-    - communicate directly with another agent.
+    Those responsibilities belong to AgentExecution,
+    AgentContinuationService, or the appropriate execution boundary.
     """
 
     def __init__(
         self,
         *,
-        agent_registry: AgentRegistry,
-        retry_policy: ExecutionRetryPolicy,
-        retry_classifier: RetryClassifier,
+        agent_execution: AgentExecution,
+        continuation_service: AgentContinuationService,
     ) -> None:
-        self._agent_registry = agent_registry
-        self._retry_policy = retry_policy
-        self._retry_classifier = retry_classifier
+        self._agent_execution = agent_execution
+        self._continuation_service = continuation_service
 
     async def __call__(
         self,
@@ -65,220 +70,97 @@ class AgentExecutionNode:
         step: ExecutionStepDTO,
     ) -> dict[str, Any]:
         """
-        Execute an eligible agent step.
+        Execute one agent step.
 
-        Dependency eligibility must already have been established
-        by the execution graph before this node is invoked.
+        LangGraph-specific information stays in this adapter.
         """
 
-        started_at = datetime.now(UTC)
-        last_error: Exception | None = None
+        request = self._build_agent_request(
+            state=state,
+            step=step,
+        )
 
-        for attempt in range(
-            1,
-            self._retry_policy.max_attempts + 1,
-        ):
-            try:
-                return await self._execute_attempt(
-                    state=state,
-                    step=step,
-                    attempt=attempt,
-                    started_at=started_at,
-                )
+        handle = await self._agent_execution.start(
+            agent_id=step.agent,
+            request=request,
+            reasoning_context=tuple(
+                state["reasoning_context"],
+            ),
+        )
 
-            except Exception as exc:
-                last_error = exc
+        initial_result = await handle.reason()
 
-                retryable = self._retry_classifier.is_retryable(
-                    error=exc,
-                )
+        continuation_result = await self._continuation_service.execute(
+            handle=handle,
+            initial_result=initial_result,
+        )
 
-                if not retryable or attempt >= self._retry_policy.max_attempts:
-                    logger.error(
-                        "Execution step failed.",
-                        extra={
-                            "operation": "execute_step",
-                            "request_id": str(state["request_id"]),
-                            "step_id": step.id,
-                            "agent": step.agent,
-                            "attempt": attempt,
-                            "retry_count": attempt - 1,
-                            "max_attempts": self._retry_policy.max_attempts,
-                            "retryable": retryable,
-                            "error_type": type(exc).__name__,
-                        },
-                        exc_info=True,
-                    )
+        return self._to_graph_update(
+            result=continuation_result.result,
+            action=continuation_result.action,
+            step=step,
+        )
 
-                    break
+    @staticmethod
+    def _build_agent_request(
+        *,
+        state: ExecutionGraphState,
+        step: ExecutionStepDTO,
+    ) -> AgentRequestDTO:
+        """
+        Convert graph state and execution-plan step into
+        the agent-facing request.
 
-                logger.warning(
-                    "Execution step attempt failed; retrying.",
-                    extra={
-                        "operation": "execute_step_retry",
-                        "request_id": str(state["request_id"]),
-                        "step_id": step.id,
-                        "agent": step.agent,
-                        "attempt": attempt,
-                        "retry_count": attempt - 1,
-                        "max_attempts": self._retry_policy.max_attempts,
-                        "error_type": type(exc).__name__,
-                    },
-                )
+        `step.id` deliberately does not enter AgentRequestDTO.
 
-        assert last_error is not None
+        The step ID belongs to workflow execution and remains
+        owned by the graph layer.
+        """
 
-        failed_at = datetime.now(UTC)
+        return AgentRequestDTO(
+            conversation=state["conversation"],
+            instruction=step.instruction,
+            arguments=step.arguments,
+            context=state["context"],
+        )
 
-        return {
+    @staticmethod
+    def _to_graph_update(
+        *,
+        result: AgentExecutionResult,
+        action: Any | None,
+        step: ExecutionStepDTO,
+    ) -> dict[str, Any]:
+        """
+        Convert an AgentExecutionResult into LangGraph state updates.
+
+        Graph-specific step identity is added here rather than leaking
+        it into AgentExecution.
+        """
+
+        update: dict[str, Any] = {
             "execution_state_updates": [
                 ExecutionStepUpdate(
                     step_id=step.id,
-                    status=ExecutionStatusEnum.FAILED,
-                    retry_count=attempt - 1,
-                    started_at=started_at,
-                    completed_at=failed_at,
-                    error=str(last_error),
+                    status=result.status,
+                    retry_count=result.retry_count,
+                    started_at=result.started_at,
+                    completed_at=result.completed_at,
+                    error=result.error,
+                    termination_reason=result.termination_reason,
                 ),
             ],
         }
 
-    async def _execute_attempt(
-        self,
-        *,
-        state: ExecutionGraphState,
-        step: ExecutionStepDTO,
-        attempt: int,
-        started_at: datetime,
-    ) -> dict[str, Any]:
-        """
-        Execute one agent attempt.
-        """
+        if result.decision is not None:
+            update["agent_decision_updates"] = [
+                AgentDecisionUpdate(
+                    step_id=step.id,
+                    decision=result.decision,
+                ),
+            ]
 
-        agent_key = step.agent
+        if action is not None:
+            update["action"] = action
 
-        with span(
-            "execution.agent.step",
-            attributes={
-                "execution.request_id": str(state["request_id"]),
-                "execution.step_id": step.id,
-                "execution.agent": agent_key,
-                "execution.attempt": attempt,
-            },
-        ) as current_span:
-            logger.info(
-                "Starting execution step attempt.",
-                extra={
-                    "operation": "execute_step",
-                    "request_id": str(state["request_id"]),
-                    "step_id": step.id,
-                    "agent": agent_key,
-                    "attempt": attempt,
-                },
-            )
-
-            add_span_event(
-                current_span,
-                "execution.step.started",
-                attributes={
-                    "execution.step_id": step.id,
-                    "execution.agent": agent_key,
-                    "execution.attempt": attempt,
-                },
-            )
-
-            try:
-                agent: BaseAgent = self._agent_registry.resolve(
-                    key=agent_key,
-                )
-
-                add_span_event(
-                    current_span,
-                    "execution.agent.resolved",
-                    attributes={
-                        "execution.step_id": step.id,
-                        "execution.agent": agent_key,
-                    },
-                )
-
-                response = await agent.run(
-                    request=AgentRequestDTO(
-                        conversation=state["conversation"],
-                        instruction=step.instruction,
-                        arguments=step.arguments,
-                        context=state["context"],
-                    ),
-                )
-
-                completed_at = datetime.now(UTC)
-                retry_count = attempt - 1
-
-                add_span_event(
-                    current_span,
-                    "execution.step.completed",
-                    attributes={
-                        "execution.step_id": step.id,
-                        "execution.attempt": attempt,
-                        "execution.retry_count": retry_count,
-                    },
-                )
-
-                logger.info(
-                    "Execution step completed.",
-                    extra={
-                        "operation": "execute_step",
-                        "request_id": str(state["request_id"]),
-                        "step_id": step.id,
-                        "agent": agent_key,
-                        "attempt": attempt,
-                        "retry_count": retry_count,
-                        "action_present": response.action is not None,
-                    },
-                )
-
-                return {
-                    "execution_state_updates": [
-                        ExecutionStepUpdate(
-                            step_id=step.id,
-                            status=ExecutionStatusEnum.COMPLETED,
-                            retry_count=retry_count,
-                            started_at=started_at,
-                            completed_at=completed_at,
-                            error=None,
-                        ),
-                    ],
-                    "memory_updates": [
-                        ExecutionArtifactUpdate(
-                            key=f"{step.id}.response",
-                            value=response,
-                        ),
-                    ],
-                    "action": response.action,
-                }
-
-            except Exception as exc:
-                add_span_event(
-                    current_span,
-                    "execution.step.failed",
-                    attributes={
-                        "execution.step_id": step.id,
-                        "execution.agent": agent_key,
-                        "execution.attempt": attempt,
-                        "error_type": type(exc).__name__,
-                    },
-                )
-
-                logger.warning(
-                    "Execution step attempt failed.",
-                    extra={
-                        "operation": "execute_step_attempt_failed",
-                        "request_id": str(state["request_id"]),
-                        "step_id": step.id,
-                        "agent": agent_key,
-                        "attempt": attempt,
-                        "max_attempts": self._retry_policy.max_attempts,
-                        "error_type": type(exc).__name__,
-                    },
-                )
-
-                raise
+        return update

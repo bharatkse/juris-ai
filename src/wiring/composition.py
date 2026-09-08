@@ -7,17 +7,18 @@ from __future__ import annotations
 from langgraph.checkpoint.base import BaseCheckpointSaver
 
 from adapters.observability.langsmith import configure_langsmith
+from agentic.collaboration.bus import CollaborationBus
 from agentic.execution.aggregation.response import ResponseAggregator
 from agentic.execution.validation.response import ResponseValidator
 from agentic.orchestration.orchestrator import AIOrchestrator
 from config.settings import get_settings
-from runtime.factories.agents import register_agents
-from runtime.factories.authorization import create_authorization
-from runtime.factories.clients import create_clients
-from runtime.factories.executor import create_executor
-from runtime.factories.planner import create_planner
-from runtime.factories.registries import create_registries
-from runtime.factories.tools import register_tools
+from wiring.factories.agents import register_agents
+from wiring.factories.authorization import create_authorization
+from wiring.factories.clients import create_clients
+from wiring.factories.executor import create_executor
+from wiring.factories.planner import create_planner
+from wiring.factories.registries import create_registries
+from wiring.factories.tools import register_tools
 
 
 def create_ai_orchestrator(
@@ -36,12 +37,27 @@ def create_ai_orchestrator(
     clients = create_clients(settings=settings)
     registries = create_registries()
 
-    register_tools(clients=clients, registries=registries, approval_service=authorization)
-    register_agents(clients=clients, registries=registries)
+    collaboration_bus = CollaborationBus()
+
+    register_tools(
+        clients=clients,
+        registries=registries,
+        approval_service=authorization,
+    )
+
+    register_agents(
+        clients=clients,
+        registries=registries,
+        collaboration_bus=collaboration_bus,
+    )
 
     return AIOrchestrator(
         planner=create_planner(clients=clients),
-        executor=create_executor(registries=registries, checkpointer=checkpointer),
+        executor=create_executor(
+            registries=registries,
+            checkpointer=checkpointer,
+            collaboration_bus=collaboration_bus,
+        ),
         validator=ResponseValidator(),
         aggregator=ResponseAggregator(),
         authorization=authorization,

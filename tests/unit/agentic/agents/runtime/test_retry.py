@@ -4,7 +4,7 @@ Unit tests for execution retry classification.
 
 from __future__ import annotations
 
-from agentic.execution.retry import RetryClassifier
+from agentic.agents.runtime.retry import RetryClassifier
 
 
 class RetryableError(Exception):

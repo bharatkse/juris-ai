@@ -184,8 +184,10 @@ class ExecutionStatusEnum(StrEnum):
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
+    PARTIAL = "partial"
     FAILED = "failed"
     SKIPPED = "skipped"
+    WAITING_FOR_APPROVAL = "waiting_for_approval"
 
 
 class RetrievalSourceEnum(StrEnum):

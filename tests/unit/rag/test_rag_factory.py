@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 
 from rag.hybrid_retriever import HybridRetriever
 from rag.indexer import RAGIndexer
-from runtime.factories.rag import build_rag_pipeline
+from wiring.factories.rag import build_rag_pipeline
 
 
 def test_build_rag_pipeline_shares_embedding_and_vector_store(monkeypatch):
@@ -18,19 +18,19 @@ def test_build_rag_pipeline_shares_embedding_and_vector_store(monkeypatch):
     )
 
     monkeypatch.setattr(
-        "runtime.factories.rag.SentenceTransformerEmbeddingProvider",
+        "wiring.factories.rag.SentenceTransformerEmbeddingProvider",
         lambda: embedding_provider,
     )
     monkeypatch.setattr(
-        "runtime.factories.rag.PgVectorStore",
+        "wiring.factories.rag.PgVectorStore",
         lambda: vector_store,
     )
     monkeypatch.setattr(
-        "runtime.factories.rag.PostgresKeywordStore",
+        "wiring.factories.rag.PostgresKeywordStore",
         lambda: keyword_store,
     )
     monkeypatch.setattr(
-        "runtime.factories.rag.CrossEncoderReranker",
+        "wiring.factories.rag.CrossEncoderReranker",
         lambda: reranker,
     )
 
@@ -74,19 +74,19 @@ def test_build_rag_pipeline_creates_separate_keyword_store_and_reranker(
     reranker_factory = MagicMock(return_value=reranker)
 
     monkeypatch.setattr(
-        "runtime.factories.rag.SentenceTransformerEmbeddingProvider",
+        "wiring.factories.rag.SentenceTransformerEmbeddingProvider",
         embedding_factory,
     )
     monkeypatch.setattr(
-        "runtime.factories.rag.PgVectorStore",
+        "wiring.factories.rag.PgVectorStore",
         vector_factory,
     )
     monkeypatch.setattr(
-        "runtime.factories.rag.PostgresKeywordStore",
+        "wiring.factories.rag.PostgresKeywordStore",
         keyword_factory,
     )
     monkeypatch.setattr(
-        "runtime.factories.rag.CrossEncoderReranker",
+        "wiring.factories.rag.CrossEncoderReranker",
         reranker_factory,
     )
 
