@@ -51,11 +51,15 @@ class ExecutionStateAssembler:
             step_state.started_at = update["started_at"]
             step_state.completed_at = update["completed_at"]
             step_state.error = update["error"]
+            step_state.termination_reason = update["termination_reason"]
 
         statuses = [step.status for step in state.steps.values()]
 
         if any(status is ExecutionStatusEnum.FAILED for status in statuses):
             state.status = ExecutionStatusEnum.FAILED
+
+        elif any(status is ExecutionStatusEnum.PARTIAL for status in statuses):
+            state.status = ExecutionStatusEnum.PARTIAL
 
         elif statuses and all(
             status

@@ -1,5 +1,8 @@
 """
-Unit tests for execution graph factory.
+Unit tests for ExecutionGraphFactory.
+
+The factory owns dependency wiring. The graph builder owns compilation,
+including attaching the configured checkpointer.
 """
 
 from __future__ import annotations
@@ -8,62 +11,80 @@ from unittest.mock import MagicMock, patch
 
 from agentic.execution.config import ExecutionRetryPolicy
 from agentic.execution.graph.factory import ExecutionGraphFactory
-from agentic.execution.retry import RetryClassifier
-from tests.builders.agentic.planning import build_plan
+from tests.builders.agentic.planning import build_plan, build_step
 
 
-@patch(
-    "agentic.execution.graph.factory.AgentExecutionNode",
-)
-def test_create_builds_agent_node_and_compiles_graph(
-    mock_agent_execution_node: MagicMock, mock_checkpointer: MagicMock
-) -> None:
-    """
-    It should create the agent execution node and pass it to the
-    graph builder for compilation.
-    """
-
-    plan = build_plan()
-
-    builder = MagicMock()
-    agent_registry = MagicMock()
-
-    retry_policy = ExecutionRetryPolicy(
-        max_attempts=3,
+def test_create_builds_agent_node_and_compiles_graph() -> None:
+    plan = build_plan(
+        steps=(build_step("step-a"),),
     )
 
-    retry_classifier = RetryClassifier()
+    builder = MagicMock()
+    compiled_graph = MagicMock(name="compiled_graph")
+    builder.compile.return_value = compiled_graph
 
-    step_node = MagicMock()
+    agent_registry = MagicMock()
+    retry_policy = ExecutionRetryPolicy(max_attempts=3)
+    retry_classifier = MagicMock()
+    checkpointer = MagicMock()
 
-    mock_agent_execution_node.return_value = step_node
+    agent_policy_provider = MagicMock()
+    agent_policy_guard = MagicMock()
+    tool_execution_service = MagicMock()
+    collaboration_bus = MagicMock()
 
     factory = ExecutionGraphFactory(
         builder=builder,
         agent_registry=agent_registry,
         retry_policy=retry_policy,
         retry_classifier=retry_classifier,
-        checkpointer=mock_checkpointer,
+        checkpointer=checkpointer,
+        agent_policy_provider=agent_policy_provider,
+        agent_policy_guard=agent_policy_guard,
+        tool_execution_service=tool_execution_service,
+        collaboration_bus=collaboration_bus,
     )
 
-    compiled_graph = MagicMock()
+    with (
+        patch("agentic.execution.graph.factory.AgentExecution") as agent_execution_cls,
+        patch(
+            "agentic.execution.graph.factory.AgentContinuationService"
+        ) as continuation_service_cls,
+        patch("agentic.execution.graph.factory.AgentExecutionNode") as node_cls,
+    ):
+        agent_execution = MagicMock(name="agent_execution")
+        continuation_service = MagicMock(name="continuation_service")
+        step_node = MagicMock(name="step_node")
 
-    builder.compile.return_value = compiled_graph
+        agent_execution_cls.return_value = agent_execution
+        continuation_service_cls.return_value = continuation_service
+        node_cls.return_value = step_node
 
-    result = factory.create(
-        plan=plan,
-    )
+        result = factory.create(plan=plan)
 
     assert result is compiled_graph
 
-    mock_agent_execution_node.assert_called_once_with(
-        agent_registry=agent_registry,
-        retry_policy=retry_policy,
-        retry_classifier=retry_classifier,
+    agent_execution_cls.assert_called_once()
+    agent_execution_kwargs = agent_execution_cls.call_args.kwargs
+
+    assert agent_execution_kwargs["agent_registry"] is agent_registry
+    assert agent_execution_kwargs["retry_policy"] is retry_policy
+    assert agent_execution_kwargs["retry_classifier"] is retry_classifier
+    assert agent_execution_kwargs["agent_policy_provider"] is agent_policy_provider
+    assert agent_execution_kwargs["agent_policy_guard"] is agent_policy_guard
+
+    continuation_service_cls.assert_called_once_with(
+        tool_execution_service=tool_execution_service,
+        collaboration_bus=collaboration_bus,
+    )
+
+    node_cls.assert_called_once_with(
+        agent_execution=agent_execution,
+        continuation_service=continuation_service,
     )
 
     builder.compile.assert_called_once_with(
         plan=plan,
         step_node=step_node,
-        checkpointer=mock_checkpointer,
+        checkpointer=checkpointer,
     )

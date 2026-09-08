@@ -7,6 +7,7 @@ from __future__ import annotations
 from langgraph.checkpoint.base import BaseCheckpointSaver
 
 from adapters.observability.langsmith import configure_langsmith
+from agentic.collaboration.bus import CollaborationBus
 from agentic.execution.aggregation.response import ResponseAggregator
 from agentic.execution.validation.response import ResponseValidator
 from agentic.orchestration.orchestrator import AIOrchestrator
@@ -36,12 +37,27 @@ def create_ai_orchestrator(
     clients = create_clients(settings=settings)
     registries = create_registries()
 
-    register_tools(clients=clients, registries=registries, approval_service=authorization)
-    register_agents(clients=clients, registries=registries)
+    collaboration_bus = CollaborationBus()
+
+    register_tools(
+        clients=clients,
+        registries=registries,
+        approval_service=authorization,
+    )
+
+    register_agents(
+        clients=clients,
+        registries=registries,
+        collaboration_bus=collaboration_bus,
+    )
 
     return AIOrchestrator(
         planner=create_planner(clients=clients),
-        executor=create_executor(registries=registries, checkpointer=checkpointer),
+        executor=create_executor(
+            registries=registries,
+            checkpointer=checkpointer,
+            collaboration_bus=collaboration_bus,
+        ),
         validator=ResponseValidator(),
         aggregator=ResponseAggregator(),
         authorization=authorization,

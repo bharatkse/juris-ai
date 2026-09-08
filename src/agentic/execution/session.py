@@ -1,20 +1,25 @@
 """
 Execution runtime session.
+
+Owns request-scoped execution context while LangGraph owns
+mutable graph runtime state and checkpoint persistence.
 """
 
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 from uuid import UUID
 
 from adapters.observability.logger import get_logger
+from agentic.decisions.decision import AgentDecisionType
 from agentic.execution.schemas.result import ExecutionResultSchema
+from core.dto.action_workflow import ActionWorkflowResultDTO
 from core.dto.agent import AgentContextDTO
-from core.dto.agent_action import AgentActionRequestDTO
-from core.dto.approval import ApprovalResponseDTO
 from core.dto.conversation import ConversationDTO
 from core.dto.planning import ExecutionPlanDTO
+from core.enums import ExecutionStatusEnum
 from core.exceptions.execution import ExecutionError
 
 if TYPE_CHECKING:
@@ -24,18 +29,27 @@ if TYPE_CHECKING:
     from agentic.execution.state.assembler import ExecutionStateAssembler
     from application.services.action_workflow import ActionWorkflowService
 
+
 logger = get_logger(__name__)
 
 
 class ExecutionSession:
     """
-    Runtime execution session.
+    Request-scoped execution session.
 
-    Owns request-scoped execution context while LangGraph owns
-    mutable graph runtime state and checkpoint persistence.
+    Responsibilities:
+        - own immutable request/session context
+        - create initial graph state
+        - invoke the execution graph
+        - assemble execution state and memory
+        - forward concrete business actions to ActionWorkflowService
 
-    Action preparation is delegated to ActionWorkflowService after
-    the graph produces a concrete proposed action.
+    This class does not:
+        - perform agent reasoning
+        - execute tools
+        - invoke agents directly
+        - perform planning
+        - wait for human approval
     """
 
     def __init__(
@@ -60,17 +74,12 @@ class ExecutionSession:
         self._timeout_policy = timeout_policy
         self._action_workflow_service = action_workflow_service
 
-    async def execute(
-        self,
-    ) -> ExecutionResultSchema:
+    async def execute(self) -> ExecutionResultSchema:
         """
-        Execute the session through the compiled LangGraph workflow.
+        Execute the request through the compiled LangGraph workflow.
 
-        If the execution produces a concrete action, the action is
-        passed to ActionWorkflowService for persistence, authorization,
-        and approval evaluation.
-
-        This method never waits for human approval.
+        The session is request-scoped. No mutable execution state is
+        stored outside the LangGraph/checkpoint runtime.
         """
 
         logger.info(
@@ -97,41 +106,50 @@ class ExecutionSession:
                     initial_state,
                     config={
                         "configurable": {
-                            "thread_id": str(self._context.thread_id),
+                            "thread_id": self._context.thread_id,
                         },
                     },
                 ),
                 timeout=self._timeout_policy.timeout_seconds,
             )
 
+            workflow_result = await self._prepare_action(
+                graph_state=graph_state,
+            )
+
             state = self._state_assembler.assemble_state(
                 graph_state=graph_state,
             )
+
+            if workflow_result is not None and workflow_result.approval_required:
+                state.status = ExecutionStatusEnum.WAITING_FOR_APPROVAL
 
             memory = self._state_assembler.assemble_memory(
                 graph_state=graph_state,
             )
 
-            action, approval = await self._prepare_action(
-                graph_state=graph_state,
-            )
+            action = workflow_result.action if workflow_result is not None else None
+
+            approval = workflow_result.approval if workflow_result is not None else None
 
             logger.info(
                 "Execution session completed.",
                 extra={
                     "operation": "execute_session",
                     "request_id": str(self._request_id),
+                    "execution_id": self._context.execution_id,
                     "execution_status": state.status.value,
                     "execution_mode": self._plan.mode.value,
                     "action_present": action is not None,
+                    "approval_required": (
+                        workflow_result.approval_required if workflow_result is not None else False
+                    ),
                 },
             )
 
             return ExecutionResultSchema(
                 state=state,
-                artifacts=dict(
-                    memory.artifacts,
-                ),
+                artifacts=dict(memory.artifacts),
                 action=action,
                 approval=approval,
             )
@@ -142,6 +160,7 @@ class ExecutionSession:
                 extra={
                     "operation": "execute_session_timeout",
                     "request_id": str(self._request_id),
+                    "execution_id": self._context.execution_id,
                     "execution_mode": self._plan.mode.value,
                     "timeout_seconds": self._timeout_policy.timeout_seconds,
                 },
@@ -159,6 +178,7 @@ class ExecutionSession:
                 extra={
                     "operation": "execute_session",
                     "request_id": str(self._request_id),
+                    "execution_id": self._context.execution_id,
                     "execution_mode": self._plan.mode.value,
                 },
             )
@@ -169,14 +189,19 @@ class ExecutionSession:
         self,
         *,
         graph_state: ExecutionGraphState,
-    ) -> tuple[
-        AgentActionRequestDTO | None,
-        ApprovalResponseDTO | None,
-    ]:
+    ) -> ActionWorkflowResultDTO | None:
         """
-        Process the action proposed by the execution graph.
+        Forward a concrete business action to ActionWorkflowService.
 
-        Returns the persisted action and optional approval request.
+        Internal TOOL_CALL and DELEGATE decisions are consumed by
+        AgentContinuationService and must never cross the business-action
+        boundary.
+
+        ActionWorkflowService owns:
+            - persistence
+            - authorization
+            - approval-policy evaluation
+            - approval-request creation
 
         This method never waits for human approval.
         """
@@ -186,27 +211,82 @@ class ExecutionSession:
         )
 
         if action is None:
-            return None, None
+            return None
 
-        result = await self._action_workflow_service.prepare(
+        if self._is_internal_agent_action(
+            graph_state=graph_state,
+        ):
+            logger.debug(
+                "Ignoring internal agent action at business-action boundary.",
+                extra={
+                    "operation": "prepare_action",
+                    "request_id": str(self._request_id),
+                    "execution_id": self._context.execution_id,
+                    "action_type": action.action_type.value,
+                    "tool_name": action.tool_name,
+                    "target_agent_id": action.target_agent_id,
+                },
+            )
+            return None
+
+        return await self._action_workflow_service.prepare(
             user_id=self._context.user_id,
             tenant_id=self._context.user_id,
             action=action,
         )
 
-        return result.action, result.approval
+    @staticmethod
+    def _is_internal_agent_action(
+        *,
+        graph_state: ExecutionGraphState,
+    ) -> bool:
+        """
+        Return whether the graph's latest agent decision represents
+        an internal continuation operation.
+
+        TOOL_CALL and DELEGATE are consumed inside the agent execution
+        continuation boundary and must not be processed as concrete
+        business actions.
+        """
+
+        decision_updates = graph_state["agent_decision_updates"]
+
+        if not decision_updates:
+            return False
+
+        latest_decision = decision_updates[-1]["decision"]
+
+        return latest_decision.decision_type in {
+            AgentDecisionType.TOOL_CALL,
+            AgentDecisionType.DELEGATE,
+        }
 
     def _build_initial_state(self) -> ExecutionGraphState:
         """
-        Build the initial LangGraph state.
+        Build the initial LangGraph state for this request.
+
+        All values are request-scoped.
+
+        No mutable state is retained by ExecutionSession after
+        graph execution completes.
         """
+
+        started_at = datetime.now(UTC)
+
+        deadline = started_at + timedelta(
+            seconds=self._timeout_policy.timeout_seconds,
+        )
 
         return {
             "request_id": self._request_id,
+            "started_at": started_at,
+            "deadline": deadline,
             "conversation": self._conversation,
-            "plan": self._plan,
             "context": self._context,
+            "reasoning_context": [],
+            "plan": self._plan,
             "execution_state_updates": [],
             "memory_updates": [],
+            "agent_decision_updates": [],
             "action": None,
         }

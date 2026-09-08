@@ -11,7 +11,10 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
-from agentic.execution.graph.state import ExecutionGraphState, ExecutionStepUpdate
+from agentic.execution.graph.state import (
+    ExecutionGraphState,
+    ExecutionStepUpdate,
+)
 from agentic.execution.protocols import StepNode
 from core.dto.planning import ExecutionPlanDTO, ExecutionStepDTO
 from core.enums import ExecutionStatusEnum
@@ -26,6 +29,8 @@ class ExecutionGraphBuilder:
 
     LangGraph owns runtime scheduling. Step wrappers determine whether
     an individual step is eligible for agent execution.
+
+    This builder is stateless and safe to reuse across graph invocations.
     """
 
     def build(
@@ -124,19 +129,52 @@ class ExecutionGraphBuilder:
     ) -> bool:
         """
         Determine whether all step dependencies completed successfully.
+
+        Execution state updates are append-only history. Therefore, the
+        latest update for each dependency is used when determining
+        eligibility.
+
+        A dependency is considered successful only when its latest status
+        is COMPLETED. PARTIAL, FAILED, and SKIPPED dependencies do not
+        satisfy the dependency requirement.
         """
 
         if not step.depends_on:
             return True
 
-        statuses = {
-            update["step_id"]: update["status"] for update in state["execution_state_updates"]
-        }
+        statuses = ExecutionGraphBuilder._latest_step_statuses(
+            state=state,
+        )
 
         return all(
             statuses.get(dependency) is ExecutionStatusEnum.COMPLETED
             for dependency in step.depends_on
         )
+
+    @staticmethod
+    def _latest_step_statuses(
+        *,
+        state: ExecutionGraphState,
+    ) -> dict[str, ExecutionStatusEnum]:
+        """
+        Resolve the latest known status for each execution step.
+
+        ExecutionStepUpdate records are retained as append-only execution
+        history. Iterating in reverse ensures the most recent update wins
+        without mutating the underlying LangGraph state.
+        """
+
+        statuses: dict[str, ExecutionStatusEnum] = {}
+
+        for update in reversed(state["execution_state_updates"]):
+            step_id = update["step_id"]
+
+            if step_id in statuses:
+                continue
+
+            statuses[step_id] = update["status"]
+
+        return statuses
 
     @staticmethod
     def _build_skipped_update(
@@ -145,6 +183,12 @@ class ExecutionGraphBuilder:
     ) -> dict[str, Any]:
         """
         Build the execution-state update for a skipped step.
+
+        A step is skipped when one or more dependencies did not complete
+        successfully.
+
+        Skipping is a workflow decision rather than an execution failure,
+        so error and termination_reason are both unset.
         """
 
         return {
@@ -155,10 +199,8 @@ class ExecutionGraphBuilder:
                     retry_count=0,
                     started_at=None,
                     completed_at=None,
-                    error=(
-                        "Step skipped because one or more "
-                        "dependencies did not complete successfully."
-                    ),
+                    error=None,
+                    termination_reason=None,
                 ),
             ],
         }

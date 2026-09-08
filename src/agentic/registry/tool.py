@@ -67,7 +67,6 @@ class ToolRegistry(ToolRegistryProtocol):
 
         try:
             return self._tools[key]
-
         except KeyError as exc:
             raise ToolNotFoundError(
                 message=(f"No tool registered with name " f"'{key}'."),

@@ -34,6 +34,7 @@ class StepExecutionStateSchema(BaseModel):
     completed_at: datetime | None = None
 
     error: str | None = None
+    termination_reason: str | None = None
 
 
 class ExecutionStateSchema(BaseModel):

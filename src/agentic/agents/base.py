@@ -9,6 +9,7 @@ from typing import ClassVar
 
 from adapters.clients.llm.base import LLMClient
 from agentic.agents.prompts.base import BasePromptBuilder
+from agentic.decisions.schemas import AgentDecision
 from agentic.tools.retrieval import RetrieverTool
 from core.dto.agent import (
     AgentMetadataDTO,
@@ -98,6 +99,34 @@ class BaseAgent:
             action=action,
         )
 
+    async def _reason(
+        self,
+        *,
+        request: AgentRequestDTO,
+        context: tuple[
+            RetrievedContentDTO,
+            ...,
+        ] = (),
+    ) -> AgentDecision:
+        """
+        Produce one validated agent decision.
+
+        This method performs reasoning only. It does not execute tools,
+        delegate to another agent, or perform concrete actions.
+        """
+
+        # Reasoning must not retrieve data implicitly. Retrieval is a
+        # tool capability selected by the agent/runtime when required.
+        llm_request = await self._prompt_builder.build(
+            request=request,
+            context=context,
+        )
+
+        return await self._llm.generate_structured(
+            request=llm_request,
+            response_model=AgentDecision,
+        )
+
     async def stream(
         self,
         *,
@@ -105,6 +134,9 @@ class BaseAgent:
     ) -> AsyncIterator[AgentStreamChunkDTO]:
         """
         Stream the agent response.
+
+        Decision-oriented structured reasoning is intentionally not
+        exposed through the existing user-facing stream contract.
         """
 
         llm_request = await self._build_llm_request(
@@ -131,6 +163,10 @@ class BaseAgent:
     ]:
         """
         Retrieve contextual information.
+
+        This remains temporarily compatible with the current prompt
+        construction. Agent-selected tool execution will replace this
+        behavior when the lifecycle runtime is integrated.
         """
 
         if self._retriever is None:
@@ -185,7 +221,11 @@ class BaseAgent:
         request: AgentRequestDTO,
     ) -> LLMRequestDTO:
         """
-        Build the provider-independent LLM request.
+        Build the provider-independent LLM request for the legacy response
+        and streaming paths.
+
+        The new decision path intentionally does not use this method because
+        retrieval must be explicitly selected by the agent/runtime.
         """
 
         context = await self._retrieve_context(
@@ -201,14 +241,56 @@ class BaseAgent:
         self,
         *,
         message: AgentMessageSchema,
-    ) -> object:
+    ) -> AgentDecision:
         """
         Handle an agent-to-agent collaboration message.
 
-        Subclasses may override this to implement collaboration-specific
-        capabilities.
+        The collaboration message carries the original agent request
+        together with delegation-specific parameters.
+
+        The receiving agent performs one reasoning operation only.
+        It does not execute tools, delegate to another agent, or perform
+        concrete business actions here. Any resulting decision is returned
+        to the parent execution through the collaboration bus.
         """
 
-        raise NotImplementedError(
-            f"Agent '{self.metadata.name}' does not support " "agent-to-agent collaboration.",
+        payload = message.payload
+
+        request = payload.get(
+            "request",
+        )
+
+        if not isinstance(
+            request,
+            AgentRequestDTO,
+        ):
+            raise ValueError(
+                "Agent collaboration message is missing a valid " "AgentRequestDTO.",
+            )
+
+        parameters = payload.get(
+            "parameters",
+            {},
+        )
+
+        if not isinstance(
+            parameters,
+            dict,
+        ):
+            raise ValueError(
+                "Agent collaboration message parameters must be a dictionary.",
+            )
+
+        delegated_request = AgentRequestDTO(
+            conversation=request.conversation,
+            instruction=request.instruction,
+            arguments={
+                **request.arguments,
+                **parameters,
+            },
+            context=request.context,
+        )
+
+        return await self._reason(
+            request=delegated_request,
         )
