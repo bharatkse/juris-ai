@@ -30,6 +30,16 @@ from uuid import uuid4
 
 import pytest
 
+from agentic.agents.runtime.continuation import AgentContinuationService
+from agentic.agents.runtime.execution import AgentExecutionResult
+from agentic.agents.runtime.lifecycle.budget import AgentExecutionBudget
+from agentic.agents.runtime.lifecycle.lifecycle import AgentLifecycle
+from agentic.agents.runtime.lifecycle.state import AgentState
+from agentic.agents.runtime.lifecycle.termination import (
+    AgentExecutionStatus,
+    TerminationReason,
+)
+from agentic.collaboration.bus import CollaborationBus
 from agentic.decisions.decision import AgentDecisionType
 from agentic.decisions.schemas import (
     AgentDecision,
@@ -38,22 +48,12 @@ from agentic.decisions.schemas import (
     AgentToolCall,
     AgentUserInputRequest,
 )
-from agentic.execution.agent_execution import AgentExecutionResult
-from agentic.execution.agent_lifecycle.budget import AgentExecutionBudget
-from agentic.execution.agent_lifecycle.lifecycle import AgentLifecycle
-from agentic.execution.agent_lifecycle.state import AgentState
-from agentic.execution.agent_lifecycle.termination import (
-    AgentExecutionStatus,
-    TerminationReason,
-)
-from agentic.execution.bus import CollaborationBus
-from agentic.execution.continuation import AgentContinuationService
 from agentic.execution.graph.builder import ExecutionGraphBuilder
 from agentic.execution.graph.state import ExecutionGraphState, ExecutionStepUpdate
 from agentic.execution.state import ExecutionStateAssembler
-from agentic.execution.tool_execution import ToolExecutionService
 from agentic.registry.tool import ToolRegistry
 from agentic.tools.base import Tool
+from agentic.tools.runtime.invocation import ToolExecutionService
 from core.dto.agent import AgentContextDTO, AgentRequestDTO
 from core.dto.agent_action import AgentActionRequestDTO
 from core.dto.conversation import ConversationDTO
