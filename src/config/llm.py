@@ -21,6 +21,9 @@ class LLMSettings(BaseAppSettings):
     web_research_fetch_timeout_seconds: int = 10
     web_research_max_chars_per_page: int = 2000
     rag_min_rerank_score: float = 0.3
+    # RRF (Reciprocal Rank Fusion) smoothing constant for hybrid
+    # retrieval merge — distinct from rag_min_rerank_score above.
+    rag_rrf_k: int = 60
     rag_chunk_size: int = 800
     rag_chunk_overlap: int = 100
 
