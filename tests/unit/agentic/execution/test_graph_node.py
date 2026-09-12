@@ -12,10 +12,15 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from agentic.agents.runtime.lifecycle.budget import AgentExecutionBudget
+from agentic.agents.runtime.lifecycle.state import AgentState
+from agentic.agents.runtime.lifecycle.termination import AgentExecutionStatus
+from agentic.decisions.decision import AgentDecisionType
+from agentic.decisions.schemas import AgentDecision
 from agentic.execution.graph.nodes import AgentExecutionNode
 from core.dto.agent import AgentRequestDTO
-from core.dto.tool import ToolFileDTO
-from core.enums import ExecutionStatusEnum
+from core.dto.tool import RetrievedContentDTO, ToolFileDTO
+from core.enums import ExecutionStatusEnum, RetrievalSourceEnum
 from tests.builders.agentic.agent import build_agent_context
 from tests.builders.agentic.execution import build_graph_state
 from tests.builders.agentic.planning import build_plan, build_step
@@ -316,3 +321,149 @@ async def test_execute_step_passes_request_context_and_reasoning_context() -> No
     }
 
     assert actual_reasoning_context == (reasoning_context)
+
+
+@pytest.mark.asyncio
+async def test_execute_step_writes_memory_update_on_final_decision_with_citations() -> None:
+    """
+    This is the artifacts-wiring gap fix: a FINAL decision must produce
+    a memory_updates entry carrying an AgentResponseDTO with
+    citations/sources populated from real accumulated reasoning
+    context -- previously nothing ever wrote to memory_updates at all,
+    so ExecutionResultSchema.artifacts was always empty and
+    ResponseAggregator.aggregate() always raised EmptyAggregationError.
+    """
+
+    step = build_step("step-a")
+
+    decision = AgentDecision(
+        decision_type=AgentDecisionType.FINAL,
+        final_response="Section 43 imposes penalty and compensation for damage.",
+    )
+
+    execution_result = _build_result(
+        status=ExecutionStatusEnum.COMPLETED,
+        decision=decision,
+    )
+
+    node, agent_execution, continuation_service, handle = _build_node(
+        result=execution_result,
+    )
+
+    agent_state = AgentState(
+        budget=AgentExecutionBudget(),
+        started_at=datetime.now(UTC),
+        status=AgentExecutionStatus.COMPLETED,
+        partial_response=decision.final_response,
+    )
+
+    retrieved = RetrievedContentDTO(
+        source=RetrievalSourceEnum.DOCUMENT,
+        source_name="retriever",
+        content="Section 43 imposes penalty and compensation for damage.",
+        metadata={"title": "IT Act 2000", "source_id": "ksrc_example"},
+    )
+
+    handle.agent_id = "legal"
+    handle.lifecycle.state = agent_state
+    handle.reasoning_context = (retrieved,)
+    handle.request = MagicMock()
+    handle.request.context = build_agent_context(execution_id="exec-123")
+
+    graph_state = _build_graph_state(
+        plan=build_plan(steps=(step,)),
+    )
+
+    result = await node(graph_state, step=step)
+
+    assert "memory_updates" in result
+    assert len(result["memory_updates"]) == 1
+
+    artifact = result["memory_updates"][0]
+    assert artifact["key"] == step.id
+
+    response = artifact["value"]
+    assert response.agent_name == "legal"
+    assert response.content == decision.final_response
+    assert response.metadata["execution_id"] == "exec-123"
+    assert response.metadata["status"] == AgentExecutionStatus.COMPLETED.value
+
+    assert len(response.citations) == 1
+    assert response.citations[0].title == "IT Act 2000"
+    assert len(response.sources) == 1
+    assert response.sources[0].title == "IT Act 2000"
+    assert response.sources[0].uri == "ksrc_example"
+
+
+@pytest.mark.asyncio
+async def test_execute_step_final_decision_without_reasoning_context_has_empty_citations() -> None:
+    """
+    An agent that answers FINAL without ever calling a tool has
+    nothing to cite -- empty citations/sources here is correct
+    behavior, not a regression of this fix.
+    """
+
+    step = build_step("step-a")
+
+    decision = AgentDecision(
+        decision_type=AgentDecisionType.FINAL,
+        final_response="General answer with no retrieval involved.",
+    )
+
+    execution_result = _build_result(
+        status=ExecutionStatusEnum.COMPLETED,
+        decision=decision,
+    )
+
+    node, agent_execution, continuation_service, handle = _build_node(
+        result=execution_result,
+    )
+
+    handle.agent_id = "legal"
+    handle.lifecycle.state = AgentState(
+        budget=AgentExecutionBudget(),
+        started_at=datetime.now(UTC),
+        status=AgentExecutionStatus.COMPLETED,
+        partial_response=decision.final_response,
+    )
+    handle.reasoning_context = ()
+    handle.request = MagicMock()
+    handle.request.context = build_agent_context(execution_id="exec-456")
+
+    graph_state = _build_graph_state(
+        plan=build_plan(steps=(step,)),
+    )
+
+    result = await node(graph_state, step=step)
+
+    response = result["memory_updates"][0]["value"]
+    assert response.citations == ()
+    assert response.sources == ()
+
+
+@pytest.mark.asyncio
+async def test_execute_step_does_not_write_memory_update_for_non_final_decision() -> None:
+    """
+    TOOL_CALL/DELEGATE decisions must not be mistaken for a completed
+    answer -- only FINAL produces a memory artifact.
+    """
+
+    step = build_step("step-a")
+
+    decision = MagicMock(name="agent_decision")
+    decision.decision_type = AgentDecisionType.TOOL_CALL
+
+    execution_result = _build_result(
+        status=ExecutionStatusEnum.COMPLETED,
+        decision=decision,
+    )
+
+    node, agent_execution, continuation_service, handle = _build_node(result=execution_result)
+
+    graph_state = _build_graph_state(
+        plan=build_plan(steps=(step,)),
+    )
+
+    result = await node(graph_state, step=step)
+
+    assert "memory_updates" not in result
