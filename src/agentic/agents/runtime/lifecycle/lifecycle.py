@@ -4,6 +4,7 @@ import logging
 from datetime import datetime, timedelta
 
 from agentic.agents.runtime.lifecycle.guard import BudgetCheckResult, BudgetGuard
+from agentic.agents.runtime.lifecycle.loop_breaker import LoopBreaker
 from agentic.agents.runtime.lifecycle.state import AgentState
 from agentic.agents.runtime.lifecycle.termination import (
     AgentTerminator,
@@ -24,6 +25,7 @@ class AgentLifecycle:
     - enforce execution budgets
     - consume runtime counters
     - track repeated actions
+    - track semantic progress
     - maintain bounded partial responses
     - apply terminal state transitions
 
@@ -48,6 +50,10 @@ class AgentLifecycle:
         self._state = state
         self._guard = guard or BudgetGuard(state.budget)
         self._terminator = terminator or AgentTerminator()
+        self._loop_breaker = LoopBreaker(
+            state=self._state,
+            guard=self._guard,
+        )
 
     @property
     def state(self) -> AgentState:
@@ -219,23 +225,34 @@ class AgentLifecycle:
 
     def record_action(self, action_key: str) -> BudgetCheckResult:
         """
-        Track consecutive identical actions.
+        Track a consecutive executable action through the LoopBreaker.
 
-        A new action resets the repetition counter. This should be called
-        before executing the action.
+        AgentLifecycle remains responsible for applying the terminal
+        transition when the LoopBreaker denies the operation.
         """
-        if not action_key:
-            raise ValueError("action_key must not be empty.")
-
-        if action_key == self._state.last_action_key:
-            self._state.repeated_action_count += 1
-        else:
-            self._state.last_action_key = action_key
-            self._state.repeated_action_count = 1
-
-        result = self._guard.check_repeated_action(
-            repeat_count=self._state.repeated_action_count,
+        result = self._loop_breaker.record_action(
+            action_key,
         )
+
+        if not result.allowed:
+            return self._terminate_partial(result.reason)
+
+        return result
+
+    def record_progress(
+        self,
+        progress_key: str,
+    ) -> BudgetCheckResult:
+        """
+        Track semantic continuation progress through the LoopBreaker.
+
+        AgentLifecycle remains responsible for applying the terminal
+        transition when the LoopBreaker denies further continuation.
+        """
+        result = self._loop_breaker.record_progress(
+            progress_key,
+        )
+
         if not result.allowed:
             return self._terminate_partial(result.reason)
 

@@ -19,8 +19,8 @@ from __future__ import annotations
 import random
 
 from adapters.observability.logger import get_logger
-from adapters.observability.metrics import record_metric
-from rag.evaluation.metrics import RAGEvaluator
+from adapters.observability.telemetry import get_meter
+from rag.evaluation.evaluator import RAGEvaluator
 
 log = get_logger(__name__)
 
@@ -40,6 +40,24 @@ class OnlineEvalSampler:
     ) -> None:
         self._evaluator = evaluator
         self._sample_rate = sample_rate
+
+        meter = get_meter("juris-agentic.rag_evaluation")
+
+        self._faithfulness_histogram = meter.create_histogram(
+            name="rag_faithfulness",
+            description="Sampled RAG faithfulness score (LLM-as-judge).",
+            unit="1",
+        )
+        self._answer_relevancy_histogram = meter.create_histogram(
+            name="rag_answer_relevancy",
+            description="Sampled RAG answer relevancy score (LLM-as-judge).",
+            unit="1",
+        )
+        self._context_precision_histogram = meter.create_histogram(
+            name="rag_context_precision",
+            description="Sampled RAG context precision score (LLM-as-judge).",
+            unit="1",
+        )
 
     def should_sample(self) -> bool:
         return random.random() < self._sample_rate
@@ -70,11 +88,11 @@ class OnlineEvalSampler:
 
         tags = {"request_id": request_id}
         if result.faithfulness is not None:
-            record_metric("rag.faithfulness", result.faithfulness, tags=tags)
+            self._faithfulness_histogram.record(result.faithfulness, attributes=tags)
         if result.answer_relevancy is not None:
-            record_metric("rag.answer_relevancy", result.answer_relevancy, tags=tags)
+            self._answer_relevancy_histogram.record(result.answer_relevancy, attributes=tags)
         if result.context_precision is not None:
-            record_metric("rag.context_precision", result.context_precision, tags=tags)
+            self._context_precision_histogram.record(result.context_precision, attributes=tags)
 
         if result.has_quality_concern():
             log.warning(

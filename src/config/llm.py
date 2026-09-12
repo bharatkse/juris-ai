@@ -14,6 +14,11 @@ class LLMSettings(BaseAppSettings):
     LLM_LOCAL_BASE_URL: str | None = None
     LLM_LOCAL_MODEL: str = LLMMODELEnum.QWEN3_8B
 
+    # Provider-independent inference defaults
+    LLM_TEMPERATURE: float = 0.2
+    LLM_TOP_P: float | None = None
+    LLM_MAX_OUTPUT_TOKENS: int | None = None
+
     # Search & RAG
     SEARXNG_BASE_URL: str
     mcp_rag_server_url: str = "http://searxng:8080"
@@ -21,6 +26,9 @@ class LLMSettings(BaseAppSettings):
     web_research_fetch_timeout_seconds: int = 10
     web_research_max_chars_per_page: int = 2000
     rag_min_rerank_score: float = 0.3
+    # RRF (Reciprocal Rank Fusion) smoothing constant for hybrid
+    # retrieval merge — distinct from rag_min_rerank_score above.
+    rag_rrf_k: int = 60
     rag_chunk_size: int = 800
     rag_chunk_overlap: int = 100
 

@@ -195,6 +195,7 @@ class IngestionPipeline(Generic[SourceT]):
                     text=sanitized.clean_text,
                     source=parsed_block.source,
                     mime_type=parsed_block.mime_type,
+                    title=parsed_block.title,
                     sequence=parsed_block.sequence,
                 )
 

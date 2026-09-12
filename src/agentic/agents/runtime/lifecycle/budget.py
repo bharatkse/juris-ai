@@ -21,7 +21,10 @@ class AgentExecutionBudget:
     max_agent_hops: int = 5
     max_total_steps: int = 30
     max_execution_time_seconds: float = 120.0
+
+    # Loop-control limits
     max_repeated_action: int = 2
+    max_no_progress: int = 2
     max_validation_attempts: int = 2
 
     # Collection limits
@@ -45,6 +48,7 @@ class AgentExecutionBudget:
             "max_agent_hops": self.max_agent_hops,
             "max_total_steps": self.max_total_steps,
             "max_repeated_action": self.max_repeated_action,
+            "max_no_progress": self.max_no_progress,
             "max_validation_attempts": self.max_validation_attempts,
             "max_decisions": self.max_decisions,
             "max_tool_call_records": self.max_tool_call_records,
@@ -75,4 +79,6 @@ class AgentExecutionBudget:
             raise ValueError("max_execution_time_seconds must be finite.")
 
         if self.max_execution_time_seconds <= 0:
-            raise ValueError("max_execution_time_seconds must be greater than zero.")
+            raise ValueError(
+                "max_execution_time_seconds must be greater than zero.",
+            )

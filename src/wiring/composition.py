@@ -46,6 +46,7 @@ def create_ai_orchestrator(
     )
 
     register_agents(
+        settings=settings,
         clients=clients,
         registries=registries,
         collaboration_bus=collaboration_bus,

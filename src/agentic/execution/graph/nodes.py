@@ -20,8 +20,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from agentic.agents.runtime.continuation import AgentContinuationService
+from agentic.decisions.decision import AgentDecisionType
+from agentic.execution.aggregation.mapper import AgentResponseMapper
 from agentic.execution.graph.state import (
     AgentDecisionUpdate,
+    ExecutionArtifactUpdate,
     ExecutionGraphState,
     ExecutionStepUpdate,
 )
@@ -31,6 +34,7 @@ from core.dto.planning import ExecutionStepDTO
 if TYPE_CHECKING:
     from agentic.agents.runtime.execution import (
         AgentExecution,
+        AgentExecutionHandle,
         AgentExecutionResult,
     )
 
@@ -96,6 +100,7 @@ class AgentExecutionNode:
         )
 
         return self._to_graph_update(
+            handle=handle,
             result=continuation_result.result,
             action=continuation_result.action,
             step=step,
@@ -127,6 +132,7 @@ class AgentExecutionNode:
     @staticmethod
     def _to_graph_update(
         *,
+        handle: AgentExecutionHandle,
         result: AgentExecutionResult,
         action: Any | None,
         step: ExecutionStepDTO,
@@ -159,6 +165,22 @@ class AgentExecutionNode:
                     decision=result.decision,
                 ),
             ]
+
+            if result.decision.decision_type is AgentDecisionType.FINAL:
+                mapper = AgentResponseMapper(agent_name=handle.agent_id)
+
+                response = mapper.map(
+                    state=handle.lifecycle.state,
+                    execution_id=handle.request.context.execution_id,
+                    context=handle.reasoning_context,
+                )
+
+                update["memory_updates"] = [
+                    ExecutionArtifactUpdate(
+                        key=step.id,
+                        value=response,
+                    ),
+                ]
 
         if action is not None:
             update["action"] = action

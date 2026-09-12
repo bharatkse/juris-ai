@@ -81,24 +81,29 @@ class LocalLLMClient(LLMClient):
             self.model,
         )
 
+        inference = request.inference
+        model = inference.model or self._model
+
         request_kwargs: dict[str, Any] = {
-            "model": self._model,
+            "model": model,
             "messages": self._to_messages(
                 request.messages,
             ),
             "think": self._think,
         }
 
-        if request.temperature is not None:
-            request_kwargs["options"] = {
-                "temperature": request.temperature,
-            }
+        options: dict[str, Any] = {
+            "temperature": inference.temperature,
+        }
 
-        if request.max_tokens is not None:
-            request_kwargs.setdefault(
-                "options",
-                {},
-            )["num_predict"] = request.max_tokens
+        if inference.top_p is not None:
+            options["top_p"] = inference.top_p
+
+        if inference.max_output_tokens is not None:
+            options["num_predict"] = inference.max_output_tokens
+
+        if options:
+            request_kwargs["options"] = options
 
         if request.response_format is not None:
             request_kwargs["format"] = self._to_response_format(
@@ -167,7 +172,7 @@ class LocalLLMClient(LLMClient):
         return LLMResponseDTO(
             content=content,
             provider=self.provider,
-            model=self.model,
+            model=model,
             finish_reason=None,
             usage=(
                 LLMTokenUsageDTO(
@@ -198,8 +203,11 @@ class LocalLLMClient(LLMClient):
             self.model,
         )
 
+        inference = request.inference
+        model = inference.model or self._model
+
         request_kwargs: dict[str, Any] = {
-            "model": self._model,
+            "model": model,
             "messages": self._to_messages(
                 request.messages,
             ),
@@ -207,13 +215,15 @@ class LocalLLMClient(LLMClient):
             "think": self._think,
         }
 
-        options: dict[str, Any] = {}
+        options: dict[str, Any] = {
+            "temperature": inference.temperature,
+        }
 
-        if request.temperature is not None:
-            options["temperature"] = request.temperature
+        if inference.top_p is not None:
+            options["top_p"] = inference.top_p
 
-        if request.max_tokens is not None:
-            options["num_predict"] = request.max_tokens
+        if inference.max_output_tokens is not None:
+            options["num_predict"] = inference.max_output_tokens
 
         if options:
             request_kwargs["options"] = options
