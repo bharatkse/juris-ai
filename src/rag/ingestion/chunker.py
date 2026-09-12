@@ -7,7 +7,7 @@ objects without accumulating the complete document in memory.
 The chunker maintains only bounded document state:
 
     - an incomplete sentence carry
-    - the current output chunk (and the source/mime_type it was built from)
+    - the current output chunk (and the source/mime_type/title it was built from)
     - small overlap state
 
 No document-sized collection is created.
@@ -119,18 +119,19 @@ class _ChunkState:
 
     Therefore concurrent chunk() calls have completely independent state.
 
-    current_chunk_source / current_chunk_mime_type describe the metadata
-    that was in effect when the *current* chunk was started (i.e. the
-    metadata of the first segment that went into it), not the metadata
-    of whatever segment happens to be arriving when the chunk is later
-    emitted. Tracking this separately is what keeps emitted chunk
-    metadata correct when a chunk's content spans multiple ParsedBlocks
-    (e.g. multiple PDF pages).
+    current_chunk_source / current_chunk_mime_type / current_chunk_title
+    describe the metadata that was in effect when the *current* chunk
+    was started (i.e. the metadata of the first segment that went into
+    it), not the metadata of whatever segment happens to be arriving
+    when the chunk is later emitted. Tracking this separately is what
+    keeps emitted chunk metadata correct when a chunk's content spans
+    multiple ParsedBlocks (e.g. multiple PDF pages).
     """
 
     current_chunk: str = ""
     current_chunk_source: str | None = None
     current_chunk_mime_type: str | None = None
+    current_chunk_title: str | None = None
     chunk_sequence: int = 0
 
 
@@ -230,6 +231,7 @@ class TextChunker:
 
         carry_source: str | None = None
         carry_mime_type: str | None = None
+        carry_title: str | None = None
 
         active_profile = self._profile
         profile_selected = False
@@ -296,6 +298,9 @@ class TextChunker:
                 if carry_mime_type is None:
                     carry_mime_type = block.mime_type
 
+                if carry_title is None:
+                    carry_title = block.title
+
                 (
                     complete_segments,
                     sentence_carry,
@@ -317,6 +322,7 @@ class TextChunker:
                         state=state,
                         source=carry_source or block.source,
                         mime_type=(carry_mime_type or block.mime_type),
+                        title=(carry_title or block.title),
                         profile=active_profile,
                     )
 
@@ -324,6 +330,7 @@ class TextChunker:
                 if not sentence_carry:
                     carry_source = None
                     carry_mime_type = None
+                    carry_title = None
 
                 # ---------------------------------------------------------
                 # Protect against pathological sentences with no boundary.
@@ -344,12 +351,14 @@ class TextChunker:
                             sequence=state.chunk_sequence,
                             source=state.current_chunk_source or "unknown",
                             mime_type=state.current_chunk_mime_type,
+                            title=state.current_chunk_title,
                         )
 
                         state.chunk_sequence += 1
                         state.current_chunk = ""
                         state.current_chunk_source = None
                         state.current_chunk_mime_type = None
+                        state.current_chunk_title = None
 
                     for piece in self._split_long_text(
                         sentence_carry,
@@ -360,6 +369,7 @@ class TextChunker:
                             sequence=state.chunk_sequence,
                             source=carry_source or block.source,
                             mime_type=(carry_mime_type or block.mime_type),
+                            title=(carry_title or block.title),
                         )
 
                         state.chunk_sequence += 1
@@ -367,6 +377,7 @@ class TextChunker:
                     sentence_carry = ""
                     carry_source = None
                     carry_mime_type = None
+                    carry_title = None
 
             # -------------------------------------------------------------
             # Flush final incomplete sentence / legal provision.
@@ -381,6 +392,7 @@ class TextChunker:
                     state=state,
                     source=carry_source or "unknown",
                     mime_type=carry_mime_type,
+                    title=carry_title,
                     profile=active_profile,
                 )
 
@@ -394,6 +406,7 @@ class TextChunker:
                     sequence=state.chunk_sequence,
                     source=state.current_chunk_source or "unknown",
                     mime_type=state.current_chunk_mime_type,
+                    title=state.current_chunk_title,
                 )
 
         except ChunkingError:
@@ -415,6 +428,7 @@ class TextChunker:
         state: _ChunkState,
         source: str,
         mime_type: str | None,
+        title: str | None,
         profile: ChunkingProfile,
     ) -> Iterator[IngestionChunk]:
         """
@@ -426,9 +440,9 @@ class TextChunker:
 
         State mutation is limited to the document-local _ChunkState
         supplied by chunk(). Emitted chunk metadata always reflects the
-        source/mime_type recorded when the *emitted* chunk was started,
-        never the metadata of the segment that happens to be arriving
-        right now.
+        source/mime_type/title recorded when the *emitted* chunk was
+        started, never the metadata of the segment that happens to be
+        arriving right now.
         """
 
         if not sentence:
@@ -448,12 +462,14 @@ class TextChunker:
                     sequence=state.chunk_sequence,
                     source=state.current_chunk_source or source,
                     mime_type=state.current_chunk_mime_type or mime_type,
+                    title=state.current_chunk_title or title,
                 )
 
                 state.chunk_sequence += 1
                 state.current_chunk = ""
                 state.current_chunk_source = None
                 state.current_chunk_mime_type = None
+                state.current_chunk_title = None
 
             for piece in self._split_long_text(
                 sentence,
@@ -464,6 +480,7 @@ class TextChunker:
                     sequence=state.chunk_sequence,
                     source=source,
                     mime_type=mime_type,
+                    title=title,
                 )
 
                 state.chunk_sequence += 1
@@ -486,6 +503,7 @@ class TextChunker:
             if starting_new_chunk:
                 state.current_chunk_source = source
                 state.current_chunk_mime_type = mime_type
+                state.current_chunk_title = title
 
             return
 
@@ -501,6 +519,7 @@ class TextChunker:
                 sequence=state.chunk_sequence,
                 source=state.current_chunk_source or source,
                 mime_type=state.current_chunk_mime_type or mime_type,
+                title=state.current_chunk_title or title,
             )
 
             state.chunk_sequence += 1
@@ -527,6 +546,7 @@ class TextChunker:
             state.current_chunk = candidate
             state.current_chunk_source = source
             state.current_chunk_mime_type = mime_type
+            state.current_chunk_title = title
             return
 
         # -------------------------------------------------------------
@@ -537,6 +557,7 @@ class TextChunker:
         state.current_chunk = ""
         state.current_chunk_source = None
         state.current_chunk_mime_type = None
+        state.current_chunk_title = None
 
         for piece in self._split_long_text(
             sentence,
@@ -547,6 +568,7 @@ class TextChunker:
                 sequence=state.chunk_sequence,
                 source=source,
                 mime_type=mime_type,
+                title=title,
             )
 
             state.chunk_sequence += 1

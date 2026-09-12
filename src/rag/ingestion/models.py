@@ -33,6 +33,7 @@ class IngestionChunk:
     sequence: int
     source: str
     mime_type: str | None = None
+    title: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
