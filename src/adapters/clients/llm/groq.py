@@ -80,16 +80,22 @@ class GroqClient(LLMClient):
             self.model,
         )
 
+        inference = request.inference
+        model = inference.model or self._model
+
         request_kwargs: dict[str, Any] = {
-            "model": self._model,
+            "model": model,
             "messages": self._to_messages(
                 request.messages,
             ),
-            "temperature": request.temperature,
+            "temperature": inference.temperature,
         }
 
-        if request.max_tokens is not None:
-            request_kwargs["max_tokens"] = request.max_tokens
+        if inference.top_p is not None:
+            request_kwargs["top_p"] = inference.top_p
+
+        if inference.max_output_tokens is not None:
+            request_kwargs["max_tokens"] = inference.max_output_tokens
 
         if request.response_format is not None:
             request_kwargs["response_format"] = request.response_format
@@ -173,7 +179,7 @@ class GroqClient(LLMClient):
         return LLMResponseDTO(
             content=content,
             provider=self.provider,
-            model=self.model,
+            model=model,
             finish_reason=choice.finish_reason,
             usage=(
                 LLMTokenUsageDTO(
@@ -204,17 +210,23 @@ class GroqClient(LLMClient):
             self.model,
         )
 
+        inference = request.inference
+        model = inference.model or self._model
+
         request_kwargs: dict[str, Any] = {
-            "model": self._model,
+            "model": model,
             "messages": self._to_messages(
                 request.messages,
             ),
-            "temperature": request.temperature,
+            "temperature": inference.temperature,
             "stream": True,
         }
 
-        if request.max_tokens is not None:
-            request_kwargs["max_tokens"] = request.max_tokens
+        if inference.top_p is not None:
+            request_kwargs["top_p"] = inference.top_p
+
+        if inference.max_output_tokens is not None:
+            request_kwargs["max_tokens"] = inference.max_output_tokens
 
         if request.response_format is not None:
             request_kwargs["response_format"] = request.response_format

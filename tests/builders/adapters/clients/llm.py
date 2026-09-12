@@ -13,6 +13,7 @@ from core.dto.clients.llm import (
     LLMStreamChunkDTO,
     LLMTokenUsageDTO,
 )
+from core.dto.inference import LLMInferenceConfig
 from core.enums import MessageRoleEnum
 
 
@@ -64,9 +65,11 @@ def build_llm_request(
         or tuple(
             build_llm_messages(),
         ),
-        temperature=temperature,
-        max_tokens=max_tokens,
         metadata=metadata or {},
+        inference=LLMInferenceConfig(
+            temperature=temperature,
+            max_output_tokens=max_tokens,
+        ),
     )
 
 

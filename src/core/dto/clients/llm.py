@@ -9,6 +9,7 @@ from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Any
 
+from core.dto.inference import LLMInferenceConfig
 from core.enums import MessageRoleEnum
 
 
@@ -31,9 +32,9 @@ class LLMRequestDTO:
 
     messages: tuple[LLMMessageDTO, ...]
 
-    temperature: float = 0.2
-
-    max_tokens: int | None = None
+    inference: LLMInferenceConfig = field(
+        default_factory=LLMInferenceConfig,
+    )
 
     metadata: Mapping[str, Any] = field(
         default_factory=lambda: MappingProxyType({}),
