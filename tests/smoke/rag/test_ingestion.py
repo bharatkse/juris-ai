@@ -67,16 +67,15 @@ class TestRAGIngestion:
                 # -------------------------------------------------
                 # Verify persisted chunks for THIS source only.
                 #
-                # source_id is stored as provenance metadata.
+                # knowledge_source_id (a real column, not a JSON
+                # metadata key) is the source identity.
                 #
                 # Every persisted knowledge chunk belongs to the
                 # KnowledgeSource established during ingestion.
                 # -------------------------------------------------
 
                 chunks_result = await session.execute(
-                    select(KnowledgeChunk).where(
-                        KnowledgeChunk.chunk_metadata["source_id"].as_string() == source_id
-                    )
+                    select(KnowledgeChunk).where(KnowledgeChunk.knowledge_source_id == source_id)
                 )
 
                 chunks = chunks_result.scalars().all()
@@ -107,13 +106,11 @@ class TestRAGIngestion:
 
                     assert chunk.chunk_metadata is not None
 
-                    assert chunk.chunk_metadata["source_id"] == source_id
-
                     assert chunk.chunk_metadata["knowledge_source_id"] == (
                         chunk.knowledge_source_id
                     )
 
-                    assert chunk.chunk_metadata["source"] == "file"
+                    assert chunk.chunk_metadata["source"] == source_path.name
 
                     assert chunk.chunk_metadata["mime_type"] == "application/pdf"
 

@@ -11,12 +11,12 @@ def _result(
     *,
     chunk_id: str,
     text: str,
-    source_id: str | None = None,
+    source: str | None = None,
 ) -> RetrievalResult:
     return RetrievalResult(
         chunk=Chunk(
             id=chunk_id,
-            source_id=source_id,
+            source=source,
             text=text,
         ),
         score=1.0,
@@ -70,12 +70,12 @@ async def test_recall_at_k_falls_back_to_sources() -> None:
             _result(
                 chunk_id="1",
                 text="Relevant content",
-                source_id="act-1",
+                source="act-1",
             ),
             _result(
                 chunk_id="2",
                 text="Other content",
-                source_id="act-2",
+                source="act-2",
             ),
         ],
         expected_sources=["act-1"],
@@ -120,8 +120,69 @@ async def test_precision_at_k_uses_evidence() -> None:
 
     assert result.metric == "precision@2"
     assert result.score == 0.5
-    assert result.passed is False
+    # Passes: with 1 expected_evidence item and k=2, 0.5 is the
+    # achievable ceiling (1 relevant slot out of 2), not a shortfall
+    # against the full 0.6 pass_threshold.
+    assert result.passed is True
     assert result.metadata["evaluation_basis"] == "evidence"
+    assert result.metadata["effective_pass_threshold"] == "0.5000"
+
+
+@pytest.mark.asyncio
+async def test_precision_at_k_passes_at_achievable_ceiling_for_single_evidence_item() -> None:
+    """
+    Real-world dataset shape: 1 expected_evidence item, k=5. Even a
+    perfect retrieval (the one relevant chunk found, ranked first)
+    scores exactly 0.2 -- the other 4 slots have nothing left to be
+    relevant to. This must pass, not fail against the full 0.6.
+    """
+
+    case = EvaluationCase(
+        query="Question",
+        answer="Answer",
+        retrieval_results=[
+            _result(chunk_id="1", text="The relevant legal provision."),
+            _result(chunk_id="2", text="Unrelated."),
+            _result(chunk_id="3", text="Unrelated."),
+            _result(chunk_id="4", text="Unrelated."),
+            _result(chunk_id="5", text="Unrelated."),
+        ],
+        expected_evidence=["relevant legal provision"],
+    )
+
+    result = await PrecisionAtK(k=5).evaluate(case=case)
+
+    assert result.score == 0.2
+    assert result.passed is True
+    assert result.metadata["effective_pass_threshold"] == "0.2000"
+
+
+@pytest.mark.asyncio
+async def test_precision_at_k_still_requires_full_threshold_when_achievable() -> None:
+    """
+    Enough expected_evidence items exist (3) relative to k (5) that the
+    configured 0.6 pass_threshold is genuinely achievable (ceiling =
+    3/5 = 0.6) -- the relaxation must not kick in here.
+    """
+
+    case = EvaluationCase(
+        query="Question",
+        answer="Answer",
+        retrieval_results=[
+            _result(chunk_id="1", text="Unrelated."),
+            _result(chunk_id="2", text="Unrelated."),
+            _result(chunk_id="3", text="Unrelated."),
+            _result(chunk_id="4", text="Unrelated."),
+            _result(chunk_id="5", text="Unrelated."),
+        ],
+        expected_evidence=["one", "two", "three"],
+    )
+
+    result = await PrecisionAtK(k=5).evaluate(case=case)
+
+    assert result.score == 0.0
+    assert result.passed is False
+    assert result.metadata["effective_pass_threshold"] == "0.6000"
 
 
 @pytest.mark.asyncio
@@ -133,12 +194,12 @@ async def test_precision_at_k_falls_back_to_sources() -> None:
             _result(
                 chunk_id="1",
                 text="Relevant",
-                source_id="act-1",
+                source="act-1",
             ),
             _result(
                 chunk_id="2",
                 text="Irrelevant",
-                source_id="act-2",
+                source="act-2",
             ),
         ],
         expected_sources=["act-1"],
@@ -230,12 +291,12 @@ async def test_mrr_falls_back_to_sources() -> None:
             _result(
                 chunk_id="1",
                 text="Unrelated",
-                source_id="act-2",
+                source="act-2",
             ),
             _result(
                 chunk_id="2",
                 text="Relevant",
-                source_id="act-1",
+                source="act-1",
             ),
         ],
         expected_sources=["act-1"],

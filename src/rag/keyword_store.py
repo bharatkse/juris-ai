@@ -127,7 +127,6 @@ class PostgresKeywordStore(KeywordStoreProtocol):
                 rows = await repository.keyword_search(
                     query=query,
                     top_k=top_k,
-                    source_ids=None,
                     metadata_filters=effective_metadata_filters,
                 )
 
@@ -160,7 +159,7 @@ class PostgresKeywordStore(KeywordStoreProtocol):
             for chunk, score in rows:
                 rag_chunk = Chunk(
                     id=chunk.id,
-                    source_id=chunk.chunk_metadata.get("source_id"),
+                    source=chunk.chunk_metadata.get("source"),
                     text=chunk.text,
                     metadata={
                         **(chunk.chunk_metadata or {}),

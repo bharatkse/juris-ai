@@ -11,6 +11,7 @@ It evaluates RetrievalResult objects already present on EvaluationCase.
 from __future__ import annotations
 
 from rag.evaluation.metrics.base import RAGMetric
+from rag.evaluation.metrics.text_matching import evidence_in_text
 from rag.evaluation.models.evaluation_case import EvaluationCase
 from rag.evaluation.models.metric_result import MetricResult
 from rag.models import RetrievalResult
@@ -94,9 +95,7 @@ class RecallAtK(RAGMetric):
         if not expected:
             return 0.0
 
-        retrieved = {
-            result.chunk.source_id for result in retrieved_results if result.chunk.source_id
-        }
+        retrieved = {result.chunk.source for result in retrieved_results if result.chunk.source}
 
         return len(expected & retrieved) / len(expected)
 
@@ -106,17 +105,17 @@ class RecallAtK(RAGMetric):
         expected_evidence: list[str],
         retrieved_results: list[RetrievalResult],
     ) -> float:
-        expected = [evidence.strip().lower() for evidence in expected_evidence if evidence.strip()]
+        expected = [evidence.strip() for evidence in expected_evidence if evidence.strip()]
 
         if not expected:
             return 0.0
 
-        retrieved_text = [result.chunk.text.lower() for result in retrieved_results]
+        retrieved_text = [result.chunk.text for result in retrieved_results]
 
         matched = sum(
             1
             for evidence in expected
-            if any(evidence in chunk_text for chunk_text in retrieved_text)
+            if any(evidence_in_text(evidence, chunk_text) for chunk_text in retrieved_text)
         )
 
         return matched / len(expected)

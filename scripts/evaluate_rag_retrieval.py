@@ -5,11 +5,13 @@ from pathlib import Path
 
 from config.settings import Settings
 from rag.evaluation.datasets.loader import GoldenDatasetLoader
+from rag.evaluation.metrics.faithfulness import FaithfulnessMetric
 from rag.evaluation.metrics.mrr import MeanReciprocalRank
 from rag.evaluation.metrics.precision import PrecisionAtK
 from rag.evaluation.metrics.recall import RecallAtK
 from rag.evaluation.retrieval_evaluator import RetrievalEvaluator
 from rag.evaluation.retrieval_runner import RetrievalEvaluationRunner
+from wiring.factories.evaluation import build_rag_evaluator
 from wiring.factories.rag import build_rag_pipeline
 
 DATASET_PATH = Path("tests/datasets/rag/evaluation/legal_retrieval_gold_v1.json")
@@ -17,12 +19,14 @@ TOP_K = 5
 
 
 async def main() -> None:
+    settings = Settings()
+
     dataset = GoldenDatasetLoader().load(
         path=DATASET_PATH,
     )
 
     pipeline = build_rag_pipeline(
-        settings=Settings(),
+        settings=settings,
     )
 
     evaluator = RetrievalEvaluator(
@@ -30,6 +34,15 @@ async def main() -> None:
             RecallAtK(k=TOP_K),
             PrecisionAtK(k=TOP_K),
             MeanReciprocalRank(),
+            # NOTE: the golden dataset has no populated `answer` field
+            # for any case today, so this always reports "no generated
+            # answer" with passed=True (not applicable, not a failure --
+            # see faithfulness.py) until the dataset (or this script)
+            # produces real answers. score stays 0.0 and is visible in
+            # mean_scores, but it does NOT drag down passed_cases/
+            # pass_rate. Wired in now so it activates automatically
+            # once that gap is closed.
+            FaithfulnessMetric(evaluator=build_rag_evaluator(settings=settings)),
         ],
     )
 

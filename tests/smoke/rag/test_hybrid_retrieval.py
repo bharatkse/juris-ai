@@ -406,7 +406,6 @@ class TestHybridRetrieverRRF:
         return RetrievalResult(
             chunk=Chunk(
                 id=chunk_id,
-                source_id=None,
                 text=f"chunk {chunk_id}",
                 metadata={
                     "knowledge_source_id": "ksrc_test",

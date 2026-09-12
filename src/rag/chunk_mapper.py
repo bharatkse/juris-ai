@@ -17,6 +17,7 @@ Flow:
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
+from pathlib import PurePosixPath
 
 from core.types import prefixed_id_field
 from rag.ingestion.models import DocumentSource, IngestionChunk
@@ -78,6 +79,12 @@ class ChunkMapper:
 
         chunk_id = self._build_chunk_id()
 
+        # Human-readable filename with extension (e.g. "it_act_2000.pdf"),
+        # kept distinct from source.id (the ksrc_ hash) -- see
+        # Chunk.source's docstring for why the two must not be
+        # conflated.
+        filename = PurePosixPath(source.location).name if source.location else None
+
         metadata: dict[str, str] = {
             "sequence": str(chunk.sequence),
             "source": chunk.source,
@@ -89,19 +96,15 @@ class ChunkMapper:
         if chunk.mime_type:
             metadata["mime_type"] = chunk.mime_type
 
-        # source.location is a natural fit for a future "url" key once a
-        # URL-sourced DocumentSource implementation exists (see
-        # DocumentSource's docstring) -- no such path exists today, so
-        # no url key is set here.
-        if source.location:
-            metadata["source_id"] = source.location
-
         if source.id:
             metadata["knowledge_source_id"] = source.id
 
+        if filename:
+            metadata["source"] = filename
+
         return Chunk(
             id=chunk_id,
-            source_id=source.id,
+            source=filename,
             text=chunk.text,
             metadata=metadata,
         )

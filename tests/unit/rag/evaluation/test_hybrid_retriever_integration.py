@@ -35,7 +35,7 @@ class StubVectorStore:
             RetrievalResult(
                 chunk=Chunk(
                     id="chunk-1",
-                    source_id="contract-law",
+                    source="contract-law",
                     text="Consideration is something of value exchanged between parties.",
                 ),
                 score=0.9,
@@ -43,7 +43,7 @@ class StubVectorStore:
             RetrievalResult(
                 chunk=Chunk(
                     id="chunk-2",
-                    source_id="other-law",
+                    source="other-law",
                     text="Unrelated legal material.",
                 ),
                 score=0.8,
@@ -62,7 +62,7 @@ class StubKeywordStore:
             RetrievalResult(
                 chunk=Chunk(
                     id="chunk-1",
-                    source_id="contract-law",
+                    source="contract-law",
                     text="Consideration is something of value exchanged between parties.",
                 ),
                 score=0.95,
@@ -70,7 +70,7 @@ class StubKeywordStore:
             RetrievalResult(
                 chunk=Chunk(
                     id="chunk-3",
-                    source_id="other-law",
+                    source="other-law",
                     text="Another unrelated legal provision.",
                 ),
                 score=0.7,

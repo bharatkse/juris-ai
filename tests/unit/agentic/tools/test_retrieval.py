@@ -31,12 +31,12 @@ async def test_execute_formats_successful_retrieval_results() -> None:
     (bugs #1/#2: tuple-unpacking a non-iterable RetrievalResult, and a
     nonexistent chunk.document_id attribute). This exercises that path
     with a real, non-empty result -- and confirms title (from bug #6's
-    fix) is preferred over source_id when present.
+    fix) is preferred over source when present.
     """
 
     chunk = Chunk(
         id="kchn_abc123",
-        source_id="ksrc_example",
+        source="ksrc_example",
         text="Section 43 imposes penalty and compensation for damage.",
         metadata={"sequence": "2", "title": "IT Act 2000"},
     )
@@ -58,16 +58,15 @@ async def test_execute_formats_successful_retrieval_results() -> None:
 
 
 @pytest.mark.asyncio
-async def test_execute_falls_back_to_source_id_when_title_absent() -> None:
+async def test_execute_falls_back_to_source_when_title_absent() -> None:
     """
     Content indexed before bug #6's fix has no title metadata -- the
-    tool must fall back to source_id rather than crash or print
-    "None".
+    tool must fall back to source rather than crash or print "None".
     """
 
     chunk = Chunk(
         id="kchn_xyz789",
-        source_id="ksrc_legacy",
+        source="ksrc_legacy",
         text="Legacy chunk with no title metadata.",
         metadata={"sequence": "0"},
     )
@@ -93,7 +92,7 @@ async def test_execute_formats_multiple_results_without_crashing() -> None:
         RetrievalResult(
             chunk=Chunk(
                 id="kchn_1",
-                source_id="ksrc_a",
+                source="ksrc_a",
                 text="First chunk.",
                 metadata={"sequence": "0"},
             ),
@@ -102,7 +101,7 @@ async def test_execute_formats_multiple_results_without_crashing() -> None:
         RetrievalResult(
             chunk=Chunk(
                 id="kchn_2",
-                source_id="ksrc_b",
+                source="ksrc_b",
                 text="Second chunk.",
                 metadata={"sequence": "5"},
             ),

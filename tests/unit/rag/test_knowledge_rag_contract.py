@@ -54,9 +54,9 @@ async def test_persistence_creates_knowledge_source_before_chunk(
 
     chunk = Chunk(
         id="chunk-1",
-        source_id="/approved/acts/example.pdf",
+        source="example.pdf",
         text="Legal text.",
-        metadata={"source_id": "/approved/acts/example.pdf"},
+        metadata={"knowledge_source_id": "/approved/acts/example.pdf"},
     )
 
     await service.persist(
@@ -81,7 +81,7 @@ def test_retrieval_result_exposes_knowledge_source_id():
     result = RetrievalResult(
         chunk=Chunk(
             id="chunk-1",
-            source_id="/approved/acts/example.pdf",
+            source="example.pdf",
             text="Legal text.",
             metadata={"knowledge_source_id": "ksrc_example"},
         ),
@@ -104,7 +104,7 @@ async def test_vector_and_keyword_results_preserve_knowledge_source_id(
         id="chunk-1",
         knowledge_source_id="ksrc_example",
         chunk_metadata={
-            "source_id": "/approved/acts/example.pdf",
+            "source": "example.pdf",
             "knowledge_source_id": "ksrc_example",
         },
         text="Legal text.",
@@ -154,7 +154,7 @@ def test_hybrid_merge_preserves_knowledge_source_id():
     result = RetrievalResult(
         chunk=Chunk(
             id="chunk-1",
-            source_id="/approved/acts/example.pdf",
+            source="example.pdf",
             text="Legal text.",
             metadata={"knowledge_source_id": "ksrc_example"},
         ),
