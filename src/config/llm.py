@@ -14,6 +14,11 @@ class LLMSettings(BaseAppSettings):
     LLM_LOCAL_BASE_URL: str | None = None
     LLM_LOCAL_MODEL: str = LLMMODELEnum.QWEN3_8B
 
+    # Provider-independent inference defaults
+    LLM_TEMPERATURE: float = 0.2
+    LLM_TOP_P: float | None = None
+    LLM_MAX_OUTPUT_TOKENS: int | None = None
+
     # Search & RAG
     SEARXNG_BASE_URL: str
     mcp_rag_server_url: str = "http://searxng:8080"

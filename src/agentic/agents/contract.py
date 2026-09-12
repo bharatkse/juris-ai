@@ -11,6 +11,7 @@ from agentic.agents.base import BaseAgent
 from agentic.agents.prompts.contract import ContractPromptBuilder
 from agentic.tools.retrieval import RetrieverTool
 from core.dto.agent import AgentMetadataDTO
+from core.dto.inference import LLMTask
 
 
 @final
@@ -30,6 +31,7 @@ class ContractAgent(BaseAgent):
         ),
         tools=("retriever",),
     )
+    inference_task = LLMTask.FACTUAL_ANSWER
 
     def __init__(
         self,

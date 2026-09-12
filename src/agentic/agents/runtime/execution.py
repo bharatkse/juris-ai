@@ -31,6 +31,8 @@ concurrent executions.
 
 from __future__ import annotations
 
+import asyncio
+import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -93,6 +95,14 @@ class AgentExecutionResult:
     action: AgentActionRequestDTO | None = None
 
 
+class _AgentReasoningFailure(Exception):
+    """Internal marker that identifies failures from the LLM reasoning call."""
+
+    def __init__(self, cause: Exception) -> None:
+        super().__init__(str(cause))
+        self.cause = cause
+
+
 class AgentExecutionHandle:
     """
     Request-scoped continuation handle for one agent execution.
@@ -123,6 +133,7 @@ class AgentExecutionHandle:
         policy: AgentPolicy,
         lifecycle: AgentLifecycle,
         retry_classifier: RetryClassifier,
+        retry_policy: ExecutionRetryPolicy,
         max_attempts: int,
         decision_validator: AgentDecisionValidator,
         agent_policy_guard: AgentPolicyGuard,
@@ -137,6 +148,7 @@ class AgentExecutionHandle:
         self._policy = policy
         self._lifecycle = lifecycle
         self._retry_classifier = retry_classifier
+        self._retry_policy = retry_policy
         self._max_attempts = max_attempts
         self._decision_validator = decision_validator
         self._agent_policy_guard = agent_policy_guard
@@ -267,30 +279,76 @@ class AgentExecutionHandle:
         try:
             return await self._execute_reasoning_attempt()
 
-        except Exception as exc:
+        except _AgentReasoningFailure as failure:
+            exc = failure.cause
             retryable = self._retry_classifier.is_retryable(
                 error=exc,
             )
 
             if retryable and self._attempt_count < self._max_attempts:
+                retry_count = self._attempt_count - 1
+                retry_delay = self._retry_policy.delay_seconds(
+                    retry_count=retry_count,
+                )
+
                 logger.warning(
-                    "Agent execution attempt failed; retrying.",
+                    "Agent reasoning attempt failed; retrying.",
                     extra={
                         "operation": "agent_execution_retry",
                         "execution_id": self._request.context.execution_id,
                         "thread_id": self._request.context.thread_id,
                         "agent_id": self._agent_id,
                         "attempt": self._attempt_count,
-                        "retry_count": self._attempt_count - 1,
+                        "retry_count": retry_count,
                         "max_attempts": self._max_attempts,
+                        "retry_delay_seconds": retry_delay,
                         "error_type": type(exc).__name__,
                     },
                 )
 
+                await asyncio.sleep(retry_delay)
+
                 return await self.reason()
 
             logger.error(
-                "Agent execution failed.",
+                "Agent reasoning failed.",
+                extra={
+                    "operation": "agent_reasoning",
+                    "execution_id": self._request.context.execution_id,
+                    "thread_id": self._request.context.thread_id,
+                    "agent_id": self._agent_id,
+                    "attempt": self._attempt_count,
+                    "retry_count": max(self._attempt_count - 1, 0),
+                    "max_attempts": self._max_attempts,
+                    "retryable": retryable,
+                    "error_type": type(exc).__name__,
+                },
+                exc_info=True,
+            )
+
+            self._lifecycle.fail(
+                TerminationReason.FAILED_LLM,
+            )
+
+            self._closed = True
+
+            return AgentExecutionResult(
+                status=ExecutionStatusEnum.FAILED,
+                termination_reason=TerminationReason.FAILED_LLM.value,
+                error=str(exc),
+                partial_response=self.state.partial_response,
+                decision=self._last_decision,
+                action=None,
+                retry_count=max(self._attempt_count - 1, 0),
+                started_at=self._started_at,
+                completed_at=datetime.now(UTC),
+            )
+
+        except Exception as exc:
+            # Validation, policy, lifecycle, and action-construction failures
+            # are not LLM failures and must never enter the retry classifier.
+            logger.error(
+                "Agent execution failed outside the LLM reasoning boundary.",
                 extra={
                     "operation": "agent_execution",
                     "execution_id": self._request.context.execution_id,
@@ -299,7 +357,7 @@ class AgentExecutionHandle:
                     "attempt": self._attempt_count,
                     "retry_count": max(self._attempt_count - 1, 0),
                     "max_attempts": self._max_attempts,
-                    "retryable": retryable,
+                    "retryable": False,
                     "error_type": type(exc).__name__,
                 },
                 exc_info=True,
@@ -331,7 +389,18 @@ class AgentExecutionHandle:
         started_at = self._started_at
 
         # --------------------------------------------------------------
-        # 1. Agent iteration budget
+        # 1. Total execution-step budget
+        # --------------------------------------------------------------
+
+        step_budget = self._lifecycle.begin_step()
+
+        if not step_budget.allowed:
+            self._closed = True
+
+            return self._build_partial_result()
+
+        # --------------------------------------------------------------
+        # 2. Agent iteration budget
         # --------------------------------------------------------------
 
         iteration_budget = self._lifecycle.begin_iteration()
@@ -342,18 +411,23 @@ class AgentExecutionHandle:
             return self._build_partial_result()
 
         # --------------------------------------------------------------
-        # 2. Agent reasoning
+        # 3. Agent reasoning
         # --------------------------------------------------------------
 
-        decision = await self._agent._reason(
-            request=self._request,
-            context=self._reasoning_context,
-        )
+        try:
+            decision = await self._agent._reason(
+                request=self._request,
+                context=self._reasoning_context,
+            )
+        except Exception as exc:
+            # Only failures originating from the actual agent/LLM reasoning
+            # call are eligible for RetryClassifier evaluation.
+            raise _AgentReasoningFailure(exc) from exc
 
         self._last_decision = decision
 
         # --------------------------------------------------------------
-        # 3. Validation budget
+        # 4. Validation budget
         # --------------------------------------------------------------
 
         validation_budget = self._lifecycle.begin_validation()
@@ -366,7 +440,7 @@ class AgentExecutionHandle:
             )
 
         # --------------------------------------------------------------
-        # 4. Validate structured decision
+        # 5. Validate structured decision
         # --------------------------------------------------------------
 
         try:
@@ -396,7 +470,7 @@ class AgentExecutionHandle:
         self._last_decision = decision
 
         # --------------------------------------------------------------
-        # 5. Decision retention budget
+        # 6. Decision retention budget
         # --------------------------------------------------------------
 
         decision_budget = self._lifecycle.begin_decision()
@@ -409,7 +483,7 @@ class AgentExecutionHandle:
             )
 
         # --------------------------------------------------------------
-        # 6. Decision handling
+        # 7. Decision handling
         # --------------------------------------------------------------
 
         result = self._handle_decision(
@@ -451,11 +525,9 @@ class AgentExecutionHandle:
                 decision.final_response,
             )
 
-            self._lifecycle.complete()
-
             return AgentExecutionResult(
                 status=ExecutionStatusEnum.COMPLETED,
-                termination_reason=TerminationReason.COMPLETED.value,
+                termination_reason=None,
                 error=None,
                 partial_response=self.state.partial_response,
                 decision=decision,
@@ -578,6 +650,17 @@ class AgentExecutionHandle:
                 reason=decision.reason or "",
             )
 
+            action_budget = self._lifecycle.record_action(
+                self._build_action_key(action),
+            )
+
+            if not action_budget.allowed:
+                self._closed = True
+
+                return self._build_partial_result(
+                    decision=decision,
+                )
+
             return AgentExecutionResult(
                 status=ExecutionStatusEnum.COMPLETED,
                 termination_reason=None,
@@ -647,6 +730,17 @@ class AgentExecutionHandle:
                 reason=decision.reason or "",
             )
 
+            action_budget = self._lifecycle.record_action(
+                self._build_action_key(action),
+            )
+
+            if not action_budget.allowed:
+                self._closed = True
+
+                return self._build_partial_result(
+                    decision=decision,
+                )
+
             return AgentExecutionResult(
                 status=ExecutionStatusEnum.COMPLETED,
                 termination_reason=None,
@@ -677,6 +771,39 @@ class AgentExecutionHandle:
             retry_count=retry_count,
             started_at=self._started_at,
             completed_at=datetime.now(UTC),
+        )
+
+    @staticmethod
+    def _build_action_key(
+        action: AgentActionRequestDTO,
+    ) -> str:
+        """
+        Build a deterministic identity for repeated internal actions.
+
+        The key intentionally excludes the human-readable reason because
+        repeated-action protection is concerned with repeating the same
+        executable operation, not changes in model wording.
+        """
+
+        parameters = action.parameters or {}
+
+        try:
+            serialized_parameters = json.dumps(
+                parameters,
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            )
+        except (TypeError, ValueError):
+            serialized_parameters = repr(parameters)
+
+        return "|".join(
+            (
+                action.action_type.value,
+                action.tool_name or "",
+                action.target_agent_id or "",
+                serialized_parameters,
+            ),
         )
 
     def _build_partial_result(
@@ -786,8 +913,8 @@ class AgentExecution:
         No mutable execution state is stored on AgentExecution.
         """
 
-        agent = self._agent_registry.get(
-            agent_id,
+        agent = self._agent_registry.resolve(
+            key=agent_id,
         )
 
         policy = await self._agent_policy_provider.get_policy(
@@ -814,6 +941,7 @@ class AgentExecution:
             policy=policy,
             lifecycle=lifecycle,
             retry_classifier=self._retry_classifier,
+            retry_policy=self._retry_policy,
             max_attempts=self._retry_policy.max_attempts,
             decision_validator=self._decision_validator,
             agent_policy_guard=self._agent_policy_guard,
