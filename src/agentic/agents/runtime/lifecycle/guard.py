@@ -190,6 +190,19 @@ class BudgetGuard:
             reason=TerminationReason.PARTIAL_REPEATED_ACTION,
         )
 
+    def check_no_progress(
+        self,
+        *,
+        no_progress_count: int,
+    ) -> BudgetCheckResult:
+        """Check whether another no-progress continuation may be attempted."""
+        return self._count_check(
+            name="no_progress",
+            current_count=no_progress_count,
+            maximum=self._budget.max_no_progress,
+            reason=TerminationReason.PARTIAL_NO_PROGRESS,
+        )
+
     def check_validation_attempts(
         self,
         *,

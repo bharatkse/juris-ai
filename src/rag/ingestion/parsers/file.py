@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterator
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from core.utils.resource_context_manager import ResourceContextManager
 from rag.ingestion.exceptions import (
@@ -12,6 +13,9 @@ from rag.ingestion.exceptions import (
 from rag.ingestion.models import ParsedBlock
 from rag.ingestion.parsers.protocol import ParserProtocol
 from rag.ingestion.readers.file_reader import FileReader
+
+if TYPE_CHECKING:
+    from pypdf import PdfReader
 
 logger = logging.getLogger(__name__)
 
@@ -202,6 +206,7 @@ class FileParser(ParserProtocol[Path]):
             )
 
             reader = PdfReader(file_handle)
+            title = self._resolve_pdf_title(reader=reader, source=source)
 
             for sequence, page in enumerate(reader.pages):
                 text = page.extract_text() or ""
@@ -213,8 +218,27 @@ class FileParser(ParserProtocol[Path]):
                     text=text,
                     source="file",
                     mime_type="application/pdf",
+                    title=title,
                     sequence=sequence,
                 )
+
+    @staticmethod
+    def _resolve_pdf_title(*, reader: PdfReader, source: Path) -> str:
+        """
+        Resolve a document title for a parsed PDF.
+
+        Prefers the PDF's embedded /Title metadata; falls back to the
+        filename (without extension) when the PDF has none. Most of
+        the current legal corpus has no /Title set, so the filename
+        fallback is the common case in practice, not just a defensive
+        edge case.
+        """
+        embedded = reader.metadata.title if reader.metadata else None
+
+        if embedded and embedded.strip():
+            return embedded.strip()
+
+        return source.stem
 
     def _parse_docx(
         self,

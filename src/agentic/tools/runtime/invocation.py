@@ -29,7 +29,7 @@ from __future__ import annotations
 from typing import Any
 
 from agentic.registry.tool import ToolRegistry
-from agentic.tools.result import ToolResult
+from agentic.tools.result import ToolEvidence, ToolResult
 
 
 class ToolExecutionService:
@@ -54,6 +54,14 @@ class ToolExecutionService:
         - mutate LangGraph state
         - retain request-scoped state
     """
+
+    # Generic source classification by tool name -- this service does
+    # not otherwise know anything tool-specific, and this mapping is
+    # deliberately narrow (retrieval-shaped tools only) rather than a
+    # step toward per-tool business logic living here.
+    _SOURCE_BY_TOOL: dict[str, str] = {
+        "retriever": "document",
+    }
 
     def __init__(
         self,
@@ -105,7 +113,12 @@ class ToolExecutionService:
             tool_name=tool_name,
             success=True,
             content=content,
-            evidence=(),
+            evidence=(
+                ToolEvidence(
+                    content=content,
+                    source=self._SOURCE_BY_TOOL.get(tool_name),
+                ),
+            ),
             execution_metadata={},
             error=None,
         )

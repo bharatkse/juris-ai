@@ -356,6 +356,17 @@ RetrievedContentDTO
 
 The LLM should **not be responsible for reconstructing source metadata.**
 
+> **Current implementation status:** this is the target pipeline, not
+> what runs today. `AgentResponseDTO` is currently constructed without
+> `citations=`/`sources=` (`agentic/agents/base.py`), so both default
+> to empty, and nothing in the codebase constructs a `CitationDTO` or
+> `SourceDTO` anywhere. The Aggregator's merge step
+> (`execution/aggregation/response.py`) is implemented correctly — it
+> has nothing to merge because nothing upstream populates it yet.
+> Every `AIResponse` today has `citations: []` and `sources: []`. A
+> fix belongs in the retrieval → `AgentResponseDTO` step above, not in
+> the Aggregator.
+
 ## 6. Execution runtime
 
 The Executor should own the runtime objects:
@@ -410,6 +421,17 @@ ContractAgent
 - `CollaborationBus` provides mediated agent-to-agent communication
   when collaboration is required.
 
+> **Current implementation status:** `ExecutionState`, `ExecutionMemory`,
+> and `CollaborationBus` are implemented and owned by the Executor as
+> shown. One caveat specific to the `execution mode` field listed
+> above: it's recorded and surfaced in telemetry
+> (`execution/session.py`) but nothing branches on it. The
+> SEQUENTIAL/PARALLEL/HYBRID shape in section 1's diagram is derived
+> structurally from each step's `depends_on` graph
+> (`execution/graph/builder.py`) — treat "execution mode" here as a
+> descriptive label for that graph shape, not a switch the Executor
+> reads.
+
 ## 7. Responsibility Matrix
 
 Component Owns Must NOT own
@@ -434,6 +456,16 @@ Component Owns Must NOT own
 | **Observability**            | Logs/traces/metrics           | Business decisions      |
 
 ```
+
+> **Current implementation status:** the role boundaries above hold
+> in code (Orchestrator never executes agents/tools, Executor never
+> plans). One boundary has an unconfirmed exception under
+> investigation — Agents hold `RetrieverTool` directly rather than
+> resolving it via the Tool Registry; whether this bypasses any
+> permission check hasn't been verified — see `claude.md` → Known
+> gaps. The **Aggregator**'s "Merge outputs/provenance" row is
+> correctly implemented; see the section 5 status note for why it
+> currently has nothing to merge.
 
 ---
 
@@ -578,6 +610,10 @@ The `ExecutionPlan` must preserve explicit execution-mode semantics:
 The Executor selects the appropriate execution strategy from the plan.
 It does not redesign or reinterpret the plan.
 
+> **Current implementation status:** see the section 6 note above —
+> `execution_mode` isn't read by the Executor; the actual strategy is
+> derived from each step's dependencies.
+
 ### Persistence Boundary
 
 `ChatService` owns the conversation-level transaction:
@@ -625,6 +661,10 @@ RetrievedContent
 ```
 
 This keeps source information available for the final API response.
+
+> **Current implementation status:** see the section 5 note above —
+> `citations`/`sources` are empty in every response today; this
+> diagram is the target, not current behavior.
 
 ---
 

@@ -30,6 +30,7 @@ class TerminationReason(StrEnum):
     PARTIAL_TIMEOUT = "partial_timeout"
     PARTIAL_REPEATED_ACTION = "partial_repeated_action"
     PARTIAL_VALIDATION_LIMIT = "partial_validation_limit"
+    PARTIAL_NO_PROGRESS = "partial_no_progress"
 
     FAILED_TOOL = "failed_tool"
     FAILED_LLM = "failed_llm"

@@ -1,10 +1,11 @@
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from agentic.agents.base import BaseAgent
 from agentic.decisions.decision import AgentDecisionType
 from agentic.decisions.schemas import AgentDecision, AgentToolCall
+from tests.builders.adapters.clients.llm import build_llm_request
 
 
 class TestAgent(BaseAgent):
@@ -21,14 +22,22 @@ def llm_client() -> AsyncMock:
 
 
 @pytest.fixture
-def prompt_builder() -> AsyncMock:
-    return AsyncMock()
+def prompt_builder() -> MagicMock:
+    """
+    BasePromptBuilder.build() is synchronous in BaseAgent.
+
+    Use MagicMock here so build() returns the provider-independent request
+    immediately instead of returning a coroutine.
+    """
+    builder = MagicMock()
+    builder.build.return_value = build_llm_request()
+    return builder
 
 
 @pytest.fixture
 def agent(
     llm_client: AsyncMock,
-    prompt_builder: AsyncMock,
+    prompt_builder: MagicMock,
 ) -> TestAgent:
     return TestAgent(
         llm_client=llm_client,

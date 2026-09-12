@@ -59,7 +59,7 @@ def build_rag_pipeline(*, settings: Settings) -> RAGPipeline:
         vector_store=vector_store,
         keyword_store=PostgresKeywordStore(),
         reranker=CrossEncoderReranker(),
-        rrf_k=settings.llm.rag_min_rerank_score,
+        rrf_k=settings.llm.rag_rrf_k,
     )
 
     rag_indexer = RAGIndexer(

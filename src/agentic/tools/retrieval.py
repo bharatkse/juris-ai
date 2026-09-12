@@ -55,10 +55,14 @@ class RetrieverTool(Tool):
         if not results:
             return "No relevant content found."
 
+        # title is only present on chunks ingested after bug #6's fix;
+        # anything indexed before that falls back to source_id here --
+        # that's expected, not a bug.
         lines = [
-            f"[{chunk.document_id} / chunk {chunk.metadata.get('chunk_index')}] "
-            f"(relevance={score:.3f})\n{chunk.text}"
-            for chunk, score in results
+            f"[{result.chunk.metadata.get('title') or result.chunk.source_id} / chunk "
+            f"{result.chunk.metadata.get('sequence')}] "
+            f"(relevance={result.score:.3f})\n{result.chunk.text}"
+            for result in results
         ]
 
         return "\n\n".join(lines)
