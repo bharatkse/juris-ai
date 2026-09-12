@@ -36,7 +36,7 @@ def test_build_rag_pipeline_shares_embedding_and_vector_store(monkeypatch):
 
     settings = SimpleNamespace(
         llm=SimpleNamespace(
-            rag_min_rerank_score=60,
+            rag_rrf_k=60,
             rag_chunk_size=32,
         ),
     )
@@ -92,7 +92,7 @@ def test_build_rag_pipeline_creates_separate_keyword_store_and_reranker(
 
     settings = SimpleNamespace(
         llm=SimpleNamespace(
-            rag_min_rerank_score=60,
+            rag_rrf_k=60,
             rag_chunk_size=32,
         ),
     )

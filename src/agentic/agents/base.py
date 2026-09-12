@@ -1,10 +1,15 @@
 """
 Base AI agent.
+
+The agent owns inference intent, while the prompt builder remains
+provider-independent and the LLM client remains responsible for provider
+translation.
 """
 
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from typing import ClassVar
 
 from adapters.clients.llm.base import LLMClient
@@ -19,6 +24,7 @@ from core.dto.agent import (
 )
 from core.dto.agent_action import AgentActionRequestDTO
 from core.dto.clients.llm import LLMRequestDTO
+from core.dto.inference import InferencePolicy, LLMTask
 from core.dto.tool import RetrievedContentDTO, ToolRequestDTO
 from core.enums import ActorTypeEnum, MessageRoleEnum, RetrievalSourceEnum
 from core.models.agent import AgentResponseSchema
@@ -28,9 +34,19 @@ from core.models.message import AgentMessageSchema
 class BaseAgent:
     """
     Base class for AI agents.
+
+    Inference intent belongs to the agent because the agent knows whether
+    an LLM call is a structured decision, factual answer, summarization,
+    classification, or another application-level task.
+
+    The agent does not know provider-specific request fields.
     """
 
     metadata: ClassVar[AgentMetadataDTO]
+
+    # Concrete agents may override this when their user-facing generation
+    # has a different inference intent.
+    inference_task: ClassVar[LLMTask] = LLMTask.FACTUAL_ANSWER
 
     def __init__(
         self,
@@ -38,10 +54,12 @@ class BaseAgent:
         llm_client: LLMClient,
         prompt_builder: BasePromptBuilder,
         retriever: RetrieverTool | None = None,
+        inference_policy: InferencePolicy | None = None,
     ) -> None:
         self._llm = llm_client
         self._prompt_builder = prompt_builder
         self._retriever = retriever
+        self._inference_policy = inference_policy or InferencePolicy()
 
     @property
     def llm(
@@ -50,7 +68,6 @@ class BaseAgent:
         """
         Return the configured language model client.
         """
-
         return self._llm
 
     async def run(
@@ -61,10 +78,11 @@ class BaseAgent:
         """
         Execute the agent.
 
-        The LLM returns a structured agent response so that
-        concrete actions can be represented explicitly.
+        The legacy user-facing response path uses structured output.
+        Inference policy therefore marks this request as a structured
+        application response while retaining the agent's factual-answer
+        intent.
         """
-
         llm_request = await self._build_llm_request(
             request=request,
         )
@@ -113,13 +131,19 @@ class BaseAgent:
 
         This method performs reasoning only. It does not execute tools,
         delegate to another agent, or perform concrete actions.
-        """
 
-        # Reasoning must not retrieve data implicitly. Retrieval is a
-        # tool capability selected by the agent/runtime when required.
-        llm_request = await self._prompt_builder.build(
+        Structured decision inference uses the low-temperature TOOL_CALL
+        task profile to make the decision generation deterministic.
+        """
+        llm_request = self._prompt_builder.build(
             request=request,
             context=context,
+        )
+
+        llm_request = self._apply_inference(
+            request=llm_request,
+            task=LLMTask.STRUCTURED_DECISION,
+            structured_output=True,
         )
 
         return await self._llm.generate_structured(
@@ -135,10 +159,9 @@ class BaseAgent:
         """
         Stream the agent response.
 
-        Decision-oriented structured reasoning is intentionally not
-        exposed through the existing user-facing stream contract.
+        The same inference policy used by non-streaming generation is
+        carried through to the provider-independent request.
         """
-
         llm_request = await self._build_llm_request(
             request=request,
         )
@@ -168,7 +191,6 @@ class BaseAgent:
         construction. Agent-selected tool execution will replace this
         behavior when the lifecycle runtime is integrated.
         """
-
         if self._retriever is None:
             return ()
 
@@ -193,6 +215,56 @@ class BaseAgent:
             ),
         )
 
+    async def _build_llm_request(
+        self,
+        *,
+        request: AgentRequestDTO,
+    ) -> LLMRequestDTO:
+        """
+        Build the provider-independent LLM request and attach the
+        agent-owned inference intent.
+        """
+        context = await self._retrieve_context(
+            request=request,
+        )
+
+        llm_request = self._prompt_builder.build(
+            request=request,
+            context=context,
+        )
+
+        return self._apply_inference(
+            request=llm_request,
+            task=self.inference_task,
+            structured_output=True,
+        )
+
+    def _apply_inference(
+        self,
+        *,
+        request: LLMRequestDTO,
+        task: LLMTask,
+        structured_output: bool,
+    ) -> LLMRequestDTO:
+        """
+        Resolve task intent into provider-independent inference settings.
+
+        Model routing/cascading is intentionally not performed here.
+        That responsibility belongs to the later LLM routing scope.
+        """
+        inference = self._inference_policy.resolve(
+            task,
+            model=request.inference.model,
+            top_p=request.inference.top_p,
+            max_output_tokens=request.inference.max_output_tokens,
+            structured_output=structured_output,
+        )
+
+        return replace(
+            request,
+            inference=inference,
+        )
+
     @staticmethod
     def _build_tool_request(
         *,
@@ -201,7 +273,6 @@ class BaseAgent:
         """
         Build a retrieval tool request.
         """
-
         user_message = next(
             message
             for message in reversed(
@@ -213,28 +284,6 @@ class BaseAgent:
         return ToolRequestDTO(
             query=user_message.content,
             uploaded_files=request.context.uploaded_files,
-        )
-
-    async def _build_llm_request(
-        self,
-        *,
-        request: AgentRequestDTO,
-    ) -> LLMRequestDTO:
-        """
-        Build the provider-independent LLM request for the legacy response
-        and streaming paths.
-
-        The new decision path intentionally does not use this method because
-        retrieval must be explicitly selected by the agent/runtime.
-        """
-
-        context = await self._retrieve_context(
-            request=request,
-        )
-
-        return self._prompt_builder.build(
-            request=request,
-            context=context,
         )
 
     async def handle_message(
@@ -253,30 +302,18 @@ class BaseAgent:
         concrete business actions here. Any resulting decision is returned
         to the parent execution through the collaboration bus.
         """
-
         payload = message.payload
 
-        request = payload.get(
-            "request",
-        )
+        request = payload.get("request")
 
-        if not isinstance(
-            request,
-            AgentRequestDTO,
-        ):
+        if not isinstance(request, AgentRequestDTO):
             raise ValueError(
-                "Agent collaboration message is missing a valid " "AgentRequestDTO.",
+                "Agent collaboration message is missing a valid AgentRequestDTO.",
             )
 
-        parameters = payload.get(
-            "parameters",
-            {},
-        )
+        parameters = payload.get("parameters", {})
 
-        if not isinstance(
-            parameters,
-            dict,
-        ):
+        if not isinstance(parameters, dict):
             raise ValueError(
                 "Agent collaboration message parameters must be a dictionary.",
             )

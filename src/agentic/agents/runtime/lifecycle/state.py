@@ -23,6 +23,11 @@ class AgentState:
 
     AgentState contains execution data only. Runtime behavior belongs to
     AgentLifecycle.
+
+    Progress tracking is also request-scoped. The state records the latest
+    progress identity and consecutive no-progress observations so the
+    existing lifecycle and LoopBreaker can make deterministic continuation
+    decisions without introducing another loop-control framework.
     """
 
     budget: AgentExecutionBudget
@@ -44,5 +49,8 @@ class AgentState:
 
     repeated_action_count: int = 0
     last_action_key: str | None = field(default=None, repr=False)
+
+    no_progress_count: int = 0
+    last_progress_key: str | None = field(default=None, repr=False)
 
     partial_response: str = ""

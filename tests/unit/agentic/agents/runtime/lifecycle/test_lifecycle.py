@@ -323,7 +323,8 @@ def test_record_action_first_action():
 
     assert result.allowed is True
     assert lifecycle.state.last_action_key == "search"
-    assert lifecycle.state.repeated_action_count == 1
+    # LoopBreaker counts repeats, so the first action is not a repeat.
+    assert lifecycle.state.repeated_action_count == 0
 
 
 def test_record_action_repeated_action_increments_count():
@@ -335,13 +336,15 @@ def test_record_action_repeated_action_increments_count():
 
     assert result.allowed is True
     assert lifecycle.state.last_action_key == "search"
-    assert lifecycle.state.repeated_action_count == 2
+    # The second identical action is the first repeat.
+    assert lifecycle.state.repeated_action_count == 1
 
 
 def test_record_action_denies_at_repeat_limit():
     budget = AgentExecutionBudget(max_repeated_action=2)
     lifecycle = AgentLifecycle(state=build_state(budget=budget))
 
+    assert lifecycle.record_action("search").allowed is True
     assert lifecycle.record_action("search").allowed is True
     result = lifecycle.record_action("search")
 
@@ -361,7 +364,8 @@ def test_record_action_new_action_resets_count():
 
     assert result.allowed is True
     assert lifecycle.state.last_action_key == "different"
-    assert lifecycle.state.repeated_action_count == 1
+    # A new action starts a new repeat streak at zero.
+    assert lifecycle.state.repeated_action_count == 0
 
 
 def test_record_action_rejects_empty_key():

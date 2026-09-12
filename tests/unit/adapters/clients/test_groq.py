@@ -66,7 +66,7 @@ async def test_generate_returns_llm_response(
             }
             for message in llm_request.messages
         ],
-        temperature=llm_request.temperature,
+        temperature=llm_request.inference.temperature,
     )
 
 
@@ -148,8 +148,8 @@ async def test_generate_passes_request_parameters(
             }
             for message in request.messages
         ],
-        temperature=request.temperature,
-        max_tokens=request.max_tokens,
+        temperature=request.inference.temperature,
+        max_tokens=request.inference.max_output_tokens,
     )
 
 

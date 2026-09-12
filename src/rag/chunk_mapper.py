@@ -83,9 +83,16 @@ class ChunkMapper:
             "source": chunk.source,
         }
 
+        if chunk.title:
+            metadata["title"] = chunk.title
+
         if chunk.mime_type:
             metadata["mime_type"] = chunk.mime_type
 
+        # source.location is a natural fit for a future "url" key once a
+        # URL-sourced DocumentSource implementation exists (see
+        # DocumentSource's docstring) -- no such path exists today, so
+        # no url key is set here.
         if source.location:
             metadata["source_id"] = source.location
 

@@ -18,6 +18,7 @@ class TestRAGIngestion:
         rag_smoke_environment,
     ) -> None:
         source_ids = rag_smoke_environment.source_ids
+        source_paths = rag_smoke_environment.source_paths
         results = rag_smoke_environment.results
 
         # ---------------------------------------------------------
@@ -41,7 +42,9 @@ class TestRAGIngestion:
         ), "Duplicate legal source IDs were discovered."
 
         async with session_factory() as session:
-            for source_id, result in zip(source_ids, results, strict=False):
+            for source_id, result, source_path in zip(
+                source_ids, results, source_paths, strict=False
+            ):
                 # -------------------------------------------------
                 # Verify indexing result returned by
                 # KnowledgeIndexingService.
@@ -113,6 +116,15 @@ class TestRAGIngestion:
                     assert chunk.chunk_metadata["source"] == "file"
 
                     assert chunk.chunk_metadata["mime_type"] == "application/pdf"
+
+                    # Neither real corpus PDF (it_act_2000.pdf,
+                    # reservation-1985.pdf) has embedded /Title
+                    # metadata, so this only exercises the
+                    # filename-fallback branch of title resolution --
+                    # not the "prefers embedded PDF metadata" branch,
+                    # which is covered separately in
+                    # tests/unit/rag/ingestion/test_parsers_file.py.
+                    assert chunk.chunk_metadata.get("title") == source_path.stem
 
                     assert chunk.text_tsv is not None
 
