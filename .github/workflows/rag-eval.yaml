@@ -78,7 +78,7 @@ jobs:
         env:
           PYTHONPATH: src
         run: |
-          poetry run python scripts/evaluate_rag_retrieval.py | tee eval_output.log
+          poetry run python scripts/python/evaluate_rag_retrieval.py | tee eval_output.log
 
           PASS_RATE=$(grep -oP 'Pass rate:\s+\K[0-9.]+' eval_output.log)
 

@@ -34,7 +34,7 @@ class AnswerQualityPolicy:
     29 cases) -- the same "calibrated to the dataset's real achievable
     ceiling" approach already used for rag.evaluation.metrics'
     PrecisionAtK, applied here for the first time. Re-run via
-    scripts/calibrate_answer_quality_thresholds.py.
+    scripts/python/calibrate_answer_quality_thresholds.py.
 
     Method: 29 positives (query + that case's own expected_evidence,
     formatted as an answer) and 29 negatives (the same query paired

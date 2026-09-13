@@ -11,7 +11,7 @@ services:
     restart: unless-stopped
 
     env_file:
-      - ../.env
+      - ../../.env
 
     environment:
       POSTGRES_USER: ${DB_USER:-juris}

@@ -117,7 +117,7 @@ make bootstrap
 This executes:
 
 ```text
-scripts/bootstrap.sh
+scripts/bash/bootstrap.sh
 ```
 
 and prepares the development environment.

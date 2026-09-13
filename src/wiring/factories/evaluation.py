@@ -61,7 +61,7 @@ def build_llm_judge(*, settings: Settings) -> Judge:
                 # allow) so repeated judge calls on the same input are
                 # stable -- required for the empirical threshold
                 # calibration in AnswerQualityPolicy to remain
-                # meaningful over time (scripts/
+                # meaningful over time (scripts/python/
                 # calibrate_answer_quality_thresholds.py).
                 inference=LLMInferenceConfig(temperature=0.0),
             ),

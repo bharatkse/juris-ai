@@ -10,14 +10,14 @@ services:
     restart: unless-stopped
 
     env_file:
-      - ../.env
+      - ../../.env
 
     command:
       - "--config=/etc/otelcol-contrib/config.yaml"
 
     volumes:
       # Source-controlled configuration
-      - ../infrastructure/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+      - ../observability/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
 
     ports:
       - "4317:4317"   # OTLP gRPC
@@ -47,11 +47,11 @@ services:
       - "9090:9090"
 
     env_file:
-      - ../.env
+      - ../../.env
 
     volumes:
       # Source-controlled configuration
-      - ../infrastructure/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
 
       # Persistent Prometheus TSDB data
       - ./.volumes/prometheus:/prometheus
@@ -78,7 +78,7 @@ services:
 
     volumes:
       # Source-controlled configuration
-      - ../infrastructure/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - ../observability/tempo.yaml:/etc/tempo/tempo.yaml:ro
 
       # Persistent Tempo trace data
       - ./.volumes/tempo:/var/tempo

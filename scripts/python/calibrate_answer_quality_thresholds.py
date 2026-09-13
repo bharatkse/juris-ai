@@ -16,7 +16,7 @@ real configured FaithfulnessBackend -- this makes a live LLM call per
 groundedness check, so this script has real latency/cost; it is not
 part of the test suite and is not run in CI).
 
-Run: PYTHONPATH=src python scripts/calibrate_answer_quality_thresholds.py
+Run: PYTHONPATH=src python scripts/python/calibrate_answer_quality_thresholds.py
 """
 
 from __future__ import annotations

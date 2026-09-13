@@ -64,7 +64,7 @@ flowchart TD
   drop a user's uploaded file or a whole search result).
 
 Offline entry point: `ingestion/ingest_offline.py`, run via
-`scripts/ingest_offline.sh <source-directory>`. Persistence of the
+`scripts/bash/ingest_offline.sh <source-directory>`. Persistence of the
 resulting chunks/embeddings is owned by
 `application/services/knowledge_chunk_indexing.py` +
 `rag_index_persistence.py` — indexing *logic* stays in `rag/`,
@@ -131,9 +131,9 @@ sequenceDiagram
     Runner-->>Script: RetrievalEvaluationReport
 ```
 
-Run it: `PYTHONPATH=src python scripts/evaluate_rag_retrieval.py`.
-Other entry points: `scripts/compare_rag_retrieval.py` (compare two
-configurations), `scripts/evaluate_rag_retrieval_comparison.py`.
+Run it: `PYTHONPATH=src python scripts/python/evaluate_rag_retrieval.py`.
+Other entry points: `scripts/python/compare_rag_retrieval.py` (compare two
+configurations), `scripts/python/evaluate_rag_retrieval_comparison.py`.
 
 **Live result, captured 2026-09-13** against the indexed IT Act 2000
 corpus (170 chunks): **22/29 cases passed (75.86% pass rate)**,
