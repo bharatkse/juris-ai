@@ -8,6 +8,24 @@ The Makefile also auto-detects the active environment from LocalStack health.
 
 ---
 
+## Where to look for what
+
+This guide covers **workflow** (commands, environments, troubleshooting). For **architecture**:
+
+| Document | Authoritative for |
+|---|---|
+| [`docs/architecture/overview.md`](architecture/overview.md) | Intended/target design, with inline "Current implementation status" callouts marking where reality has diverged (and been fixed back) |
+| [`docs/architecture/api.md`](architecture/api.md) | REST API surface reference |
+| [`src/agentic/README.md`](../src/agentic/README.md) | Current, real behavior of planning/orchestration/execution/agents/tools — read this to debug a live agent request |
+| [`src/rag/README.md`](../src/rag/README.md) | Current, real behavior of ingestion/indexing/retrieval/evaluation — read this to debug a retrieval-quality issue |
+| [`claude.md`](../claude.md) (repo root) | Repo-wide working conventions and the authoritative, cross-cutting "Known gaps" list — every module doc cross-references it rather than duplicating it |
+
+When `overview.md` and a module README disagree, the module README
+wins — it documents what the code does today, not what it was
+designed to do.
+
+---
+
 ## 1. Prerequisites
 
 Before starting, make sure the following are installed:

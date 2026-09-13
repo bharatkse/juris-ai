@@ -2,686 +2,207 @@
 
 ## Purpose
 
-The `rag/` package owns the **RAG data plane** for Juris-AI.
+`rag/` owns the **RAG data plane**: turning the legal-document corpus
+into searchable representations and retrieving relevant chunks for
+agents. It is intentionally separate from the agent/LLM intelligence
+plane (`src/agentic/`) — RAG does not execute agents, orchestrate the
+LLM, or manage conversation state.
 
-It transforms the legal-document corpus into searchable representations
-and retrieves relevant chunks for agents. It is intentionally separate
-from the **LLM/Agent intelligence plane**.
+## Module map
 
-``` text
-RAG DATA PLANE
+| Path | Responsibility |
+|---|---|
+| `models.py` | Canonical RAG domain models (`Chunk`, `EmbeddingRepresentation`, `RetrievalResult`) |
+| `embeddings.py` | Concrete embedding-provider implementation (`SentenceTransformerEmbeddingProvider`, `BAAI/bge-small-en-v1.5`) |
+| `indexer.py` | Chunk -> embedding -> vector/keyword index orchestration |
+| `chunk_mapper.py` | Maps ingestion-layer `IngestionChunk` into the RAG-domain `Chunk` (deterministic chunk IDs, hashed from `source_id`+`sequence`) |
+| `hybrid_retriever.py` | Vector + keyword retrieval, RRF fusion, cross-encoder reranking |
+| `pgvector_store.py` | PostgreSQL/pgvector adapter (`VectorStoreProtocol`) |
+| `keyword_store.py` | PostgreSQL full-text-search adapter (`KeywordStoreProtocol`) |
+| `reranker.py` | Cross-encoder second-stage reranker |
+| `protocols/` | Capability contracts (`embedding_provider`, `vector_store`/`vector`, `keyword`, `reranker`, `indexer`, `index_persistence`, `document_ingestion`) |
+| `ingestion/` | Document preprocessing: parse -> sanitize -> validate -> chunk (see below) |
+| `evaluation/` | Golden-dataset retrieval evaluation, RAGAS/legacy faithfulness scoring, online sampling |
 
-Legal Corpus
-    ↓
-Ingestion
-    ↓
-Chunks
-    ↓
-Indexing
-    ├──→ Embeddings → PGVector
-    └──→ BM25
-    ↓
-Hybrid Retrieval
-    ├──→ Vector Query
-    └──→ Keyword Query
-          ↓
-         RRF
-          ↓
-      Reranking
-          ↓
-   RetrievalResult[]
-```
+Concrete adapters are injected against the protocols — swap a provider
+by implementing the protocol, not by changing call sites.
 
-The intelligence plane consumes the retrieval results:
+## Ingestion pipeline
 
-``` text
-INTELLIGENCE PLANE
+Real, confirmed order (`ingestion/pipeline.py::_validated_blocks()`):
+parse -> sanitize -> validate -> chunk. The pipeline is a lazy
+generator — it never holds a whole document or a full chunk list in
+memory.
 
-User Query
-    ↓
-Agent
-    ↓
-RAG / Tools / MCP
-    ↓
-RetrievalResult[]
-    ↓
-LLM
-    ↓
-Answer / Action
-```
-
-RAG does **not** own agent execution, LLM orchestration, MCP execution,
-conversation management, or application workflow control.
-
-------------------------------------------------------------------------
-
-## Directory Structure
-
-``` text
-rag/
-├── __init__.py
-├── models.py
-├── embeddings.py
-├── indexer.py
-├── hybrid_retriever.py
-├── pgvector_store.py
-├── keyword_store.py
-├── reranker.py
-│
-├── protocols/
-│   ├── __init__.py
-│   ├── embedding_provider.py
-│   ├── vector_store.py
-│   ├── keyword_store.py
-│   └── reranker.py
-│
-├── ingestion/
-│   ├── __init__.py
-│   ├── exceptions.py
-│   ├── models.py
-│   ├── pipeline.py
-│   ├── sanitizer.py
-│   ├── validator.py
-│   ├── text_chunker.py
-│   ├── ingest_offline.py
-│   ├── readers/
-│   │   ├── __init__.py
-│   │   └── file_reader.py
-│   └── parsers/
-│       ├── __init__.py
-│       ├── protocol.py
-│       ├── file.py
-│       └── text.py
-│
-└── evaluation/
-    ├── __init__.py
-    ├── evaluator.py
-    ├── online_sampler.py
-    ├── ragas_offline.py
-    ├── datasets/
-    ├── metrics/
-    └── models/
-```
-
-  Component               Responsibility
-  ----------------------- -------------------------------------------------------
-  `models.py`             Canonical RAG domain models
-  `embeddings.py`         Concrete embedding-provider implementation
-  `indexer.py`            Chunk → embedding → indexing orchestration
-  `hybrid_retriever.py`   Vector + keyword retrieval, RRF, reranking
-  `pgvector_store.py`     PostgreSQL/pgvector adapter
-  `keyword_store.py`      PostgreSQL keyword/BM25 adapter
-  `reranker.py`           Cross-encoder reranking implementation
-  `protocols/`            RAG capability contracts
-  `ingestion/`            Document preprocessing and streaming chunk production
-  `evaluation/`           RAG quality evaluation
-
-------------------------------------------------------------------------
-
-## Capability Contracts
-
-RAG orchestration depends on capability protocols:
-
-``` text
-EmbeddingProviderProtocol
-    ├── embed()
-    └── embed_one()
-
-VectorStoreProtocol
-    ├── upsert()
-    └── query()
-
-KeywordStoreProtocol
-    ├── upsert()
-    └── query()
-
-RerankerProtocol
-    └── rerank()
-```
-
-Concrete implementations are injected into the RAG components.
-
-This keeps RAG orchestration independent from specific models,
-databases, and infrastructure implementations.
-
-------------------------------------------------------------------------
-
-# Ingestion and Indexing
-
-## Ingestion Flow
-
-The ingestion package transforms local legal source documents into
-validated, security-screened chunks.
-
-``` mermaid
+```mermaid
 flowchart TD
-    A[Legal Source Directory] --> B[ingest_offline.py]
-    B --> C[FileParser]
-    C --> D[SecuritySanitizer]
-    D --> E[ContentValidator]
-    E --> F[TextChunker]
-    F --> G[Iterator[Chunk]]
+    A[Source file<br/>PDF / DOCX / TXT / MD / HTML] --> B["FileParser / TextParser<br/>(ingestion/parsers/)"]
+    B -->|"PDF: also resolves document title<br/>(parsers/file.py::_resolve_pdf_title)"| C[ParsedBlock<br/>text + title + sequence]
+    C --> D["SecuritySanitizer.sanitize_and_scan()<br/>(ingestion/sanitizer.py)"]
+    D -->|"block dropped if any threat found<br/>(fail_on defaults to CRITICAL)"| D
+    D --> E["ContentValidator.validate()<br/>(ingestion/validator.py)"]
+    E -->|invalid block dropped| E
+    E --> F["TextChunker.chunk()<br/>(ingestion/chunker.py, per chunking_profile.py)"]
+    F --> G[Iterator&lt;IngestionChunk&gt;]
+    G --> H["ChunkMapper<br/>(chunk_mapper.py)"]
+    H --> I["rag.models.Chunk<br/>(title carried in metadata)"]
 ```
 
-The pipeline is lazy and streaming:
+- **Title extraction** happens once, at parse time, only for PDFs
+  today (`parsers/file.py::_resolve_pdf_title()` — prefers embedded
+  PDF metadata, falls back to filename). It survives through
+  `ParsedBlock.title` -> chunking -> `ChunkMapper` into `Chunk`'s
+  metadata dict. No ingestion path populates `url` today (no
+  web-sourced ingestion exists yet — see Known gaps).
+- **Injection screening** happens immediately after parsing, before
+  validation or chunking — `SecuritySanitizer.sanitize_and_scan()`
+  drops the whole block on any detected threat at ingestion time. This
+  is a stricter default than the two other call sites that reuse the
+  same sanitizer (`agentic/tools/search_engine/content_fetch.py` and
+  `agentic/tools/library/parser.py` withhold only on `CRITICAL`,
+  since those paths would rather show degraded content than silently
+  drop a user's uploaded file or a whole search result).
 
-``` text
-Source
-  ↓
-Parser
-  ↓
-Security Sanitizer
-  ↓
-Content Validator
-  ↓
-Streaming Chunker
-  ↓
-Iterator[Chunk]
-```
+Offline entry point: `ingestion/ingest_offline.py`, run via
+`scripts/ingest_offline.sh <source-directory>`. Persistence of the
+resulting chunks/embeddings is owned by
+`application/services/knowledge_chunk_indexing.py` +
+`rag_index_persistence.py` — indexing *logic* stays in `rag/`,
+persistence *orchestration* stays in `application/`.
 
-The ingestion flow does not intentionally accumulate complete documents,
-parsed-block collections, or chunk collections.
+## Retrieval pipeline
 
-Consume the stream one chunk at a time.
-
-## Offline Ingestion
-
-Supported source formats:
-
-``` text
-.pdf
-.docx
-.txt
-.md
-.html
-.htm
-```
-
-Python entry point:
-
-``` bash
-python -m rag.ingestion.ingest_offline <source-directory>
-```
-
-Preferred shell interface:
-
-``` bash
-./scripts/ingest_offline.sh <source-directory>
-```
-
-The shell script is only a launcher and contains no ingestion business
-logic.
-
-## Indexing Flow
-
-After ingestion produces chunks, indexing creates searchable
-representations.
-
-``` mermaid
+```mermaid
 flowchart TD
-    A[Chunk] --> B[Indexer]
-    B --> C[EmbeddingProvider.embed]
-    C --> D[VectorStore.upsert]
-    D --> E[PGVector]
-
-    A --> F[KeywordStore.upsert]
-    F --> G[BM25 / PostgreSQL Full Text]
+    Q[Query] --> EMB["EmbeddingProvider.embed_one()"]
+    EMB --> VEC["VectorStore.query()<br/>top fusion_candidates=20"]
+    Q --> KW["KeywordStore.query()<br/>top fusion_candidates=20"]
+    VEC --> RRF["Reciprocal Rank Fusion<br/>score = Σ 1 / (rrf_k=60 + rank)"]
+    KW --> RRF
+    RRF --> POOL["Candidate pool<br/>(top fusion_candidates=20 after fusion)"]
+    POOL --> RERANK["CrossEncoderReranker<br/>(query, chunk.text) scored jointly"]
+    RERANK --> OUT["RetrievalResult[]<br/>(top top_k, default 5)"]
 ```
 
-The indexing path is:
+`HybridRetriever.retrieve()` (`hybrid_retriever.py`) runs vector and
+keyword search concurrently once the query embedding is computed, then
+fuses with RRF before reranking. Constants (both overridable per call,
+shown at their defaults):
 
-``` text
-Chunk
- │
- ├──→ EmbeddingProvider.embed()
- │           ↓
- │     VectorStore.upsert()
- │           ↓
- │        PGVector
- │
- └──→ KeywordStore.upsert()
-             ↓
-        BM25 / PostgreSQL
+- `DEFAULT_RRF_K = 60` (`rag_rrf_k` in settings) — RRF's smoothing
+  constant; higher values flatten the influence of rank differences.
+- `DEFAULT_FUSION_CANDIDATES = 20` — how many results each of
+  vector/keyword search contributes *before* fusion, and the size of
+  the pool handed to the reranker after fusion.
+- `top_k` (caller-supplied, default 5 in the evaluation script) — the
+  final result count returned after reranking.
+
+Vector and keyword retrieval are otherwise independent: keyword
+scoring doesn't know about vector similarity or vice versa; RRF is
+what lets a chunk supported by both rankings outrank one supported by
+only one.
+
+## Evaluation
+
+```mermaid
+sequenceDiagram
+    participant Script as evaluate_rag_retrieval.py
+    participant Loader as GoldenDatasetLoader
+    participant Runner as RetrievalEvaluationRunner
+    participant Retriever as HybridRetriever
+    participant Metrics as RecallAtK / PrecisionAtK / MRR / FaithfulnessMetric
+    participant FB as FaithfulnessBackend
+    participant Judge as LLM judge (Groq/local)
+
+    Script->>Loader: load(legal_retrieval_gold_v1.json)
+    Loader-->>Script: GoldenDataset (29 cases)
+    Script->>Runner: evaluate(dataset)
+    loop each case
+        Runner->>Retriever: retrieve(query, top_k=5)
+        Retriever-->>Runner: RetrievalResult[]
+        Runner->>Metrics: evaluate(case, results)
+        Metrics->>FB: evaluate(query, answer, contexts)
+        Note over FB,Judge: only called if the case has a<br/>generated `answer` -- today's golden<br/>dataset has none, so this is a no-op<br/>("not applicable", passed=True) for<br/>every case (see script comment)
+        FB->>Judge: generate(prompt) [temperature=0.0]
+        Judge-->>FB: score
+        FB-->>Metrics: faithfulness score
+        Metrics-->>Runner: MetricResult[]
+    end
+    Runner-->>Script: RetrievalEvaluationReport
 ```
 
-`EmbeddingRepresentation` records the model name, dimension, and vector
-so representations from different embedding models remain
-distinguishable.
-
-------------------------------------------------------------------------
-
-# Retrieval
-
-## Vector Retrieval
-
-`VectorStoreProtocol` owns both:
-
-``` text
-upsert()
-query()
-```
-
-Therefore:
-
-``` text
-Indexing
-    ↓
-VectorStore.upsert()
-    ↓
-PGVector
-
-Retrieval
-    ↓
-VectorStore.query()
-    ↓
-PGVector
-```
-
-`PgVectorStore` is the infrastructure adapter. PostgreSQL, pgvector,
-SQLAlchemy, persistence repositories, and transactions remain outside
-the RAG domain orchestration.
-
-## Keyword / BM25 Retrieval
-
-`KeywordStoreProtocol` owns:
-
-``` text
-upsert()
-query()
-```
-
-The keyword path is:
-
-``` text
-Chunk
-  ↓
-KeywordStore.upsert()
-  ↓
-BM25 / PostgreSQL Full Text
-
-Query
-  ↓
-KeywordStore.query()
-  ↓
-Keyword candidates
-```
-
-Keyword retrieval is independent of vector similarity.
-
-## Hybrid Retrieval
-
-`HybridRetriever` combines dense and keyword retrieval.
-
-``` mermaid
-flowchart TD
-    A[Query] --> B[EmbeddingProvider.embed_one]
-    B --> C[VectorStore.query]
-    A --> D[KeywordStore.query]
-    C --> E[Reciprocal Rank Fusion]
-    D --> E
-    E --> F[Candidate Pool]
-    F --> G[CrossEncoderReranker]
-    G --> H[RetrievalResult[]]
-```
-
-Vector and keyword retrieval run concurrently after the query embedding
-is generated.
-
-``` text
-Query
-  │
-  ├──→ embed_one()
-  │
-  ├──→ VectorStore.query()
-  │
-  └──→ KeywordStore.query()
-             │
-             ↓
-            RRF
-             ↓
-       Candidate Pool
-             ↓
-          Reranker
-             ↓
-     RetrievalResult[]
-```
-
-------------------------------------------------------------------------
-
-## Reciprocal Rank Fusion
-
-RRF combines independently ranked vector and keyword candidate lists.
-
-``` text
-RRF score = Σ 1 / (k + rank)
-```
-
-RRF combines rankings without requiring vector and keyword scores to
-share the same numeric scale.
-
-A chunk supported by both retrieval strategies receives contributions
-from both rankings.
-
-RRF determines candidate ordering before second-stage reranking.
-
-The original `RetrievalResult` representation is preserved during
-fusion.
-
-## Cross-Encoder Reranking
-
-The cross-encoder is the second-stage retrieval model.
-
-``` text
-Vector candidates
-               → RRF → Candidate Pool → CrossEncoderReranker → Final Results
-       /
-Keyword candidates
-```
-
-The reranker evaluates:
-
-``` text
-(query, candidate.chunk.text)
-```
-
-jointly.
-
-It changes the relevance score while preserving:
-
-``` text
-Chunk
-EmbeddingRepresentation[]
-```
-
-It does not generate document embeddings, perform vector/keyword
-retrieval, perform RRF, persist data, call the generation LLM, or
-execute agents.
-
-------------------------------------------------------------------------
-
-# Complete RAG Data Plane
-
-``` mermaid
-flowchart TD
-    A[Legal Corpus] --> B[Offline Ingestion]
-    B --> C[Parser]
-    C --> D[Sanitizer]
-    D --> E[Validator]
-    E --> F[Streaming Chunker]
-    F --> G[Chunk]
-
-    G --> H[Indexer]
-    H --> I[EmbeddingProvider]
-    I --> J[VectorStore.upsert]
-    J --> K[PGVector]
-
-    G --> L[KeywordStore.upsert]
-    L --> M[BM25 / PostgreSQL]
-
-    N[Query] --> O[EmbeddingProvider.embed_one]
-    O --> P[VectorStore.query]
-    N --> Q[KeywordStore.query]
-    P --> R[RRF]
-    Q --> R
-    R --> S[CrossEncoderReranker]
-    S --> T[RetrievalResult[]]
-```
-
-------------------------------------------------------------------------
-
-# RAG and Agent / LLM Separation
-
-RAG is a knowledge-retrieval capability available to the intelligence
-plane.
-
-``` mermaid
-flowchart TD
-    A[User Request] --> B[Agent]
-    B --> C[RAG Capability]
-    C --> D[HybridRetriever]
-    D --> E[RetrievalResult[]]
-    E --> B
-    B --> F[Tools / MCP]
-    B --> G[LLM]
-    G --> H[Answer / Action]
-```
-
-  RAG Data Plane            Agent / LLM Intelligence Plane
-  ------------------------- --------------------------------
-  Parse documents           Reason about requests
-  Sanitize content          Plan and decide actions
-  Validate content          Execute workflows
-  Chunk documents           Call RAG/tools/MCP
-  Generate embeddings       Build reasoning context
-  Index vectors             Invoke LLM
-  Index keywords            Produce answer/action
-  Vector retrieval          Manage agent state
-  Keyword retrieval         Execute tools
-  RRF fusion                Coordinate execution
-  Cross-encoder reranking   ---
-  RAG evaluation            ---
-
-The generation LLM must remain outside the vector store, keyword store,
-retriever, indexer, and reranker.
-
-------------------------------------------------------------------------
-
-# Agent-Time Retrieval
-
-RAG retrieval occurs when an agent requires knowledge retrieval.
-
-``` text
-User Request
-     ↓
-Planner / Executor
-     ↓
-Agent
-     ↓
-Agent decides retrieval is required
-     ↓
-HybridRetriever
-     ↓
-RetrievalResult[]
-     ↓
-Agent Context
-     ↓
-LLM
-     ↓
-Answer / Action
-```
-
-RAG provides knowledge; the agent decides when and how to use it; the
-LLM performs reasoning and generation.
-
-------------------------------------------------------------------------
-
-# Domain Models
-
-`rag/models.py` is the canonical location for RAG domain models.
-
-Important models include:
-
-``` text
-Chunk
-EmbeddingRepresentation
-RetrievalResult
-IndexedRepresentation
-```
-
-`RetrievalResult` preserves the retrieved chunk, retrieval score, and
-associated embedding representations.
-
-RAG domain models must not depend on SQLAlchemy persistence entities.
-
-------------------------------------------------------------------------
-
-# Persistence Boundary
-
-``` text
-RAG
- │
- ├── Capability Protocols
- └── Domain Models
-          │
-          ↓
-    Concrete Adapters
-          │
-          ↓
- Persistence Repositories
-          │
-          ↓
- PostgreSQL / PGVector
-```
-
-Persistence owns:
-
-``` text
-SQLAlchemy models
-Repositories
-Transactions
-PostgreSQL
-pgvector
-Full-text search
-Persistence relationships
-```
-
-RAG owns:
-
-``` text
-Retrieval semantics
-Indexing orchestration
-Embedding abstraction
-Hybrid retrieval
-RRF
-Reranking
-RAG domain representations
-```
-
-------------------------------------------------------------------------
-
-# Evaluation
-
-RAG evaluation is separate from retrieval execution.
-
-The evaluation package supports:
-
-``` text
-Online evaluation
-Offline evaluation
-Golden datasets
-RAGAS-based evaluation
-Retrieval and answer quality metrics
-```
-
-Evaluation can consume `RetrievalResult` and embedding metadata without
-becoming part of the retrieval algorithm.
-
-------------------------------------------------------------------------
-
-# Error Handling
-
-RAG components use the RAG-specific exception hierarchy from:
-
-``` text
-core.exceptions.rag
-```
-
-Unexpected failures should be logged with stack traces and wrapped in
-the appropriate RAG exception while preserving the original exception as
-the cause.
-
-Operational logs must not expose:
-
-``` text
-document secrets
-credentials
-tokens
-sensitive document snippets
-```
-
-Prefer operational metadata such as:
-
-``` text
-source_id
-chunk count
-top_k
-model name
-candidate count
-operation
-```
-
-------------------------------------------------------------------------
-
-# Architecture Freeze
-
-The RAG architecture is intentionally divided into two related but
-separate responsibilities.
-
-## Ingestion / Indexing
-
-``` text
-Corpus
-  ↓
-Parser
-  ↓
-Sanitizer
-  ↓
-Validator
-  ↓
-Chunker
-  ↓
-Chunk
-  ↓
-┌───────────────────────┐
-│                       │
-↓                       ↓
-EmbeddingProvider     KeywordStore
-↓                       ↓
-VectorStore.upsert()   BM25
-↓
-PGVector
-```
-
-## Retrieval
-
-``` text
-Query
-  ↓
-EmbeddingProvider.embed_one()
-  ↓
-┌───────────────────────┐
-│                       │
-↓                       ↓
-VectorStore.query()   KeywordStore.query()
-│                       │
-└──────────┬────────────┘
-           ↓
-          RRF
-           ↓
-     Candidate Pool
-           ↓
-  CrossEncoderReranker
-           ↓
-    RetrievalResult[]
-```
-
-## Intelligence Plane
-
-``` text
-User Request
-     ↓
-Planner
-     ↓
-Executor
-     ↓
-Agent
-     ↓
-RAG / Tools / MCP
-     ↓
-LLM
-     ↓
-Answer / Action
-```
-
-These boundaries are the current architecture baseline and should not be
-collapsed.
+Run it: `PYTHONPATH=src python scripts/evaluate_rag_retrieval.py`.
+Other entry points: `scripts/compare_rag_retrieval.py` (compare two
+configurations), `scripts/evaluate_rag_retrieval_comparison.py`.
+
+**Live result, captured 2026-09-13** against the indexed IT Act 2000
+corpus (170 chunks): **22/29 cases passed (75.86% pass rate)**,
+`recall@5=0.759`, `precision@5=0.152`, `mrr=0.602`. `faithfulness=0.0`
+is expected, not a failure — see the note above. 7 failing cases share
+one pattern: `recall@5`/`precision@5`/`mrr` all `0.0` (expected
+evidence never retrieved in the top 5) — worth a closer look before
+trusting retrieval quality on those queries specifically.
+
+### `faithfulness_backend` setting
+
+`settings.llm.faithfulness_backend: Literal["legacy", "ragas"]`
+(env var: `faithfulness_backend`, lowercase — this one field breaks
+the repo's usual ALL_CAPS env var convention, confirmed in
+`config/llm.py`) is the single switch between:
+
+- `"legacy"` (default) — the hand-rolled judge,
+  `RAGEvaluator.faithfulness()` (`evaluation/evaluator.py`), wrapped
+  by `LegacyFaithfulnessBackend`.
+- `"ragas"` — the `ragas` library's own `Faithfulness` metric
+  (`evaluation/ragas_faithfulness.py`), wrapped by
+  `RagasFaithfulnessBackend`, bridged onto this project's `Judge`
+  callable via `ragas_llm_adapter.py`.
+
+`wiring/factories/evaluation.py::build_faithfulness_backend()` is the
+*only* place this decision is made — both `FaithfulnessMetric`
+(offline evaluation) and `OnlineEvalSampler` (live-traffic sampling)
+get their backend from this one factory, so flipping the setting
+changes both at once. The underlying judge LLM call
+(`build_llm_judge()`) is pinned to `temperature=0.0` regardless of
+which backend wraps it — see `src/agentic/README.md`'s determinism
+section for why.
+
+If using `"ragas"`, set `RAGAS_DO_NOT_TRACK=true` to opt out of the
+`ragas` package's own telemetry (a real env var read by `ragas`
+itself, not by this codebase — see `env.example`).
+
+## Known gaps
+
+RAG-specific items not already covered by `claude.md` → Known gaps
+(read that first — it covers the citation-provenance chain this
+package feeds into):
+
+- **Inline legislative amendment-marker brackets are an unhandled
+  text-matching artifact class** (e.g. `"1[electronic\nsignature]"`
+  mid-sentence in the IT Act corpus). See
+  `evaluation/metrics/text_matching.py`'s module docstring and
+  `src/rag/CLAUDE.md` → Known gaps for the full rationale and how one
+  instance was fixed (`legal_retrieval_gold_v1.json`, case `it-005`).
+- **Citation-quality thresholds (`min_citation_precision`/
+  `min_citation_coverage` in `agentic/evaluation/answer.py`) have no
+  empirical calibration, and — unlike groundedness/relevance/
+  correctness — none is possible from this dataset.**
+  `_evaluate_citations` is exact set-membership (0.0 or 1.0 per case,
+  no continuous distribution to sweep a threshold over). This is an
+  `agentic/` concern, not a `rag/` one, but it directly limits how much
+  confidence to place in citation quality derived from this package's
+  retrieval output. See `agentic/evaluation/answer.py`'s
+  `AnswerQualityPolicy` docstring for the honest accounting.
+- **`quality_gate.py` is not wired into CI** — see `src/rag/CLAUDE.md`
+  → Known gaps.
+- **Ingestion never writes `url` into chunk metadata** — no
+  web-sourced ingestion path exists yet. See `claude.md` → Known gaps.
+
+## Error handling
+
+RAG components raise from the exception hierarchy in
+`core.exceptions.rag`. Unexpected failures are logged with a stack
+trace and wrapped, preserving the original as `__cause__`. Never log
+document secrets, credentials, tokens, or sensitive document snippets
+— prefer operational metadata (`source_id`, chunk count, `top_k`,
+model name, candidate count).

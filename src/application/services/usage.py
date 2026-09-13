@@ -59,7 +59,7 @@ class UsageService(BaseService):
 
         settings = get_settings().rate_limit
 
-        if not settings.ENABLED:
+        if not settings.RATE_LIMIT_ENABLED:
             return
 
         now = datetime.now(UTC)
@@ -73,7 +73,7 @@ class UsageService(BaseService):
 
         await self.commit()
 
-        if request_count > settings.REQUESTS_PER_MINUTE:
+        if request_count > settings.RATE_LIMIT_REQUESTS_PER_MINUTE:
             retry_after_seconds = 60 - now.second
 
             logger.warning(
@@ -82,12 +82,12 @@ class UsageService(BaseService):
                     "operation": "enforce_usage_limits",
                     "user_id": user_id,
                     "request_count": request_count,
-                    "limit": settings.REQUESTS_PER_MINUTE,
+                    "limit": settings.RATE_LIMIT_REQUESTS_PER_MINUTE,
                 },
             )
 
             raise RateLimitExceededError(
-                limit=settings.REQUESTS_PER_MINUTE,
+                limit=settings.RATE_LIMIT_REQUESTS_PER_MINUTE,
                 retry_after_seconds=retry_after_seconds,
             )
 
@@ -96,19 +96,19 @@ class UsageService(BaseService):
             window_start=day_window,
         )
 
-        if daily_usage >= settings.DAILY_TOKEN_QUOTA:
+        if daily_usage >= settings.RATE_LIMIT_DAILY_TOKEN_QUOTA:
             logger.warning(
                 "Daily token quota exceeded.",
                 extra={
                     "operation": "enforce_usage_limits",
                     "user_id": user_id,
                     "daily_usage": daily_usage,
-                    "quota": settings.DAILY_TOKEN_QUOTA,
+                    "quota": settings.RATE_LIMIT_DAILY_TOKEN_QUOTA,
                 },
             )
 
             raise TokenQuotaExceededError(
-                quota=settings.DAILY_TOKEN_QUOTA,
+                quota=settings.RATE_LIMIT_DAILY_TOKEN_QUOTA,
                 used=daily_usage,
             )
 
@@ -132,7 +132,7 @@ class UsageService(BaseService):
 
         settings = get_settings().rate_limit
 
-        if not settings.ENABLED:
+        if not settings.RATE_LIMIT_ENABLED:
             return
 
         now = datetime.now(UTC)
