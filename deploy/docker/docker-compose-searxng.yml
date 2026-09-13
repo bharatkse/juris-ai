@@ -13,7 +13,7 @@ services:
     restart: unless-stopped
 
     volumes:
-      - ./docker/searxng/settings.yml:/etc/searxng/settings.yml:ro
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
 
     environment:
       SEARXNG_BASE_URL: http://searxng:8080/

@@ -11,7 +11,7 @@ repos:
       - id: check-json
       - id: check-toml
       - id: check-yaml
-        exclude: ^infrastructure/cf_templates/
+        exclude: ^deploy/cloud/
       - id: detect-private-key
 
 
@@ -85,7 +85,7 @@ repos:
     rev: v1.43.3
     hooks:
       - id: cfn-lint
-        files: ^infrastructure/cf_templates/.*\.ya?ml$
+        files: ^deploy/cloud/.*\.ya?ml$
 
   # ----------------------------------------
   # OpenAPI / YAML linting

@@ -100,8 +100,8 @@ API_NAME := juris-ai-api-snd
 AWS_REGION := us-east-1
 ENDPOINT   := http://localhost:4566
 
-MAIN_TEMPLATE  := infrastructure/cf_templates/template.yaml
-ECS_TEMPLATE   := infrastructure/cf_templates/ecs-template.yaml
+MAIN_TEMPLATE  := deploy/cloud/template.yaml
+ECS_TEMPLATE   := deploy/cloud/ecs-template.yaml
 BUILD_TEMPLATE := .aws-sam/build/template.yaml
 
 POETRY  := poetry
@@ -122,11 +122,11 @@ DOCKER_COMPOSE := docker compose \
 	--env-file .env \
 	-p $(DOCKER_PROJECT_NAME)
 
-DOCKER_COMPOSE_MAIN_FILE       := docker/docker-compose.yml
-DOCKER_COMPOSE_LOCALSTACK_FILE := docker/docker-compose-localstack.yml
-DOCKER_COMPOSE_INFRA_FILE      := docker/docker-compose-infra.yml
-DOCKER_COMPOSE_LLM_FILE        := docker/docker-compose-llm.yml
-DOCKER_COMPOSE_SEARCHXNG_FILE  := docker/docker-compose-searxng.yml
+DOCKER_COMPOSE_MAIN_FILE       := deploy/docker/docker-compose.yml
+DOCKER_COMPOSE_LOCALSTACK_FILE := deploy/docker/docker-compose-localstack.yml
+DOCKER_COMPOSE_INFRA_FILE      := deploy/docker/docker-compose-infra.yml
+DOCKER_COMPOSE_LLM_FILE        := deploy/docker/docker-compose-llm.yml
+DOCKER_COMPOSE_SEARCHXNG_FILE  := deploy/docker/docker-compose-searxng.yml
 
 # Complete local Compose definition.
 #
@@ -306,8 +306,8 @@ env-info: ## Show active environment and resolved configuration
 .PHONY: bootstrap
 
 bootstrap:
-	@chmod +x scripts/bootstrap.sh
-	@./scripts/bootstrap.sh
+	@chmod +x scripts/bash/bootstrap.sh
+	@./scripts/bash/bootstrap.sh
 
 # ============================================================================
 # Docker - Application

@@ -306,7 +306,7 @@ python -m rag.ingestion.ingest_offline <source-directory>
 The preferred shell interface is:
 
 ```bash
-./scripts/ingest_offline.sh <source-directory>
+./scripts/bash/ingest_offline.sh <source-directory>
 ```
 
 The shell script is only a launcher and contains no ingestion business logic.

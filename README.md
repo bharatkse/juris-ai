@@ -22,7 +22,7 @@ Stated plainly, not aspirationally — verified against the code and,
 where numeric, against a live run on 2026-09-13:
 
 - **RAG retrieval works.** Live evaluation against the golden
-  dataset (29 cases, `scripts/evaluate_rag_retrieval.py`): **22/29
+  dataset (29 cases, `scripts/python/evaluate_rag_retrieval.py`): **22/29
   passed (75.86% pass rate)**, `recall@5=0.759`, `precision@5=0.152`,
   `mrr@5=0.602`. 7 failures share one pattern (expected evidence never
   in the top 5) — see `src/rag/README.md` for detail.
