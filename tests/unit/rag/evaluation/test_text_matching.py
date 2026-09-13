@@ -52,11 +52,11 @@ def test_evidence_in_text_matches_stray_space_before_comma() -> None:
 
 
 def test_evidence_in_text_still_fails_on_genuine_mismatch() -> None:
-    # Spelling variant ("dispatch" vs "dispatch") is a real, different
-    # problem (dataset authoring) -- whitespace normalization must not
-    # paper over it.
+    # A newline is intentionally NOT a mismatch because whitespace
+    # normalization is supposed to make line-wrapped text match.
+    # Use a genuine lexical mismatch instead.
     evidence = "the dispatch of an electronic record occurs when it enters a computer resource"
-    chunk_text = "the dispatch of an electronic record occurs when it enters a\ncomputer resource"
+    chunk_text = "the dispatch of an electronic record occurs when it enters a computer system"
 
     assert not evidence_in_text(evidence, chunk_text)
 

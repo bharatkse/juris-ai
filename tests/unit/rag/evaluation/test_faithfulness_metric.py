@@ -1,6 +1,5 @@
 import pytest
 
-from rag.evaluation.evaluator import RAGEvaluator
 from rag.evaluation.metrics.faithfulness import FaithfulnessMetric
 from rag.evaluation.models.evaluation_case import EvaluationCase
 from rag.models import Chunk, RetrievalResult
@@ -20,10 +19,31 @@ def _result(
     )
 
 
+class _FakeBackend:
+    """
+    Minimal FaithfulnessBackend fake. FaithfulnessMetric only depends
+    on the FaithfulnessBackend protocol (see faithfulness_backend.py),
+    not on any concrete implementation -- these tests exercise that
+    boundary directly rather than through a real ragas or legacy
+    judge call.
+    """
+
+    def __init__(self, *, score: float | None, should_be_called: bool = True) -> None:
+        self._score = score
+        self._should_be_called = should_be_called
+        self.called = False
+
+    async def evaluate(self, *, query: str, answer: str, contexts: list[str]) -> float | None:
+        if not self._should_be_called:
+            raise AssertionError("backend should not be called for this case")
+
+        self.called = True
+        return self._score
+
+
 @pytest.mark.asyncio
-async def test_faithfulness_passes_when_judge_score_meets_threshold() -> None:
-    async def judge(prompt: str) -> str:
-        return '{"score": 0.9, "unsupported_claims": []}'
+async def test_faithfulness_passes_when_backend_score_meets_threshold() -> None:
+    backend = _FakeBackend(score=0.9)
 
     case = EvaluationCase(
         query="What is the limitation period?",
@@ -33,18 +53,18 @@ async def test_faithfulness_passes_when_judge_score_meets_threshold() -> None:
         ],
     )
 
-    result = await FaithfulnessMetric(evaluator=RAGEvaluator(judge=judge)).evaluate(case=case)
+    result = await FaithfulnessMetric(backend=backend).evaluate(case=case)
 
     assert result.metric == "faithfulness"
     assert result.score == 0.9
     assert result.passed is True
     assert result.metadata["retrieved_results"] == "1"
+    assert backend.called is True
 
 
 @pytest.mark.asyncio
-async def test_faithfulness_fails_when_judge_score_below_threshold() -> None:
-    async def judge(prompt: str) -> str:
-        return '{"score": 0.2, "unsupported_claims": ["three years"]}'
+async def test_faithfulness_fails_when_backend_score_below_threshold() -> None:
+    backend = _FakeBackend(score=0.2)
 
     case = EvaluationCase(
         query="What is the limitation period?",
@@ -54,7 +74,7 @@ async def test_faithfulness_fails_when_judge_score_below_threshold() -> None:
         ],
     )
 
-    result = await FaithfulnessMetric(evaluator=RAGEvaluator(judge=judge)).evaluate(case=case)
+    result = await FaithfulnessMetric(backend=backend).evaluate(case=case)
 
     assert result.score == 0.2
     assert result.passed is False
@@ -62,8 +82,7 @@ async def test_faithfulness_fails_when_judge_score_below_threshold() -> None:
 
 @pytest.mark.asyncio
 async def test_faithfulness_reports_no_retrieved_context() -> None:
-    async def judge(prompt: str) -> str:
-        raise AssertionError("judge should not be called without retrieved context")
+    backend = _FakeBackend(score=1.0, should_be_called=False)
 
     case = EvaluationCase(
         query="What is the limitation period?",
@@ -71,7 +90,7 @@ async def test_faithfulness_reports_no_retrieved_context() -> None:
         retrieval_results=[],
     )
 
-    result = await FaithfulnessMetric(evaluator=RAGEvaluator(judge=judge)).evaluate(case=case)
+    result = await FaithfulnessMetric(backend=backend).evaluate(case=case)
 
     assert result.score == 0.0
     assert result.passed is False
@@ -80,8 +99,7 @@ async def test_faithfulness_reports_no_retrieved_context() -> None:
 
 @pytest.mark.asyncio
 async def test_faithfulness_reports_no_generated_answer() -> None:
-    async def judge(prompt: str) -> str:
-        raise AssertionError("judge should not be called without a generated answer")
+    backend = _FakeBackend(score=1.0, should_be_called=False)
 
     case = EvaluationCase(
         query="What is the limitation period?",
@@ -91,7 +109,7 @@ async def test_faithfulness_reports_no_generated_answer() -> None:
         ],
     )
 
-    result = await FaithfulnessMetric(evaluator=RAGEvaluator(judge=judge)).evaluate(case=case)
+    result = await FaithfulnessMetric(backend=backend).evaluate(case=case)
 
     # Not applicable, not a failure -- see the passed=True rationale in
     # faithfulness.py. A case with no generated answer must not drag
@@ -102,9 +120,8 @@ async def test_faithfulness_reports_no_generated_answer() -> None:
 
 
 @pytest.mark.asyncio
-async def test_faithfulness_reports_judge_unavailable_on_invalid_score() -> None:
-    async def judge(prompt: str) -> str:
-        return "not a JSON response at all"
+async def test_faithfulness_reports_judge_unavailable_when_backend_returns_none() -> None:
+    backend = _FakeBackend(score=None)
 
     case = EvaluationCase(
         query="What is the limitation period?",
@@ -114,7 +131,7 @@ async def test_faithfulness_reports_judge_unavailable_on_invalid_score() -> None
         ],
     )
 
-    result = await FaithfulnessMetric(evaluator=RAGEvaluator(judge=judge)).evaluate(case=case)
+    result = await FaithfulnessMetric(backend=backend).evaluate(case=case)
 
     assert result.score == 0.0
     assert result.passed is False
@@ -123,8 +140,7 @@ async def test_faithfulness_reports_judge_unavailable_on_invalid_score() -> None
 
 @pytest.mark.asyncio
 async def test_faithfulness_rejects_out_of_range_pass_threshold() -> None:
-    async def judge(prompt: str) -> str:
-        return '{"score": 0.5}'
+    backend = _FakeBackend(score=0.5, should_be_called=False)
 
     with pytest.raises(ValueError):
-        FaithfulnessMetric(evaluator=RAGEvaluator(judge=judge), pass_threshold=1.5)
+        FaithfulnessMetric(backend=backend, pass_threshold=1.5)

@@ -9,9 +9,8 @@ from typing import final
 from adapters.clients.llm.base import LLMClient
 from agentic.agents.base import BaseAgent
 from agentic.agents.prompts.legal import LegalPromptBuilder
-from agentic.tools.retrieval import RetrieverTool
 from core.dto.agent import AgentMetadataDTO
-from core.dto.inference import LLMTask
+from core.dto.inference import InferencePolicy, LLMTask
 
 
 @final
@@ -35,10 +34,10 @@ class LegalAgent(BaseAgent):
         self,
         *,
         llm_client: LLMClient,
-        retriever: RetrieverTool,
+        inference_policy: InferencePolicy | None = None,
     ) -> None:
         super().__init__(
             llm_client=llm_client,
             prompt_builder=LegalPromptBuilder(),
-            retriever=retriever,
+            inference_policy=inference_policy,
         )

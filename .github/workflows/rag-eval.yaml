@@ -1,0 +1,95 @@
+name: RAG Golden Dataset Evaluation
+
+# Not run on every PR: needs a real Postgres+pgvector service (none of
+# today's CI jobs use one -- unit tests run against SQLite) and
+# downloads the embedding/reranker models from HuggingFace on a cold
+# runner, adding real time + an external-network flake risk for a
+# small, slow-changing 2-document/29-case dataset. Nightly + on-demand
+# catches regressions without taxing every PR.
+on:
+  schedule:
+    - cron: "0 6 * * *" # 06:00 UTC daily
+  workflow_dispatch: {}
+
+defaults:
+  run:
+    shell: bash -eo pipefail {0}
+
+env:
+  PYTHON_VERSION: "3.11.9"
+  PASS_RATE_THRESHOLD: "65.0"
+
+jobs:
+  rag-golden-eval:
+    name: Golden Dataset Retrieval Evaluation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: juris_ai_user
+          POSTGRES_PASSWORD: juris_ai_password
+          POSTGRES_DB: juris_ai_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U juris_ai_user -d juris_ai_db"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      ENVIRONMENT: development
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_USER: juris_ai_user
+      DB_PASSWORD: juris_ai_password
+      DB_NAME: juris_ai_db
+      SECRET_KEY: ${{ secrets.SECRET_KEY }}
+      JWT_SECRET_KEY: ${{ secrets.JWT_SECRET_KEY }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      SEARXNG_BASE_URL: "http://localhost"
+      # ragas gets imported regardless of faithfulness_backend selection;
+      # this is its own sanctioned opt-out for the analytics thread's
+      # network flush (see ragas/_analytics.py).
+      RAGAS_DO_NOT_TRACK: "true"
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Setup Python and Poetry
+        uses: ./.github/actions/setup-python-poetry
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          poetry-groups: "--with=dev,eval"
+
+      - name: Run database migrations
+        run: poetry run alembic upgrade head
+
+      - name: Ingest golden-dataset corpus
+        env:
+          PYTHONPATH: src
+        run: poetry run python -m rag.ingestion.ingest_offline raw_datasets/acts
+
+      - name: Run golden-dataset retrieval evaluation
+        env:
+          PYTHONPATH: src
+        run: |
+          poetry run python scripts/evaluate_rag_retrieval.py | tee eval_output.log
+
+          PASS_RATE=$(grep -oP 'Pass rate:\s+\K[0-9.]+' eval_output.log)
+
+          if [ -z "$PASS_RATE" ]; then
+            echo "::error::Could not parse pass rate from evaluation output."
+            exit 1
+          fi
+
+          echo "Golden-dataset pass rate: ${PASS_RATE}% (gate: ${{ env.PASS_RATE_THRESHOLD }}%)"
+
+          if awk -v p="$PASS_RATE" -v t="${{ env.PASS_RATE_THRESHOLD }}" 'BEGIN {exit !(p < t)}'; then
+            echo "::error::Golden-dataset pass rate ${PASS_RATE}% is below the ${{ env.PASS_RATE_THRESHOLD }}% gate."
+            exit 1
+          fi

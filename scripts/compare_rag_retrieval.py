@@ -17,7 +17,7 @@ from rag.hybrid_retriever import HybridRetriever
 from rag.keyword_store import PostgresKeywordStore
 from rag.pgvector_store import PgVectorStore
 from rag.reranker import CrossEncoderReranker
-from wiring.factories.evaluation import build_rag_evaluator
+from wiring.factories.evaluation import build_faithfulness_backend
 
 DATASET_PATH = "tests/datasets/rag/evaluation/legal_retrieval_gold_v1.json"
 TOP_K = 5
@@ -102,7 +102,7 @@ async def main() -> None:
             # mean_scores, but it does NOT drag down passed_cases/
             # pass_rate. Wired in now so it activates automatically
             # once that gap is closed.
-            FaithfulnessMetric(evaluator=build_rag_evaluator(settings=settings)),
+            FaithfulnessMetric(backend=build_faithfulness_backend(settings=settings)),
         ],
     )
 

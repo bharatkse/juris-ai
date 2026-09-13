@@ -18,10 +18,25 @@ configured LLM client into the judge callable expected here.
 
 Metrics:
 
-    - Faithfulness
+    - Faithfulness (hand-rolled judge -- kept as the "legacy" backend;
+      see below)
     - Answer Relevancy
     - Context Precision
     - Context Recall
+
+Faithfulness has a second, ragas-backed implementation (see
+rag.evaluation.ragas_faithfulness) and switching between the two is a
+single settings-driven decision -- see
+rag.evaluation.faithfulness_backend.FaithfulnessBackend and
+wiring.factories.evaluation.build_faithfulness_backend, the one place
+that decision is made. This class's own faithfulness() method is not
+retired: it is exactly what LegacyFaithfulnessBackend wraps.
+
+evaluate() always returns RAGEvalResult.faithfulness=None -- callers
+needing a faithfulness score go through FaithfulnessBackend (which may
+or may not be backed by this class's faithfulness() method, depending
+on the settings switch) and merge the result in themselves, rather
+than evaluate() hard-wiring one specific backend's choice.
 
 Context recall requires a ground-truth answer and is normally used
 only for offline evaluation against a labeled evaluation dataset.
@@ -215,6 +230,10 @@ class RAGEvaluator:
     ) -> float | None:
         """
         Evaluate whether answer claims are supported by the context.
+
+        This is the "legacy" faithfulness judge -- LegacyFaithfulnessBackend
+        wraps this method. See this module's docstring for how it relates
+        to the ragas-backed alternative and the settings switch between them.
         """
 
         result = await self._evaluate_prompt(
@@ -324,6 +343,11 @@ class RAGEvaluator:
 
         Evaluation failures produce unavailable metrics rather than
         propagating an exception into the RAG request.
+
+        faithfulness is always None here -- it is computed separately
+        via ragas_faithfulness.score_faithfulness() (ragas' own
+        Faithfulness metric) and merged into this result by the caller.
+        See this module's docstring for why.
         """
 
         context = "\n\n".join(retrieved_chunks)
@@ -342,15 +366,10 @@ class RAGEvaluator:
             )
 
         (
-            faithfulness,
             answer_relevancy,
             context_precision,
             context_recall,
         ) = await asyncio.gather(
-            self.faithfulness(
-                context=context,
-                answer=answer,
-            ),
             self.answer_relevancy(
                 question=question,
                 answer=answer,
@@ -363,7 +382,7 @@ class RAGEvaluator:
         )
 
         return RAGEvalResult(
-            faithfulness=faithfulness,
+            faithfulness=None,
             answer_relevancy=answer_relevancy,
             context_precision=context_precision,
             context_recall=context_recall,

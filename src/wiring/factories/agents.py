@@ -51,21 +51,15 @@ def register_agents(
         default_max_output_tokens=settings.llm.LLM_MAX_OUTPUT_TOKENS,
     )
 
-    retriever = registries.tool_registry.resolve(
-        key="retriever",
-    )
-
     llm_client = clients.llm_resolver.get()
 
     legal_agent = LegalAgent(
         llm_client=llm_client,
-        retriever=retriever,
         inference_policy=inference_policy,
     )
 
     contract_agent = ContractAgent(
         llm_client=llm_client,
-        retriever=retriever,
         inference_policy=inference_policy,
     )
 

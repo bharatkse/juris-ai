@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import SecretStr
 
 from config.base import BaseAppSettings
@@ -31,6 +33,15 @@ class LLMSettings(BaseAppSettings):
     rag_rrf_k: int = 60
     rag_chunk_size: int = 800
     rag_chunk_overlap: int = 100
+    # Single switch point between the two FaithfulnessBackend
+    # implementations (see rag/evaluation/faithfulness_backend.py) --
+    # "legacy" is the proven hand-rolled judge (RAGEvaluator.faithfulness()),
+    # "ragas" is the ragas-library-backed one. Default stays "legacy"
+    # until "ragas" is validated; both FaithfulnessMetric and
+    # OnlineEvalSampler get their backend from the same factory
+    # (wiring/factories/evaluation.py's build_faithfulness_backend), so
+    # flipping this one value changes both at once.
+    faithfulness_backend: Literal["legacy", "ragas"] = "legacy"
 
     # External APIs
     GROQ_API_KEY: SecretStr | None = None

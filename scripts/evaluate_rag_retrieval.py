@@ -11,7 +11,7 @@ from rag.evaluation.metrics.precision import PrecisionAtK
 from rag.evaluation.metrics.recall import RecallAtK
 from rag.evaluation.retrieval_evaluator import RetrievalEvaluator
 from rag.evaluation.retrieval_runner import RetrievalEvaluationRunner
-from wiring.factories.evaluation import build_rag_evaluator
+from wiring.factories.evaluation import build_faithfulness_backend
 from wiring.factories.rag import build_rag_pipeline
 
 DATASET_PATH = Path("tests/datasets/rag/evaluation/legal_retrieval_gold_v1.json")
@@ -42,7 +42,7 @@ async def main() -> None:
             # mean_scores, but it does NOT drag down passed_cases/
             # pass_rate. Wired in now so it activates automatically
             # once that gap is closed.
-            FaithfulnessMetric(evaluator=build_rag_evaluator(settings=settings)),
+            FaithfulnessMetric(backend=build_faithfulness_backend(settings=settings)),
         ],
     )
 

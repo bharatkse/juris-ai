@@ -10,22 +10,30 @@ computed as a retrieval-ground-truth heuristic (expected_evidence /
 expected_sources vs. retrieved_results): it depends on the semantic
 relationship between the *generated answer* and the *retrieved
 context*, which requires a judge capable of natural-language
-entailment. There is exactly one definition of that judgment in this
-codebase -- RAGEvaluator.faithfulness() in evaluator.py, including its
-prompt -- and this metric wraps it rather than re-deriving a second,
-inconsistent definition of "faithfulness".
+entailment. That judgment is delegated to ragas' own Faithfulness
+metric (via rag.evaluation.ragas_faithfulness) rather than a
+hand-rolled prompt, so there is exactly one definition of
+"faithfulness" in play, not two independently drifting ones -- see
+ragas_faithfulness.py's module docstring for the other caller
+(OnlineEvalSampler) that shares this same definition.
 
 This makes FaithfulnessMetric the only metric in this package that
-requires an LLM call (via an injected RAGEvaluator) and the only one
-that evaluates case.answer / case.contexts rather than
-case.expected_evidence / case.expected_sources. It still conforms to
-the RAGMetric contract so it runs interchangeably with the
+requires an LLM call (via an injected FaithfulnessBackend) and the
+only one that evaluates case.answer / case.contexts / case.query
+rather than case.expected_evidence / case.expected_sources. It still
+conforms to the RAGMetric contract so it runs interchangeably with the
 retrieval-only metrics through retrieval_evaluator.py.
+
+Which concrete backend does the judging (the proven hand-rolled judge,
+or ragas' own Faithfulness metric) is not this class's decision --
+see rag.evaluation.faithfulness_backend and
+wiring.factories.evaluation.build_faithfulness_backend, the single
+switch point for that.
 """
 
 from __future__ import annotations
 
-from rag.evaluation.evaluator import RAGEvaluator
+from rag.evaluation.faithfulness_backend import FaithfulnessBackend
 from rag.evaluation.metrics.base import RAGMetric
 from rag.evaluation.models import EvaluationCase, MetricResult
 
@@ -36,13 +44,13 @@ class FaithfulnessMetric(RAGMetric):
     def __init__(
         self,
         *,
-        evaluator: RAGEvaluator,
+        backend: FaithfulnessBackend,
         pass_threshold: float = 0.6,
     ) -> None:
         if not 0.0 <= pass_threshold <= 1.0:
             raise ValueError("pass_threshold must be between 0.0 and 1.0.")
 
-        self._evaluator = evaluator
+        self._backend = backend
         self._pass_threshold = pass_threshold
 
     @property
@@ -83,9 +91,10 @@ class FaithfulnessMetric(RAGMetric):
                 },
             )
 
-        score = await self._evaluator.faithfulness(
-            context="\n\n".join(contexts),
+        score = await self._backend.evaluate(
+            query=case.query,
             answer=case.answer,
+            contexts=contexts,
         )
 
         if score is None:

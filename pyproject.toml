@@ -71,6 +71,12 @@ alembic = "^1.13.1"
 # PDF parsing and text extraction
 pypdf = "^6.15.0"
 python-docx = "^1.2.0"
+# HTML parsing (rag/ingestion/parsers/file.py's _parse_html) -- was
+# previously present only as an untracked/incidental install, not a
+# declared dependency; discovered and fixed while resolving an
+# unrelated ragas/langchain-community conflict (`poetry install --sync`
+# correctly removed it as untracked, which is what surfaced the gap).
+beautifulsoup4 = "^4.12.3"
 
 # -------------------------------------------------
 # Embeddings / Vector Search
@@ -149,8 +155,20 @@ langsmith = "^0.10.17"
 # Evaluation Dependencies
 # -------------------------------------------------
 [tool.poetry.group.eval.dependencies]
-ragas = "^0.2"
+# Pinned exact, not "^0.2": the langchain-community<0.4 pin below was
+# hand-verified against this specific ragas version's import chain
+# (ragas/llms/base.py). An unconstrained ^0.2 lets `poetry update`
+# silently pick a newer ragas patch whose compatibility with that pin
+# has not been checked.
+ragas = "0.2.15"
 datasets = "^2.20"
+# ragas 0.2.x declares no upper bound on langchain-community ("*"), so
+# an unconstrained resolution picks the latest available -- which, as
+# of langchain-community 0.4.x, dropped the old langchain_community
+# .chat_models.vertexai module that ragas/llms/base.py imports
+# eagerly at package load, making `import ragas` fail outright. Pin to
+# the last pre-split (0.3.x) line, which still has that module.
+langchain-community = "<0.4"
 
 
 # -------------------------------------------------

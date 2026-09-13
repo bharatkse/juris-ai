@@ -4,6 +4,8 @@ Unit pytest configuration.
 
 from __future__ import annotations
 
+import os
+
 pytest_plugins = [
     "tests.fixtures.environment",
     "tests.fixtures.faker",
@@ -23,3 +25,5 @@ pytest_plugins = [
     "tests.fixtures.agentic.execution",
     "tests.fixtures.agentic.agents",
 ]
+
+os.environ.setdefault("RAGAS_DO_NOT_TRACK", "true")

@@ -11,16 +11,22 @@ For rigorous, ground-truth-backed evaluation, use
 rag/evaluation/ragas_offline.py against a curated eval set instead —
 this sampler only computes the three metrics that don't need a
 ground-truth answer (faithfulness, answer_relevancy,
-context_precision).
+context_precision). faithfulness is scored via an injected
+FaithfulnessBackend (legacy or ragas, per settings.llm.faithfulness_backend)
+rather than by RAGEvaluator itself -- see
+wiring.factories.evaluation.build_faithfulness_backend.
 """
 
 from __future__ import annotations
 
+import asyncio
 import random
+from dataclasses import replace
 
 from adapters.observability.logger import get_logger
 from adapters.observability.telemetry import get_meter
 from rag.evaluation.evaluator import RAGEvaluator
+from rag.evaluation.faithfulness_backend import FaithfulnessBackend
 
 log = get_logger(__name__)
 
@@ -36,9 +42,17 @@ class OnlineEvalSampler:
         self,
         *,
         evaluator: RAGEvaluator,
+        faithfulness_backend: FaithfulnessBackend,
         sample_rate: float = DEFAULT_SAMPLE_RATE,
     ) -> None:
         self._evaluator = evaluator
+        # Same FaithfulnessBackend (legacy or ragas, per the settings
+        # switch -- see wiring/factories/evaluation.py's
+        # build_faithfulness_backend) that FaithfulnessMetric uses.
+        # RAGEvaluator.evaluate() no longer computes faithfulness
+        # itself (see evaluator.py's module docstring), so it's scored
+        # here and merged into RAGEvaluator's result below.
+        self._faithfulness_backend = faithfulness_backend
         self._sample_rate = sample_rate
 
         meter = get_meter("juris-agentic.rag_evaluation")
@@ -76,15 +90,24 @@ class OnlineEvalSampler:
         """
 
         try:
-            result = await self._evaluator.evaluate(
-                question=question,
-                answer=answer,
-                retrieved_chunks=retrieved_chunks,
+            result, faithfulness = await asyncio.gather(
+                self._evaluator.evaluate(
+                    question=question,
+                    answer=answer,
+                    retrieved_chunks=retrieved_chunks,
+                ),
+                self._faithfulness_backend.evaluate(
+                    query=question,
+                    answer=answer,
+                    contexts=retrieved_chunks,
+                ),
             )
 
         except Exception:
             log.exception("Online RAG evaluation failed for request_id=%s.", request_id)
             return
+
+        result = replace(result, faithfulness=faithfulness)
 
         tags = {"request_id": request_id}
         if result.faithfulness is not None:

@@ -1,13 +1,13 @@
 """
 Tests for RAGEvaluator (rag/evaluation/evaluator.py).
 
-RAGEvaluator has no prior test coverage anywhere in this codebase --
-confirmed by searching every import of it: only online_sampler.py
-references it, and nothing calls online_sampler.py either. These
+RAGEvaluator.faithfulness() is the "legacy" judge that
+LegacyFaithfulnessBackend wraps (see faithfulness_backend.py) -- these
 tests exercise the real prompt formatting, judge-response parsing
 (including _JSON_BLOCK_REGEX extraction from a realistic,
 non-pure-JSON judge response), and score validation/clamping
-end-to-end -- not just a metric class's delegation to it.
+end-to-end, independent of which FaithfulnessBackend a caller has
+selected.
 """
 
 from __future__ import annotations
