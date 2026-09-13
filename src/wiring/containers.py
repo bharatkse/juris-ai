@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from agentic.tools.search_engine.content_fetch import ContentFetcher
     from application.authorization.service import AuthorizationService
     from rag.hybrid_retriever import HybridRetriever
+    from rag.protocols.embedding_provider import EmbeddingProviderProtocol
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,6 +33,10 @@ class ClientContainer:
     # Built once at startup (factories/rag.py) — holds the loaded
     # embedding + reranker models. Never reconstruct this per-request.
     hybrid_retriever: HybridRetriever
+    # Same underlying instance as hybrid_retriever's — exposed directly
+    # for consumers (e.g. the agentic answer evaluator) that need raw
+    # text similarity rather than retrieval.
+    embedding_provider: EmbeddingProviderProtocol
 
 
 @dataclass(frozen=True, slots=True)

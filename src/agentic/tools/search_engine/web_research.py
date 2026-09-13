@@ -19,8 +19,11 @@ from agentic.tools.search_engine.content_fetch import ContentFetcher
 from agentic.tools.search_engine.url_normalizer import normalize_and_dedupe
 from core.dto.clients.search_engine import WebPageContent
 from core.exceptions.client import ClientConnectionError
+from rag.ingestion.sanitizer import SecuritySanitizer, ThreatLevel
 
 log = get_logger(__name__)
+
+WITHHELD_TITLE_MESSAGE = "[title withheld: prompt-injection pattern detected]"
 
 
 class WebResearchTool(Tool):
@@ -45,6 +48,12 @@ class WebResearchTool(Tool):
     ) -> None:
         self._searxng = searxng_client
         self._fetcher = content_fetcher
+        # ContentFetcher already scans page BODY text (page.text) before
+        # it reaches us. Titles are a separate injection vector -- they
+        # come from the search engine's/page's own <title>, are just as
+        # attacker-controlled, and are interpolated directly into the
+        # prompt block below, so they need their own scan.
+        self._sanitizer = SecuritySanitizer()
 
     async def execute(
         self,
@@ -78,10 +87,9 @@ class WebResearchTool(Tool):
 
         return self._format_for_llm(pages=pages)
 
-    @staticmethod
-    def _format_for_llm(*, pages: list[WebPageContent]) -> str:
+    def _format_for_llm(self, *, pages: list[WebPageContent]) -> str:
         blocks = [
-            f"Source: {page.title}\nURL: {page.url}\n\n{page.text}"
+            f"Source: {self._safe_title(page.title)}\nURL: {page.url}\n\n{page.text}"
             for page in pages
             if page.fetch_succeeded
         ]
@@ -90,3 +98,19 @@ class WebResearchTool(Tool):
             return "Search results found, but no page content could be fetched."
 
         return "\n\n---\n\n".join(blocks)
+
+    def _safe_title(self, title: str) -> str:
+        scan = self._sanitizer.sanitize_and_scan(
+            title,
+            fail_on=(ThreatLevel.CRITICAL,),
+        )
+
+        if not scan.is_safe:
+            log.warning(
+                "Prompt-injection pattern detected in page title; "
+                "title withheld: threat_count=%d.",
+                len(scan.threats),
+            )
+            return WITHHELD_TITLE_MESSAGE
+
+        return scan.clean_text

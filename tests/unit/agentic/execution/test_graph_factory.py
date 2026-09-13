@@ -32,6 +32,8 @@ def test_create_builds_agent_node_and_compiles_graph() -> None:
     agent_policy_guard = MagicMock()
     tool_execution_service = MagicMock()
     collaboration_bus = MagicMock()
+    answer_evaluator = MagicMock()
+    answer_quality_policy = MagicMock()
 
     factory = ExecutionGraphFactory(
         builder=builder,
@@ -43,6 +45,8 @@ def test_create_builds_agent_node_and_compiles_graph() -> None:
         agent_policy_guard=agent_policy_guard,
         tool_execution_service=tool_execution_service,
         collaboration_bus=collaboration_bus,
+        answer_evaluator=answer_evaluator,
+        answer_quality_policy=answer_quality_policy,
     )
 
     with (
@@ -76,6 +80,9 @@ def test_create_builds_agent_node_and_compiles_graph() -> None:
     continuation_service_cls.assert_called_once_with(
         tool_execution_service=tool_execution_service,
         collaboration_bus=collaboration_bus,
+        answer_evaluator=answer_evaluator,
+        answer_quality_policy=answer_quality_policy,
+        agent_policy_guard=agent_policy_guard,
     )
 
     node_cls.assert_called_once_with(

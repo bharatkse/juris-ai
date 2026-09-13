@@ -70,7 +70,7 @@
         "it_act_2000.pdf"
       ],
       "expected_evidence": [
-        "authenticated by means of electronic signature"
+        "authenticated by means of 1[electronic signature] affixed in such manner"
       ],
       "section": "5",
       "evidence_match": "contains"

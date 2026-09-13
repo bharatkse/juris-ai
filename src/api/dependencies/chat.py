@@ -7,6 +7,7 @@ from __future__ import annotations
 from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from adapters.clients.llm.base import LLMClient
 from adapters.persistence.sqlalchemy.repositories.conversation import (
     ConversationRepository,
 )
@@ -16,10 +17,16 @@ from adapters.persistence.sqlalchemy.repositories.conversation_event import (
 from adapters.persistence.sqlalchemy.session import get_db_session
 from agentic.orchestration.orchestrator import AIOrchestrator
 from api.dependencies.action_workflow import get_action_workflow_service
+from api.dependencies.llm import get_llm_client
+from api.dependencies.rate_limit import get_usage_service
 from application.services.action_workflow import ActionWorkflowService
 from application.services.chat import ChatService
 from application.services.conversation import ConversationService
 from application.services.conversation_event import ConversationEventService
+from application.services.conversation_summarization import (
+    ConversationSummarizationService,
+)
+from application.services.usage import UsageService
 
 # ============================================================================
 # Repositories
@@ -95,6 +102,28 @@ def get_conversation_event_service(
     )
 
 
+def get_conversation_summarization_service(
+    session: AsyncSession = Depends(
+        get_db_session,
+    ),
+    conversation_event_service: ConversationEventService = Depends(
+        get_conversation_event_service,
+    ),
+    llm_client: LLMClient = Depends(
+        get_llm_client,
+    ),
+) -> ConversationSummarizationService:
+    """
+    Create a ConversationSummarizationService.
+    """
+
+    return ConversationSummarizationService(
+        session=session,
+        conversation_event_service=conversation_event_service,
+        llm_client=llm_client,
+    )
+
+
 def get_ai_orchestrator(
     request: Request,
 ) -> AIOrchestrator:
@@ -129,6 +158,12 @@ def get_chat_service(
     agent_action_workflow_service: ActionWorkflowService = Depends(
         get_action_workflow_service,
     ),
+    usage_service: UsageService = Depends(
+        get_usage_service,
+    ),
+    conversation_summarization_service: ConversationSummarizationService = Depends(
+        get_conversation_summarization_service,
+    ),
 ) -> ChatService:
     """
     Create a ChatService.
@@ -140,4 +175,6 @@ def get_chat_service(
         conversation_event_service=conversation_event_service,
         orchestrator=orchestrator,
         action_workflow_service=agent_action_workflow_service,
+        usage_service=usage_service,
+        conversation_summarization_service=conversation_summarization_service,
     )

@@ -24,14 +24,26 @@ from agentic.agents.runtime.execution import (
 from agentic.agents.runtime.lifecycle.termination import TerminationReason
 from agentic.collaboration.bus import CollaborationBus
 from agentic.decisions.decision import AgentDecisionType
-from agentic.evaluation.answer import AnswerEvaluator, AnswerQualityPolicy
+from agentic.evaluation.answer import (
+    AnswerEvaluationResult,
+    AnswerEvaluator,
+    AnswerQualityPolicy,
+)
+from agentic.policy.guard import AgentPolicyGuard
 from agentic.tools.result import ToolResult
 from agentic.tools.runtime.invocation import ToolExecutionService
 from agentic.tools.runtime.result_converter import ToolResultConverter
 from core.dto.agent_action import AgentActionRequestDTO
 from core.dto.tool import RetrievedContentDTO
 from core.enums import MessageRoleEnum, RetrievalSourceEnum
+from core.exceptions.registry import ToolNotFoundError
 from core.models.message import AgentMessageSchema
+
+# Broadened relative to RetrieverTool's own default (top_k=5) for a
+# corrective retry -- a fresh attempt at more evidence should cast a
+# wider net than the original call already did. Not empirically
+# tuned; a reasonable, easily-adjusted starting point.
+CORRECTIVE_RETRIEVAL_TOP_K = 8
 
 
 @dataclass(slots=True, frozen=True)
@@ -73,11 +85,13 @@ class AgentContinuationService:
         collaboration_bus: CollaborationBus,
         answer_evaluator: AnswerEvaluator,
         answer_quality_policy: AnswerQualityPolicy,
+        agent_policy_guard: AgentPolicyGuard,
     ) -> None:
         self._tool_execution_service = tool_execution_service
         self._collaboration_bus = collaboration_bus
         self._answer_evaluator = answer_evaluator
         self._answer_quality_policy = answer_quality_policy
+        self._agent_policy_guard = agent_policy_guard
 
     async def execute(
         self,
@@ -363,6 +377,18 @@ class AgentContinuationService:
 
         Returns a new result to continue on (insufficient + budget left),
         or None to accept the FINAL result as-is.
+
+        A groundedness or relevance failure specifically triggers a
+        structural corrective-retrieval retry (_force_corrective_retrieval):
+        a real TOOL_CALL to "retriever" is forced before the next FINAL
+        attempt, rather than just re-asking the same LLM with a note and
+        no new information. Those are the only two dimensions where more
+        evidence is actually the right remedy (an ungrounded or
+        off-topic answer needs new material, not just a nudge); a
+        correctness or citation failure (the only other ways
+        is_sufficient can return False) falls back to the weak
+        re-ask-with-feedback retry below, since forcing a retrieval
+        wouldn't address either.
         """
 
         decision = result.decision
@@ -373,7 +399,7 @@ class AgentContinuationService:
 
         evidence = tuple(item.content for item in handle.reasoning_context)
 
-        evaluation = self._answer_evaluator.evaluate(
+        evaluation = await self._answer_evaluator.evaluate(
             question=self._request_question(handle.request),
             answer=answer,
             evidence=evidence,
@@ -389,6 +415,25 @@ class AgentContinuationService:
             # answer, but return the lifecycle's non-completed terminal result.
             return handle.terminal_result()
 
+        groundedness_failed = (
+            evaluation.groundedness_detail.applicable
+            and evaluation.groundedness < self._answer_quality_policy.min_groundedness
+        )
+        relevance_failed = evaluation.relevance < self._answer_quality_policy.min_relevance
+
+        if groundedness_failed or relevance_failed:
+            retried = await self._force_corrective_retrieval(
+                handle=handle,
+                evaluation=evaluation,
+            )
+
+            if retried is not None:
+                return retried
+
+            # Corrective retrieval itself couldn't run (budget exhausted
+            # or the tool call failed) -- fall through to the weak
+            # retry below rather than giving up outright.
+
         handle.extend_reasoning_context(
             context=(
                 RetrievedContentDTO(
@@ -403,6 +448,103 @@ class AgentContinuationService:
                     ),
                     score=None,
                     metadata={"source_type": "evaluation_feedback"},
+                ),
+            ),
+        )
+
+        return await handle.reason()
+
+    async def _force_corrective_retrieval(
+        self,
+        *,
+        handle: AgentExecutionHandle,
+        evaluation: AnswerEvaluationResult,
+    ) -> AgentExecutionResult | None:
+        """
+        Force a real "retriever" TOOL_CALL before the next FINAL attempt.
+
+        Deterministic, not another LLM guess: re-runs retrieval for the
+        original question (broadened via a higher top_k) rather than
+        asking the model to invent a "refined query" through another
+        generation call -- structural correction, not more self-report.
+
+        Returns the next reasoning result on success, or None if the
+        retrieval itself couldn't be attempted/failed (budget exhausted,
+        policy denial, tool error) -- callers fall back to the weak
+        retry in that case rather than losing the turn entirely.
+
+        Goes through AgentPolicyGuard.check_tool() like any other tool
+        call (agents/runtime/execution.py checks the same way for an
+        LLM-proposed TOOL_CALL) -- this is a system-initiated call, not
+        a user's or the LLM's, but it still uses a real tool and must
+        respect the same policy an agent would otherwise be bound by.
+        """
+
+        permission = self._agent_policy_guard.check_tool(
+            policy=handle.policy,
+            tool_name="retriever",
+        )
+
+        if not permission.allowed:
+            return None
+
+        tool_budget = handle.lifecycle.begin_tool_call()
+
+        if not tool_budget.allowed:
+            return None
+
+        query = self._request_question(handle.request)
+
+        try:
+            tool_result = await self._tool_execution_service.execute(
+                tool_name="retriever",
+                parameters={
+                    "query": query,
+                    "top_k": CORRECTIVE_RETRIEVAL_TOP_K,
+                },
+            )
+
+        except ToolNotFoundError:
+            # No "retriever" tool registered for this deployment/agent --
+            # degrade to the weak retry rather than crashing the
+            # continuation over a system-initiated corrective attempt.
+            return None
+
+        if not tool_result.success:
+            return None
+
+        context = ToolResultConverter.to_reasoning_context(
+            result=tool_result,
+        )
+
+        if not self._record_reasoning_context(
+            handle=handle,
+            context=context,
+        ):
+            return handle.terminal_result()
+
+        if not self._record_progress(
+            handle=handle,
+            context=context,
+        ):
+            return handle.terminal_result()
+
+        handle.extend_reasoning_context(
+            context=(
+                RetrievedContentDTO(
+                    source=RetrievalSourceEnum.MEMORY,
+                    source_name="answer_evaluator",
+                    content=(
+                        f"Previous answer failed quality checks "
+                        f"(groundedness={evaluation.groundedness:.2f}, "
+                        f"relevance={evaluation.relevance:.2f}). Additional "
+                        f"evidence was retrieved above for the same "
+                        f"question -- use it to provide a better-grounded, "
+                        f"more relevant answer, or state that the question "
+                        f"cannot be answered from the available evidence."
+                    ),
+                    score=None,
+                    metadata={"source_type": "corrective_retrieval_feedback"},
                 ),
             ),
         )

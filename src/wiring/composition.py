@@ -56,6 +56,8 @@ def create_ai_orchestrator(
         planner=create_planner(clients=clients),
         executor=create_executor(
             registries=registries,
+            clients=clients,
+            settings=settings,
             checkpointer=checkpointer,
             collaboration_bus=collaboration_bus,
         ),

@@ -92,6 +92,12 @@ pgvector = ">=0.3,<1.0"
 sentence-transformers = "5.1.2"
 torch = { version = "*", source = "pytorch-cpu" }
 
+# Token counting for prompt budgeting (agentic/agents/prompts/token_budget.py).
+# Not an exact tokenizer for the Llama/Qwen models actually in use --
+# see that module's docstring for why cl100k_base is the best available
+# approximation without a gated per-model tokenizer download.
+tiktoken = "^0.14.0"
+
 # ONNX runtime for CPU inference
 onnxruntime = "^1.22"
 # Required by sentence-transformers when CrossEncoder uses backend="onnx".
@@ -271,7 +277,7 @@ pythonpath = ["src"]
 
 
 asyncio_mode = "auto"
-asyncio_default_fixture_loop_scope = "session"
+asyncio_default_fixture_loop_scope = "function"
 
 
 python_files = ["test_*.py"]

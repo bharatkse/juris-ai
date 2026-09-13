@@ -34,6 +34,7 @@ from rag.reranker import CrossEncoderReranker
 
 if TYPE_CHECKING:
     from config.settings import Settings
+    from rag.protocols.embedding_provider import EmbeddingProviderProtocol
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +48,10 @@ class RAGPipeline:
 
     hybrid_retriever: HybridRetriever
     rag_indexer: RAGIndexer
+    # Exposed so other consumers needing text-similarity (e.g. the
+    # agentic answer evaluator) can reuse this same process-lifetime
+    # instance instead of loading a second copy of the model.
+    embedding_provider: EmbeddingProviderProtocol
 
 
 def build_rag_pipeline(*, settings: Settings) -> RAGPipeline:
@@ -71,4 +76,5 @@ def build_rag_pipeline(*, settings: Settings) -> RAGPipeline:
     return RAGPipeline(
         hybrid_retriever=hybrid_retriever,
         rag_indexer=rag_indexer,
+        embedding_provider=embedding_provider,
     )

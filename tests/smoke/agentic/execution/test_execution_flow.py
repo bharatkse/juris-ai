@@ -26,6 +26,7 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
@@ -388,6 +389,11 @@ def test_smoke_lifecycle_budget_exhaustion_is_partial() -> None:
 
 
 def test_smoke_lifecycle_repeated_action_is_bounded() -> None:
+    """
+    max_repeated_action=2 allows 2 consecutive repeats of the same action
+    after its first occurrence (3 occurrences total), then denies the 3rd
+    repeat -- per LoopBreaker.record_action's documented semantic.
+    """
     lifecycle = AgentLifecycle(
         state=AgentState(
             budget=AgentExecutionBudget(max_repeated_action=2),
@@ -399,9 +405,15 @@ def test_smoke_lifecycle_repeated_action_is_bounded() -> None:
     assert first.allowed
 
     second = lifecycle.record_action("tool:smoke_tool")
+    assert second.allowed
 
-    assert not second.allowed
-    assert second.reason is TerminationReason.PARTIAL_REPEATED_ACTION
+    third = lifecycle.record_action("tool:smoke_tool")
+    assert third.allowed
+
+    fourth = lifecycle.record_action("tool:smoke_tool")
+
+    assert not fourth.allowed
+    assert fourth.reason is TerminationReason.PARTIAL_REPEATED_ACTION
     assert lifecycle.state.repeated_action_count == 2
     assert lifecycle.state.status is AgentExecutionStatus.PARTIAL
     assert lifecycle.state.termination_reason is TerminationReason.PARTIAL_REPEATED_ACTION
@@ -460,6 +472,8 @@ async def test_smoke_tool_call_executes_and_continues_reasoning() -> None:
             tool_registry=registry,
         ),
         collaboration_bus=CollaborationBus(),
+        answer_evaluator=AsyncMock(),
+        answer_quality_policy=MagicMock(is_sufficient=MagicMock(return_value=True)),
     )
 
     decision = _tool_decision()
@@ -517,6 +531,8 @@ async def test_smoke_tool_failure_is_failed_tool() -> None:
             tool_registry=registry,
         ),
         collaboration_bus=CollaborationBus(),
+        answer_evaluator=AsyncMock(),
+        answer_quality_policy=MagicMock(is_sufficient=MagicMock(return_value=True)),
     )
 
     decision = _tool_decision()
@@ -560,6 +576,8 @@ async def test_smoke_tool_budget_denial_is_partial_not_failed() -> None:
             tool_registry=registry,
         ),
         collaboration_bus=CollaborationBus(),
+        answer_evaluator=AsyncMock(),
+        answer_quality_policy=MagicMock(is_sufficient=MagicMock(return_value=True)),
     )
 
     decision = _tool_decision()
@@ -620,6 +638,8 @@ async def test_smoke_delegate_routes_through_bus_and_continues() -> None:
             tool_registry=ToolRegistry(),
         ),
         collaboration_bus=bus,
+        answer_evaluator=AsyncMock(),
+        answer_quality_policy=MagicMock(is_sufficient=MagicMock(return_value=True)),
     )
 
     decision = _delegate_decision()
@@ -676,6 +696,8 @@ async def test_smoke_delegate_budget_denial_is_partial() -> None:
             tool_registry=ToolRegistry(),
         ),
         collaboration_bus=bus,
+        answer_evaluator=AsyncMock(),
+        answer_quality_policy=MagicMock(is_sufficient=MagicMock(return_value=True)),
     )
 
     decision = _delegate_decision()
@@ -906,6 +928,8 @@ async def test_smoke_concurrent_continuations_keep_request_context_isolated() ->
             tool_registry=registry,
         ),
         collaboration_bus=CollaborationBus(),
+        answer_evaluator=AsyncMock(),
+        answer_quality_policy=MagicMock(is_sufficient=MagicMock(return_value=True)),
     )
 
     decision = _tool_decision()

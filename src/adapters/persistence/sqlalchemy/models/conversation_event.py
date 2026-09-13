@@ -97,6 +97,7 @@ class ConversationEvent(
 
     conversation: Mapped[Conversation] = relationship(
         back_populates="events",
+        foreign_keys="ConversationEvent.conversation_id",
     )
 
     parent_event: Mapped[ConversationEvent | None] = relationship(

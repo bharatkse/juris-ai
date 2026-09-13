@@ -341,9 +341,14 @@ def test_record_action_repeated_action_increments_count():
 
 
 def test_record_action_denies_at_repeat_limit():
+    """
+    max_repeated_action=2 allows 2 repeats after the first occurrence (3
+    calls total), then denies the 3rd repeat (4th call).
+    """
     budget = AgentExecutionBudget(max_repeated_action=2)
     lifecycle = AgentLifecycle(state=build_state(budget=budget))
 
+    assert lifecycle.record_action("search").allowed is True
     assert lifecycle.record_action("search").allowed is True
     assert lifecycle.record_action("search").allowed is True
     result = lifecycle.record_action("search")

@@ -8129,7 +8129,7 @@ version = "0.14.0"
 description = "tiktoken is a fast BPE tokeniser for use with OpenAI's models"
 optional = false
 python-versions = ">=3.9"
-groups = ["eval"]
+groups = ["main", "eval"]
 files = [
     {file = "tiktoken-0.14.0-cp310-cp310-macosx_10_12_x86_64.whl", hash = "sha256:3b12e54f8bec91433e41aff65d8d1f209a4f678081163747079806e5361f6c91"},
     {file = "tiktoken-0.14.0-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:94f77b60a8ab23580db19ae822744c9716c1720020d2179ca5605112d12326f1"},
@@ -9894,4 +9894,4 @@ cffi = ["cffi (>=1.17,<2.0) ; platform_python_implementation != \"PyPy\" and pyt
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<4.0"
-content-hash = "8bd81372a85f4faa7f6bc851303a7d44a431b35140f814d2db8f69804e5d1668"
+content-hash = "8ea775c56049916a9c80c9636c1a8917577789e4ea215c34a22bb54a34948e41"

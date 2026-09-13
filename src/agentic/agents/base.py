@@ -14,6 +14,7 @@ from typing import ClassVar
 
 from adapters.clients.llm.base import LLMClient
 from agentic.agents.prompts.base import BasePromptBuilder
+from agentic.agents.prompts.token_budget import DEFAULT_RESERVED_OUTPUT_TOKENS
 from agentic.decisions.schemas import AgentDecision
 from core.dto.agent import (
     AgentMetadataDTO,
@@ -84,6 +85,8 @@ class BaseAgent:
         llm_request = self._prompt_builder.build(
             request=request,
             context=context,
+            model=self._llm.model,
+            reserved_output_tokens=self._reserved_output_tokens(),
         )
 
         llm_request = self._apply_inference(
@@ -143,6 +146,8 @@ class BaseAgent:
         llm_request = self._prompt_builder.build(
             request=request,
             context=(),
+            model=self._llm.model,
+            reserved_output_tokens=self._reserved_output_tokens(),
         )
 
         return self._apply_inference(
@@ -150,6 +155,22 @@ class BaseAgent:
             task=self.inference_task,
             structured_output=True,
         )
+
+    def _reserved_output_tokens(self) -> int:
+        """
+        Output-token reservation used when budgeting the prompt.
+
+        The full InferencePolicy resolution (which may pick a
+        task-specific max_output_tokens) doesn't happen until
+        _apply_inference, after the prompt is already built -- see
+        _reason()/_build_llm_request() above. This uses the policy's
+        configured default as a reasonable stand-in rather than
+        resolving the full config twice; a task-specific override that
+        differs from the default isn't reflected in the pre-build
+        budget.
+        """
+
+        return self._inference_policy.default_max_output_tokens or DEFAULT_RESERVED_OUTPUT_TOKENS
 
     def _apply_inference(
         self,

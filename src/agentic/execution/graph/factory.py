@@ -12,6 +12,7 @@ from agentic.agents.runtime.execution import AgentExecution
 from agentic.agents.runtime.retry import RetryClassifier
 from agentic.collaboration.bus import CollaborationBus
 from agentic.decisions.validator import AgentDecisionValidator
+from agentic.evaluation.answer import AnswerEvaluator, AnswerQualityPolicy
 from agentic.execution.config import ExecutionRetryPolicy
 from agentic.execution.graph.builder import ExecutionGraphBuilder
 from agentic.execution.graph.nodes import AgentExecutionNode
@@ -45,6 +46,8 @@ class ExecutionGraphFactory:
         retry_classifier: RetryClassifier,
         tool_execution_service: ToolExecutionService,
         collaboration_bus: CollaborationBus,
+        answer_evaluator: AnswerEvaluator,
+        answer_quality_policy: AnswerQualityPolicy,
         checkpointer: BaseCheckpointSaver,
     ) -> None:
         self._builder = builder
@@ -55,6 +58,8 @@ class ExecutionGraphFactory:
         self._retry_classifier = retry_classifier
         self._tool_execution_service = tool_execution_service
         self._collaboration_bus = collaboration_bus
+        self._answer_evaluator = answer_evaluator
+        self._answer_quality_policy = answer_quality_policy
         self._decision_validator = AgentDecisionValidator()
         self._checkpointer = checkpointer
 
@@ -83,6 +88,9 @@ class ExecutionGraphFactory:
         continuation_service = AgentContinuationService(
             tool_execution_service=self._tool_execution_service,
             collaboration_bus=self._collaboration_bus,
+            answer_evaluator=self._answer_evaluator,
+            answer_quality_policy=self._answer_quality_policy,
+            agent_policy_guard=self._agent_policy_guard,
         )
 
         step_node = AgentExecutionNode(

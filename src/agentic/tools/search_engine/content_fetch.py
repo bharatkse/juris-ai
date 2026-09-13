@@ -38,12 +38,15 @@ import trafilatura
 
 from adapters.observability.logger import get_logger
 from core.dto.clients.search_engine import SearchEngineResultDTO, WebPageContent
+from rag.ingestion.sanitizer import SecuritySanitizer, ThreatLevel
 
 log = get_logger(__name__)
 
 DEFAULT_MAX_CONCURRENCY = 5
 DEFAULT_TIMEOUT_SECONDS = 8.0
 DEFAULT_MAX_CHARS = 4000  # per-page cap fed to the LLM
+
+WITHHELD_CONTENT_MESSAGE = "[content withheld: prompt-injection pattern detected in fetched page]"
 
 
 class ContentFetcher:
@@ -65,6 +68,10 @@ class ContentFetcher:
             follow_redirects=True,
             headers={"User-Agent": "juris-ai-research-bot/1.0"},
         )
+        # Fetched pages are arbitrary, untrusted third-party content --
+        # the same threat model the RAG ingestion sanitizer already
+        # covers for uploaded documents. Stateless, safe to share.
+        self._sanitizer = SecuritySanitizer()
 
     async def close(self) -> None:
         await self._client.aclose()
@@ -118,10 +125,35 @@ class ContentFetcher:
                     error="No extractable content.",
                 )
 
+            # Fetched page text is untrusted and will be dropped directly
+            # into the agent's LLM prompt (WebResearchTool._format_for_llm).
+            # Scan the full extracted text (before truncation, so a
+            # pattern positioned after max_chars is not missed) and
+            # withhold the page entirely on a CRITICAL finding rather
+            # than forwarding it -- do not silently pass it through.
+            scan = self._sanitizer.sanitize_and_scan(
+                extracted,
+                fail_on=(ThreatLevel.CRITICAL,),
+            )
+
+            if not scan.is_safe:
+                log.warning(
+                    "Prompt-injection pattern detected in fetched page; "
+                    "content withheld: url=%s threat_count=%d.",
+                    result.url,
+                    len(scan.threats),
+                )
+                return WebPageContent(
+                    url=result.url,
+                    title=result.title,
+                    text=WITHHELD_CONTENT_MESSAGE,
+                    fetch_succeeded=True,
+                )
+
             return WebPageContent(
                 url=result.url,
                 title=result.title,
-                text=extracted[: self._max_chars],
+                text=scan.clean_text[: self._max_chars],
                 fetch_succeeded=True,
             )
 

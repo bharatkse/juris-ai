@@ -4,10 +4,13 @@ LLM-backed execution plan generator.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from langsmith import traceable
 
 from adapters.clients.llm.base import LLMClient
 from agentic.planning.prompts.planning import PlanningPromptBuilder
+from core.dto.inference import InferencePolicy, LLMTask
 from core.dto.planning import ExecutionPlanDTO, ExecutionStepDTO, PlanningRequestDTO
 from core.models.planning import ExecutionPlanResponseSchema
 
@@ -32,9 +35,20 @@ class LLMPlanGenerator:
         *,
         llm_client: LLMClient,
         prompt_builder: PlanningPromptBuilder,
+        inference_policy: InferencePolicy | None = None,
     ) -> None:
         self._llm = llm_client
         self._prompt_builder = prompt_builder
+        # Planning produces a single structured decision (the execution
+        # plan) consumed programmatically, not prose read by a user --
+        # same inference intent as an agent's STRUCTURED_DECISION
+        # (TOOL_CALL) reasoning. Previously this request carried no
+        # inference config at all, silently falling back to
+        # LLMInferenceConfig's bare dataclass default (temperature=0.2)
+        # instead of a deliberate, low/deterministic setting -- fixed
+        # here rather than relying on that default being low enough by
+        # accident.
+        self._inference_policy = inference_policy or InferencePolicy()
 
     @traceable(
         name="planner",
@@ -55,6 +69,15 @@ class LLMPlanGenerator:
         llm_request = self._prompt_builder.build(
             request=request,
         )
+
+        inference = self._inference_policy.resolve(
+            LLMTask.STRUCTURED_DECISION,
+            model=llm_request.inference.model,
+            top_p=llm_request.inference.top_p,
+            max_output_tokens=llm_request.inference.max_output_tokens,
+            structured_output=True,
+        )
+        llm_request = replace(llm_request, inference=inference)
 
         response = await self._llm.generate_structured(
             request=llm_request,

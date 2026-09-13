@@ -11,19 +11,110 @@ This module intentionally does NOT decide FINAL/CONTINUE.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+import asyncio
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 
-SimilarityFn = Callable[[str, str], float]
+from adapters.observability.logger import get_logger
+from rag.evaluation.faithfulness_backend import FaithfulnessBackend
+
+logger = get_logger(__name__)
+
+SimilarityFn = Callable[[str, str], Awaitable[float]]
 
 
 @dataclass(frozen=True, slots=True)
 class AnswerQualityPolicy:
-    """Deterministic thresholds applied after answer evaluation."""
+    """
+    Deterministic thresholds applied after answer evaluation.
 
-    min_groundedness: float = 0.70
-    min_relevance: float = 0.70
+    min_groundedness and min_relevance were empirically calibrated
+    (2026-09-13) against a small labeled set built from the RAG golden
+    dataset (tests/datasets/rag/evaluation/legal_retrieval_gold_v1.json,
+    29 cases) -- the same "calibrated to the dataset's real achievable
+    ceiling" approach already used for rag.evaluation.metrics'
+    PrecisionAtK, applied here for the first time. Re-run via
+    scripts/calibrate_answer_quality_thresholds.py.
+
+    Method: 29 positives (query + that case's own expected_evidence,
+    formatted as an answer) and 29 negatives (the same query paired
+    with a DIFFERENT case's expected_evidence -- an answer unsupported
+    by what's actually retrieved for that question), scored with the
+    real AnswerEvaluator (real embeddings, real Groq-backed
+    FaithfulnessBackend, not mocked).
+
+    Results:
+      groundedness -- perfectly separated: every positive scored >= 0.5
+        (median 0.5, two scored 1.0), every negative scored exactly
+        0.0. Any threshold in (0, 0.5] gives 100% accuracy on this set;
+        0.70 (the prior unexamined default) would have rejected 27/29
+        genuinely grounded answers. Set to 0.50, the top of the
+        positive cluster.
+      relevance -- positives 0.453-0.835 (mean 0.686), negatives
+        0.439-0.679 (mean 0.530); overlapping, not cleanly separable.
+        A sweep over candidate thresholds found 0.60 maximizes accuracy
+        (86.2%: 22/29 positives correctly pass, 28/29 negatives
+        correctly fail). 0.70 only reached 75.9% (rejecting over half
+        of genuinely relevant answers). Set to 0.60.
+
+    Caveats, stated rather than hidden: n=29 per group, single legal
+    corpus (IT Act 2000), one negative-construction strategy
+    (evidence-swap, not model-generated hallucinations), and
+    single-sentence synthetic positives -- some scored only 0.5 on
+    groundedness because appending "(Section X)" made the answer a
+    second, unverifiable claim rather than because the underlying fact
+    was ungrounded (see the calibration script's positive-construction
+    comment). This is a real calibration against real signals, not a
+    guess, but it is a first pass on a small, narrow set -- revisit as
+    real production traffic accumulates.
+
+    min_correctness was empirically calibrated (2026-09-13, same script
+    and dataset as above, extended). Positives: candidate answer scored
+    against THIS case's own gold reference (the bare expected_evidence
+    text). Negatives: the same case's query/evidence, but scored
+    against the WRONG case's answer -- a mismatched response judged
+    against the right question's gold reference. Positives 0.876-0.973
+    (mean 0.931), negatives 0.400-0.724 (mean 0.524) -- cleanly
+    separated, no overlap. A sweep found 0.75 gives perfect accuracy
+    (100%: 29/29 positives correctly pass, 29/29 negatives correctly
+    fail; 0.80 ties it, 0.70 already drops one negative). Set to 0.75.
+
+    Caveat specific to correctness: it's still never exercised in the
+    live path today (_gate_final never supplies a reference_answer, so
+    result.correctness is always None there -- see is_sufficient) --
+    this calibration is ready for whenever that changes, not yet load-
+    bearing. And like the calibration above, this is one negative-
+    construction strategy (evidence-swap) on n=29 from a single corpus
+    -- a real signal, not a guess, but not a substitute for recalibrating
+    against production data once available.
+
+    min_citation_precision/min_citation_coverage have NO empirical
+    calibration, and -- unlike groundedness/relevance/correctness --
+    none is possible from this dataset: _evaluate_citations is exact
+    set-membership (a cited source either is or isn't in the retrieved
+    set), producing only the extremes 0.0 or 1.0 per case, not a
+    continuous score with an overlapping distribution to sweep a
+    threshold over. Confirmed via calibrate_answer_quality_thresholds.py:
+    a correct citation scores (precision=1.0, coverage=1.0), a wrong one
+    scores (0.0, 0.0) -- exactly as expected, but this is a sanity check
+    of the metric, not a calibration of the threshold. 0.70 remains a
+    policy choice (how much imperfect citing to tolerate), stated as
+    such rather than dressed up as empirically derived.
+
+    min_completeness is advisory only -- see is_sufficient's docstring.
+    Kept as a named threshold (rather than deleted) so the "is this
+    complete enough" question stays answerable/loggable even though it
+    no longer gates. Not recalibrated: an advisory number doesn't need
+    the same rigor as a blocking one, and the prior audit already
+    showed embedding-similarity-based completeness scores are
+    structurally noisy against verbose evidence regardless of where
+    the line is drawn.
+    """
+
+    min_groundedness: float = 0.50
+    min_relevance: float = 0.60
     min_completeness: float = 0.70
+    min_correctness: float = 0.75
     min_citation_precision: float = 0.70
     min_citation_coverage: float = 0.70
     enforce_citations: bool = False
@@ -31,15 +122,54 @@ class AnswerQualityPolicy:
     def is_sufficient(self, result: AnswerEvaluationResult) -> bool:
         """Return whether the evaluated answer satisfies the quality policy.
 
-        Correctness is evaluated only when a reference answer is supplied;
-        no correctness threshold is imposed when correctness is unavailable.
+        Groundedness is skipped, not failed, when no evidence was available
+        to check the answer against (result.groundedness_detail.applicable
+        is False) -- absence of evidence must not, by itself, force another
+        reasoning turn.
+
+        Groundedness and relevance are hard requirements: an ungrounded
+        (hallucinated) or irrelevant (off-topic) answer must never pass,
+        regardless of anything else.
+
+        Completeness is advisory, not blocking (logged when below
+        min_completeness, but does not affect the return value). Unlike
+        groundedness/relevance, completeness is a thoroughness/style
+        property, not a safety property -- a short, fully grounded,
+        fully relevant answer measured against verbose evidence can
+        legitimately score low on embedding-similarity-based
+        completeness without being a bad answer (confirmed empirically
+        with real embeddings during the answer.py audit). Gating on it
+        with the same hard AND-threshold as groundedness/relevance
+        forces the agent into unproductive extra reasoning loops on
+        answers that are already good -- a known failure mode of
+        strict-AND multi-dimension quality gates. There is no existing
+        calibration data to derive a principled alternative (e.g.
+        weighted) threshold from, so rather than invent one,
+        completeness is demoted to an observed-and-logged signal until
+        real calibration data exists to justify a specific number.
+
+        Correctness is checked only when a reference answer was actually
+        supplied (result.correctness is not None); it plays no role in
+        sufficiency otherwise.
         """
 
-        if not (
-            result.groundedness >= self.min_groundedness
-            and result.relevance >= self.min_relevance
-            and result.completeness >= self.min_completeness
-        ):
+        groundedness_ok = (
+            not result.groundedness_detail.applicable
+            or result.groundedness >= self.min_groundedness
+        )
+
+        if result.completeness < self.min_completeness:
+            logger.info(
+                "Answer completeness below advisory threshold "
+                "(completeness=%.2f, min_completeness=%.2f); not blocking.",
+                result.completeness,
+                self.min_completeness,
+            )
+
+        if not (groundedness_ok and result.relevance >= self.min_relevance):
+            return False
+
+        if result.correctness is not None and result.correctness < self.min_correctness:
             return False
 
         if not self.enforce_citations:
@@ -53,11 +183,16 @@ class AnswerQualityPolicy:
 
 @dataclass(frozen=True, slots=True)
 class GroundednessResult:
-    """Groundedness signal for an answer against supplied evidence."""
+    """
+    Groundedness signal for an answer against supplied evidence.
+
+    ``applicable`` is False when there was no evidence to check the answer
+    against. That is a missing basis for judgment, not a failed check --
+    see AnswerQualityPolicy.is_sufficient.
+    """
 
     score: float
-    supported_claims: int
-    total_claims: int
+    applicable: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,20 +213,36 @@ class AnswerEvaluationResult:
 
 
 class AnswerEvaluator:
-    """Deterministically evaluates a proposed answer using semantic similarity.
+    """Evaluates a proposed answer's quality signals.
 
-    The similarity function is injected so the evaluator is independent of a
-    specific embedding implementation. Runtime callers can provide the
-    platform's existing embedding provider.
+    Relevance, completeness, and correctness are embedding-similarity
+    based (via the injected SimilarityFn) -- those are genuinely just
+    "how close are these two texts", which similarity measures reasonably.
+
+    Groundedness is judged by an injected FaithfulnessBackend instead of
+    similarity: cosine similarity between a claim and a context sentence
+    tracks topical overlap, not factual entailment, so it cannot catch a
+    confidently wrong number or a fabricated requirement sitting in an
+    otherwise on-topic sentence. FaithfulnessBackend is the same
+    legacy/ragas switch point RAG evaluation uses (see
+    rag.evaluation.faithfulness_backend and
+    wiring.factories.evaluation.build_faithfulness_backend) -- this class
+    does not know or care which concrete backend it was given.
 
     This evaluator produces quality signals; a separate policy decides whether
     those signals are sufficient to accept a proposed FINAL decision.
     """
 
-    def __init__(self, *, similarity: SimilarityFn) -> None:
+    def __init__(
+        self,
+        *,
+        similarity: SimilarityFn,
+        faithfulness_backend: FaithfulnessBackend,
+    ) -> None:
         self._similarity = similarity
+        self._faithfulness_backend = faithfulness_backend
 
-    def evaluate(
+    async def evaluate(
         self,
         *,
         question: str,
@@ -101,24 +252,27 @@ class AnswerEvaluator:
         citations: Sequence[str] = (),
         citation_sources: Sequence[str] = (),
     ) -> AnswerEvaluationResult:
-        groundedness_detail = self._evaluate_groundedness(
+        groundedness_detail = await self._evaluate_groundedness(
+            question=question,
             answer=answer,
             evidence=evidence,
         )
 
-        relevance = self._evaluate_relevance(
+        relevance = await self._evaluate_relevance(
             question=question,
             answer=answer,
         )
 
-        completeness = self._evaluate_completeness(
+        completeness = await self._evaluate_completeness(
             question=question,
             answer=answer,
             evidence=evidence,
         )
 
         correctness = (
-            self._similarity(answer, reference_answer) if reference_answer is not None else None
+            await self._similarity(answer, reference_answer)
+            if reference_answer is not None
+            else None
         )
 
         citation_precision, citation_coverage = self._evaluate_citations(
@@ -137,35 +291,42 @@ class AnswerEvaluator:
             groundedness_detail=groundedness_detail,
         )
 
-    def _evaluate_groundedness(
+    async def _evaluate_groundedness(
         self,
         *,
+        question: str,
         answer: str,
         evidence: Sequence[str],
     ) -> GroundednessResult:
-        claims = _claims(answer)
-
-        if not claims:
-            return GroundednessResult(0.0, 0, 0)
+        if not answer.strip():
+            return GroundednessResult(score=0.0, applicable=True)
 
         if not evidence:
-            return GroundednessResult(0.0, 0, len(claims))
+            # Not applicable, not a failure: there is nothing to check the
+            # answer against. AnswerQualityPolicy.is_sufficient skips this
+            # signal rather than treating it as a failed check.
+            return GroundednessResult(score=0.0, applicable=False)
 
-        supported = sum(
-            max(self._similarity(claim, item) for item in evidence) >= 0.70 for claim in claims
-        )
-        return GroundednessResult(
-            score=supported / len(claims),
-            supported_claims=supported,
-            total_claims=len(claims),
+        score = await self._faithfulness_backend.evaluate(
+            query=question,
+            answer=answer,
+            contexts=list(evidence),
         )
 
-    def _evaluate_relevance(self, *, question: str, answer: str) -> float:
+        if score is None:
+            # Judge evaluation unavailable is a real failure to establish
+            # groundedness, unlike "no evidence" above -- it counts against
+            # the answer rather than being skipped.
+            return GroundednessResult(score=0.0, applicable=True)
+
+        return GroundednessResult(score=score, applicable=True)
+
+    async def _evaluate_relevance(self, *, question: str, answer: str) -> float:
         if not question.strip() or not answer.strip():
             return 0.0
-        return self._similarity(question, answer)
+        return await self._similarity(question, answer)
 
-    def _evaluate_completeness(
+    async def _evaluate_completeness(
         self,
         *,
         question: str,
@@ -179,10 +340,12 @@ class AnswerEvaluator:
         # evidence concepts. Otherwise use question-to-answer relevance as the
         # available deterministic signal.
         if evidence:
-            scores = [self._similarity(item, answer) for item in evidence]
+            scores = await asyncio.gather(
+                *(self._similarity(item, answer) for item in evidence),
+            )
             return sum(scores) / len(scores)
 
-        return self._similarity(question, answer)
+        return await self._similarity(question, answer)
 
     def _evaluate_citations(
         self,
@@ -212,13 +375,3 @@ class AnswerEvaluator:
         coverage = len(cited_evidence) / len(source_set)
 
         return precision, coverage
-
-
-def _claims(answer: str) -> list[str]:
-    """Split an answer into simple claim-sized units.
-
-    This is intentionally conservative and deterministic. It is not intended
-    to replace an LLM judge in offline evaluation.
-    """
-
-    return [claim.strip() for claim in answer.replace("\n", " ").split(".") if claim.strip()]

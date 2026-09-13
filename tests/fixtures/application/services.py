@@ -58,12 +58,34 @@ def mock_action_workflow_service() -> MagicMock:
 
 
 @pytest.fixture
+def mock_usage_service() -> MagicMock:
+    service = MagicMock()
+
+    service.record = AsyncMock()
+
+    return service
+
+
+@pytest.fixture
+def mock_conversation_summarization_service() -> MagicMock:
+    service = MagicMock()
+
+    # Pass-through by default: no summarization side effects unless a
+    # test explicitly overrides this.
+    service.ensure_summarized = AsyncMock(side_effect=lambda *, conversation: conversation)
+
+    return service
+
+
+@pytest.fixture
 def chat_service(
     mock_async_session: AsyncMock,
     mock_conversation_service: MagicMock,
     mock_conversation_event_service: MagicMock,
     mock_orchestrator: MagicMock,
     mock_action_workflow_service: MagicMock,
+    mock_usage_service: MagicMock,
+    mock_conversation_summarization_service: MagicMock,
 ) -> ChatService:
     """
     Return a chat service.
@@ -75,6 +97,8 @@ def chat_service(
         conversation_event_service=mock_conversation_event_service,
         orchestrator=mock_orchestrator,
         action_workflow_service=mock_action_workflow_service,
+        usage_service=mock_usage_service,
+        conversation_summarization_service=mock_conversation_summarization_service,
     )
 
 

@@ -22,6 +22,7 @@ from config.settings import get_settings
 from core.constants import API_DESCRIPTION, API_TITLE
 from core.utils.file_system import ensure_dir
 from wiring.composition import create_ai_orchestrator
+from wiring.factories.agent_policies import seed_default_agent_policies
 
 logger = get_logger(__name__)
 
@@ -107,6 +108,8 @@ async def lifespan(
     await startup()
 
     try:
+        await seed_default_agent_policies()
+
         async with AsyncPostgresSaver.from_conn_string(
             settings.langgraph_database_url,
         ) as checkpointer:

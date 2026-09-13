@@ -66,17 +66,27 @@ def _tool_decision() -> AgentDecision:
     )
 
 
-def _insufficient_answer_evaluator() -> tuple[MagicMock, MagicMock]:
-    """Return synchronous mocks that model a numeric insufficient evaluation."""
-    answer_evaluator = MagicMock()
+def _insufficient_answer_evaluator() -> tuple[AsyncMock, MagicMock]:
+    """Return mocks that model a numeric insufficient evaluation.
+
+    ``evaluate`` is awaited by the real continuation code, so it must be an
+    AsyncMock; ``is_sufficient`` stays synchronous. groundedness_detail and
+    the policy's min_* thresholds are real (non-Mock) values because
+    _gate_final now compares them directly (to decide whether to force
+    corrective retrieval) rather than only calling is_sufficient().
+    """
+    answer_evaluator = AsyncMock()
     answer_evaluator.evaluate.return_value = SimpleNamespace(
         groundedness=0.0,
         relevance=0.0,
         completeness=0.0,
+        groundedness_detail=SimpleNamespace(applicable=True),
     )
 
     answer_quality_policy = MagicMock()
     answer_quality_policy.is_sufficient.return_value = False
+    answer_quality_policy.min_groundedness = 0.70
+    answer_quality_policy.min_relevance = 0.70
     return answer_evaluator, answer_quality_policy
 
 
@@ -300,7 +310,7 @@ async def test_tool_result_is_real_continuation_input(
     handle = await _start_handle(execution)
     initial = await handle.reason()
 
-    answer_evaluator = MagicMock()
+    answer_evaluator = AsyncMock()
     answer_quality_policy = MagicMock()
     answer_quality_policy.is_sufficient.return_value = True
 
@@ -309,6 +319,7 @@ async def test_tool_result_is_real_continuation_input(
         collaboration_bus=collaboration_bus,
         answer_evaluator=answer_evaluator,
         answer_quality_policy=answer_quality_policy,
+        agent_policy_guard=MagicMock(),
     )
 
     result = await continuation.execute(
@@ -343,7 +354,7 @@ async def test_failed_tool_terminates_real_lifecycle_without_next_reasoning(
     handle = await _start_handle(execution)
     initial = await handle.reason()
 
-    answer_evaluator = MagicMock()
+    answer_evaluator = AsyncMock()
     answer_quality_policy = MagicMock()
     answer_quality_policy.is_sufficient.return_value = True
 
@@ -352,6 +363,7 @@ async def test_failed_tool_terminates_real_lifecycle_without_next_reasoning(
         collaboration_bus=collaboration_bus,
         answer_evaluator=answer_evaluator,
         answer_quality_policy=answer_quality_policy,
+        agent_policy_guard=MagicMock(),
     )
 
     result = await continuation.execute(
@@ -389,7 +401,7 @@ async def test_empty_tool_evidence_is_preserved_as_no_new_reasoning_context(
     handle = await _start_handle(execution)
     initial = await handle.reason()
 
-    answer_evaluator = MagicMock()
+    answer_evaluator = AsyncMock()
     answer_quality_policy = MagicMock()
     answer_quality_policy.is_sufficient.return_value = True
 
@@ -398,6 +410,7 @@ async def test_empty_tool_evidence_is_preserved_as_no_new_reasoning_context(
         collaboration_bus=collaboration_bus,
         answer_evaluator=answer_evaluator,
         answer_quality_policy=answer_quality_policy,
+        agent_policy_guard=MagicMock(),
     )
 
     result = await continuation.execute(
@@ -588,6 +601,7 @@ async def test_final_without_evidence_must_not_be_accepted_as_terminal(
         collaboration_bus=collaboration_bus,
         answer_evaluator=answer_evaluator,
         answer_quality_policy=answer_quality_policy,
+        agent_policy_guard=MagicMock(),
     )
 
     result = await continuation.execute(
@@ -649,6 +663,7 @@ async def test_high_score_irrelevant_evidence_must_not_make_final_sufficient(
         collaboration_bus=collaboration_bus,
         answer_evaluator=answer_evaluator,
         answer_quality_policy=answer_quality_policy,
+        agent_policy_guard=MagicMock(),
     )
 
     result = await continuation.execute(
@@ -715,6 +730,7 @@ async def test_conflicting_evidence_must_not_allow_unresolved_final(
         collaboration_bus=collaboration_bus,
         answer_evaluator=answer_evaluator,
         answer_quality_policy=answer_quality_policy,
+        agent_policy_guard=MagicMock(),
     )
 
     result = await continuation.execute(
@@ -768,6 +784,7 @@ async def test_insufficient_final_does_not_get_replaced_by_answer_string_compari
         collaboration_bus=collaboration_bus,
         answer_evaluator=answer_evaluator,
         answer_quality_policy=answer_quality_policy,
+        agent_policy_guard=MagicMock(),
     )
 
     result = await continuation.execute(
