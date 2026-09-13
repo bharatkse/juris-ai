@@ -17,6 +17,7 @@ The metric is provider-independent and does not perform retrieval.
 from __future__ import annotations
 
 from rag.evaluation.metrics.base import RAGMetric
+from rag.evaluation.metrics.text_matching import evidence_in_text
 from rag.evaluation.models import EvaluationCase, MetricResult
 from rag.models import RetrievalResult
 
@@ -82,7 +83,7 @@ class MeanReciprocalRank(RAGMetric):
             return None
 
         for rank, result in enumerate(retrieved_results, start=1):
-            if result.chunk.source_id in expected:
+            if result.chunk.source in expected:
                 return rank
 
         return None
@@ -93,15 +94,15 @@ class MeanReciprocalRank(RAGMetric):
         expected_evidence: list[str],
         retrieved_results: list[RetrievalResult],
     ) -> int | None:
-        expected = [evidence.strip().lower() for evidence in expected_evidence if evidence.strip()]
+        expected = [evidence.strip() for evidence in expected_evidence if evidence.strip()]
 
         if not expected:
             return None
 
         for rank, result in enumerate(retrieved_results, start=1):
-            chunk_text = result.chunk.text.lower()
+            chunk_text = result.chunk.text
 
-            if any(evidence in chunk_text for evidence in expected):
+            if any(evidence_in_text(evidence, chunk_text) for evidence in expected):
                 return rank
 
         return None

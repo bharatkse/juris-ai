@@ -37,6 +37,16 @@ PYTHONPATH := $(PROJECT_ROOT)/src
 
 export PYTHONPATH
 
+# ragas (imported transitively wherever rag.evaluation.faithfulness_backend
+# is, regardless of which backend is selected) starts a background
+# analytics thread + atexit network flush unless told not to -- this is
+# ragas' own sanctioned opt-out (see ragas/_analytics.py). conftest.py
+# sets this too (for non-Make pytest invocations); this covers every
+# other target here (scripts/, etc.) that isn't routed through pytest.
+RAGAS_DO_NOT_TRACK := true
+
+export RAGAS_DO_NOT_TRACK
+
 
 # ============================================================================
 # Environment Detection

@@ -30,7 +30,7 @@ class StubRetriever:
             RetrievalResult(
                 chunk=Chunk(
                     id="chunk-1",
-                    source_id="source-1",
+                    source="source-1",
                     text=f"Retrieved evidence for: {query}",
                 ),
                 score=1.0,

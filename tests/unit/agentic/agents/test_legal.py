@@ -1,7 +1,3 @@
-"""
-Unit tests for LegalAgent.
-"""
-
 from __future__ import annotations
 
 from unittest.mock import AsyncMock
@@ -9,117 +5,80 @@ from unittest.mock import AsyncMock
 import pytest
 
 from agentic.agents.legal import LegalAgent
+from agentic.decisions.schemas import AgentDecision
 from core.dto.message import MessageDTO
 from core.enums import MessageRoleEnum
-from core.models.agent import AgentResponseSchema
 from tests.builders.agentic.agent import build_agent_request
 
 
-def build_agent_response(
-    *,
-    content: str = "Hello!",
-) -> AgentResponseSchema:
-    """
-    Build a valid structured agent response for tests.
-
-    The current AgentResponseSchema requires action to be
-    explicitly provided, even when no action is required.
-    """
-
-    return AgentResponseSchema(
-        content=content,
-        action=None,
-        metadata={},
-    )
+def build_legal_agent(mock_llm_client) -> LegalAgent:
+    """Build LegalAgent using its current constructor contract."""
+    return LegalAgent(llm_client=mock_llm_client)
 
 
-def test_init_sets_dependencies(
-    legal_agent: LegalAgent,
-    mock_llm_client,
-) -> None:
-    """
-    It should initialize the agent dependencies.
-    """
+def test_init_sets_dependencies(mock_llm_client) -> None:
+    """LegalAgent owns the LLM, prompt builder, and inference policy."""
+    legal_agent = build_legal_agent(mock_llm_client)
 
     assert legal_agent.llm is mock_llm_client
     assert legal_agent._prompt_builder is not None
-    assert legal_agent._retriever is not None
+    assert not hasattr(legal_agent, "_retriever")
 
 
 @pytest.mark.asyncio
-async def test_run_calls_generate_structured(
-    legal_agent: LegalAgent,
-    mock_llm_client,
-) -> None:
-    """
-    It should invoke the structured LLM generation method.
-    """
-
+async def test_reason_calls_generate_structured(mock_llm_client) -> None:
+    """_reason() should invoke structured decision generation."""
+    decision = object()
     mock_llm_client.generate_structured = AsyncMock(
-        return_value=build_agent_response(
-            content="Hello!",
-        ),
+        return_value=decision,
     )
 
+    legal_agent = build_legal_agent(mock_llm_client)
     request = build_agent_request(
         instruction="Answer the user's legal question.",
     )
 
-    response = await legal_agent.run(
-        request=request,
-    )
+    result = await legal_agent._reason(request=request)
 
     mock_llm_client.generate_structured.assert_awaited_once()
 
-    assert response.content == "Hello!"
-    assert response.agent_name == legal_agent.metadata.name
+    kwargs = mock_llm_client.generate_structured.await_args.kwargs
+    assert kwargs["response_model"] is AgentDecision
+    assert result is decision
 
 
 @pytest.mark.asyncio
-async def test_run_passes_expected_messages(
-    legal_agent: LegalAgent,
-    mock_llm_client,
-) -> None:
-    """
-    It should build the expected LLM messages.
-    """
-
+async def test_reason_passes_expected_messages(mock_llm_client) -> None:
+    """_reason() should build the expected provider-independent messages."""
     mock_llm_client.generate_structured = AsyncMock(
-        return_value=build_agent_response(),
+        return_value=object(),
     )
 
+    legal_agent = build_legal_agent(mock_llm_client)
     request = build_agent_request(
         instruction="Answer the user's legal question.",
     )
 
-    await legal_agent.run(
-        request=request,
-    )
+    await legal_agent._reason(request=request)
 
     llm_request = mock_llm_client.generate_structured.await_args.kwargs["request"]
-
     messages = llm_request.messages
 
     assert messages[0].role is MessageRoleEnum.SYSTEM
-    assert messages[0].content == (legal_agent._prompt_builder._system_prompt)
+    assert messages[0].content == legal_agent._prompt_builder._system_prompt
 
     assert messages[-1].role is MessageRoleEnum.USER
     assert messages[-1].content == "Hello"
 
 
 @pytest.mark.asyncio
-async def test_run_includes_history(
-    legal_agent: LegalAgent,
-    mock_llm_client,
-) -> None:
-    """
-    It should include conversation history.
-    """
-
+async def test_reason_includes_history(mock_llm_client) -> None:
+    """_reason() should preserve conversation history in the prompt."""
     mock_llm_client.generate_structured = AsyncMock(
-        return_value=build_agent_response(),
+        return_value=object(),
     )
 
+    legal_agent = build_legal_agent(mock_llm_client)
     request = build_agent_request(
         instruction="Answer the current legal question.",
         messages=[
@@ -138,15 +97,10 @@ async def test_run_includes_history(
         ],
     )
 
-    await legal_agent.run(
-        request=request,
-    )
+    await legal_agent._reason(request=request)
 
     llm_request = mock_llm_client.generate_structured.await_args.kwargs["request"]
-
-    messages = llm_request.messages
-
-    contents = [message.content for message in messages]
+    contents = [message.content for message in llm_request.messages]
 
     assert "Old question" in contents
     assert "Old answer" in contents
@@ -154,49 +108,19 @@ async def test_run_includes_history(
 
 
 @pytest.mark.asyncio
-async def test_run_returns_agent_response(
-    legal_agent: LegalAgent,
-    mock_llm_client,
-) -> None:
-    """
-    It should map the structured LLM response
-    to an agent response.
-    """
-
+async def test_reason_returns_agent_decision(mock_llm_client) -> None:
+    """_reason() should return the structured AgentDecision unchanged."""
+    decision = object()
     mock_llm_client.generate_structured = AsyncMock(
-        return_value=build_agent_response(
-            content="Legal answer",
-        ),
+        return_value=decision,
     )
 
-    response = await legal_agent.run(
+    legal_agent = build_legal_agent(mock_llm_client)
+
+    result = await legal_agent._reason(
         request=build_agent_request(
             instruction="Provide a legal answer.",
         ),
     )
 
-    assert response.content == "Legal answer"
-    assert response.agent_name == legal_agent.metadata.name
-
-
-@pytest.mark.asyncio
-async def test_run_passes_retrieved_context_to_the_prompt(
-    legal_agent: LegalAgent,
-    mock_llm_client,
-    mock_retriever,
-) -> None:
-    """It should use the Tool.execute interface and include RAG content."""
-
-    mock_retriever.execute = AsyncMock(return_value="Relevant contract clause.")
-    mock_llm_client.generate_structured = AsyncMock(return_value=build_agent_response())
-
-    await legal_agent.run(
-        request=build_agent_request(
-            instruction="Answer the user's legal question.",
-        ),
-    )
-
-    mock_retriever.execute.assert_awaited_once_with(query="Hello")
-
-    llm_request = mock_llm_client.generate_structured.await_args.kwargs["request"]
-    assert "Relevant contract clause." in [message.content for message in llm_request.messages]
+    assert result is decision

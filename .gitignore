@@ -227,3 +227,5 @@ localstack-data
 # Claude .md files
 CLAUDE.md
 claude.md
+
+.claude/

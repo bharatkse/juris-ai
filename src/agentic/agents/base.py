@@ -15,19 +15,14 @@ from typing import ClassVar
 from adapters.clients.llm.base import LLMClient
 from agentic.agents.prompts.base import BasePromptBuilder
 from agentic.decisions.schemas import AgentDecision
-from agentic.tools.retrieval import RetrieverTool
 from core.dto.agent import (
     AgentMetadataDTO,
     AgentRequestDTO,
-    AgentResponseDTO,
     AgentStreamChunkDTO,
 )
-from core.dto.agent_action import AgentActionRequestDTO
 from core.dto.clients.llm import LLMRequestDTO
 from core.dto.inference import InferencePolicy, LLMTask
-from core.dto.tool import RetrievedContentDTO, ToolRequestDTO
-from core.enums import ActorTypeEnum, MessageRoleEnum, RetrievalSourceEnum
-from core.models.agent import AgentResponseSchema
+from core.dto.tool import RetrievedContentDTO
 from core.models.message import AgentMessageSchema
 
 
@@ -53,12 +48,10 @@ class BaseAgent:
         *,
         llm_client: LLMClient,
         prompt_builder: BasePromptBuilder,
-        retriever: RetrieverTool | None = None,
         inference_policy: InferencePolicy | None = None,
     ) -> None:
         self._llm = llm_client
         self._prompt_builder = prompt_builder
-        self._retriever = retriever
         self._inference_policy = inference_policy or InferencePolicy()
 
     @property
@@ -69,53 +62,6 @@ class BaseAgent:
         Return the configured language model client.
         """
         return self._llm
-
-    async def run(
-        self,
-        *,
-        request: AgentRequestDTO,
-    ) -> AgentResponseDTO:
-        """
-        Execute the agent.
-
-        The legacy user-facing response path uses structured output.
-        Inference policy therefore marks this request as a structured
-        application response while retaining the agent's factual-answer
-        intent.
-        """
-        llm_request = await self._build_llm_request(
-            request=request,
-        )
-
-        response = await self._llm.generate_structured(
-            request=llm_request,
-            response_model=AgentResponseSchema,
-        )
-
-        action = None
-
-        if response.action is not None:
-            action = AgentActionRequestDTO(
-                execution_id=request.context.execution_id,
-                thread_id=request.context.thread_id,
-                conversation_event_id=request.context.conversation_event_id,
-                agent_id=self.metadata.name,
-                action_type=response.action.action_type,
-                actor_type=ActorTypeEnum.AGENT,
-                tool_name=response.action.tool_name,
-                target_agent_id=response.action.target_agent_id,
-                resource_type=response.action.resource_type,
-                resource_id=response.action.resource_id,
-                parameters=response.action.parameters,
-                reason=response.action.reason,
-            )
-
-        return AgentResponseDTO(
-            agent_name=self.metadata.name,
-            content=response.content,
-            metadata=response.metadata,
-            action=action,
-        )
 
     async def _reason(
         self,
@@ -176,45 +122,6 @@ class BaseAgent:
                 metadata=chunk.metadata,
             )
 
-    async def _retrieve_context(
-        self,
-        *,
-        request: AgentRequestDTO,
-    ) -> tuple[
-        RetrievedContentDTO,
-        ...,
-    ]:
-        """
-        Retrieve contextual information.
-
-        This remains temporarily compatible with the current prompt
-        construction. Agent-selected tool execution will replace this
-        behavior when the lifecycle runtime is integrated.
-        """
-        if self._retriever is None:
-            return ()
-
-        tool_request = self._build_tool_request(
-            request=request,
-        )
-        content = await self._retriever.execute(
-            query=tool_request.query,
-        )
-
-        if content in {
-            "No relevant content found.",
-            "Retrieval failed — please try again.",
-        }:
-            return ()
-
-        return (
-            RetrievedContentDTO(
-                source=RetrievalSourceEnum.DOCUMENT,
-                source_name=self._retriever.name,
-                content=content,
-            ),
-        )
-
     async def _build_llm_request(
         self,
         *,
@@ -223,14 +130,19 @@ class BaseAgent:
         """
         Build the provider-independent LLM request and attach the
         agent-owned inference intent.
-        """
-        context = await self._retrieve_context(
-            request=request,
-        )
 
+        No retrieval context is sourced here. The graph execution path
+        (_reason()) receives context externally via
+        AgentExecutionHandle.reasoning_context, populated by TOOL_CALL
+        results through the Tool Registry + policy path -- not through
+        this agent holding a retriever reference. stream() (the only
+        caller of this method) therefore runs with no retrieved
+        context, same as before this change since it was already
+        unreachable in production.
+        """
         llm_request = self._prompt_builder.build(
             request=request,
-            context=context,
+            context=(),
         )
 
         return self._apply_inference(
@@ -263,27 +175,6 @@ class BaseAgent:
         return replace(
             request,
             inference=inference,
-        )
-
-    @staticmethod
-    def _build_tool_request(
-        *,
-        request: AgentRequestDTO,
-    ) -> ToolRequestDTO:
-        """
-        Build a retrieval tool request.
-        """
-        user_message = next(
-            message
-            for message in reversed(
-                request.conversation.messages,
-            )
-            if message.role is MessageRoleEnum.USER
-        )
-
-        return ToolRequestDTO(
-            query=user_message.content,
-            uploaded_files=request.context.uploaded_files,
         )
 
     async def handle_message(

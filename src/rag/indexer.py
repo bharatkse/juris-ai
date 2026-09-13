@@ -209,7 +209,6 @@ class RAGIndexer(RAGIndexerProtocol):
         )
 
         return IndexedRepresentation(
-            source_id=source_id,
             chunk_count=chunk_count,
             embedding_model=metadata.model_name,
             embedding_dimension=metadata.dimension,
@@ -303,12 +302,14 @@ class RAGIndexer(RAGIndexerProtocol):
         """
         Validate that a chunk belongs to the current source.
         """
-        if chunk.source_id != source_id:
+        chunk_knowledge_source_id = chunk.metadata.get("knowledge_source_id")
+
+        if chunk_knowledge_source_id != source_id:
             raise RAGError(
                 message=(
                     "Chunk source mismatch: "
                     f"expected '{source_id}', "
-                    f"received '{chunk.source_id}'."
+                    f"received '{chunk_knowledge_source_id}'."
                 ),
             )
 

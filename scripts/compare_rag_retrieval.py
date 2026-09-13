@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from config.settings import Settings
 from rag.embeddings import SentenceTransformerEmbeddingProvider
 from rag.evaluation.datasets.loader import GoldenDatasetLoader
+from rag.evaluation.metrics.faithfulness import FaithfulnessMetric
 from rag.evaluation.metrics.mrr import MeanReciprocalRank
 from rag.evaluation.metrics.precision import PrecisionAtK
 from rag.evaluation.metrics.recall import RecallAtK
@@ -16,6 +17,7 @@ from rag.hybrid_retriever import HybridRetriever
 from rag.keyword_store import PostgresKeywordStore
 from rag.pgvector_store import PgVectorStore
 from rag.reranker import CrossEncoderReranker
+from wiring.factories.evaluation import build_faithfulness_backend
 
 DATASET_PATH = "tests/datasets/rag/evaluation/legal_retrieval_gold_v1.json"
 TOP_K = 5
@@ -92,6 +94,15 @@ async def main() -> None:
             RecallAtK(k=TOP_K),
             PrecisionAtK(k=TOP_K),
             MeanReciprocalRank(),
+            # NOTE: the golden dataset has no populated `answer` field
+            # for any case today, so this always reports "no generated
+            # answer" with passed=True (not applicable, not a failure --
+            # see faithfulness.py) until the dataset (or this script)
+            # produces real answers. score stays 0.0 and is visible in
+            # mean_scores, but it does NOT drag down passed_cases/
+            # pass_rate. Wired in now so it activates automatically
+            # once that gap is closed.
+            FaithfulnessMetric(backend=build_faithfulness_backend(settings=settings)),
         ],
     )
 

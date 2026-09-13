@@ -22,7 +22,7 @@ class StubRetriever:
             RetrievalResult(
                 chunk=Chunk(
                     id="irrelevant",
-                    source_id="other-source",
+                    source="other-source",
                     text="Unrelated legal material.",
                 ),
                 score=0.9,
@@ -30,7 +30,7 @@ class StubRetriever:
             RetrievalResult(
                 chunk=Chunk(
                     id="relevant",
-                    source_id="contract-law",
+                    source="contract-law",
                     text="Consideration is something of value exchanged between parties.",
                 ),
                 score=0.8,
@@ -127,7 +127,7 @@ async def test_runner_fails_quality_when_retrieval_is_not_relevant() -> None:
                 RetrievalResult(
                     chunk=Chunk(
                         id="irrelevant",
-                        source_id="other-source",
+                        source="other-source",
                         text="Completely unrelated material.",
                     ),
                     score=1.0,

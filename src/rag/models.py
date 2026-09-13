@@ -23,11 +23,16 @@ class Chunk:
     """
 
     id: str
-    source_id: str | None
     text: str
     metadata: dict[str, str] = field(
         default_factory=dict,
     )
+
+    # Human-readable source filename (e.g. "it_act_2000.pdf"), distinct
+    # from knowledge-source lookups -- neither
+    # of which can double as a filename without breaking that. This is
+    # the field expected_sources-based evaluation metrics match against.
+    source: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,7 +67,7 @@ class RetrievalResult:
     def knowledge_source_id(self) -> str | None:
         """Return the source identity discovered from indexed knowledge."""
 
-        return self.chunk.metadata.get("knowledge_source_id") or self.chunk.source_id
+        return self.chunk.metadata.get("knowledge_source_id")
 
     def with_score(
         self,
@@ -85,7 +90,6 @@ class IndexedRepresentation:
     Statistics describing a completed indexing operation.
     """
 
-    source_id: str
     chunk_count: int
     embedding_model: str
     embedding_dimension: int

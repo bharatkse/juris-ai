@@ -11,13 +11,22 @@ It evaluates RetrievalResult objects already present on EvaluationCase.
 from __future__ import annotations
 
 from rag.evaluation.metrics.base import RAGMetric
+from rag.evaluation.metrics.text_matching import evidence_in_text
 from rag.evaluation.models.evaluation_case import EvaluationCase
 from rag.evaluation.models.metric_result import MetricResult
 from rag.models import RetrievalResult
 
 
 class PrecisionAtK(RAGMetric):
-    """Evaluate retrieval precision at K."""
+    """
+    Evaluate retrieval precision at K.
+
+    pass_threshold is a target, not a guarantee it's reachable: with
+    fewer expected ground-truth items than k, precision@k is
+    structurally capped below 1.0 (e.g. 1 expected_evidence item at
+    k=5 caps a perfect retrieval at 0.2). See evaluate()'s
+    achievable_ceiling comment for how passed accounts for this.
+    """
 
     def __init__(
         self,
@@ -62,6 +71,7 @@ class PrecisionAtK(RAGMetric):
                 retrieved_results=retrieved_results,
             )
             evaluation_basis = "evidence"
+            expected_count = len(case.expected_evidence)
 
         elif case.expected_sources:
             score = self._source_precision(
@@ -69,6 +79,7 @@ class PrecisionAtK(RAGMetric):
                 retrieved_results=retrieved_results,
             )
             evaluation_basis = "source"
+            expected_count = len(case.expected_sources)
 
         else:
             return MetricResult(
@@ -81,16 +92,32 @@ class PrecisionAtK(RAGMetric):
                 },
             )
 
+        # precision@k is structurally capped at expected_count / k: with
+        # a single expected_evidence item (this dataset's shape) and
+        # k=5, even a perfect retrieval scores 0.2 -- the remaining 4
+        # slots have nothing left to be relevant to. That ceiling is a
+        # property of how many ground-truth items exist, not a
+        # retrieval-quality signal, so pass_threshold is never allowed
+        # to demand more than what's actually achievable for this case.
+        # recall@k and mrr already independently confirm whether the
+        # evidence was found at all; this only relaxes precision@k's
+        # own bar, and only down to that ceiling -- a case with enough
+        # expected items to clear the full configured threshold still
+        # has to.
+        achievable_ceiling = min(1.0, expected_count / len(retrieved_results))
+        effective_pass_threshold = min(self._pass_threshold, achievable_ceiling)
+
         return MetricResult(
             metric=self.name,
             score=score,
-            passed=score >= self._pass_threshold,
+            passed=score >= effective_pass_threshold,
             metadata={
                 "k": str(self._k),
                 "evaluation_basis": evaluation_basis,
                 "expected_sources": str(len(case.expected_sources)),
                 "expected_evidence": str(len(case.expected_evidence)),
                 "retrieved_results": str(len(retrieved_results)),
+                "effective_pass_threshold": f"{effective_pass_threshold:.4f}",
             },
         )
 
@@ -105,7 +132,7 @@ class PrecisionAtK(RAGMetric):
         if not expected:
             return 0.0
 
-        relevant = sum(1 for result in retrieved_results if result.chunk.source_id in expected)
+        relevant = sum(1 for result in retrieved_results if result.chunk.source in expected)
 
         return relevant / len(retrieved_results)
 
@@ -115,7 +142,7 @@ class PrecisionAtK(RAGMetric):
         expected_evidence: list[str],
         retrieved_results: list[RetrievalResult],
     ) -> float:
-        expected = [evidence.strip().lower() for evidence in expected_evidence if evidence.strip()]
+        expected = [evidence.strip() for evidence in expected_evidence if evidence.strip()]
 
         if not expected:
             return 0.0
@@ -123,7 +150,7 @@ class PrecisionAtK(RAGMetric):
         relevant = sum(
             1
             for result in retrieved_results
-            if any(evidence in result.chunk.text.lower() for evidence in expected)
+            if any(evidence_in_text(evidence, result.chunk.text) for evidence in expected)
         )
 
         return relevant / len(retrieved_results)

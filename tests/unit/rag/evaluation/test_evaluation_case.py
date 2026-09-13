@@ -6,12 +6,12 @@ def _result(
     *,
     chunk_id: str,
     text: str,
-    source_id: str | None = None,
+    source: str | None = None,
 ) -> RetrievalResult:
     return RetrievalResult(
         chunk=Chunk(
             id=chunk_id,
-            source_id=source_id,
+            source=source,
             text=text,
         ),
         score=1.0,
@@ -39,12 +39,12 @@ def test_contexts_returns_retrieved_chunk_text() -> None:
             _result(
                 chunk_id="chunk-1",
                 text="Consideration is something of value.",
-                source_id="contract-law",
+                source="contract-law",
             ),
             _result(
                 chunk_id="chunk-2",
                 text="Consideration must have legal value.",
-                source_id="contract-law",
+                source="contract-law",
             ),
         ],
     )
@@ -69,7 +69,7 @@ def test_evaluation_case_preserves_retrieval_results() -> None:
         _result(
             chunk_id="chunk-1",
             text="Relevant legal evidence.",
-            source_id="act-1",
+            source="act-1",
         )
     ]
 

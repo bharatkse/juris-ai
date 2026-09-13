@@ -131,7 +131,7 @@ class RAGIndexPersistenceService(RAGIndexPersistenceProtocol):
                 )
 
                 knowledge_source_id = self._knowledge_source_id(
-                    chunks[0].source_id,
+                    chunks[0].metadata.get("knowledge_source_id"),
                 )
 
                 if knowledge_source_id is None:
@@ -144,7 +144,12 @@ class RAGIndexPersistenceService(RAGIndexPersistenceProtocol):
                 )
 
                 if knowledge_source is None:
-                    source_location = chunks[0].metadata.get("source_id") or chunks[0].source_id
+                    # chunk.source (a human-readable label, e.g. a bare
+                    # filename) is not guaranteed to be a full path any
+                    # more -- it "can be anything" by design. Falling
+                    # back to the ksrc_ identity keeps storage_path
+                    # non-empty even when source is absent.
+                    source_location = chunks[0].source or knowledge_source_id
                     filename = PurePosixPath(source_location).name[:255]
                     knowledge_source = await source_repository.create(
                         KnowledgeSource(
@@ -169,7 +174,6 @@ class RAGIndexPersistenceService(RAGIndexPersistenceProtocol):
 
                     chunk_metadata = {
                         **chunk.metadata,
-                        "source_id": chunk.source_id,
                         "knowledge_source_id": knowledge_source_id,
                     }
 

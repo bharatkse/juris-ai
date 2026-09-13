@@ -157,9 +157,6 @@ class HybridRetriever:
         if fusion_candidates <= 0:
             return []
 
-        if fusion_candidates <= 0:
-            return []
-
         try:
             query_vector = await self._embedding_provider.embed_one(
                 text=query,

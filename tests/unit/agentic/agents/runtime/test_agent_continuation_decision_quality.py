@@ -162,7 +162,6 @@ def llm_client() -> object:
 def agent(llm_client: object) -> LegalAgent:
     return LegalAgent(
         llm_client=llm_client,
-        retriever=AsyncMock(),
     )
 
 
