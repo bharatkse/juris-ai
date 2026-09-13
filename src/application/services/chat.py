@@ -14,6 +14,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from adapters.observability.logger import get_logger
 from agentic.orchestration.schemas.request import OrchestratorRequest
 from application.services.base import BaseService
+from application.services.conversation_summarization import (
+    UNSUMMARIZED_EVENT_LIMIT,
+)
 from application.services.internal_dto.chat import ChatResultDTO
 from application.services.internal_dto.stream import ChatStreamChunkDTO
 from core.dto.agent import AgentResponseDTO
@@ -29,6 +32,10 @@ if TYPE_CHECKING:
     from application.services.action_workflow import ActionWorkflowService
     from application.services.conversation import ConversationService
     from application.services.conversation_event import ConversationEventService
+    from application.services.conversation_summarization import (
+        ConversationSummarizationService,
+    )
+    from application.services.usage import UsageService
     from core.dto.tool import ToolFileDTO
 
 logger = get_logger(__name__)
@@ -63,12 +70,16 @@ class ChatService(BaseService):
         conversation_event_service: ConversationEventService,
         orchestrator: AIOrchestrator,
         action_workflow_service: ActionWorkflowService,
+        usage_service: UsageService,
+        conversation_summarization_service: ConversationSummarizationService,
     ) -> None:
         super().__init__(session)
         self._conversation_service = conversation_service
         self._conversation_event_service = conversation_event_service
         self._orchestrator = orchestrator
         self._action_workflow_service = action_workflow_service
+        self._usage_service = usage_service
+        self._conversation_summarization_service = conversation_summarization_service
 
     async def chat(
         self,
@@ -131,6 +142,22 @@ class ChatService(BaseService):
             result = await self._orchestrator.handle(
                 request=orchestration_request,
                 action_workflow_service=self._action_workflow_service,
+            )
+
+            # ---------------------------------------------------------
+            # 3b. Record actual token usage against the daily quota.
+            #
+            # result.usage is already the real, provider-reported
+            # token count aggregated across every LLM call made during
+            # this orchestration (agentic/execution/aggregation/
+            # response.py) -- not an estimate. Best-effort: never
+            # blocks or fails the response (see UsageService.record).
+            # ---------------------------------------------------------
+
+            await self._usage_service.record(
+                user_id=user_id,
+                input_tokens=result.usage.prompt_tokens,
+                output_tokens=result.usage.completion_tokens,
             )
 
             # ---------------------------------------------------------
@@ -344,20 +371,48 @@ class ChatService(BaseService):
     ) -> OrchestratorRequest:
         """
         Build the orchestration request from conversation history.
+
+        History is capped at UNSUMMARIZED_EVENT_LIMIT recent, verbatim
+        events; anything older has already been folded into
+        conversation.rolling_summary by
+        ConversationSummarizationService.ensure_summarized (called just
+        below), which is prepended in place of the raw events it
+        replaces. This bounds history growth semantically (compression,
+        not loss) -- the token budget in agentic/agents/prompts/
+        token_budget.py is the separate, final safety net applied
+        downstream against whatever model actually serves the request.
         """
+
+        conversation = await self._conversation_summarization_service.ensure_summarized(
+            conversation=conversation,
+        )
 
         events = await self._conversation_event_service.list(
             conversation_id=conversation.id,
+            limit=UNSUMMARIZED_EVENT_LIMIT,
         )
 
-        history = [
+        history: list[ConversationMessageSchema] = []
+
+        if conversation.rolling_summary:
+            history.append(
+                ConversationMessageSchema(
+                    role=MessageRoleEnum.SYSTEM,
+                    content=(
+                        "Summary of earlier conversation (older messages "
+                        "already folded in):\n" + conversation.rolling_summary
+                    ),
+                )
+            )
+
+        history.extend(
             ConversationMessageSchema(
                 content=event.content,
                 role=event.role,
             )
             for event in events
             if event.id != current_event_id
-        ]
+        )
 
         return OrchestratorRequest(
             request_id=request_id,

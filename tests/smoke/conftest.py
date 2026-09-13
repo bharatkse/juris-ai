@@ -13,7 +13,7 @@ from adapters.persistence.sqlalchemy.models.knowledge_sources import KnowledgeSo
 from adapters.persistence.sqlalchemy.repositories.rag_retrieval import (
     RAGRetrievalRepository,
 )
-from adapters.persistence.sqlalchemy.session import session_factory
+from adapters.persistence.sqlalchemy.session import dispose_engine, session_factory
 from application.services.knowledge_chunk_indexing import KnowledgeIndexingService
 from application.services.offline_ingestion import OfflineIngestionService
 from rag.chunk_mapper import ChunkMapper
@@ -130,6 +130,15 @@ async def rag_smoke_environment() -> RAGSmokeEnvironment:
     for the lifetime of the smoke-test environment.
     """
 
+    # This fixture runs under its own session-scoped loop (see the
+    # loop_scope="session" pin above and on the tests that consume it),
+    # separate from the function-scoped loop every other test in the
+    # suite now gets by default. session_factory's shared engine may
+    # still be holding connections checked out under one of those
+    # earlier per-function loops -- discard them before first use here,
+    # or SQLAlchemy raises "Future ... attached to a different loop".
+    await dispose_engine()
+
     source_paths = _find_legal_documents()
 
     source_path_keys = {
@@ -220,6 +229,12 @@ async def rag_smoke_environment() -> RAGSmokeEnvironment:
         await _cleanup_rag_smoke_data(
             source_ids=source_ids,
         )
+
+        # Symmetric with the dispose_engine() call above: connections
+        # opened under this fixture's session-scoped loop must not be
+        # handed back out once control returns to function-scoped
+        # tests running under their own, different loops.
+        await dispose_engine()
 
 
 async def _cleanup_rag_smoke_data(

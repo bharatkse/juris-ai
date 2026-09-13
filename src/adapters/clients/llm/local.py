@@ -30,6 +30,15 @@ from core.exceptions.client import (
 
 log = get_logger(__name__)
 
+# Qwen3's native context window (per its published model config), used
+# for both models this client serves (qwen3:4b, qwen3:8b). Ollama's own
+# default num_ctx is 2048 regardless of what a model natively supports
+# -- explicitly requesting Qwen3's real window here is what makes that
+# window actually usable, rather than silently capping every request at
+# 2048. agentic/agents/prompts/token_budget.py's MODEL_CONTEXT_WINDOWS
+# imports this same constant so the two can never drift apart.
+QWEN3_NUM_CTX = 32_768
+
 
 class LocalLLMClient(LLMClient):
     """
@@ -94,6 +103,7 @@ class LocalLLMClient(LLMClient):
 
         options: dict[str, Any] = {
             "temperature": inference.temperature,
+            "num_ctx": QWEN3_NUM_CTX,
         }
 
         if inference.top_p is not None:
@@ -217,6 +227,7 @@ class LocalLLMClient(LLMClient):
 
         options: dict[str, Any] = {
             "temperature": inference.temperature,
+            "num_ctx": QWEN3_NUM_CTX,
         }
 
         if inference.top_p is not None:

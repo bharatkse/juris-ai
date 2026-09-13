@@ -16,10 +16,10 @@ Flow:
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Iterable, Iterator
 from pathlib import PurePosixPath
 
-from core.types import prefixed_id_field
 from rag.ingestion.models import DocumentSource, IngestionChunk
 from rag.models import Chunk
 
@@ -77,7 +77,10 @@ class ChunkMapper:
                 "chunk.text must not be empty.",
             )
 
-        chunk_id = self._build_chunk_id()
+        chunk_id = self._build_chunk_id(
+            source_id=source.id,
+            sequence=chunk.sequence,
+        )
 
         # Human-readable filename with extension (e.g. "it_act_2000.pdf"),
         # kept distinct from source.id (the ksrc_ hash) -- see
@@ -110,12 +113,26 @@ class ChunkMapper:
         )
 
     @staticmethod
-    def _build_chunk_id() -> str:
+    def _build_chunk_id(*, source_id: str, sequence: int) -> str:
         """
         Build a deterministic chunk identifier.
 
         The same source and sequence always produce the same ID,
         allowing downstream upsert operations to remain idempotent.
+
+        Previously this returned prefixed_id_field("kchn") -- a fresh
+        random UUID on every call, ignoring source/sequence entirely.
+        That contradicted this docstring and made re-ingestion of the
+        same source non-idempotent: RAGIndexPersistenceService.persist()
+        keys its create-vs-update decision on this ID via
+        chunk_repository.get_by_id(), so a random ID never matches an
+        existing row and every re-run silently inserted a full
+        duplicate set of chunks/embeddings under the same
+        knowledge_source_id instead of replacing them.
         """
 
-        return prefixed_id_field("kchn")
+        digest = hashlib.sha256(
+            f"{source_id}:{sequence}".encode(),
+        ).hexdigest()
+
+        return f"kchn_{digest[:32]}"

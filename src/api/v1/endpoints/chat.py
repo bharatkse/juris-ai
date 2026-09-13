@@ -14,6 +14,7 @@ from adapters.observability.logger import get_logger
 from api.dependencies.auth import get_current_user
 from api.dependencies.authorization import bind_document_acl
 from api.dependencies.chat import get_chat_service
+from api.dependencies.rate_limit import enforce_usage_limits
 from api.helpers.files import build_tool_files
 from api.schemas.chat import (
     AIResponse,
@@ -44,6 +45,7 @@ async def chat(
     http_request: Request,
     chat_request: ChatRequest = Depends(ChatRequest.as_form),
     current_user=Depends(get_current_user),
+    _rate_limit: None = Depends(enforce_usage_limits),
     _: None = Depends(bind_document_acl),
     service: ChatService = Depends(get_chat_service),
 ) -> ApiResponse:
@@ -109,11 +111,18 @@ async def stream_chat(
     http_request: Request,
     chat_request: ChatRequest = Depends(ChatRequest.as_form),
     current_user=Depends(get_current_user),
+    _rate_limit: None = Depends(enforce_usage_limits),
     _: None = Depends(bind_document_acl),
     service: ChatService = Depends(get_chat_service),
 ) -> StreamingResponse:
     """
     Stream a chat response.
+
+    NOTE: streaming itself is currently broken independent of rate
+    limiting (AIOrchestrator has no stream() method; see the chat
+    service). This dependency still runs and enforces the same
+    limits before that failure, so a rate-limited/quota-exhausted
+    user is rejected here rather than reaching the broken code path.
     """
 
     logger.info(

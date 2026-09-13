@@ -13,6 +13,8 @@ from agentic.planning.planner import ExecutionPlanner
 from agentic.planning.prompts.planning import PlanningPromptBuilder
 from agentic.planning.templates import PlanTemplateRegistry
 from agentic.planning.validator import ExecutionPlanValidator
+from core.dto.clients.llm import LLMMessageDTO, LLMRequestDTO
+from core.enums import MessageRoleEnum
 
 
 @pytest.fixture
@@ -37,9 +39,20 @@ def plan_validator() -> ExecutionPlanValidator:
 def mock_prompt_builder() -> Mock:
     """
     Provide a mocked planning prompt builder.
+
+    build() returns a real LLMRequestDTO (default LLMInferenceConfig)
+    rather than a bare Mock -- LLMPlanGenerator.generate() reads
+    request.inference.{model,top_p,max_output_tokens} to resolve the
+    planning inference policy, which a Mock's auto-attributes can't
+    satisfy (they're not real floats/None).
     """
 
-    return Mock(spec=PlanningPromptBuilder)
+    builder = Mock(spec=PlanningPromptBuilder)
+    builder.build.return_value = LLMRequestDTO(
+        messages=(LLMMessageDTO(role=MessageRoleEnum.SYSTEM, content="system prompt"),),
+    )
+
+    return builder
 
 
 @pytest.fixture

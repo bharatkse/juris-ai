@@ -9,6 +9,13 @@ every other concurrent request on the same process for the entire
 duration, not just this one. asyncio.to_thread offloads it to a
 worker thread so the event loop stays free to serve other requests
 while a big PDF parses.
+
+User-uploaded files are exactly as untrusted as fetched web pages --
+arbitrary third-party content an attacker fully controls (a PDF with
+injected instructions is easier to construct than a compromised web
+page). Extracted text is scanned with the same SecuritySanitizer used
+for web-fetch (content_fetch.py) before it can reach the agent's
+prompt, withholding on a CRITICAL finding rather than forwarding it.
 """
 
 from __future__ import annotations
@@ -30,8 +37,11 @@ from agentic.tools.constants import (
     TEXT_CONTENT_TYPE,
 )
 from core.dto.tool import ToolFileDTO
+from rag.ingestion.sanitizer import SecuritySanitizer, ThreatLevel
 
 log = get_logger(__name__)
+
+WITHHELD_CONTENT_MESSAGE = "[content withheld: prompt-injection pattern detected in uploaded file]"
 
 
 class ParserTool(Tool):
@@ -51,6 +61,9 @@ class ParserTool(Tool):
                 MARKDOWN_CONTENT_TYPE: self._parse_text,
             }
         )
+        # Same threat model/sanitizer as ContentFetcher (web-fetch) --
+        # stateless, safe to share across parses.
+        self._sanitizer = SecuritySanitizer()
 
     async def execute(self, *, files: list[ToolFileDTO]) -> str:
         """
@@ -103,7 +116,26 @@ class ParserTool(Tool):
             log.warning("Parsed empty content from file '%s'.", file.filename)
             return f"[{file.filename}]: no extractable text."
 
-        return f"[{file.filename}]\n{text}"
+        # Extracted text is untrusted and about to be dropped directly
+        # into the agent's LLM prompt via this tool's flattened string
+        # return -- scan it and withhold on a CRITICAL finding rather
+        # than forwarding it, same as ContentFetcher does for fetched
+        # web pages.
+        scan = self._sanitizer.sanitize_and_scan(
+            text,
+            fail_on=(ThreatLevel.CRITICAL,),
+        )
+
+        if not scan.is_safe:
+            log.warning(
+                "Prompt-injection pattern detected in uploaded file; "
+                "content withheld: filename=%s threat_count=%d.",
+                file.filename,
+                len(scan.threats),
+            )
+            return f"[{file.filename}]\n{WITHHELD_CONTENT_MESSAGE}"
+
+        return f"[{file.filename}]\n{scan.clean_text}"
 
     @staticmethod
     def _parse_pdf(file: ToolFileDTO) -> str:

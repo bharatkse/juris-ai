@@ -2,9 +2,10 @@
 Conversation ORM model.
 """
 
+from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from adapters.persistence.sqlalchemy.base import Base
@@ -59,6 +60,34 @@ class Conversation(
     library: Mapped[list["Library"]] = relationship(
         back_populates="conversation",
         cascade="all, delete-orphan",
+    )
+
+    # Cross-request memory: a compact summary of events created at or
+    # before rolling_summary_through_created_at, folded in by
+    # ConversationSummarizationService once the unsummarized tail grows
+    # past UNSUMMARIZED_EVENT_LIMIT. NULL until a conversation is long
+    # enough to need it. Prepended to history in place of the raw
+    # discarded events it replaces -- see application/services/
+    # conversation_summarization.py.
+    #
+    # A plain timestamp, not a FK to conversation_events.id: the
+    # summarization boundary only needs "events up to this point in
+    # time", not a hard reference to one specific event row. An FK here
+    # previously created a real circular dependency between
+    # conversations and conversation_events (each referencing the
+    # other), which confused SQLAlchemy's table-sort logic (surfaced as
+    # a real SAWarning in the test fixture, not just a theoretical
+    # concern) despite being harmless in practice. A timestamp carries
+    # everything ensure_summarized() actually needs and breaks the
+    # cycle.
+    rolling_summary: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    rolling_summary_through_created_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
     )
 
     def __repr__(self) -> str:

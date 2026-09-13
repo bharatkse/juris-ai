@@ -5,10 +5,10 @@ Contract prompt builder.
 from __future__ import annotations
 
 from agentic.agents.prompts.base import BasePromptBuilder
+from agentic.agents.prompts.token_budget import DEFAULT_RESERVED_OUTPUT_TOKENS
 from core.dto.agent import AgentRequestDTO
-from core.dto.clients.llm import LLMMessageDTO, LLMRequestDTO
+from core.dto.clients.llm import LLMRequestDTO
 from core.dto.tool import RetrievedContentDTO
-from core.enums import MessageRoleEnum
 
 
 class ContractPromptBuilder(BasePromptBuilder):
@@ -29,36 +29,21 @@ class ContractPromptBuilder(BasePromptBuilder):
             RetrievedContentDTO,
             ...,
         ],
+        model: str,
+        reserved_output_tokens: int = DEFAULT_RESERVED_OUTPUT_TOKENS,
     ) -> LLMRequestDTO:
         """
         Build a provider-independent LLM request.
         """
 
-        messages: list[LLMMessageDTO] = [
-            LLMMessageDTO(
-                role=MessageRoleEnum.SYSTEM,
-                content=self._system_prompt,
-            ),
-        ]
-
-        if context:
-            messages.append(
-                LLMMessageDTO(
-                    role=MessageRoleEnum.SYSTEM,
-                    content=self.build_context(
-                        context=context,
-                    ),
-                ),
-            )
-
-        messages.extend(
-            LLMMessageDTO(
-                role=message.role,
-                content=message.content,
-            )
-            for message in request.conversation.messages
+        messages = self.build_messages(
+            system_prompt=self._system_prompt,
+            request=request,
+            context=context,
+            model=model,
+            reserved_output_tokens=reserved_output_tokens,
         )
 
         return LLMRequestDTO(
-            messages=tuple(messages),
+            messages=messages,
         )

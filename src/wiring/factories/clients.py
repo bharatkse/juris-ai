@@ -31,4 +31,5 @@ def create_clients(*, settings: Settings) -> ClientContainer:
         # Loads the embedding + reranker models exactly once, here,
         # at process startup.
         hybrid_retriever=rag_pipeline.hybrid_retriever,
+        embedding_provider=rag_pipeline.embedding_provider,
     )

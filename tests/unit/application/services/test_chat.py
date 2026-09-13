@@ -12,6 +12,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from agentic.orchestration.schemas.request import OrchestratorRequest
 from application.services.chat import ChatService
+from application.services.conversation_summarization import UNSUMMARIZED_EVENT_LIMIT
 from application.services.internal_dto.chat import ChatResultDTO
 from core.enums import MessageRoleEnum
 from core.exceptions.httpx import ConversationInactiveError, NotFoundError
@@ -744,6 +745,7 @@ async def test_stream_chat_rolls_back_when_agent_fails(
 
     mock_conversation_event_service.list.assert_awaited_once_with(
         conversation_id=conversation.id,
+        limit=UNSUMMARIZED_EVENT_LIMIT,
     )
 
     mock_orchestrator.stream.assert_called_once()

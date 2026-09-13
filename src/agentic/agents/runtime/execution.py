@@ -177,6 +177,12 @@ class AgentExecutionHandle:
         return self._request
 
     @property
+    def policy(self) -> AgentPolicy:
+        """Return the resolved policy for this agent execution."""
+
+        return self._policy
+
+    @property
     def agent_id(self) -> str:
         """Return the agent identifier."""
 

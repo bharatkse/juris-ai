@@ -5,10 +5,12 @@ from typing import Any
 
 from pydantic import Field, model_validator
 
+from config.agent_policy import AgentPolicySettings
 from config.base import AppSettings, BaseAppSettings
 from config.database import DatabaseSettings
 from config.llm import LLMSettings
 from config.logging import LoggingSettings
+from config.rate_limit import RateLimitSettings
 from config.security import SecuritySettings
 from core.enums import EnvironmentEnum
 
@@ -21,6 +23,8 @@ class Settings(BaseAppSettings):
     security: SecuritySettings = Field(default_factory=SecuritySettings)
     llm: LLMSettings = Field(default_factory=LLMSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
+    rate_limit: RateLimitSettings = Field(default_factory=RateLimitSettings)
+    agent_policy: AgentPolicySettings = Field(default_factory=AgentPolicySettings)
 
     # --------------------------------------------------------------------------
     # Backward Compatibility Proxies

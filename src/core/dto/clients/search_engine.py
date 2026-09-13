@@ -54,5 +54,24 @@ class SearchEngineResponseDTO:
     )
 
 
+@dataclass(slots=True, frozen=True)
 class WebPageContent:
-    pass
+    """
+    Extracted content from one fetched web page.
+
+    Previously this was an empty stub (`class WebPageContent: pass`),
+    while every caller (content_fetch.py, web_research.py) constructed
+    it with url/title/text/fetch_succeeded/error keyword arguments --
+    a TypeError on every call, so WebResearchTool crashed on any real
+    fetch. Fields below match that pre-existing call-site contract.
+    """
+
+    url: str
+
+    title: str
+
+    text: str
+
+    fetch_succeeded: bool
+
+    error: str | None = None

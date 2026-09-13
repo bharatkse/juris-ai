@@ -108,3 +108,24 @@ def create_db_session() -> AsyncSession:
     """
 
     return session_factory()
+
+
+async def dispose_engine() -> None:
+    """
+    Discard the shared engine's connection pool.
+
+    The pool caches live asyncpg connections, each bound to whichever
+    event loop was running when it was checked out. In production this
+    never matters: the app has exactly one event loop for its whole
+    lifetime. It does matter for any caller that may run this module's
+    session_factory() under more than one event loop in a single
+    process (e.g. a test process moving between differently
+    loop-scoped test blocks) -- a connection checked out under a now-closed
+    loop and handed back out under a new one raises
+    "Future ... attached to a different loop". Call this right before
+    (and after) a block of work known to run under a different loop
+    than whatever last used session_factory(), to force fresh
+    connections instead of reusing stale ones.
+    """
+
+    await engine.dispose()

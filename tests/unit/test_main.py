@@ -116,6 +116,7 @@ async def test_root_endpoint() -> None:
 
 
 @pytest.mark.asyncio
+@patch("main.seed_default_agent_policies")
 @patch("main.create_ai_orchestrator")
 @patch("main.AsyncPostgresSaver.from_conn_string")
 @patch("main.logger")
@@ -127,6 +128,7 @@ async def test_lifespan(
     mock_log: MagicMock,
     mock_from_conn_string: MagicMock,
     mock_create_ai_orchestrator: MagicMock,
+    mock_seed_default_agent_policies: MagicMock,
 ) -> None:
     """
     It should perform startup and shutdown tasks.
@@ -164,6 +166,8 @@ async def test_lifespan(
     mock_ensure_dir.assert_any_call(
         main.settings.logging.LOG_DIRECTORY,
     )
+
+    mock_seed_default_agent_policies.assert_awaited_once_with()
 
     checkpointer.setup.assert_awaited_once_with()
 

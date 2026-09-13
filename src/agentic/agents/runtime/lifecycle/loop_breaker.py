@@ -35,19 +35,31 @@ class LoopBreaker:
 
         Therefore max_repeated_action represents the maximum number of
         consecutive repeats after the first occurrence.
+
+        Uses the same pre-operation, increment-only-after-allow convention
+        as every other budget counter (see AgentLifecycle.begin_iteration
+        etc.): the guard is checked against the count of repeats already
+        recorded, and the counter only advances once the guard allows it.
         """
         if not action_key:
             raise ValueError("action_key must not be empty.")
 
-        if action_key == self.state.last_action_key:
-            self.state.repeated_action_count += 1
-        else:
+        if action_key != self.state.last_action_key:
             self.state.last_action_key = action_key
             self.state.repeated_action_count = 0
 
-        return self.guard.check_repeated_action(
+            return self.guard.check_repeated_action(
+                repeat_count=self.state.repeated_action_count,
+            )
+
+        result = self.guard.check_repeated_action(
             repeat_count=self.state.repeated_action_count,
         )
+
+        if result.allowed:
+            self.state.repeated_action_count += 1
+
+        return result
 
     def record_progress(
         self,
@@ -65,16 +77,26 @@ class LoopBreaker:
         reason rather than reusing the repeated-action control. This keeps
         semantic no-progress distinct from repeatedly issuing the same
         executable action.
+
+        Uses the same pre-operation, increment-only-after-allow convention
+        as record_action (see there for why).
         """
         if not progress_key:
             raise ValueError("progress_key must not be empty.")
 
-        if progress_key == self.state.last_progress_key:
-            self.state.no_progress_count += 1
-        else:
+        if progress_key != self.state.last_progress_key:
             self.state.last_progress_key = progress_key
             self.state.no_progress_count = 0
 
-        return self.guard.check_no_progress(
+            return self.guard.check_no_progress(
+                no_progress_count=self.state.no_progress_count,
+            )
+
+        result = self.guard.check_no_progress(
             no_progress_count=self.state.no_progress_count,
         )
+
+        if result.allowed:
+            self.state.no_progress_count += 1
+
+        return result

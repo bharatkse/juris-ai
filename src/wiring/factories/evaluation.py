@@ -18,6 +18,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from core.dto.clients.llm import LLMMessageDTO, LLMRequestDTO
+from core.dto.inference import LLMInferenceConfig
 from core.enums import MessageRoleEnum
 from rag.evaluation.evaluator import Judge, RAGEvaluator
 from rag.evaluation.faithfulness_backend import (
@@ -48,6 +49,21 @@ def build_llm_judge(*, settings: Settings) -> Judge:
                         content=prompt,
                     ),
                 ),
+                # Every caller of this judge (faithfulness, answer
+                # relevancy, context precision/recall -- legacy and
+                # ragas-backed alike, see ragas_llm_adapter.py) is a
+                # scoring call, not a generative one. Previously this
+                # request carried no inference config, silently
+                # defaulting to LLMInferenceConfig's bare 0.2 -- an
+                # ambient, undeliberate temperature for a judge whose
+                # output is supposed to be a reproducible score.
+                # Pinned to 0.0 (as close to deterministic as providers
+                # allow) so repeated judge calls on the same input are
+                # stable -- required for the empirical threshold
+                # calibration in AnswerQualityPolicy to remain
+                # meaningful over time (scripts/
+                # calibrate_answer_quality_thresholds.py).
+                inference=LLMInferenceConfig(temperature=0.0),
             ),
         )
 
