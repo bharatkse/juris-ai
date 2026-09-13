@@ -13,16 +13,16 @@ class RateLimitSettings(BaseAppSettings):
     data -- tune via env vars once real usage numbers exist.
     """
 
-    ENABLED: bool = True
+    RATE_LIMIT_ENABLED: bool = True
 
     # (a) burst/rate limit: max requests per rolling-minute window.
-    REQUESTS_PER_MINUTE: int = 20
+    RATE_LIMIT_REQUESTS_PER_MINUTE: int = 20
 
     # (b) cost control: max total (input + output) tokens per user per
     # calendar day.
-    DAILY_TOKEN_QUOTA: int = 200_000
+    RATE_LIMIT_DAILY_TOKEN_QUOTA: int = 200_000
 
-    @field_validator("REQUESTS_PER_MINUTE", "DAILY_TOKEN_QUOTA")
+    @field_validator("RATE_LIMIT_REQUESTS_PER_MINUTE", "RATE_LIMIT_DAILY_TOKEN_QUOTA")
     @classmethod
     def validate_positive(cls, value: int) -> int:
         if value <= 0:

@@ -356,16 +356,18 @@ RetrievedContentDTO
 
 The LLM should **not be responsible for reconstructing source metadata.**
 
-> **Current implementation status:** this is the target pipeline, not
-> what runs today. `AgentResponseDTO` is currently constructed without
-> `citations=`/`sources=` (`agentic/agents/base.py`), so both default
-> to empty, and nothing in the codebase constructs a `CitationDTO` or
-> `SourceDTO` anywhere. The Aggregator's merge step
-> (`execution/aggregation/response.py`) is implemented correctly — it
-> has nothing to merge because nothing upstream populates it yet.
-> Every `AIResponse` today has `citations: []` and `sources: []`. A
-> fix belongs in the retrieval → `AgentResponseDTO` step above, not in
-> the Aggregator.
+> **Current implementation status:** this gap is closed. A FINAL
+> decision's `AgentResponseDTO` is now built by
+> `AgentResponseMapper.map()` (`execution/aggregation/mapper.py`),
+> called from the graph's FINAL handling
+> (`execution/graph/nodes.py`), which derives real `CitationDTO`/
+> `SourceDTO` values from the reasoning context accumulated during
+> execution (`_build_provenance()`) rather than leaving them empty.
+> The Aggregator's merge step (`execution/aggregation/response.py`)
+> now has real data to merge. Citation/source *quality* is still
+> capped by a separate, still-open issue — the `Tool.execute() -> str`
+> boundary loses structured per-result data (title, per-chunk score)
+> before it ever reaches this mapper — see `claude.md` → Known gaps.
 
 ## 6. Execution runtime
 
@@ -432,6 +434,22 @@ ContractAgent
 > descriptive label for that graph shape, not a switch the Executor
 > reads.
 
+### Corrective retrieval (added this session — not in the original design)
+
+When a FINAL answer fails groundedness or relevance
+(`agentic/evaluation/answer.py`'s `AnswerQualityPolicy`),
+`AgentContinuationService._gate_final()`
+(`agents/runtime/continuation.py`) now forces a real `retriever`
+`TOOL_CALL` for the same question (broadened `top_k`) before letting
+the agent try FINAL again, instead of only re-asking the same LLM with
+a note and no new information. This system-initiated call goes through
+`AgentPolicyGuard.check_tool()` exactly like an LLM-proposed one — an
+agent without `"retriever"` in its policy cannot get this retry
+either. Correctness/citation failures (the only other ways an answer
+can fail the policy) still fall back to a weaker re-ask, since more
+retrieval isn't the right remedy for those. See
+`src/agentic/README.md` for the full sequence diagram.
+
 ## 7. Responsibility Matrix
 
 Component Owns Must NOT own
@@ -459,13 +477,20 @@ Component Owns Must NOT own
 
 > **Current implementation status:** the role boundaries above hold
 > in code (Orchestrator never executes agents/tools, Executor never
-> plans). One boundary has an unconfirmed exception under
-> investigation — Agents hold `RetrieverTool` directly rather than
-> resolving it via the Tool Registry; whether this bypasses any
-> permission check hasn't been verified — see `claude.md` → Known
-> gaps. The **Aggregator**'s "Merge outputs/provenance" row is
-> correctly implemented; see the section 5 status note for why it
-> currently has nothing to merge.
+> plans). Tool-permission enforcement (`AgentPolicyGuard.check_tool()`)
+> is no longer inert: `agent_policies` is a real, DB-backed table
+> (`DatabaseAgentPolicyProvider`, seeded at startup) instead of the
+> empty static dict it used to be, and every `TOOL_CALL` — both
+> LLM-proposed (`agents/runtime/execution.py`) and system-forced
+> corrective retrieval (`agents/runtime/continuation.py`, see the new
+> note under section 6) — is checked against it. One confirmed
+> exception remains, now higher-risk precisely because enforcement
+> elsewhere actually works: `agents/base.py._retrieve_context()` still
+> holds a `RetrieverTool` directly with no policy check at all. It
+> remains dead code (unreached via `run()`/`stream()`) — see
+> `claude.md` → Known gaps for the full trace. The **Aggregator**'s
+> "Merge outputs/provenance" row is correctly implemented and now has
+> real data to merge — see the section 5 status note.
 
 ---
 
@@ -663,8 +688,9 @@ RetrievedContent
 This keeps source information available for the final API response.
 
 > **Current implementation status:** see the section 5 note above —
-> `citations`/`sources` are empty in every response today; this
-> diagram is the target, not current behavior.
+> this is no longer just the target, it's what runs: `citations`/
+> `sources` are populated by `AgentResponseMapper` today, subject to
+> the same quality ceiling noted there.
 
 ---
 
