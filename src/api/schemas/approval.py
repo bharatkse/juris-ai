@@ -33,6 +33,19 @@ class ApprovalDecisionRequest(BaseModel):
 class ApprovalResponse(BaseModel):
     """
     Approval request returned by the API.
+
+    Field names mirror ApprovalResponseDTO (core/dto/approval.py)
+    exactly -- ApprovalLifecycleService.process() returns that DTO
+    (via the persisted Approval entity's to_dto()), and this schema is
+    built from it with from_attributes=True, so a name here that
+    doesn't exist on the DTO fails validation on every call. Previously
+    named `action_id`/`action_fingerprint`, neither a real attribute on
+    the DTO (it has `agent_action_id`, no fingerprint field at all --
+    that lives on AgentAction, not Approval) -- this endpoint 500'd on
+    every decision, after the decision itself was already durably
+    recorded. Found while building the HITL approve-flow E2E test
+    (tests/e2e/test_hitl_approval_flow.py), which exercises this
+    response shape for real.
     """
 
     model_config = ConfigDict(
@@ -41,9 +54,7 @@ class ApprovalResponse(BaseModel):
 
     approval_id: str
 
-    action_id: str
-
-    action_fingerprint: str
+    agent_action_id: str
 
     requested_by: str
 

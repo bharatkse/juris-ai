@@ -31,6 +31,7 @@ from sentence_transformers import SentenceTransformer
 
 from agentic.evaluation.answer import AnswerEvaluator
 from config.settings import get_settings
+from wiring.factories.cache import build_cache
 from wiring.factories.evaluation import build_faithfulness_backend
 
 DATASET_PATH = Path("tests/datasets/rag/evaluation/legal_retrieval_gold_v1.json")
@@ -78,6 +79,11 @@ def _build_examples(cases: list[dict]) -> tuple[list[dict], list[dict]]:
                 # judgment, not comparing a string to itself.
                 "reference_answer": evidence_text,
                 "expected_source": case["expected_sources"][0],
+                # Citation positive: cites its OWN evidence verbatim --
+                # same construction rigor as the other three metrics'
+                # positives (correctness's positive is likewise the
+                # evidence text itself, not a paraphrase).
+                "citation": evidence_text,
             }
         )
 
@@ -97,6 +103,11 @@ def _build_examples(cases: list[dict]) -> tuple[list[dict], list[dict]]:
                 "reference_answer": evidence_text,
                 "expected_source": case["expected_sources"][0],
                 "wrong_source": other["expected_sources"][0],
+                # Citation negative: cites a DIFFERENT case's evidence
+                # against THIS case's own evidence -- an unrelated
+                # (not fabricated-nonsense, but genuinely mismatched)
+                # citation.
+                "citation": other_evidence,
             }
         )
 
@@ -141,7 +152,12 @@ async def main() -> None:
     cases = dataset["cases"]
 
     settings = get_settings()
-    faithfulness_backend = build_faithfulness_backend(settings=settings)
+    # Own cache instance, Redis-backed by default -- repeated
+    # calibration runs (e.g. Step 2's model-comparison reruns) hit
+    # cache for any judge call whose (provider, model, prompt) repeats
+    # across invocations, not just within one run.
+    cache = build_cache(settings=settings)
+    faithfulness_backend = build_faithfulness_backend(settings=settings, cache=cache)
 
     model = SentenceTransformer(EMBEDDING_MODEL)
     evaluator = AnswerEvaluator(
@@ -158,6 +174,7 @@ async def main() -> None:
                 answer=item["answer"],
                 evidence=item["evidence"],
                 reference_answer=item["reference_answer"],
+                citations=[item["citation"]],
             )
             for item in items
         ]
@@ -181,31 +198,16 @@ async def main() -> None:
     _sweep("relevance", pos_relevance, neg_relevance)
     _sweep("correctness", pos_correctness, neg_correctness)
 
-    print(
-        "\n=== CITATIONS (precision/coverage) -- sanity check, NOT an empirical " "calibration ==="
-    )
-    print(
-        "_evaluate_citations is exact set-membership (a citation either is or "
-        "isn't in the source set), not a continuous similarity score -- there is "
-        "no overlapping distribution to sweep a separating threshold over the "
-        "way groundedness/relevance/correctness have. What follows only confirms "
-        "the metric produces the expected 0.0/1.0 extremes; the actual threshold "
-        "stays a policy choice (how much imperfect citing to tolerate), not "
-        "something this dataset can empirically discover."
-    )
+    print("\n=== CITATION PRECISION (cited text vs its own evidence chunk) ===")
+    pos_citation_precision = _stats("positives", [r.citation_precision for r in pos_results])
+    neg_citation_precision = _stats("negatives", [r.citation_precision for r in neg_results])
 
-    correct_citation = evaluator._evaluate_citations(
-        citations=[positives[0]["expected_source"]],
-        citation_sources=[positives[0]["expected_source"]],
-        evidence=positives[0]["evidence"],
-    )
-    wrong_citation = evaluator._evaluate_citations(
-        citations=[negatives[0]["wrong_source"]],
-        citation_sources=[negatives[0]["expected_source"]],
-        evidence=negatives[0]["evidence"],
-    )
-    print(f"  correct citation -> precision/coverage = {correct_citation}")
-    print(f"  wrong citation   -> precision/coverage = {wrong_citation}")
+    print("\n=== CITATION COVERAGE (evidence chunk vs cited text) ===")
+    pos_citation_coverage = _stats("positives", [r.citation_coverage for r in pos_results])
+    neg_citation_coverage = _stats("negatives", [r.citation_coverage for r in neg_results])
+
+    _sweep("citation precision", pos_citation_precision, neg_citation_precision)
+    _sweep("citation coverage", pos_citation_coverage, neg_citation_coverage)
 
 
 if __name__ == "__main__":

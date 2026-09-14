@@ -474,6 +474,7 @@ async def test_smoke_tool_call_executes_and_continues_reasoning() -> None:
         collaboration_bus=CollaborationBus(),
         answer_evaluator=AsyncMock(),
         answer_quality_policy=MagicMock(is_sufficient=MagicMock(return_value=True)),
+        agent_policy_guard=MagicMock(),
     )
 
     decision = _tool_decision()
@@ -533,6 +534,7 @@ async def test_smoke_tool_failure_is_failed_tool() -> None:
         collaboration_bus=CollaborationBus(),
         answer_evaluator=AsyncMock(),
         answer_quality_policy=MagicMock(is_sufficient=MagicMock(return_value=True)),
+        agent_policy_guard=MagicMock(),
     )
 
     decision = _tool_decision()
@@ -578,6 +580,7 @@ async def test_smoke_tool_budget_denial_is_partial_not_failed() -> None:
         collaboration_bus=CollaborationBus(),
         answer_evaluator=AsyncMock(),
         answer_quality_policy=MagicMock(is_sufficient=MagicMock(return_value=True)),
+        agent_policy_guard=MagicMock(),
     )
 
     decision = _tool_decision()
@@ -640,6 +643,7 @@ async def test_smoke_delegate_routes_through_bus_and_continues() -> None:
         collaboration_bus=bus,
         answer_evaluator=AsyncMock(),
         answer_quality_policy=MagicMock(is_sufficient=MagicMock(return_value=True)),
+        agent_policy_guard=MagicMock(),
     )
 
     decision = _delegate_decision()
@@ -698,6 +702,7 @@ async def test_smoke_delegate_budget_denial_is_partial() -> None:
         collaboration_bus=bus,
         answer_evaluator=AsyncMock(),
         answer_quality_policy=MagicMock(is_sufficient=MagicMock(return_value=True)),
+        agent_policy_guard=MagicMock(),
     )
 
     decision = _delegate_decision()
@@ -930,6 +935,7 @@ async def test_smoke_concurrent_continuations_keep_request_context_isolated() ->
         collaboration_bus=CollaborationBus(),
         answer_evaluator=AsyncMock(),
         answer_quality_policy=MagicMock(is_sufficient=MagicMock(return_value=True)),
+        agent_policy_guard=MagicMock(),
     )
 
     decision = _tool_decision()

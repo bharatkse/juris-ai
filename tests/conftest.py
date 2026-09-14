@@ -33,6 +33,9 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
         elif "/tests/smoke/" in path:
             item.add_marker(pytest.mark.smoke)
 
+        elif "/tests/e2e/" in path:
+            item.add_marker(pytest.mark.e2e)
+
 
 @pytest.fixture(autouse=True)
 def disable_langsmith(

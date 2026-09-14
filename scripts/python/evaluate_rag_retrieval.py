@@ -11,6 +11,7 @@ from rag.evaluation.metrics.precision import PrecisionAtK
 from rag.evaluation.metrics.recall import RecallAtK
 from rag.evaluation.retrieval_evaluator import RetrievalEvaluator
 from rag.evaluation.retrieval_runner import RetrievalEvaluationRunner
+from wiring.factories.cache import build_cache
 from wiring.factories.evaluation import build_faithfulness_backend
 from wiring.factories.rag import build_rag_pipeline
 
@@ -25,8 +26,14 @@ async def main() -> None:
         path=DATASET_PATH,
     )
 
+    # Own cache instance -- Redis-backed by default (settings.security.
+    # CACHE_BACKEND), so repeated script runs across separate processes
+    # also hit cache for embeddings/judge calls on unchanged inputs.
+    cache = build_cache(settings=settings)
+
     pipeline = build_rag_pipeline(
         settings=settings,
+        cache=cache,
     )
 
     evaluator = RetrievalEvaluator(
@@ -42,7 +49,7 @@ async def main() -> None:
             # mean_scores, but it does NOT drag down passed_cases/
             # pass_rate. Wired in now so it activates automatically
             # once that gap is closed.
-            FaithfulnessMetric(backend=build_faithfulness_backend(settings=settings)),
+            FaithfulnessMetric(backend=build_faithfulness_backend(settings=settings, cache=cache)),
         ],
     )
 

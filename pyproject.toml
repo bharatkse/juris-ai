@@ -291,6 +291,7 @@ markers = [
   "integration: Integration tests — use real services",
   "slow: Tests that take more than 5 seconds",
   "smoke: smoke tests for critical application workflows",
+  "e2e: API-level end-to-end tests — real FastAPI app, real Postgres/Redis",
 ]
 
 

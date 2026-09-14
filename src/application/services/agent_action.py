@@ -4,6 +4,8 @@ Agent action application service.
 
 from __future__ import annotations
 
+from typing import Any
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from adapters.observability.logger import get_logger
@@ -53,6 +55,7 @@ class AgentActionService(BaseService):
         action: AgentActionRequestDTO,
         user_id: str,
         tenant_id: str,
+        plan_snapshot: dict[str, Any] | None = None,
     ) -> AgentAction:
         """
         Create and persist a concrete AgentAction.
@@ -60,6 +63,9 @@ class AgentActionService(BaseService):
         Entity construction belongs to the application/model layer.
         The repository receives an already-constructed entity and
         performs persistence only.
+
+        plan_snapshot: see ActionWorkflowService.prepare()'s docstring
+        -- only set for an action that paused a LangGraph execution.
         """
 
         try:
@@ -72,6 +78,7 @@ class AgentActionService(BaseService):
                 user_id=user_id,
                 tenant_id=tenant_id,
                 fingerprint=fingerprint,
+                plan_snapshot=plan_snapshot,
             )
 
             entity = await self._repository.create(

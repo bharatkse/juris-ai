@@ -195,6 +195,37 @@ specific deployment.
 This is a first-cut seed, not derived from a specification — treat it
 as a starting point to adjust, not a settled design.
 
+### Gated-tool replay safety
+
+`AgentContinuationService._execute_gated_tool()` (`agents/runtime/
+continuation.py`) pauses a `GATED_TOOLS` (`email`, `slack`) `TOOL_CALL`
+via LangGraph's `interrupt()` instead of executing it. LangGraph
+replays the *whole* node function from the top on resume, including
+any tool call that ran earlier in the same turn — `_execute_tool()`'s
+real invocation runs inside a `langgraph.func.task`
+(`_call_replay_safe()` in the same module), which checkpoints its
+result the first time it runs; a replay returns that cached result
+instead of re-invoking the tool. Verified live against the real
+Postgres checkpointer: an ungated tool (`retriever`) called before a
+gated one (`email`) in the same turn executes exactly once across a
+full pause/resume cycle, not twice.
+
+`@task` itself raises outside an active LangGraph runnable context, so
+`_call_replay_safe()` falls back to calling the task's plain underlying
+function directly when there is none (checked via LangGraph's
+`var_child_runnable_config` contextvar, non-raising) — this is what
+keeps `AgentContinuationService` unit-testable in isolation (constructed
+directly and called without a compiled graph), the pattern this
+module's own test suite relies on.
+
+Deliberately not extended to `_delegate()`'s real send the same way:
+`DELEGATE` is confirmed unreachable in production today (`AgentPolicyGuard
+.check_delegation()` always denies — `allow_delegation` defaults `False`
+and `agent_policies` has no column for it), so there's no live replay
+hazard to fix yet, and `CollaborationBus.send()` returns a bare `object`
+with no established serialization contract to checkpoint safely. Revisit
+alongside adding real `allow_delegation` support.
+
 ## Temperature / determinism conventions
 
 Every LLM call in this package resolves its sampling config through

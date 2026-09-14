@@ -8,8 +8,8 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import JSON as JSONB
+from sqlalchemy import DateTime, ForeignKey, Index, String, Text
 from sqlalchemy import Enum as PgEnum
-from sqlalchemy import ForeignKey, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from adapters.persistence.sqlalchemy.base import Base
@@ -158,6 +158,17 @@ class AgentAction(
         default="",
     )
 
+    # Serialized ExecutionPlanDTO (core.dto.planning.serialize_plan),
+    # set only for an action that paused a LangGraph execution via
+    # interrupt() -- resuming rebuilds the compiled graph from this,
+    # since the checkpointer persists conversation/reasoning state but
+    # not the plan's step/node shape itself. Null for every action
+    # that didn't pause execution.
+    plan_snapshot: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB,
+        nullable=True,
+    )
+
     # ------------------------------------------------------------------
     # Action lifecycle
     # ------------------------------------------------------------------
@@ -196,7 +207,11 @@ class AgentAction(
         nullable=True,
     )
 
+    # DateTime(timezone=True) explicit -- see approval.py's
+    # expires_at/decided_at comment for why (same latent bug class,
+    # fixed together).
     executed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
         nullable=True,
     )
 
@@ -246,6 +261,7 @@ class AgentAction(
         user_id: str,
         tenant_id: str,
         fingerprint: str,
+        plan_snapshot: dict[str, Any] | None = None,
     ) -> AgentAction:
         """
         Build a persistence entity from an action DTO.
@@ -271,6 +287,7 @@ class AgentAction(
             reason=action.reason,
             status=AgentActionStatusEnum.DRAFT,
             fingerprint=fingerprint,
+            plan_snapshot=plan_snapshot,
         )
 
     def to_dto(self) -> AgentActionResponseDTO:

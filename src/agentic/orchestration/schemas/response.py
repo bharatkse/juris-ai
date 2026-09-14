@@ -19,11 +19,24 @@ from core.types import ConversationId
 class Citation(BaseModel):
     """
     Citation supporting the generated response.
+
+    from_attributes=True: ResponseAggregator._aggregate_citations()
+    passes core.dto.response.CitationDTO instances (a frozen dataclass,
+    field-for-field identical to this model) straight through into
+    AggregatedResponse.citations: list[Citation] -- without this,
+    pydantic rejects a dataclass instance outright wherever a
+    BaseModel is declared, since it's neither a dict nor an instance
+    of this exact class. Confirmed live: this made every FINAL answer
+    carrying a non-empty citation fail at the aggregation boundary --
+    caught while verifying the HITL resume path end-to-end, since that
+    was the first thing to actually drive a real citation through this
+    exact construction (see claude.md's HITL trace).
     """
 
     model_config = ConfigDict(
         frozen=True,
         extra="forbid",
+        from_attributes=True,
     )
 
     title: str
@@ -40,11 +53,15 @@ class Citation(BaseModel):
 class Source(BaseModel):
     """
     Source used to generate the response.
+
+    from_attributes=True: see Citation's docstring above -- same
+    reason, same fix, for core.dto.response.SourceDTO.
     """
 
     model_config = ConfigDict(
         frozen=True,
         extra="forbid",
+        from_attributes=True,
     )
 
     title: str

@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+import threading
 from typing import Any
 
 from adapters.observability.logger import get_logger
@@ -97,6 +98,7 @@ class CrossEncoderReranker(RerankerProtocol):
         self._raw_output_is_logit = raw_output_is_logit
         self._retrieval_weight = retrieval_weight
         self._model: Any | None = None
+        self._model_lock = threading.Lock()
 
         logger.info(
             "Configured ONNX reranker model.",
@@ -110,39 +112,51 @@ class CrossEncoderReranker(RerankerProtocol):
     def _load(self) -> Any:
         """
         Lazily load the cross-encoder using the ONNX backend.
+
+        Model loading is protected so concurrent worker threads do not
+        initialize multiple model instances -- same double-checked
+        locking as SentenceTransformerEmbeddingProvider._load()
+        (rag/embeddings.py), reused as-is rather than a new pattern.
+        Callers must invoke this via asyncio.to_thread(), same as
+        embeddings.py's call site does -- this method itself stays
+        synchronous so it can run in a worker thread.
         """
 
         if self._model is not None:
             return self._model
 
-        try:
-            from sentence_transformers import CrossEncoder
+        with self._model_lock:
+            if self._model is not None:
+                return self._model
 
-            logger.info(
-                "Loading ONNX reranker model.",
-                extra={
-                    "model": self._model_name,
-                },
-            )
+            try:
+                from sentence_transformers import CrossEncoder
 
-            self._model = CrossEncoder(
-                self._model_name,
-                backend="onnx",
-            )
+                logger.info(
+                    "Loading ONNX reranker model.",
+                    extra={
+                        "model": self._model_name,
+                    },
+                )
 
-            return self._model
+                self._model = CrossEncoder(
+                    self._model_name,
+                    backend="onnx",
+                )
 
-        except Exception as exc:
-            logger.exception(
-                "Failed to load ONNX reranker model.",
-                extra={
-                    "model": self._model_name,
-                },
-            )
+                return self._model
 
-            raise RerankError(
-                message=("Failed to load ONNX reranker model " f"'{self._model_name}'."),
-            ) from exc
+            except Exception as exc:
+                logger.exception(
+                    "Failed to load ONNX reranker model.",
+                    extra={
+                        "model": self._model_name,
+                    },
+                )
+
+                raise RerankError(
+                    message=("Failed to load ONNX reranker model " f"'{self._model_name}'."),
+                ) from exc
 
     def _normalize_score(
         self,
@@ -221,7 +235,12 @@ class CrossEncoderReranker(RerankerProtocol):
             return []
 
         try:
-            model = self._load()
+            # Offloaded like the predict() call below -- _load() does
+            # a real, one-time model download/instantiation (the
+            # "30-40s cold load"), which would otherwise run
+            # synchronously on the event loop and block every other
+            # concurrent request for its entire duration.
+            model = await asyncio.to_thread(self._load)
 
             pairs = [
                 (

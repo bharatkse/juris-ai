@@ -25,6 +25,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from rag.caching_embedding_provider import CachingEmbeddingProvider
 from rag.embeddings import SentenceTransformerEmbeddingProvider
 from rag.hybrid_retriever import HybridRetriever
 from rag.indexer import RAGIndexer
@@ -33,6 +34,7 @@ from rag.pgvector_store import PgVectorStore
 from rag.reranker import CrossEncoderReranker
 
 if TYPE_CHECKING:
+    from adapters.cache.base import AbstractCache
     from config.settings import Settings
     from rag.protocols.embedding_provider import EmbeddingProviderProtocol
 
@@ -54,9 +56,18 @@ class RAGPipeline:
     embedding_provider: EmbeddingProviderProtocol
 
 
-def build_rag_pipeline(*, settings: Settings) -> RAGPipeline:
+def build_rag_pipeline(*, settings: Settings, cache: AbstractCache) -> RAGPipeline:
     # Built ONCE, shared by both the retriever and the indexer below.
-    embedding_provider = SentenceTransformerEmbeddingProvider()
+    # Wrapped with the shared cache here, before being handed to
+    # anything -- covers HybridRetriever's query embedding,
+    # RAGIndexer's ingestion embedding, and (via ClientContainer.
+    # embedding_provider) the agentic answer evaluator's similarity
+    # calls, all from this one construction point.
+    embedding_provider: EmbeddingProviderProtocol = CachingEmbeddingProvider(
+        wrapped=SentenceTransformerEmbeddingProvider(),
+        cache=cache,
+        ttl_seconds=settings.security.CACHE_TTL_SECONDS,
+    )
     vector_store = PgVectorStore()
 
     hybrid_retriever = HybridRetriever(

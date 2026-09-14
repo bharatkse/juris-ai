@@ -34,6 +34,31 @@ class ConversationEventRepository(
             event,
         )
 
+    async def get_by_id(
+        self,
+        *,
+        event_id: ConversationEventId,
+    ) -> ConversationEvent | None:
+        """
+        Retrieve a conversation event by ID alone.
+
+        Used where only the event ID is known up front (e.g. resuming
+        a paused agent action, which carries conversation_event_id but
+        not conversation_id) -- get() above is preferred whenever the
+        conversation_id is already known, since it also scopes the
+        lookup to that conversation.
+        """
+
+        statement = self.select().where(
+            self._model.id == event_id,
+        )
+
+        result = await self._session.execute(
+            statement,
+        )
+
+        return result.scalar_one_or_none()
+
     async def get(
         self,
         *,

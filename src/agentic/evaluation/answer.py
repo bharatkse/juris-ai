@@ -88,18 +88,52 @@ class AnswerQualityPolicy:
     -- a real signal, not a guess, but not a substitute for recalibrating
     against production data once available.
 
-    min_citation_precision/min_citation_coverage have NO empirical
-    calibration, and -- unlike groundedness/relevance/correctness --
-    none is possible from this dataset: _evaluate_citations is exact
-    set-membership (a cited source either is or isn't in the retrieved
-    set), producing only the extremes 0.0 or 1.0 per case, not a
-    continuous score with an overlapping distribution to sweep a
-    threshold over. Confirmed via calibrate_answer_quality_thresholds.py:
-    a correct citation scores (precision=1.0, coverage=1.0), a wrong one
-    scores (0.0, 0.0) -- exactly as expected, but this is a sanity check
-    of the metric, not a calibration of the threshold. 0.70 remains a
-    policy choice (how much imperfect citing to tolerate), stated as
-    such rather than dressed up as empirically derived.
+    min_citation_precision/min_citation_coverage ARE now empirically
+    calibrated (2026-09-14, same script/dataset/evidence-swap method as
+    above), following the redesign of _evaluate_citations from exact
+    identifier set-membership (which only ever produced 0.0 or 1.0,
+    with no overlapping distribution to sweep) to continuous embedding
+    similarity between cited text and evidence chunks.
+
+    Method: positives cite their own case's expected_evidence verbatim
+    against that same evidence; negatives cite a DIFFERENT case's
+    expected_evidence against this case's evidence -- the identical
+    evidence-swap construction used for groundedness/correctness above.
+
+    Results: positives are uniformly 1.000 (a citation compared to
+    itself is a perfect match by construction). Negatives are NOT
+    uniformly 0.0 the way the old metric's sanity check was -- they
+    range 0.430-0.760 (mean 0.543), a real overlapping distribution,
+    because embedding similarity between two different sections of the
+    same statute is genuinely nonzero. A sweep found 0.80 gives perfect
+    accuracy (100%: 29/29 positives correctly pass, 29/29 negatives
+    correctly fail) -- 0.70 (the prior, unexamined default) only
+    reached 96.6% (2 of 29 mismatched citations would have incorrectly
+    passed). Set to 0.80.
+
+    Caveat specific to this pair: precision and coverage are
+    numerically IDENTICAL in this calibration -- an artifact of each
+    case constructing exactly one citation against exactly one evidence
+    chunk, where max-over-one-item collapses both formulas to the same
+    value. They will diverge in production, where an answer can have
+    multiple citations against multiple evidence chunks (see
+    _evaluate_citations's docstring for the two formulas). This
+    calibration validates the SIMILARITY SCORING is sound and the
+    threshold is well-separated, not that precision and coverage behave
+    identically at multi-item scale -- that would need a differently
+    constructed dataset (multiple citations/evidence per case) to test
+    directly. Same standing caveats as groundedness/relevance/
+    correctness apply otherwise: n=29, single corpus, one
+    negative-construction strategy -- a real signal, not a guess, but
+    not a substitute for recalibrating against production data.
+
+    Also still true regardless of this recalibration: enforce_citations
+    defaults to False, and _gate_final (agents/runtime/continuation.py)
+    never passes citations= to evaluate() in the live path today, so
+    citation_precision/coverage are computed (as 0.0, 0.0 -- no
+    citations supplied) but do not currently gate anything in
+    production. This calibration makes the threshold meaningful for
+    whenever that changes, not retroactively live today.
 
     min_completeness is advisory only -- see is_sufficient's docstring.
     Kept as a named threshold (rather than deleted) so the "is this
@@ -115,8 +149,8 @@ class AnswerQualityPolicy:
     min_relevance: float = 0.60
     min_completeness: float = 0.70
     min_correctness: float = 0.75
-    min_citation_precision: float = 0.70
-    min_citation_coverage: float = 0.70
+    min_citation_precision: float = 0.80
+    min_citation_coverage: float = 0.80
     enforce_citations: bool = False
 
     def is_sufficient(self, result: AnswerEvaluationResult) -> bool:
@@ -250,35 +284,44 @@ class AnswerEvaluator:
         evidence: Sequence[str] = (),
         reference_answer: str | None = None,
         citations: Sequence[str] = (),
-        citation_sources: Sequence[str] = (),
     ) -> AnswerEvaluationResult:
-        groundedness_detail = await self._evaluate_groundedness(
-            question=question,
-            answer=answer,
-            evidence=evidence,
-        )
-
-        relevance = await self._evaluate_relevance(
-            question=question,
-            answer=answer,
-        )
-
-        completeness = await self._evaluate_completeness(
-            question=question,
-            answer=answer,
-            evidence=evidence,
-        )
-
-        correctness = (
-            await self._similarity(answer, reference_answer)
-            if reference_answer is not None
-            else None
-        )
-
-        citation_precision, citation_coverage = self._evaluate_citations(
-            citations=citations,
-            citation_sources=citation_sources,
-            evidence=evidence,
+        # All five checks are independent given the same inputs -- none
+        # reads another's result -- so they run concurrently rather
+        # than one after another. This matters most for groundedness,
+        # the one real network round trip (an LLM judge call);
+        # relevance/completeness/correctness/citations are local
+        # embedding math and would otherwise sit idle waiting for it.
+        # Gathering all five means groundedness's latency is hidden
+        # behind the others instead of adding to them.
+        (
+            groundedness_detail,
+            relevance,
+            completeness,
+            correctness,
+            (citation_precision, citation_coverage),
+        ) = await asyncio.gather(
+            self._evaluate_groundedness(
+                question=question,
+                answer=answer,
+                evidence=evidence,
+            ),
+            self._evaluate_relevance(
+                question=question,
+                answer=answer,
+            ),
+            self._evaluate_completeness(
+                question=question,
+                answer=answer,
+                evidence=evidence,
+            ),
+            self._maybe_correctness(
+                answer=answer,
+                reference_answer=reference_answer,
+            ),
+            self._evaluate_citations(
+                citations=citations,
+                evidence=evidence,
+            ),
         )
 
         return AnswerEvaluationResult(
@@ -326,6 +369,23 @@ class AnswerEvaluator:
             return 0.0
         return await self._similarity(question, answer)
 
+    async def _maybe_correctness(
+        self,
+        *,
+        answer: str,
+        reference_answer: str | None,
+    ) -> float | None:
+        """
+        Wraps the reference_answer is not None conditional in an
+        always-awaitable so it can sit alongside the other four checks
+        in evaluate()'s asyncio.gather() -- gather needs a real
+        coroutine for every position, not a plain None.
+        """
+
+        if reference_answer is None:
+            return None
+        return await self._similarity(answer, reference_answer)
+
     async def _evaluate_completeness(
         self,
         *,
@@ -347,31 +407,59 @@ class AnswerEvaluator:
 
         return await self._similarity(question, answer)
 
-    def _evaluate_citations(
+    async def _evaluate_citations(
         self,
         *,
         citations: Sequence[str],
-        citation_sources: Sequence[str],
         evidence: Sequence[str],
     ) -> tuple[float, float]:
-        if not evidence:
-            # No evidence means citation quality is not demonstrable.
+        """
+        Continuous precision/coverage over cited text vs relevant
+        (evidence) chunks, via embedding similarity -- not exact
+        string/identifier set-membership.
+
+        Redesigned from the original metric, which compared opaque
+        citation/source IDENTIFIER strings for exact membership,
+        producing only the extremes 0.0/1.0 whenever a case cited
+        exactly one source (the common shape) -- confirmed via
+        calibrate_answer_quality_thresholds.py's sanity check before
+        this change. That made "how good is this citation" an
+        unanswerable question for anything short of a perfect or
+        totally-wrong match: citing the right document but the wrong
+        paragraph scored identically to fabricating a citation outright.
+
+        precision: for each citation, its similarity to the
+        BEST-matching evidence chunk, averaged across citations. A
+        citation that closely echoes real evidence scores near 1.0; a
+        fabricated or tangential one scores low in proportion to how
+        far it drifts from anything actually retrieved, rather than a
+        flat 0.0 for "not an exact match."
+
+        coverage: for each evidence chunk, its similarity to the
+        BEST-matching citation, averaged across evidence. Citing 1 of
+        5 equally-relevant chunks now scores partway, not "did any
+        expected source appear at all."
+
+        citations are expected to be the actual cited TEXT (e.g.
+        CitationDTO.snippet), not source identifiers -- there is
+        nothing left here to compare an identifier against.
+        """
+
+        if not evidence or not citations:
+            # No evidence means citation quality is not demonstrable;
+            # no citations means there is nothing to score.
             return (0.0, 0.0)
 
-        if not citations:
-            return (0.0, 0.0)
+        citation_scores = [
+            max([await self._similarity(citation, chunk) for chunk in evidence])
+            for citation in citations
+        ]
+        precision = sum(citation_scores) / len(citation_scores)
 
-        source_set = {source for source in citation_sources if source}
-
-        if not source_set:
-            # Citation identifiers without source mapping cannot establish
-            # citation precision/coverage.
-            return (0.0, 0.0)
-
-        valid = sum(citation in source_set for citation in citations)
-        precision = valid / len(citations)
-
-        cited_evidence = {source for source in citations if source in source_set}
-        coverage = len(cited_evidence) / len(source_set)
+        evidence_scores = [
+            max([await self._similarity(chunk, citation) for citation in citations])
+            for chunk in evidence
+        ]
+        coverage = sum(evidence_scores) / len(evidence_scores)
 
         return precision, coverage

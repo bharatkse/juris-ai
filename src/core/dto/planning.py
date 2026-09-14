@@ -103,6 +103,58 @@ class ExecutionPlanDTO:
     )
 
 
+def serialize_plan(plan: ExecutionPlanDTO) -> dict[str, Any]:
+    """
+    Convert an ExecutionPlanDTO into a JSON-safe dict.
+
+    Needed to persist the plan alongside a paused (interrupted)
+    execution -- resuming it later rebuilds an identically-shaped
+    compiled graph (see agentic.execution.session.ExecutionSession.
+    resume()), which requires the same plan the original execution
+    used, not just the checkpointed conversation/reasoning state.
+    """
+
+    return {
+        "intent": plan.intent.value,
+        "mode": plan.mode.value,
+        "steps": [
+            {
+                "id": step.id,
+                "agent": step.agent.value,
+                "instruction": step.instruction,
+                "depends_on": list(step.depends_on),
+                "stage": step.stage,
+                "arguments": step.arguments,
+            }
+            for step in plan.steps
+        ],
+        "metadata": plan.metadata,
+    }
+
+
+def deserialize_plan(data: dict[str, Any]) -> ExecutionPlanDTO:
+    """
+    Reconstruct an ExecutionPlanDTO from serialize_plan()'s output.
+    """
+
+    return ExecutionPlanDTO(
+        intent=IntentEnum(data["intent"]),
+        mode=ExecutionModeEnum(data["mode"]),
+        steps=tuple(
+            ExecutionStepDTO(
+                id=step["id"],
+                agent=AgentTypeEnum(step["agent"]),
+                instruction=step["instruction"],
+                depends_on=tuple(step["depends_on"]),
+                stage=step["stage"],
+                arguments=step["arguments"],
+            )
+            for step in data["steps"]
+        ),
+        metadata=data["metadata"],
+    )
+
+
 @dataclass(slots=True, frozen=True)
 class PlanningResponseDTO:
     """

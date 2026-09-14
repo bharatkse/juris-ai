@@ -229,3 +229,5 @@ CLAUDE.md
 claude.md
 
 .claude/
+
+.logs/

@@ -81,6 +81,16 @@ class LLMProviderEnum(StrEnum):
 
 
 class GroqModelEnum(StrEnum):
+    # CONFIRMED DEAD as of 2026-09-14: every real call with this model
+    # returns groq.NotFoundError (404 model_not_found) on this
+    # project's Groq account/API key -- Groq has been rotating out
+    # older Llama 3.1 8B variants. Not a code bug, not a quality
+    # question -- do not select this for GROQ_MODEL/JUDGE_MODEL until
+    # re-verified against the live Groq API (its catalog can change
+    # independently of this codebase). Left in place rather than
+    # deleted: MODEL_CONTEXT_WINDOWS (agents/prompts/token_budget.py)
+    # and a unit test still reference it, and Groq could re-add an
+    # equivalent small model under this or another name later.
     LLAMA_3_1_8B = "llama-3.1-8b-instant"
     LLAMA_3_3_70B = "llama-3.3-70b-versatile"
     GPT_OSS_120B = "openai/gpt-oss-120b"
