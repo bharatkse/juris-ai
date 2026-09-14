@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from adapters.cache.base import AbstractCache
     from adapters.clients.mcp.registry import MCPServerRegistry
     from adapters.clients.resolver import LLMResolver
     from adapters.clients.search_engine.searxng import SearxngClient
@@ -37,6 +38,11 @@ class ClientContainer:
     # for consumers (e.g. the agentic answer evaluator) that need raw
     # text similarity rather than retrieval.
     embedding_provider: EmbeddingProviderProtocol
+    # Shared LLM-judge/embedding memoization cache (wiring/factories/
+    # cache.py) — one instance for the whole process, threaded into
+    # build_rag_pipeline() (already applied to embedding_provider
+    # above) and build_faithfulness_backend() (factories/executor.py).
+    cache: AbstractCache
 
 
 @dataclass(frozen=True, slots=True)

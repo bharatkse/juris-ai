@@ -13,6 +13,7 @@ import pytest
 from api.schemas.approval import ApprovalDecisionRequest
 from api.v1.endpoints.approval import process_approval
 from application.services.approval_lifecycle import ApprovalLifecycleService
+from application.services.hitl_resume import HitlResumeService
 from core.dto.approval import ApprovalDecisionRequestDTO
 from core.enums import ApprovalDecisionEnum
 from core.exceptions.authorization import AuthorizationError
@@ -35,7 +36,20 @@ def build_approval_result() -> SimpleNamespace:
 
     return SimpleNamespace(
         id="approval-123",
+        approval_id="approval-123",
+        agent_action_id="action-123",
+        decision_type=ApprovalDecisionEnum.APPROVE,
     )
+
+
+def build_hitl_resume_service() -> MagicMock:
+    """
+    Build a mocked HitlResumeService for route tests.
+    """
+
+    service = MagicMock(spec=HitlResumeService)
+    service.resume_after_decision = AsyncMock()
+    return service
 
 
 @pytest.mark.asyncio
@@ -63,11 +77,14 @@ async def test_process_approval_returns_success_response() -> None:
         "api.schemas.approval.ApprovalResponse.model_validate",
         return_value={"id": "approval-123"},
     ):
+        hitl_resume_service = build_hitl_resume_service()
+
         result = await process_approval(
             approval_id="approval-123",
             request=request,
             current_user=current_user,
             service=service,
+            hitl_resume_service=hitl_resume_service,
         )
 
     assert result.status_code == 200
@@ -78,6 +95,12 @@ async def test_process_approval_returns_success_response() -> None:
     assert result["data"] == {"id": "approval-123"}
 
     service.process.assert_awaited_once()
+
+    hitl_resume_service.resume_after_decision.assert_awaited_once_with(
+        approval_id="approval-123",
+        agent_action_id="action-123",
+        decision_type=ApprovalDecisionEnum.APPROVE,
+    )
 
     call = service.process.await_args
 
@@ -131,6 +154,7 @@ async def test_process_approval_passes_edited_payload() -> None:
             request=request,
             current_user=current_user,
             service=service,
+            hitl_resume_service=build_hitl_resume_service(),
         )
 
     decision_request = service.process.await_args.kwargs["request"]

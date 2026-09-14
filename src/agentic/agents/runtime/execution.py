@@ -58,6 +58,7 @@ from agentic.policy.agent_policy import AgentPolicyProvider
 from agentic.policy.guard import AgentPolicyGuard
 from agentic.policy.schemas import AgentPolicy
 from agentic.registry.agent import AgentRegistry
+from agentic.tools.constants import GATED_TOOLS
 from core.dto.agent import AgentRequestDTO
 from core.dto.agent_action import AgentActionRequestDTO
 from core.dto.tool import RetrievedContentDTO
@@ -645,12 +646,21 @@ class AgentExecutionHandle:
                     completed_at=completed_at,
                 )
 
+            # GATED_TOOLS (email/slack sends) are tagged SEND instead of
+            # the usual TOOL_CALL -- AgentContinuationService reads this
+            # to decide whether to execute immediately or pause for
+            # human approval. Every other tool keeps TOOL_CALL, executed
+            # immediately as before.
             action = AgentActionRequestDTO(
                 execution_id=self._request.context.execution_id,
                 thread_id=self._request.context.thread_id,
                 conversation_event_id=self._request.context.conversation_event_id,
                 agent_id=self._agent_id,
-                action_type=ActionTypeEnum.TOOL_CALL,
+                action_type=(
+                    ActionTypeEnum.SEND
+                    if tool_call.tool_name in GATED_TOOLS
+                    else ActionTypeEnum.TOOL_CALL
+                ),
                 tool_name=tool_call.tool_name,
                 parameters=tool_call.parameters,
                 reason=decision.reason or "",

@@ -30,5 +30,10 @@ class AbstractCache(ABC):
         """Remove all keys."""
 
     @abstractmethod
-    def size(self) -> int:
-        """Number of currently cached items."""
+    async def size(self) -> int:
+        """Number of currently cached items.
+
+        Async because a real backend (Redis) needs a network round
+        trip for this -- nothing implemented this interface before
+        today, so changing it here is free.
+        """

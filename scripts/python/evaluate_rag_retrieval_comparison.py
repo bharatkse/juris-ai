@@ -1,6 +1,7 @@
 import asyncio
 from pathlib import Path
 
+from adapters.cache.base import AbstractCache
 from config.settings import Settings
 from rag.embeddings import SentenceTransformerEmbeddingProvider
 from rag.evaluation.datasets.loader import GoldenDatasetLoader
@@ -13,6 +14,7 @@ from rag.evaluation.retrieval_runner import RetrievalEvaluationRunner
 from rag.keyword_store import PostgresKeywordStore
 from rag.models import RetrievalResult
 from rag.pgvector_store import PgVectorStore
+from wiring.factories.cache import build_cache
 from wiring.factories.evaluation import build_faithfulness_backend
 from wiring.factories.rag import build_rag_pipeline
 
@@ -65,7 +67,7 @@ class KeywordRetriever:
         )
 
 
-def build_evaluator(*, settings: Settings) -> RetrievalEvaluator:
+def build_evaluator(*, settings: Settings, cache: AbstractCache) -> RetrievalEvaluator:
     return RetrievalEvaluator(
         metrics=[
             RecallAtK(k=TOP_K),
@@ -79,19 +81,25 @@ def build_evaluator(*, settings: Settings) -> RetrievalEvaluator:
             # mean_scores, but it does NOT drag down passed_cases/
             # pass_rate. Wired in now so it activates automatically
             # once that gap is closed.
-            FaithfulnessMetric(backend=build_faithfulness_backend(settings=settings)),
+            FaithfulnessMetric(backend=build_faithfulness_backend(settings=settings, cache=cache)),
         ],
     )
 
 
-async def evaluate(name: str, retriever, *, settings: Settings) -> None:
+async def evaluate(
+    name: str,
+    retriever,
+    *,
+    settings: Settings,
+    cache: AbstractCache,
+) -> None:
     dataset = GoldenDatasetLoader().load(
         path=DATASET_PATH,
     )
 
     runner = RetrievalEvaluationRunner(
         retriever=retriever,
-        evaluator=build_evaluator(settings=settings),
+        evaluator=build_evaluator(settings=settings, cache=cache),
         top_k=TOP_K,
     )
 
@@ -113,8 +121,11 @@ async def evaluate(name: str, retriever, *, settings: Settings) -> None:
 async def main() -> None:
     settings = Settings()
 
+    cache = build_cache(settings=settings)
+
     pipeline = build_rag_pipeline(
         settings=settings,
+        cache=cache,
     )
 
     embedding_provider = SentenceTransformerEmbeddingProvider()
@@ -134,18 +145,21 @@ async def main() -> None:
         "VECTOR",
         vector_retriever,
         settings=settings,
+        cache=cache,
     )
 
     await evaluate(
         "KEYWORD",
         keyword_retriever,
         settings=settings,
+        cache=cache,
     )
 
     await evaluate(
         "HYBRID",
         pipeline.hybrid_retriever,
         settings=settings,
+        cache=cache,
     )
 
 

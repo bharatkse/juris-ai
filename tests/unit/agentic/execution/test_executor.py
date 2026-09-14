@@ -56,6 +56,7 @@ async def test_execute_creates_session_and_delegates(
         graph_factory=graph_factory,
         state_assembler=state_assembler,
         timeout_policy=timeout_policy,
+        tool_execution_service=MagicMock(),
     )
 
     response = await executor.execute(

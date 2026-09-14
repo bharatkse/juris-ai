@@ -16,7 +16,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from adapters.observability.logger import get_logger
+from agentic.agents.prompts.token_budget import count_tokens
 from application.services.base import BaseService
+from config.settings import get_settings
 from core.dto.clients.llm import LLMMessageDTO, LLMRequestDTO
 from core.dto.inference import InferencePolicy, LLMTask
 from core.enums import MessageRoleEnum
@@ -176,8 +178,15 @@ class ConversationSummarizationService(BaseService):
             f"Previous summary:\n{previous_summary}\n\n" if previous_summary else ""
         ) + f"Conversation to fold in:\n{transcript}"
 
+        # settings.llm.SUMMARIZATION_MODEL, not whatever GROQ_MODEL the
+        # client defaults to -- one config point, deliberately easy to
+        # revert (see its docstring in config/llm.py: based on a single
+        # spot-check, not a calibration).
+        summarization_model = get_settings().llm.SUMMARIZATION_MODEL.value
+
         inference = self._inference_policy.resolve(
             LLMTask.SUMMARIZATION,
+            model=summarization_model,
             max_output_tokens=SUMMARY_MAX_OUTPUT_TOKENS,
         )
 
@@ -196,5 +205,21 @@ class ConversationSummarizationService(BaseService):
         )
 
         response = await self._llm_client.generate(request=request)
+        summary = response.content.strip()
 
-        return response.content.strip()
+        # Cheap, real signal for whenever a quality complaint surfaces
+        # later -- there's no automated summarization-quality harness
+        # today (unlike the answer-quality gate's calibration script),
+        # so this is the only ongoing visibility into what model
+        # produced a given summary and how long it came out.
+        logger.info(
+            "Conversation summarized.",
+            extra={
+                "operation": "summarize_conversation",
+                "model": summarization_model,
+                "summary_tokens": count_tokens(summary),
+                "folded_event_count": len(events),
+            },
+        )
+
+        return summary

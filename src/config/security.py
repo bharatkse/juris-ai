@@ -25,7 +25,17 @@ class SecuritySettings(BaseAppSettings):
     CACHE_MAX_SIZE: int = 1000
     REDIS_URL: str = "redis://localhost:6379/0"
 
-    @field_validator("CACHE_TTL")
+    # TTL specifically for LLM-judge/embedding memoization
+    # (wiring/factories/cache.py) -- deliberately separate from
+    # CACHE_TTL above (a shorter, generic default not tailored to this
+    # use case). Judge/embedding outputs for a given input don't
+    # logically expire; 7 days is a predictable operational bound
+    # rather than the real eviction mechanism -- Redis's own
+    # `--maxmemory 256mb --maxmemory-policy allkeys-lru`
+    # (deploy/docker/docker-compose.yml) does the actual bounding.
+    CACHE_TTL_SECONDS: int = 604_800
+
+    @field_validator("CACHE_TTL", "CACHE_TTL_SECONDS")
     @classmethod
     def validate_cache_ttl(cls, value: int) -> int:
         if value <= 0:

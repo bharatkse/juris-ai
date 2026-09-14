@@ -8,8 +8,8 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import JSON as JSONB
+from sqlalchemy import DateTime, ForeignKey, Index, String, Text
 from sqlalchemy import Enum as PgEnum
-from sqlalchemy import ForeignKey, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from adapters.persistence.sqlalchemy.base import Base
@@ -115,12 +115,22 @@ class Approval(
     # Timing
     # ------------------------------------------------------------------
 
+    # DateTime(timezone=True) explicit -- without it SQLAlchemy maps a
+    # bare Mapped[datetime] to a naive TIMESTAMP WITHOUT TIME ZONE
+    # column, which asyncpg then rejects outright the moment a real
+    # timezone-aware datetime.now(UTC) value (every datetime this
+    # codebase constructs) is inserted. Confirmed live: this made
+    # ApprovalLifecycleService.create() fail unconditionally, on the
+    # very first real approval ever created (this table's rows were
+    # simply never written before -- see claude.md's HITL trace).
     expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
         nullable=False,
         index=True,
     )
 
     decided_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
         nullable=True,
     )
 

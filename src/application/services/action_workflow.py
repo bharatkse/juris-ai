@@ -4,6 +4,8 @@ Agent action workflow service.
 
 from __future__ import annotations
 
+from typing import Any
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from application.authorization.approval_lifecycle.policy import ApprovalLifecyclePolicy
@@ -13,6 +15,7 @@ from application.services.approval_lifecycle import ApprovalLifecycleService
 from application.services.base import BaseService
 from core.dto.action_workflow import ActionWorkflowResultDTO
 from core.dto.agent_action import AgentActionRequestDTO
+from core.enums import AgentActionStatusEnum
 from core.exceptions.authorization import AuthorizationError
 
 
@@ -56,6 +59,7 @@ class ActionWorkflowService(BaseService):
         user_id: str,
         tenant_id: str,
         action: AgentActionRequestDTO,
+        plan_snapshot: dict[str, Any] | None = None,
     ) -> ActionWorkflowResultDTO:
         """
         Prepare a concrete AgentAction for execution.
@@ -70,6 +74,12 @@ class ActionWorkflowService(BaseService):
 
         Human approval is handled separately and never blocks
         this workflow.
+
+        plan_snapshot: only meaningful for an action that paused a
+        LangGraph execution (see ExecutionSession._extract_interrupted_
+        action()) -- the serialized ExecutionPlanDTO needed to rebuild
+        an identical graph at resume time. None for any action that
+        didn't pause execution.
         """
 
         # ---------------------------------------------------------
@@ -80,6 +90,7 @@ class ActionWorkflowService(BaseService):
             action=action,
             user_id=user_id,
             tenant_id=tenant_id,
+            plan_snapshot=plan_snapshot,
         )
 
         action_dto = persisted_action.to_dto()
@@ -118,6 +129,8 @@ class ActionWorkflowService(BaseService):
         # ---------------------------------------------------------
         # 5. Approval required
         # ---------------------------------------------------------
+
+        persisted_action.status = AgentActionStatusEnum.PENDING_APPROVAL
 
         approval = await self._approval_lifecycle_service.create(
             action=action_dto,

@@ -9,9 +9,11 @@ from fastapi import APIRouter, Depends, status
 from adapters.observability.logger import get_logger
 from api.dependencies.approval import get_approval_lifecycle_service
 from api.dependencies.auth import get_current_user
+from api.dependencies.hitl_resume import get_hitl_resume_service
 from api.schemas.approval import ApprovalDecisionRequest, ApprovalResponse
 from api.utilities.api_response import ApiResponse
 from application.services.approval_lifecycle import ApprovalLifecycleService
+from application.services.hitl_resume import HitlResumeService
 from core.dto.approval import ApprovalDecisionRequestDTO
 from core.exceptions.authorization import AuthorizationError
 
@@ -36,9 +38,18 @@ async def process_approval(
     service: ApprovalLifecycleService = Depends(
         get_approval_lifecycle_service,
     ),
+    hitl_resume_service: HitlResumeService = Depends(
+        get_hitl_resume_service,
+    ),
 ) -> ApiResponse:
     """
     Process a human decision for an approval request.
+
+    An APPROVE/REJECT decision resumes the paused execution
+    (HitlResumeService) after the decision itself is durably recorded
+    -- a resume failure never rolls back or hides the decision that
+    was just made; see HitlResumeService.resume_after_decision()'s
+    docstring for that tradeoff.
     """
 
     logger.info(
@@ -61,6 +72,13 @@ async def process_approval(
             ),
             user_id=current_user.id,
         )
+
+        await hitl_resume_service.resume_after_decision(
+            approval_id=result.approval_id,
+            agent_action_id=result.agent_action_id,
+            decision_type=result.decision_type,
+        )
+
         return ApiResponse(
             success=True,
             status_code=status.HTTP_200_OK,

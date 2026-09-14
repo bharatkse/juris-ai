@@ -19,8 +19,13 @@ from agentic.orchestration.schemas.response import (
 )
 from core.enums import AttachmentTypeEnum, MessageRoleEnum, RequestSourceEnum
 from core.models.conversation import ConversationMessageSchema
-from core.types import ConversationId, UserId
-from tests.helpers.identifiers import unknown_conversation_id, unknown_user_id
+from core.types import ConversationEventId, ConversationId, UserId
+from tests.helpers.identifiers import (
+    unknown_conversation_event_id,
+    unknown_conversation_id,
+    unknown_request_id,
+    unknown_user_id,
+)
 
 
 def build_citation(
@@ -191,7 +196,9 @@ def build_request_metadata(
 
 def build_orchestrator_request(
     *,
+    request_id: str | None = None,
     conversation_id: ConversationId | None = None,
+    current_event_id: ConversationEventId | None = None,
     user_id: UserId | None = None,
     message: str = "Hello",
     history: list[ConversationMessageSchema] | None = None,
@@ -200,10 +207,16 @@ def build_orchestrator_request(
 ) -> OrchestratorRequest:
     """
     Build an OrchestratorRequest.
+
+    request_id/current_event_id were missing here (OrchestratorRequest
+    requires both, no defaults) -- this builder was unused everywhere
+    until now, so the gap had never surfaced as a failing test.
     """
 
     return OrchestratorRequest(
+        request_id=(request_id or unknown_request_id()),
         conversation_id=(conversation_id or unknown_conversation_id()),
+        current_event_id=(current_event_id or unknown_conversation_event_id()),
         user_id=(user_id or unknown_user_id()),
         message=message,
         history=history or [],

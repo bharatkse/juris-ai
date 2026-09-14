@@ -71,7 +71,10 @@ def create_executor(
         similarity=EmbeddingSimilarity(
             embedding_provider=clients.embedding_provider,
         ),
-        faithfulness_backend=build_faithfulness_backend(settings=settings),
+        faithfulness_backend=build_faithfulness_backend(
+            settings=settings,
+            cache=clients.cache,
+        ),
     )
     answer_quality_policy = AnswerQualityPolicy()
 
@@ -95,4 +98,5 @@ def create_executor(
         graph_factory=graph_factory,
         state_assembler=state_assembler,
         timeout_policy=timeout_policy,
+        tool_execution_service=tool_execution_service,
     )

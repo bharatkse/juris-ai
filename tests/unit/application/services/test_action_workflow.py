@@ -210,6 +210,7 @@ async def test_prepare_returns_action_when_approval_not_required(
         action=action,
         user_id="user-123",
         tenant_id="tenant-123",
+        plan_snapshot=None,
     )
 
     persisted_action.to_dto.assert_called_once_with()
@@ -282,6 +283,7 @@ async def test_prepare_creates_approval_when_required(
         action=action,
         user_id="user-123",
         tenant_id="tenant-123",
+        plan_snapshot=None,
     )
 
     authorization_service.authorize_action.assert_called_once_with(
@@ -340,6 +342,7 @@ async def test_prepare_raises_authorization_error_when_action_is_denied(
         action=action,
         user_id="user-123",
         tenant_id="tenant-123",
+        plan_snapshot=None,
     )
 
     persisted_action.to_dto.assert_called_once_with()

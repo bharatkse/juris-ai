@@ -139,6 +139,7 @@ async def test_create_returns_persisted_entity(
         user_id="user-123",
         tenant_id="tenant-123",
         fingerprint="fingerprint-123",
+        plan_snapshot=None,
     )
 
     mock_repository.create.assert_awaited_once_with(
@@ -185,6 +186,7 @@ async def test_create_generates_fingerprint_before_persistence(
         user_id="user-123",
         tenant_id="tenant-123",
         fingerprint="fingerprint-123",
+        plan_snapshot=None,
     )
 
 
@@ -223,6 +225,7 @@ async def test_create_passes_correct_identity_to_entity(
         user_id="user-456",
         tenant_id="tenant-456",
         fingerprint="fingerprint-123",
+        plan_snapshot=None,
     )
 
 
@@ -423,6 +426,7 @@ async def test_create_wraps_unexpected_repository_error(
         user_id="user-123",
         tenant_id="tenant-123",
         fingerprint="fingerprint-123",
+        plan_snapshot=None,
     )
 
     mock_repository.create.assert_awaited_once_with(

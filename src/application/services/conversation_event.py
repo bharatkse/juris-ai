@@ -113,3 +113,18 @@ class ConversationEventService(BaseService):
             conversation_id=conversation_id,
             limit=limit,
         )
+
+    async def get_by_id(
+        self,
+        *,
+        event_id: ConversationEventId,
+    ) -> ConversationEvent | None:
+        """
+        Retrieve a conversation event by ID alone, when its
+        conversation_id isn't already known (e.g. resuming a paused
+        agent action -- see application.services.hitl_resume).
+        """
+
+        return await self._repository.get_by_id(
+            event_id=event_id,
+        )

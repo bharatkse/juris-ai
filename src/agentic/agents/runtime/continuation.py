@@ -17,6 +17,9 @@ import hashlib
 import json
 from dataclasses import dataclass
 
+from langgraph.config import var_child_runnable_config
+from langgraph.func import task as langgraph_task
+
 from agentic.agents.runtime.execution import (
     AgentExecutionHandle,
     AgentExecutionResult,
@@ -35,9 +38,41 @@ from agentic.tools.runtime.invocation import ToolExecutionService
 from agentic.tools.runtime.result_converter import ToolResultConverter
 from core.dto.agent_action import AgentActionRequestDTO
 from core.dto.tool import RetrievedContentDTO
-from core.enums import MessageRoleEnum, RetrievalSourceEnum
+from core.enums import ActionTypeEnum, MessageRoleEnum, RetrievalSourceEnum
 from core.exceptions.registry import ToolNotFoundError
 from core.models.message import AgentMessageSchema
+
+
+async def _call_replay_safe(task_fn, /, **kwargs):
+    """
+    Call a langgraph.func.task-decorated function normally (inside a
+    real graph invocation, this checkpoints the call -- a later
+    interrupt()/resume in the same turn replays the enclosing node but
+    returns this call's cached result instead of re-invoking it) or
+    call its plain underlying function directly when there is no
+    active LangGraph runnable context.
+
+    The fallback matters because @task itself raises RuntimeError
+    ("Called get_config outside of a runnable context") the instant
+    it's invoked without one -- confirmed by running the real unit
+    suite, which constructs AgentContinuationService directly and
+    calls its methods standalone, exactly that "no context" case, to
+    test decision-quality logic in isolation without spinning up a
+    full compiled graph. Preserving that test-in-isolation pattern
+    matters more than making @task unconditional; production always
+    runs inside a real graph.ainvoke(), so it always takes the
+    checkpointed path.
+
+    var_child_runnable_config is LangGraph's own (non-raising) way to
+    check for an active context -- get_config() itself only raises,
+    it doesn't offer a boolean check.
+    """
+
+    if var_child_runnable_config.get() is None:
+        return await task_fn.func(**kwargs)
+
+    return await task_fn(**kwargs)
+
 
 # Broadened relative to RetrieverTool's own default (top_k=5) for a
 # corrective retry -- a fresh attempt at more evidence should cast a
@@ -133,10 +168,15 @@ class AgentContinuationService:
                         tool_results=tuple(tool_results),
                     )
 
-                tool_result = await self._execute_tool(
-                    handle=handle,
-                    action=action,
-                )
+                if action.action_type is ActionTypeEnum.SEND:
+                    tool_result = await self._execute_gated_tool(
+                        action=action,
+                    )
+                else:
+                    tool_result = await self._execute_tool(
+                        handle=handle,
+                        action=action,
+                    )
 
                 # Retain the tool result only after the lifecycle confirms
                 # that another retained tool-result record is available.
@@ -267,6 +307,79 @@ class AgentContinuationService:
                 tool_results=tuple(tool_results),
             )
 
+    async def _execute_gated_tool(
+        self,
+        *,
+        action: AgentActionRequestDTO,
+    ) -> ToolResult:
+        """
+        Pause for human approval instead of executing a GATED_TOOLS
+        (email/slack send) TOOL_CALL directly.
+
+        Calls LangGraph's interrupt() with a plain, JSON-serializable
+        dict describing the proposed action -- not the AgentActionRequestDTO
+        itself, since the checkpointer's msgpack serializer only accepts
+        registered/primitive types (a dataclass round-trips today via a
+        pickle fallback LangGraph warns is being removed).
+
+        On the pausing call, interrupt() never returns -- it unwinds the
+        whole async call stack up through LangGraph's own executor,
+        which checkpoints this node's state and returns
+        graph_state["__interrupt__"] to whoever called graph.ainvoke().
+        See ExecutionSession._prepare_action(), which turns that payload
+        into a real AgentActionRequestDTO and a persisted Approval via
+        the existing ActionWorkflowService/ApprovalLifecyclePolicy path.
+
+        On resume (a later graph.ainvoke(Command(resume=...), ...) call
+        for the same thread_id -- see Executor.resume()), interrupt()
+        returns the resume payload instead of pausing, and this method
+        returns normally with the tool result that was actually computed
+        outside the graph (the approved tool call is executed for real
+        by Executor.resume() BEFORE resuming, not replayed inside this
+        node -- see its docstring for why).
+
+        LangGraph replays this WHOLE node function from the top on
+        resume -- including any tool call that ran earlier in the SAME
+        agent turn, before this interrupt. That used to be a real
+        hazard the day a non-idempotent, ungated tool got added
+        (replaying it would re-trigger its side effect for real).
+        Fixed: _execute_tool() below wraps the actual tool invocation
+        in a LangGraph @task, which checkpoints its result the first
+        time it runs -- a replay returns that cached result instead of
+        re-invoking the tool. Verified live (real interrupt/resume
+        against the real Postgres checkpointer, an ungated tool called
+        before a gated one in the same turn): the ungated tool executes
+        exactly once across the full pause/resume cycle.
+        """
+
+        from langgraph.types import interrupt
+
+        resume_payload = interrupt(
+            {
+                "execution_id": action.execution_id,
+                "thread_id": action.thread_id,
+                "conversation_event_id": action.conversation_event_id,
+                "agent_id": action.agent_id,
+                "action_type": action.action_type.value,
+                "actor_type": action.actor_type.value,
+                "tool_name": action.tool_name,
+                "parameters": action.parameters,
+                "reason": action.reason,
+            }
+        )
+
+        if resume_payload.get("decision") != "approved":
+            return ToolResult(
+                tool_name=action.tool_name or "",
+                success=False,
+                content="",
+                evidence=(),
+                execution_metadata={"approval_decision": resume_payload.get("decision")},
+                error="Action was not approved by a human reviewer.",
+            )
+
+        return ToolResult.from_dict(resume_payload["tool_result"])
+
     async def _execute_tool(
         self,
         *,
@@ -275,6 +388,22 @@ class AgentContinuationService:
     ) -> ToolResult:
         """
         Execute one tool call while enforcing the agent lifecycle budget.
+
+        The real invocation runs inside a LangGraph @task (see
+        run_tool_task below, dispatched through _call_replay_safe) so
+        that a LATER interrupt()/resume in the SAME agent turn -- which
+        replays this whole node from the top, see
+        _execute_gated_tool()'s docstring -- returns this call's
+        checkpointed result instead of re-invoking the tool. Only
+        tool_name/parameters (both plain, serializable types) are
+        declared as the task's real arguments; it closes over
+        self._tool_execution_service via a nested function rather than
+        passing it as an argument, since @task's checkpointer needs to
+        serialize declared inputs (a live service object holding a
+        ToolRegistry is not serializable) -- verified this closure
+        pattern doesn't affect replay-matching (LangGraph matches task
+        calls by position/call-order within the node, the same way it
+        matches interrupt() calls).
         """
 
         budget = handle.lifecycle.begin_tool_call()
@@ -294,10 +423,21 @@ class AgentContinuationService:
                 error="Tool-call execution budget exceeded.",
             )
 
-        return await self._tool_execution_service.execute(
+        @langgraph_task
+        async def run_tool_task(*, tool_name: str, parameters: dict) -> dict:
+            result = await self._tool_execution_service.execute(
+                tool_name=tool_name,
+                parameters=parameters,
+            )
+            return result.to_dict()
+
+        result_dict = await _call_replay_safe(
+            run_tool_task,
             tool_name=action.tool_name or "",
             parameters=action.parameters,
         )
+
+        return ToolResult.from_dict(result_dict)
 
     async def _delegate(
         self,
@@ -312,6 +452,21 @@ class AgentContinuationService:
 
         Delegation failures propagate to the execution layer. A budget
         denial is handled as a normal PARTIAL lifecycle termination.
+
+        NOT wrapped in the same replay-safety @task fix as
+        _execute_tool() (see there) -- deliberately, not an oversight.
+        DELEGATE is confirmed unreachable in production today
+        (AgentPolicyGuard.check_delegation() always denies: allow_
+        delegation defaults False and agent_policies has no column for
+        it -- see claude.md's CollaborationBus audit), so there is no
+        live replay hazard to fix yet. It would also need a real
+        serialization scheme first: CollaborationBus.send() returns a
+        bare ``object`` (whatever the target agent's handle_message()
+        produces, e.g. a pydantic AgentDecision), and a @task's
+        checkpointed return value needs the same plain-dict treatment
+        ToolResult got here -- inventing that for a type this method
+        doesn't actually constrain would be guessing. Revisit
+        alongside adding real allow_delegation support.
         """
 
         target_agent_id = action.target_agent_id
