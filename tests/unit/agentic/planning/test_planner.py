@@ -23,7 +23,7 @@ from core.enums import AgentTypeEnum, ExecutionModeEnum, IntentEnum
 from core.exceptions.planning import PlanValidationError
 from tests.builders.agentic.orchestrator import build_conversation_message
 from tests.builders.agentic.planning import build_context, build_planning_request
-from tests.helpers.identifiers import unknown_conversation_id, unknown_user_id
+from tests.unit.helpers.identifiers import unknown_conversation_id, unknown_user_id
 
 
 @pytest.mark.asyncio

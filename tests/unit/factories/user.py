@@ -10,7 +10,7 @@ from faker import Faker
 from adapters.persistence.sqlalchemy.mixins import generate_prefixed_uuid_pk
 from adapters.persistence.sqlalchemy.models.user import User
 from core.enums import GenderEnum
-from tests.factories.base import BaseFactory
+from tests.unit.factories.base import BaseFactory
 
 fake = Faker()
 

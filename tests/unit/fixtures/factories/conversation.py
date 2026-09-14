@@ -6,8 +6,8 @@ from __future__ import annotations
 
 import pytest
 
-from tests.factories.conversation import ConversationFactory
-from tests.factories.user import UserFactory
+from tests.unit.factories.conversation import ConversationFactory
+from tests.unit.factories.user import UserFactory
 
 
 @pytest.fixture

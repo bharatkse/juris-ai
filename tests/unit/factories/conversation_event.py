@@ -11,8 +11,8 @@ import factory
 from adapters.persistence.sqlalchemy.mixins import generate_prefixed_uuid_pk
 from adapters.persistence.sqlalchemy.models.conversation_event import ConversationEvent
 from core.enums import MessageRoleEnum
-from tests.factories.base import BaseFactory
-from tests.factories.conversation import ConversationFactory
+from tests.unit.factories.base import BaseFactory
+from tests.unit.factories.conversation import ConversationFactory
 
 
 class ConversationEventFactory(BaseFactory):

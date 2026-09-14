@@ -13,8 +13,8 @@ from application.services.conversation import ConversationService
 from core.constants import DEFAULT_CONVERSATION_TITLE
 from core.exceptions.database import DatabaseError
 from tests.builders.api.schemas import build_create_conversation_request
-from tests.factories.conversation import ConversationFactory
-from tests.factories.user import UserFactory
+from tests.unit.factories.conversation import ConversationFactory
+from tests.unit.factories.user import UserFactory
 
 
 @pytest.mark.asyncio

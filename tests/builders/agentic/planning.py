@@ -18,7 +18,7 @@ from core.models.planning import (
     ExecutionPlanResponseSchema,
     ExecutionStepResponseSchema,
 )
-from tests.helpers.identifiers import unknown_conversation_id, unknown_user_id
+from tests.unit.helpers.identifiers import unknown_conversation_id, unknown_user_id
 
 
 def build_planning_request(msg: str | None = None) -> PlanningRequestDTO:

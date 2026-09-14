@@ -13,7 +13,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 
 from api.schemas.auth import RefreshTokenRequest
 from api.v1.endpoints.auth import access_token, login, logout
-from tests.factories.user import UserFactory
+from tests.unit.factories.user import UserFactory
 
 
 def build_form_data(

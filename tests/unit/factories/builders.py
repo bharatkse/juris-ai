@@ -11,8 +11,8 @@ from dataclasses import dataclass
 from adapters.persistence.sqlalchemy.models.conversation import Conversation
 from adapters.persistence.sqlalchemy.models.conversation_event import ConversationEvent
 from core.enums import MessageRoleEnum
-from tests.factories.conversation import ConversationFactory
-from tests.factories.conversation_event import ConversationEventFactory
+from tests.unit.factories.conversation import ConversationFactory
+from tests.unit.factories.conversation_event import ConversationEventFactory
 
 
 @dataclass(slots=True)

@@ -14,7 +14,7 @@ from agentic.execution.schemas.result import ExecutionResultSchema
 from tests.builders.agentic.agent import build_agent_context
 from tests.builders.agentic.planning import build_plan
 from tests.builders.application.conversation import build_conversation
-from tests.helpers.identifiers import unknown_request_id
+from tests.unit.helpers.identifiers import unknown_request_id
 
 
 @pytest.mark.asyncio

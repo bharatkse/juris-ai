@@ -7,8 +7,8 @@ from __future__ import annotations
 import pytest
 
 from core.enums import ApprovalStatusEnum
-from tests.factories.approval import ApprovalFactory
-from tests.helpers.identifiers import unknown_approval_id
+from tests.unit.factories.approval import ApprovalFactory
+from tests.unit.helpers.identifiers import unknown_approval_id
 
 
 @pytest.mark.asyncio

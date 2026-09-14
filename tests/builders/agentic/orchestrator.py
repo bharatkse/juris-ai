@@ -20,7 +20,7 @@ from agentic.orchestration.schemas.response import (
 from core.enums import AttachmentTypeEnum, MessageRoleEnum, RequestSourceEnum
 from core.models.conversation import ConversationMessageSchema
 from core.types import ConversationEventId, ConversationId, UserId
-from tests.helpers.identifiers import (
+from tests.unit.helpers.identifiers import (
     unknown_conversation_event_id,
     unknown_conversation_id,
     unknown_request_id,

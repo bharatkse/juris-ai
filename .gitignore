@@ -220,6 +220,7 @@ pytests.db
 
 
 ./.process_dataset
+.processed_datasets/
 
 localstack-data
 

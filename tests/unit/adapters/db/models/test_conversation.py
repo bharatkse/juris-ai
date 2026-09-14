@@ -5,7 +5,7 @@ Unit tests for the Conversation ORM model.
 from __future__ import annotations
 
 from core.constants import DEFAULT_CONVERSATION_TITLE
-from tests.factories.conversation import ConversationFactory
+from tests.unit.factories.conversation import ConversationFactory
 
 
 def test_title_defaults_to_default_conversation_title() -> None:

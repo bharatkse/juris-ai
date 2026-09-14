@@ -10,7 +10,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from adapters.persistence.sqlalchemy.base import Base
 from adapters.persistence.sqlalchemy.mixins import PrimaryKeyMixin, TimestampMixin
-from tests.helpers.assertions import assert_prefixed_uuid
+from tests.unit.helpers.assertions import assert_prefixed_uuid
 
 
 class DummyPrimaryKeyModel(

@@ -22,8 +22,8 @@ from tests.builders.application.chat import (
     build_chat_result,
     build_chat_stream_chunk,
 )
-from tests.helpers.identifiers import unknown_user_id
-from tests.helpers.request import build_http_request
+from tests.unit.helpers.identifiers import unknown_user_id
+from tests.unit.helpers.request import build_http_request
 
 
 def _build_authorization_service() -> MagicMock:

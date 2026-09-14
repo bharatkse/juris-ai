@@ -10,7 +10,7 @@ import pytest
 from jose import JWTError
 
 from application.services.auth import AuthenticationService
-from tests.factories.user import UserFactory
+from tests.unit.factories.user import UserFactory
 
 
 @pytest.mark.asyncio

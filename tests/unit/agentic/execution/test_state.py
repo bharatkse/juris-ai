@@ -9,7 +9,7 @@ from agentic.execution.schemas.state import (
     StepExecutionStateSchema,
 )
 from core.enums import ExecutionStatusEnum
-from tests.helpers.identifiers import unknown_request_id
+from tests.unit.helpers.identifiers import unknown_request_id
 
 
 def test_step_execution_state_defaults() -> None:

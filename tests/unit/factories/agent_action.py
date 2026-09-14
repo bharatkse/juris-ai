@@ -9,9 +9,9 @@ import factory
 from adapters.persistence.sqlalchemy.mixins import generate_prefixed_uuid_pk
 from adapters.persistence.sqlalchemy.models.agent_action import AgentAction
 from core.enums import ActionTypeEnum, ActorTypeEnum, AgentActionStatusEnum
-from tests.factories.base import BaseFactory
-from tests.factories.conversation_event import ConversationEventFactory
-from tests.factories.user import UserFactory
+from tests.unit.factories.base import BaseFactory
+from tests.unit.factories.conversation_event import ConversationEventFactory
+from tests.unit.factories.user import UserFactory
 
 
 class AgentActionFactory(BaseFactory):

@@ -10,8 +10,8 @@ from adapters.persistence.sqlalchemy.repositories.library import (
     LibraryRepository,
 )
 from core.enums import LibraryStatusEnum
-from tests.factories.conversation import ConversationFactory
-from tests.factories.library import LibraryFactory
+from tests.unit.factories.conversation import ConversationFactory
+from tests.unit.factories.library import LibraryFactory
 
 pytestmark = pytest.mark.asyncio
 

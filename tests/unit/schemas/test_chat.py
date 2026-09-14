@@ -19,8 +19,8 @@ from api.schemas.chat import (
 )
 from core.enums import MessageRoleEnum
 from tests.builders.api.schemas import build_chat_request
-from tests.factories.conversation_event import ConversationEventFactory
-from tests.helpers.identifiers import unknown_conversation_id
+from tests.unit.factories.conversation_event import ConversationEventFactory
+from tests.unit.helpers.identifiers import unknown_conversation_id
 
 
 def test_chat_request_accepts_valid_request() -> None:

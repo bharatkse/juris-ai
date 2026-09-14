@@ -13,8 +13,8 @@ from core.enums import (
     LibraryStatusEnum,
     StorageTypeEnum,
 )
-from tests.factories.base import BaseFactory
-from tests.factories.conversation import ConversationFactory
+from tests.unit.factories.base import BaseFactory
+from tests.unit.factories.conversation import ConversationFactory
 
 
 class LibraryFactory(BaseFactory):

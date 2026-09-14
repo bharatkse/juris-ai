@@ -14,7 +14,7 @@ from tests.builders.api.schemas import (
     build_create_user_request,
     build_update_user_request,
 )
-from tests.factories.user import UserFactory
+from tests.unit.factories.user import UserFactory
 
 
 @pytest.mark.asyncio

@@ -24,7 +24,7 @@ from tests.builders.agentic.agent import (
 from tests.builders.agentic.execution import build_graph_state
 from tests.builders.agentic.planning import build_plan
 from tests.builders.application.conversation import build_conversation
-from tests.helpers.identifiers import unknown_request_id
+from tests.unit.helpers.identifiers import unknown_request_id
 
 
 def _with_session_required_graph_keys(graph_state: dict) -> dict:

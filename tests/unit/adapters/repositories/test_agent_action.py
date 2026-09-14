@@ -6,8 +6,8 @@ from __future__ import annotations
 
 import pytest
 
-from tests.factories.agent_action import AgentActionFactory
-from tests.helpers.identifiers import unknown_agent_action_id
+from tests.unit.factories.agent_action import AgentActionFactory
+from tests.unit.helpers.identifiers import unknown_agent_action_id
 
 
 @pytest.mark.asyncio
