@@ -4,7 +4,7 @@ Unit tests for the User ORM model.
 
 from __future__ import annotations
 
-from tests.factories.user import UserFactory
+from tests.unit.factories.user import UserFactory
 
 
 def test_full_name_returns_first_and_last_name() -> None:

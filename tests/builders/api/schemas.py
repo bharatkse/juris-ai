@@ -28,10 +28,10 @@ from core.models.response import (
     MetadataModel,
     PaginationModel,
 )
-from tests.factories.conversation import ConversationFactory
-from tests.factories.conversation_event import ConversationEventFactory
-from tests.factories.user import UserFactory
-from tests.helpers.identifiers import unknown_conversation_id
+from tests.unit.factories.conversation import ConversationFactory
+from tests.unit.factories.conversation_event import ConversationEventFactory
+from tests.unit.factories.user import UserFactory
+from tests.unit.helpers.identifiers import unknown_conversation_id
 
 
 def build_create_user_request(

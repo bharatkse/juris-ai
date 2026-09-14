@@ -6,10 +6,10 @@ from __future__ import annotations
 
 import pytest
 
-from tests.factories.conversation import ConversationFactory
-from tests.factories.conversation_event import ConversationEventFactory
-from tests.factories.library import LibraryFactory
-from tests.factories.user import UserFactory
+from tests.unit.factories.conversation import ConversationFactory
+from tests.unit.factories.conversation_event import ConversationEventFactory
+from tests.unit.factories.library import LibraryFactory
+from tests.unit.factories.user import UserFactory
 
 
 @pytest.fixture(autouse=True)

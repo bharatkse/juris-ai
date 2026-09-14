@@ -5,8 +5,8 @@ Unit tests for the ConversationEvent ORM model.
 from __future__ import annotations
 
 from core.enums import MessageRoleEnum
-from tests.factories.conversation import ConversationFactory
-from tests.factories.conversation_event import ConversationEventFactory
+from tests.unit.factories.conversation import ConversationFactory
+from tests.unit.factories.conversation_event import ConversationEventFactory
 
 
 def test_role_defaults_to_user() -> None:

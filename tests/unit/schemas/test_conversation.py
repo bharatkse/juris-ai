@@ -11,7 +11,7 @@ from pydantic import ValidationError
 
 from api.schemas.conversation import ConversationResponse, CreateConversationRequest
 from tests.builders.api.schemas import build_create_conversation_request
-from tests.factories.conversation import ConversationFactory
+from tests.unit.factories.conversation import ConversationFactory
 
 
 def test_create_conversation_request_accepts_valid_request() -> None:

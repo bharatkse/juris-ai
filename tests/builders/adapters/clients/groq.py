@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 
 from core.dto.clients.llm import LLMMessageDTO
 from tests.builders.adapters.clients.llm import build_llm_message
-from tests.helpers.async_iterator import async_iterator
+from tests.unit.helpers.async_iterator import async_iterator
 
 DEFAULT_MODEL = "llama-3.3-70b-versatile"
 

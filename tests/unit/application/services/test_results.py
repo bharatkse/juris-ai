@@ -7,8 +7,8 @@ from __future__ import annotations
 from application.services.internal_dto.chat import ChatResultDTO
 from application.services.internal_dto.stream import ChatStreamChunkDTO
 from tests.builders.agentic.orchestrator import build_orchestrator_response
-from tests.factories.conversation import ConversationFactory
-from tests.factories.conversation_event import ConversationEventFactory
+from tests.unit.factories.conversation import ConversationFactory
+from tests.unit.factories.conversation_event import ConversationEventFactory
 
 
 def test_chat_result_stores_values() -> None:

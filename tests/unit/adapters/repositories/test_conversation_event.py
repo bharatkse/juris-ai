@@ -9,8 +9,8 @@ from uuid import uuid4
 import pytest
 
 from core.enums import MessageRoleEnum
-from tests.factories.conversation_event import ConversationEventFactory
-from tests.helpers.identifiers import unknown_conversation_event_id
+from tests.unit.factories.conversation_event import ConversationEventFactory
+from tests.unit.helpers.identifiers import unknown_conversation_event_id
 
 
 @pytest.mark.asyncio

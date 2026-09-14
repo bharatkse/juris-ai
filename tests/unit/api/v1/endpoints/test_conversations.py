@@ -17,7 +17,7 @@ from api.v1.endpoints.conversations import (
 )
 from core.exceptions.httpx import NotFoundError as ConversationNotFoundError
 from tests.builders.api.schemas import build_create_conversation_request
-from tests.factories.conversation import ConversationFactory
+from tests.unit.factories.conversation import ConversationFactory
 
 
 @pytest.mark.asyncio

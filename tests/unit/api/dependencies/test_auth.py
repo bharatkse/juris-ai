@@ -11,7 +11,7 @@ from fastapi import HTTPException
 
 from adapters.persistence.sqlalchemy.models.user import User
 from api.dependencies.auth import get_current_user
-from tests.factories.user import UserFactory
+from tests.unit.factories.user import UserFactory
 
 
 def build_user(

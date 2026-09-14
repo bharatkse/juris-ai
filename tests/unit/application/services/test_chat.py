@@ -17,9 +17,9 @@ from application.services.internal_dto.chat import ChatResultDTO
 from core.enums import MessageRoleEnum
 from core.exceptions.httpx import ConversationInactiveError, NotFoundError
 from tests.builders.agentic.orchestrator import build_orchestrator_response
-from tests.factories.conversation import ConversationFactory
-from tests.factories.conversation_event import ConversationEventFactory
-from tests.helpers.identifiers import unknown_conversation_id, unknown_user_id
+from tests.unit.factories.conversation import ConversationFactory
+from tests.unit.factories.conversation_event import ConversationEventFactory
+from tests.unit.helpers.identifiers import unknown_conversation_id, unknown_user_id
 
 TEST_MESSAGE = "Hello"
 

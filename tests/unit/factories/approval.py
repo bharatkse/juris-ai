@@ -11,9 +11,9 @@ import factory
 from adapters.persistence.sqlalchemy.mixins import generate_prefixed_uuid_pk
 from adapters.persistence.sqlalchemy.models.approval import Approval
 from core.enums import ApprovalStatusEnum
-from tests.factories.agent_action import AgentActionFactory
-from tests.factories.base import BaseFactory
-from tests.factories.user import UserFactory
+from tests.unit.factories.agent_action import AgentActionFactory
+from tests.unit.factories.base import BaseFactory
+from tests.unit.factories.user import UserFactory
 
 
 class ApprovalFactory(BaseFactory):
