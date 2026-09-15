@@ -91,9 +91,22 @@ def session() -> MagicMock:
 
 
 @pytest.fixture
+def compliance_log_service() -> MagicMock:
+    """
+    Provide a mocked ComplianceLogService.
+    """
+
+    service = MagicMock()
+    service.record_hitl_approval_decision = AsyncMock()
+
+    return service
+
+
+@pytest.fixture
 def service(
     session: MagicMock,
     repository: MagicMock,
+    compliance_log_service: MagicMock,
 ) -> ApprovalLifecycleService:
     """
     Create an ApprovalLifecycleService with mocked dependencies.
@@ -102,6 +115,7 @@ def service(
     return ApprovalLifecycleService(
         session=session,
         repository=repository,
+        compliance_log_service=compliance_log_service,
     )
 
 
@@ -113,6 +127,7 @@ def service(
 def test_init_rejects_non_positive_ttl(
     session: MagicMock,
     repository: MagicMock,
+    compliance_log_service: MagicMock,
 ) -> None:
     """
     It should reject a non-positive approval TTL.
@@ -125,6 +140,7 @@ def test_init_rejects_non_positive_ttl(
         ApprovalLifecycleService(
             session=session,
             repository=repository,
+            compliance_log_service=compliance_log_service,
             approval_ttl_seconds=0,
         )
 
@@ -136,6 +152,7 @@ def test_init_rejects_non_positive_ttl(
 def test_init_rejects_negative_ttl(
     session: MagicMock,
     repository: MagicMock,
+    compliance_log_service: MagicMock,
     ttl: int,
 ) -> None:
     """
@@ -149,6 +166,7 @@ def test_init_rejects_negative_ttl(
         ApprovalLifecycleService(
             session=session,
             repository=repository,
+            compliance_log_service=compliance_log_service,
             approval_ttl_seconds=ttl,
         )
 
@@ -212,6 +230,7 @@ async def test_create_uses_configured_ttl(
     mock_from_dto: MagicMock,
     session: MagicMock,
     repository: MagicMock,
+    compliance_log_service: MagicMock,
 ) -> None:
     """
     It should calculate expiration using the configured TTL.
@@ -220,6 +239,7 @@ async def test_create_uses_configured_ttl(
     service = ApprovalLifecycleService(
         session=session,
         repository=repository,
+        compliance_log_service=compliance_log_service,
         approval_ttl_seconds=60,
     )
 
@@ -655,6 +675,38 @@ async def test_approve_updates_waiting_approval(
 
     repository.save.assert_awaited_once_with(
         entity=entity,
+    )
+
+
+@pytest.mark.asyncio
+async def test_approve_records_hitl_compliance_log_entry(
+    service: ApprovalLifecycleService,
+    repository: MagicMock,
+    compliance_log_service: MagicMock,
+) -> None:
+    """
+    Approving a waiting approval must record a HITL_APPROVAL_DECISION
+    compliance log entry -- the audit trail's "what a human approved"
+    half (application/services/compliance_log.py).
+    """
+
+    entity = build_approval_entity()
+    repository.get.return_value = entity
+    repository.save.return_value = entity
+    entity.to_dto.return_value = MagicMock()
+
+    await service.approve(
+        approval_id="approval-123",
+        user_id="approver-123",
+        decision_reason="Approved by reviewer.",
+    )
+
+    compliance_log_service.record_hitl_approval_decision.assert_awaited_once_with(
+        user_id="approver-123",
+        tenant_id="approver-123",
+        agent_action_id=entity.agent_action_id,
+        approval_id=entity.id,
+        decision_type=ApprovalDecisionEnum.APPROVE.value,
     )
 
 

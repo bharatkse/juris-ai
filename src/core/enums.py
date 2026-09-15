@@ -350,3 +350,29 @@ class ActorTypeEnum(StrEnum):
 
     USER = "user"
     AGENT = "agent"
+
+
+# ============================================================================
+# Compliance Log
+# ============================================================================
+
+
+class ComplianceEventTypeEnum(StrEnum):
+    """
+    Kind of fact recorded in the compliance_log table -- one row per
+    discrete auditable event in a request's lifecycle, not a status.
+
+    See application/services/compliance_log.py for the no-raw-content
+    rule each event type's payload must follow (never verbatim
+    message/response text, retrieved chunk text, or matched PII
+    substrings -- identifiers, hashes, and counts only).
+    """
+
+    REQUEST_RECEIVED = "request_received"
+    RETRIEVAL_PERFORMED = "retrieval_performed"
+    PLAN_CREATED = "plan_created"
+    TOOL_CALL_EXECUTED = "tool_call_executed"
+    AGENT_DECISION = "agent_decision"
+    GUARDRAIL_FIRED = "guardrail_fired"
+    HITL_APPROVAL_DECISION = "hitl_approval_decision"
+    RESPONSE_RETURNED = "response_returned"

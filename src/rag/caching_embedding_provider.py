@@ -19,6 +19,7 @@ from __future__ import annotations
 import hashlib
 
 from adapters.cache.base import AbstractCache
+from adapters.observability.metrics import metrics
 from rag.models import EmbeddingMetadata
 from rag.protocols.embedding_provider import EmbeddingProviderProtocol
 
@@ -68,7 +69,13 @@ class CachingEmbeddingProvider:
 
         miss_indices = [index for index, value in enumerate(cached) if value is None]
 
+        hit_count = len(texts) - len(miss_indices)
+
+        if hit_count:
+            metrics.record_cache_request(result="hit", cache="embedding", count=hit_count)
+
         if miss_indices:
+            metrics.record_cache_request(result="miss", cache="embedding", count=len(miss_indices))
             miss_texts = [texts[index] for index in miss_indices]
 
             computed = await self._wrapped.embed(texts=miss_texts)

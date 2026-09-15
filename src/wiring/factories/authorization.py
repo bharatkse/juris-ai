@@ -8,6 +8,7 @@ No authorization business logic belongs in this module.
 
 from __future__ import annotations
 
+from adapters.persistence.sqlalchemy.session import session_factory
 from application.authorization.capability.analyzer import DefaultCapabilityAnalyzer
 from application.authorization.rbac.execute_gate import RBACExecuteGate
 from application.authorization.rbac.policy import RBACPolicy
@@ -35,4 +36,5 @@ def create_authorization() -> AuthorizationService:
         capability_analyzer=capability_analyzer,
         rbac=rbac,
         execute_gate=execute_gate,
+        session_factory=session_factory,
     )

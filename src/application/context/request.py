@@ -11,10 +11,10 @@ must therefore never be captured in constructors.
 ContextVar is asyncio-task-scoped, so concurrent requests receive their
 own context without leaking values between requests.
 
-allowed_document_ids has two independent states, not one:
+allowed_library_ids has two independent states, not one:
 
   - Explicitly None: AuthorizationService resolved this user's access
-    and determined they have no document restriction (e.g. an
+    and determined they have no library restriction (e.g. an
     admin/superuser). Legitimately unrestricted.
   - Never resolved: no authorization step has run yet for this
     request — e.g. RequestContextMiddleware bound the base context
@@ -23,13 +23,21 @@ allowed_document_ids has two independent states, not one:
     declare it.
 
 Collapsing these into one "None means unrestricted" value would make
-a missing `Depends(bind_document_acl)` on some route fail OPEN —
-silently exposing every document to every user, with no error,
+a missing `Depends(bind_library_acl)` on some route fail OPEN —
+silently exposing every uploaded file to every user, with no error,
 because the untouched default happens to mean "no restriction". That
 is the one failure mode this whole ACL design exists to prevent, so
-it must not be reachable by omission. Reading allowed_document_ids
+it must not be reachable by omission. Reading allowed_library_ids
 before it has been explicitly set raises, rather than silently
 returning None.
+
+Named allowed_library_ids, not allowed_document_ids: it scopes
+Library rows (real per-user-uploaded files, owned transitively via
+Conversation.user_id — see AuthorizationService.get_allowed_library_ids())
+specifically, not the separate KnowledgeSource/KnowledgeChunk corpus
+(shared, admin-curated, no per-user ownership model — see
+CaseLawSearchTool.search_contracts()'s docstring for why that scope is
+deliberately not ACL-checked here).
 
 Typical usage:
 
@@ -42,13 +50,13 @@ Typical usage:
         ...
 
     # Later — after get_current_user resolves, in a route dependency:
-    get_request_context().allowed_document_ids = await (
-        authorization_service.get_allowed_document_ids(user_id=current_user.id)
+    get_request_context().allowed_library_ids = await (
+        authorization_service.get_allowed_library_ids(user_id=current_user.id)
     )
 
 ACL-scoped tools then read:
 
-    allowed_document_ids = get_request_context().allowed_document_ids
+    allowed_library_ids = get_request_context().allowed_library_ids
     # raises RuntimeError if the line above never ran for this request
 """
 
@@ -96,15 +104,15 @@ class RequestContext:
 
     # Private, sentinel-backed — see module docstring for why this
     # isn't a plain `set[str] | None = None` field. Access via the
-    # allowed_document_ids property below, not this attribute
+    # allowed_library_ids property below, not this attribute
     # directly.
-    _allowed_document_ids: set[str] | None | Literal[_Unset] = field(default=_UNSET, repr=False)
+    _allowed_library_ids: set[str] | None | Literal[_Unset] = field(default=_UNSET, repr=False)
 
     @property
-    def allowed_document_ids(self) -> set[str] | None:
-        if self._allowed_document_ids is _UNSET:
+    def allowed_library_ids(self) -> set[str] | None:
+        if self._allowed_library_ids is _UNSET:
             raise RuntimeError(
-                "allowed_document_ids was never resolved for this request. "
+                "allowed_library_ids was never resolved for this request. "
                 "An ACL-scoped tool executed before the authorization "
                 "dependency ran — this is a route wiring bug (a missing "
                 "Depends() for ACL resolution), not a runtime condition to "
@@ -112,11 +120,11 @@ class RequestContext:
                 "restriction'."
             )
 
-        return self._allowed_document_ids
+        return self._allowed_library_ids
 
-    @allowed_document_ids.setter
-    def allowed_document_ids(self, value: set[str] | None) -> None:
-        self._allowed_document_ids = value
+    @allowed_library_ids.setter
+    def allowed_library_ids(self, value: set[str] | None) -> None:
+        self._allowed_library_ids = value
 
     def to_metadata(self) -> dict[str, object]:
         """
@@ -171,10 +179,10 @@ def bind_request_context(
     """
     Bind a request context for the duration of a block.
 
-    Deliberately does NOT accept allowed_document_ids as a parameter —
+    Deliberately does NOT accept allowed_library_ids as a parameter —
     it's resolved separately, later in the request lifecycle (after
     authentication), by mutating the yielded/current context's
-    allowed_document_ids property. See api/dependencies/authorization.py.
+    allowed_library_ids property. See api/dependencies/authorization.py.
 
     The previous context is restored automatically when the block exits,
     including when an exception is raised.

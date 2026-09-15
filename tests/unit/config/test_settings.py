@@ -123,7 +123,9 @@ def test_database_url_returns_test_database_url() -> None:
 
 def test_database_url_returns_postgres_url() -> None:
     """
-    It should build the PostgreSQL connection URL.
+    It should build the PostgreSQL connection URL for the restricted
+    runtime role (APP_DB_USER) -- not the admin/migration role
+    (DB_USER), which async_database_url no longer resolves to.
     """
     settings = Settings(
         app=AppSettings(ENVIRONMENT=EnvironmentEnum.DEVELOPMENT),
@@ -133,6 +135,8 @@ def test_database_url_returns_postgres_url() -> None:
             DB_NAME="legal_ai",
             DB_USER="postgres",
             DB_PASSWORD="password",
+            APP_DB_USER="app_role",
+            APP_DB_PASSWORD="app_password",
         ),
         security=SecuritySettings(
             SECRET_KEY="secret",
@@ -147,8 +151,65 @@ def test_database_url_returns_postgres_url() -> None:
     )
 
     assert settings.async_database_url == (
+        "postgresql+asyncpg://app_role:app_password@localhost:5432/legal_ai"
+    )
+
+
+def test_admin_database_url_returns_postgres_url_for_the_admin_role() -> None:
+    """
+    admin_async_database_url is the one that still builds the URL from
+    DB_USER/DB_PASSWORD -- for admin-only code (Alembic-adjacent
+    scripts, not runtime request handling).
+    """
+    settings = Settings(
+        app=AppSettings(ENVIRONMENT=EnvironmentEnum.DEVELOPMENT),
+        database=DatabaseSettings(
+            DB_HOST="localhost",
+            DB_PORT=5432,
+            DB_NAME="legal_ai",
+            DB_USER="postgres",
+            DB_PASSWORD="password",
+            APP_DB_USER="app_role",
+            APP_DB_PASSWORD="app_password",
+        ),
+        security=SecuritySettings(
+            SECRET_KEY="secret",
+            JWT_SECRET_KEY=SecretStr("jwt-secret"),
+        ),
+        llm=LLMSettings(
+            SEARXNG_BASE_URL="http://localhost:8080",
+            GROQ_API_KEY=SecretStr("api-key"),
+            LANGSMITH_TRACING=False,
+            LANGSMITH_TRACING_V2=False,
+        ),
+    )
+
+    assert settings.admin_async_database_url == (
         "postgresql+asyncpg://postgres:password@localhost:5432/legal_ai"
     )
+
+
+def test_admin_database_url_raises_for_production() -> None:
+    """
+    Like async_database_url, admin_async_database_url has no
+    implementation beyond DEVELOPMENT/TESTING -- cloud/RDS role
+    separation is out of scope.
+    """
+    settings = Settings(
+        app=AppSettings(ENVIRONMENT=EnvironmentEnum.PRODUCTION),
+        security=SecuritySettings(
+            SECRET_KEY="secret",
+            JWT_SECRET_KEY=SecretStr("jwt-secret"),
+        ),
+        llm=LLMSettings(
+            SEARXNG_BASE_URL="http://localhost:8080",
+            LANGSMITH_TRACING=False,
+            LANGSMITH_TRACING_V2=False,
+        ),
+    )
+
+    with pytest.raises(NotImplementedError):
+        _ = settings.admin_async_database_url
 
 
 def test_database_url_raises_for_production() -> None:
@@ -184,6 +245,8 @@ def test_alembic_database_url() -> None:
             DB_NAME="legal_ai",
             DB_USER="postgres",
             DB_PASSWORD="password",
+            APP_DB_USER="app_role",
+            APP_DB_PASSWORD="app_password",
         ),
         security=SecuritySettings(
             SECRET_KEY="secret",
@@ -231,6 +294,8 @@ def test_is_development() -> None:
             DB_NAME="legal_ai",
             DB_USER="postgres",
             DB_PASSWORD="password",
+            APP_DB_USER="app_role",
+            APP_DB_PASSWORD="app_password",
         ),
         security=SecuritySettings(
             SECRET_KEY="secret",
@@ -305,6 +370,8 @@ def test_validate_configuration_requires_secret_key(
                 DB_NAME="legal_ai",
                 DB_USER="postgres",
                 DB_PASSWORD="password",
+                APP_DB_USER="app_role",
+                APP_DB_PASSWORD="app_password",
             ),
             llm=LLMSettings(
                 SEARXNG_BASE_URL="http://localhost:8080",
@@ -333,6 +400,8 @@ def test_validate_configuration_requires_database_configuration(
                 DB_NAME="legal_ai",
                 DB_USER="postgres",
                 DB_PASSWORD="password",
+                APP_DB_USER="app_role",
+                APP_DB_PASSWORD="app_password",
             ),
             llm=LLMSettings(
                 SEARXNG_BASE_URL="http://localhost:8080",
@@ -361,6 +430,8 @@ def test_validate_configuration_requires_groq_api_key(
                 DB_NAME="legal_ai",
                 DB_USER="postgres",
                 DB_PASSWORD="password",
+                APP_DB_USER="app_role",
+                APP_DB_PASSWORD="app_password",
             ),
             llm=LLMSettings(
                 SEARXNG_BASE_URL="http://localhost:8080",

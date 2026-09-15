@@ -95,6 +95,19 @@ class ConversationEvent(
         nullable=True,
     )
 
+    # Populated for ASSISTANT events only: {"citations": [...],
+    # "sources": [...]} -- the same Citation/Source payloads
+    # OrchestratorResponse already carries, mirrored here so a
+    # reopened past conversation can show what backed a prior answer.
+    # Previously dropped at this persistence boundary: ChatService only
+    # persisted content + ResponseMetadata (agents/workflow), even
+    # though citations/sources were already present on the response
+    # DTO all along -- they just never made it into the write.
+    citations: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON,
+        nullable=True,
+    )
+
     conversation: Mapped[Conversation] = relationship(
         back_populates="events",
         foreign_keys="ConversationEvent.conversation_id",

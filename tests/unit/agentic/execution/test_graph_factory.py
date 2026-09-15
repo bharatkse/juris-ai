@@ -47,6 +47,7 @@ def test_create_builds_agent_node_and_compiles_graph() -> None:
         collaboration_bus=collaboration_bus,
         answer_evaluator=answer_evaluator,
         answer_quality_policy=answer_quality_policy,
+        compliance_log=MagicMock(),
     )
 
     with (
@@ -83,6 +84,7 @@ def test_create_builds_agent_node_and_compiles_graph() -> None:
         answer_evaluator=answer_evaluator,
         answer_quality_policy=answer_quality_policy,
         agent_policy_guard=agent_policy_guard,
+        compliance_log=factory._compliance_log,
     )
 
     node_cls.assert_called_once_with(

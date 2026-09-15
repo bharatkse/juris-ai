@@ -65,13 +65,15 @@ class GroqClient(LLMClient):
     ) -> str:
         return self._model
 
-    async def generate(
+    async def _generate(
         self,
         *,
         request: LLMRequestDTO,
     ) -> LLMResponseDTO:
         """
-        Generate a completion.
+        Generate a completion. Called by LLMClient.generate(), which
+        wraps this with call-duration/token metrics -- see that
+        method's docstring.
         """
 
         log.info(

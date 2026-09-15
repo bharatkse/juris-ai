@@ -72,6 +72,7 @@ def test_get_chat_service(
     action_workflow_service = MagicMock()
     usage_service = MagicMock()
     conversation_summarization_service = MagicMock()
+    compliance_log_service = MagicMock()
 
     service = MagicMock()
 
@@ -85,6 +86,7 @@ def test_get_chat_service(
         agent_action_workflow_service=action_workflow_service,
         usage_service=usage_service,
         conversation_summarization_service=conversation_summarization_service,
+        compliance_log_service=compliance_log_service,
     )
 
     assert result is service
@@ -97,4 +99,5 @@ def test_get_chat_service(
         action_workflow_service=action_workflow_service,
         usage_service=usage_service,
         conversation_summarization_service=conversation_summarization_service,
+        compliance_log_service=compliance_log_service,
     )

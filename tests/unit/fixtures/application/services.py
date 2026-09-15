@@ -78,6 +78,16 @@ def mock_conversation_summarization_service() -> MagicMock:
 
 
 @pytest.fixture
+def mock_compliance_log_service() -> MagicMock:
+    service = MagicMock()
+
+    service.record_request_received = AsyncMock()
+    service.record_response_returned = AsyncMock()
+
+    return service
+
+
+@pytest.fixture
 def chat_service(
     mock_async_session: AsyncMock,
     mock_conversation_service: MagicMock,
@@ -86,6 +96,7 @@ def chat_service(
     mock_action_workflow_service: MagicMock,
     mock_usage_service: MagicMock,
     mock_conversation_summarization_service: MagicMock,
+    mock_compliance_log_service: MagicMock,
 ) -> ChatService:
     """
     Return a chat service.
@@ -99,6 +110,7 @@ def chat_service(
         action_workflow_service=mock_action_workflow_service,
         usage_service=mock_usage_service,
         conversation_summarization_service=mock_conversation_summarization_service,
+        compliance_log_service=mock_compliance_log_service,
     )
 
 

@@ -100,6 +100,10 @@ services:
     volumes:
       - ../../src:/juris_ai/src
 
+    depends_on:
+      postgres:
+        condition: service_healthy
+
     healthcheck:
       test: ["CMD", "python", "-c",
         "import socket; socket.create_connection(('localhost', 8003), timeout=3)"]

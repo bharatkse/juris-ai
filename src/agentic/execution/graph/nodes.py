@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 
 from agentic.agents.runtime.continuation import AgentContinuationService
 from agentic.decisions.decision import AgentDecisionType
+from agentic.evaluation.answer import AnswerEvaluationSummary
 from agentic.execution.aggregation.mapper import AgentResponseMapper
 from agentic.execution.graph.state import (
     AgentDecisionUpdate,
@@ -103,6 +104,7 @@ class AgentExecutionNode:
             handle=handle,
             result=continuation_result.result,
             action=continuation_result.action,
+            evaluation_summary=continuation_result.evaluation_summary,
             step=step,
         )
 
@@ -135,6 +137,7 @@ class AgentExecutionNode:
         handle: AgentExecutionHandle,
         result: AgentExecutionResult,
         action: Any | None,
+        evaluation_summary: AnswerEvaluationSummary | None,
         step: ExecutionStepDTO,
     ) -> dict[str, Any]:
         """
@@ -173,6 +176,7 @@ class AgentExecutionNode:
                     state=handle.lifecycle.state,
                     execution_id=handle.request.context.execution_id,
                     context=handle.reasoning_context,
+                    evaluation_summary=evaluation_summary,
                 )
 
                 update["memory_updates"] = [

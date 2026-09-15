@@ -124,10 +124,23 @@ def mock_execute_gate() -> MagicMock:
 
 
 @pytest.fixture
+def mock_library_session_factory() -> MagicMock:
+    """
+    Provide a mocked session_factory for AuthorizationService's
+    get_allowed_library_ids() -- same self-contained-session pattern
+    as DatabaseAgentPolicyProvider, so this needs a factory callable,
+    not a bound session.
+    """
+
+    return MagicMock()
+
+
+@pytest.fixture
 def authorization_service(
     mock_capability_analyzer: MagicMock,
     mock_rbac: MagicMock,
     mock_execute_gate: MagicMock,
+    mock_library_session_factory: MagicMock,
 ) -> AuthorizationService:
     """
     Build the authorization service.
@@ -137,4 +150,5 @@ def authorization_service(
         capability_analyzer=mock_capability_analyzer,
         rbac=mock_rbac,
         execute_gate=mock_execute_gate,
+        session_factory=mock_library_session_factory,
     )

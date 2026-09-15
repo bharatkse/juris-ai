@@ -29,6 +29,7 @@ from wiring.containers import ClientContainer, RegistryContainer
 from wiring.factories.evaluation import build_faithfulness_backend
 
 if TYPE_CHECKING:
+    from application.services.compliance_log import StandaloneComplianceLogWriter
     from config.settings import Settings
 
 
@@ -39,6 +40,7 @@ def create_executor(
     settings: Settings,
     collaboration_bus: CollaborationBus,
     checkpointer: BaseCheckpointSaver,
+    compliance_log: StandaloneComplianceLogWriter,
 ) -> Executor:
     """
     Create the configured execution runtime.
@@ -90,6 +92,7 @@ def create_executor(
         answer_evaluator=answer_evaluator,
         answer_quality_policy=answer_quality_policy,
         checkpointer=checkpointer,
+        compliance_log=compliance_log,
     )
 
     state_assembler = ExecutionStateAssembler()

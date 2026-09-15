@@ -148,6 +148,24 @@ comments in `env.example`.
 make dev-deploy
 ```
 
+## Set up local DB role separation
+
+The app connects to Postgres as a restricted, non-superuser role
+(`APP_DB_USER`/`APP_DB_PASSWORD` in `.env`) distinct from the
+admin/migration role (`DB_USER`/`DB_PASSWORD`) that owns the schema
+and runs migrations. A fresh Postgres container creates this role
+automatically on first boot, but **if your local Postgres volume
+already existed before this**, run it explicitly once (safe to
+re-run any time):
+
+```bash
+make db-setup-role
+```
+
+Do this *before* `make alembic-upgrade` below — one migration
+restricts this role's access to a specific table, which requires the
+role to already exist.
+
 ## Run database migrations
 
 ```bash

@@ -5,6 +5,7 @@ Database models.
 from .agent_action import AgentAction
 from .agent_policy import AgentPolicyModel
 from .approval import Approval
+from .compliance_log import ComplianceLog
 from .conversation import Conversation
 from .conversation_event import ConversationEvent
 from .knowledge_chunk import KnowledgeChunk
@@ -26,4 +27,5 @@ __all__ = [
     "Approval",
     "UsageRecord",
     "AgentPolicyModel",
+    "ComplianceLog",
 ]

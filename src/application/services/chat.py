@@ -5,21 +5,21 @@ Chat service.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
-from typing import TYPE_CHECKING
+from collections.abc import AsyncIterator, Sequence
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from adapters.observability.logger import get_logger
 from agentic.orchestration.schemas.request import OrchestratorRequest
+from agentic.orchestration.schemas.response import Citation, OrchestratorResponse, Source
 from application.services.base import BaseService
 from application.services.conversation_summarization import (
     UNSUMMARIZED_EVENT_LIMIT,
 )
 from application.services.internal_dto.chat import ChatResultDTO
 from application.services.internal_dto.stream import ChatStreamChunkDTO
-from core.dto.agent import AgentResponseDTO
 from core.enums import MessageRoleEnum
 from core.models.conversation import ConversationMessageSchema
 from core.types import ConversationEventId, ConversationId, UserId
@@ -28,8 +28,12 @@ if TYPE_CHECKING:
     from adapters.persistence.sqlalchemy.models.conversation import (
         Conversation as ConversationModel,
     )
+    from adapters.persistence.sqlalchemy.models.conversation_event import (
+        ConversationEvent,
+    )
     from agentic.orchestration.orchestrator import AIOrchestrator
     from application.services.action_workflow import ActionWorkflowService
+    from application.services.compliance_log import ComplianceLogService
     from application.services.conversation import ConversationService
     from application.services.conversation_event import ConversationEventService
     from application.services.conversation_summarization import (
@@ -72,6 +76,7 @@ class ChatService(BaseService):
         action_workflow_service: ActionWorkflowService,
         usage_service: UsageService,
         conversation_summarization_service: ConversationSummarizationService,
+        compliance_log_service: ComplianceLogService,
     ) -> None:
         super().__init__(session)
         self._conversation_service = conversation_service
@@ -80,6 +85,7 @@ class ChatService(BaseService):
         self._action_workflow_service = action_workflow_service
         self._usage_service = usage_service
         self._conversation_summarization_service = conversation_summarization_service
+        self._compliance_log_service = compliance_log_service
 
     async def chat(
         self,
@@ -112,20 +118,12 @@ class ChatService(BaseService):
         )
 
         try:
-            # ---------------------------------------------------------
-            # 1. Persist user message
-            # ---------------------------------------------------------
-
-            user_event = await self._conversation_event_service.create(
-                conversation_id=conversation.id,
+            user_event = await self._persist_user_message(
+                conversation=conversation,
                 request_id=request_id,
-                role=MessageRoleEnum.USER,
-                content=message,
+                message=message,
+                user_id=user_id,
             )
-
-            # ---------------------------------------------------------
-            # 2. Build orchestration request
-            # ---------------------------------------------------------
 
             orchestration_request = await self._build_chat_request(
                 conversation=conversation,
@@ -135,58 +133,21 @@ class ChatService(BaseService):
                 files=files,
             )
 
-            # ---------------------------------------------------------
-            # 3. Delegate orchestration
-            # ---------------------------------------------------------
-
             result = await self._orchestrator.handle(
                 request=orchestration_request,
                 action_workflow_service=self._action_workflow_service,
             )
 
-            # ---------------------------------------------------------
-            # 3b. Record actual token usage against the daily quota.
-            #
-            # result.usage is already the real, provider-reported
-            # token count aggregated across every LLM call made during
-            # this orchestration (agentic/execution/aggregation/
-            # response.py) -- not an estimate. Best-effort: never
-            # blocks or fails the response (see UsageService.record).
-            # ---------------------------------------------------------
-
-            await self._usage_service.record(
-                user_id=user_id,
-                input_tokens=result.usage.prompt_tokens,
-                output_tokens=result.usage.completion_tokens,
-            )
-
-            # ---------------------------------------------------------
-            # 4. Persist assistant response
-            #
             # The assistant event is also persisted when HITL approval
             # is required so the approval state is available in
             # conversation history.
-            # ---------------------------------------------------------
-
-            metadata = result.metadata.model_dump(
-                mode="json",
-            )
-
-            if result.approval is not None:
-                metadata["approval"] = result.approval.model_dump(
-                    mode="json",
-                )
-
-            assistant_event = await self._conversation_event_service.create(
-                conversation_id=conversation.id,
+            assistant_event = await self._persist_assistant_response(
+                user_id=user_id,
+                conversation=conversation,
                 request_id=request_id,
-                parent_event_id=user_event.id,
-                role=MessageRoleEnum.ASSISTANT,
-                content=result.content,
-                metadata=metadata,
+                user_event=user_event,
+                response=result,
             )
-
-            await self.commit()
 
             logger.info(
                 "Chat request completed.",
@@ -239,6 +200,13 @@ class ChatService(BaseService):
 
         Action processing happens inside the orchestrator after the
         final orchestration result is produced.
+
+        Persistence/compliance/usage on completion go through the same
+        _persist_user_message()/_persist_assistant_response() helpers
+        chat() uses -- this is what keeps this method at parity with
+        chat() (compliance logging both ways, usage recording) rather
+        than the two silently drifting apart again the way they did
+        before this fix.
         """
 
         logger.info(
@@ -257,11 +225,11 @@ class ChatService(BaseService):
         )
 
         try:
-            user_event = await self._conversation_event_service.create(
-                conversation_id=conversation.id,
+            user_event = await self._persist_user_message(
+                conversation=conversation,
                 request_id=request_id,
-                role=MessageRoleEnum.USER,
-                content=message,
+                message=message,
+                user_id=user_id,
             )
 
             orchestration_request = await self._build_chat_request(
@@ -277,10 +245,10 @@ class ChatService(BaseService):
                 action_workflow_service=self._action_workflow_service,
             )
 
-            final_response: AgentResponseDTO | None = None
+            final_response: OrchestratorResponse | None = None
 
             async for chunk in stream:
-                if chunk.is_complete:
+                if chunk.is_final:
                     final_response = chunk.response
 
                 yield chunk
@@ -290,32 +258,13 @@ class ChatService(BaseService):
                     "Streaming completed without a final response.",
                 )
 
-            # ---------------------------------------------------------
-            # Persist assistant response
-            #
-            # Approval information is stored in the assistant event
-            # metadata so it is available in conversation history.
-            # ---------------------------------------------------------
-
-            metadata = final_response.metadata.model_dump(
-                mode="json",
-            )
-
-            if final_response.approval is not None:
-                metadata["approval"] = final_response.approval.model_dump(
-                    mode="json",
-                )
-
-            assistant_event = await self._conversation_event_service.create(
-                conversation_id=conversation.id,
+            assistant_event = await self._persist_assistant_response(
+                user_id=user_id,
+                conversation=conversation,
                 request_id=request_id,
-                parent_event_id=user_event.id,
-                role=MessageRoleEnum.ASSISTANT,
-                content=final_response.content,
-                metadata=metadata,
+                user_event=user_event,
+                response=final_response,
             )
-
-            await self.commit()
 
             logger.info(
                 "Chat stream completed.",
@@ -326,6 +275,7 @@ class ChatService(BaseService):
                     "user_id": str(user_id),
                     "user_event_id": str(user_event.id),
                     "assistant_event_id": str(assistant_event.id),
+                    "action_required": final_response.action is not None,
                     "approval_required": final_response.approval is not None,
                 },
             )
@@ -359,6 +309,138 @@ class ChatService(BaseService):
             )
 
             raise
+
+    async def _persist_user_message(
+        self,
+        *,
+        conversation: ConversationModel,
+        request_id: UUID,
+        message: str,
+        user_id: UserId,
+    ) -> ConversationEvent:
+        """
+        Persist the USER conversation event and its matching
+        compliance log entry -- the "who asked what, when" half of the
+        audit trail. Shared by chat() and stream_chat() so both stay
+        in parity by construction, rather than by remembering to keep
+        two call sites in sync (stream_chat() previously skipped the
+        compliance call here entirely).
+        """
+
+        user_event = await self._conversation_event_service.create(
+            conversation_id=conversation.id,
+            request_id=request_id,
+            role=MessageRoleEnum.USER,
+            content=message,
+        )
+
+        # Same transaction as the assistant event/compliance row
+        # _persist_assistant_response() writes below -- its commit()
+        # covers both.
+        await self._compliance_log_service.record_request_received(
+            request_id=request_id,
+            user_id=str(user_id),
+            tenant_id=str(user_id),
+            conversation_id=str(conversation.id),
+            conversation_event_id=str(user_event.id),
+            message=message,
+        )
+
+        return user_event
+
+    async def _persist_assistant_response(
+        self,
+        *,
+        user_id: UserId,
+        conversation: ConversationModel,
+        request_id: UUID,
+        user_event: ConversationEvent,
+        response: OrchestratorResponse,
+    ) -> ConversationEvent:
+        """
+        Record usage, persist the ASSISTANT conversation event, log
+        the matching compliance entry, and commit -- the "what the
+        system decided/returned" half. Shared by chat() and
+        stream_chat() for the same reason as _persist_user_message()
+        above: this is exactly the logic that drifted out of sync
+        between the two before this fix (stream_chat() previously
+        skipped both the compliance call and the usage-quota record
+        entirely).
+        """
+
+        # response.usage is the real, provider-reported token count
+        # aggregated across every LLM call made during this
+        # orchestration (agentic/execution/aggregation/response.py)
+        # -- not an estimate. Best-effort: never blocks or fails the
+        # response (see UsageService.record()).
+        await self._usage_service.record(
+            user_id=user_id,
+            input_tokens=response.usage.prompt_tokens,
+            output_tokens=response.usage.completion_tokens,
+        )
+
+        metadata = response.metadata.model_dump(
+            mode="json",
+        )
+
+        if response.approval is not None:
+            metadata["approval"] = response.approval.model_dump(
+                mode="json",
+            )
+
+        if response.guardrail is not None:
+            metadata["guardrail"] = response.guardrail.model_dump(
+                mode="json",
+            )
+
+        assistant_event = await self._conversation_event_service.create(
+            conversation_id=conversation.id,
+            request_id=request_id,
+            parent_event_id=user_event.id,
+            role=MessageRoleEnum.ASSISTANT,
+            content=response.content,
+            metadata=metadata,
+            citations=self._build_citations_payload(
+                citations=response.citations,
+                sources=response.sources,
+            ),
+        )
+
+        await self._compliance_log_service.record_response_returned(
+            request_id=request_id,
+            user_id=str(user_id),
+            tenant_id=str(user_id),
+            conversation_id=str(conversation.id),
+            conversation_event_id=str(assistant_event.id),
+            content=response.content,
+            citation_count=len(response.citations),
+            action_required=response.action is not None,
+        )
+
+        await self.commit()
+
+        return assistant_event
+
+    @staticmethod
+    def _build_citations_payload(
+        *,
+        citations: Sequence[Citation],
+        sources: Sequence[Source],
+    ) -> dict[str, Any] | None:
+        """
+        Build the {"citations": [...], "sources": [...]} payload
+        persisted onto an ASSISTANT conversation_event's ``citations``
+        column, or None when the answer carried neither -- a plain
+        chat turn with nothing to cite shouldn't grow a stored {}.
+        """
+
+        if not citations and not sources:
+            return None
+
+        return {
+            "citations": [item.model_dump(mode="json") for item in citations],
+            "sources": [item.model_dump(mode="json") for item in sources],
+        }
 
     async def _build_chat_request(
         self,

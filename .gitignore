@@ -208,7 +208,17 @@ __marimo__/
 
 # Docker volumes and mounted dirs
 deploy/docker/.volumes/
-deploy/docker/.init/
+# ...except source-controlled Postgres init scripts (docker-entrypoint-initdb.d)
+# -- these must ship with the repo, not be treated as local instance state.
+# (A plain `!deploy/docker/init/postgres/**` negation doesn't work here:
+# once a parent dir matches an ignore pattern, git won't descend into it to
+# apply negations for paths below it -- ignoring only the directory's direct
+# children with `init/*`, rather than the directory itself, is what lets
+# the negation below actually take effect. Everything under postgres/ is
+# tracked, not just *.sh -- e.g. _create_app_role.lib is deliberately
+# extensionless so Postgres's own docker-entrypoint.sh, which auto-runs
+# every *.sh/*.sql* file it finds here, doesn't try to execute it standalone.)
+!deploy/docker/init/**
 
 # SAM CLI
 .sam/

@@ -16,6 +16,8 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+from uuid import UUID
 
 from langgraph.config import var_child_runnable_config
 from langgraph.func import task as langgraph_task
@@ -29,6 +31,7 @@ from agentic.collaboration.bus import CollaborationBus
 from agentic.decisions.decision import AgentDecisionType
 from agentic.evaluation.answer import (
     AnswerEvaluationResult,
+    AnswerEvaluationSummary,
     AnswerEvaluator,
     AnswerQualityPolicy,
 )
@@ -41,6 +44,16 @@ from core.dto.tool import RetrievedContentDTO
 from core.enums import ActionTypeEnum, MessageRoleEnum, RetrievalSourceEnum
 from core.exceptions.registry import ToolNotFoundError
 from core.models.message import AgentMessageSchema
+
+if TYPE_CHECKING:
+    # Deferred: application/services/compliance_log.py never needs to
+    # be imported at runtime here -- this module only calls methods on
+    # an already-constructed writer instance (duck typing), and a real
+    # runtime import would run the wrong direction against this
+    # project's layering (application/ depends on agentic/, not the
+    # reverse -- application.services.chat already imports from
+    # agentic.orchestration.orchestrator).
+    from application.services.compliance_log import StandaloneComplianceLogWriter
 
 
 async def _call_replay_safe(task_fn, /, **kwargs):
@@ -90,6 +103,10 @@ class AgentContinuationResult:
     result: AgentExecutionResult
     action: AgentActionRequestDTO | None = None
     tool_results: tuple[ToolResult, ...] = ()
+    # Populated only for a FINAL decision _gate_final actually
+    # accepted (is_sufficient() returned True on that call) -- see
+    # AnswerEvaluationSummary's docstring.
+    evaluation_summary: AnswerEvaluationSummary | None = None
 
 
 class AgentContinuationService:
@@ -121,12 +138,14 @@ class AgentContinuationService:
         answer_evaluator: AnswerEvaluator,
         answer_quality_policy: AnswerQualityPolicy,
         agent_policy_guard: AgentPolicyGuard,
+        compliance_log: StandaloneComplianceLogWriter,
     ) -> None:
         self._tool_execution_service = tool_execution_service
         self._collaboration_bus = collaboration_bus
         self._answer_evaluator = answer_evaluator
         self._answer_quality_policy = answer_quality_policy
         self._agent_policy_guard = agent_policy_guard
+        self._compliance_log = compliance_log
 
     async def execute(
         self,
@@ -288,7 +307,7 @@ class AgentContinuationService:
                 continue
 
             if decision.decision_type is AgentDecisionType.FINAL:
-                gated = await self._gate_final(
+                gated, evaluation_summary = await self._gate_final(
                     handle=handle,
                     result=result,
                 )
@@ -299,6 +318,7 @@ class AgentContinuationService:
                     result=result,
                     action=result.action,
                     tool_results=tuple(tool_results),
+                    evaluation_summary=evaluation_summary,
                 )
 
             return AgentContinuationResult(
@@ -429,6 +449,24 @@ class AgentContinuationService:
                 tool_name=tool_name,
                 parameters=parameters,
             )
+
+            # Written INSIDE the @task body, deliberately -- not after
+            # _call_replay_safe() returns below. A later interrupt()/
+            # resume in the same turn replays run_tool_task's caller
+            # from the top (see this method's own docstring), but the
+            # checkpointed @task call itself returns its cached result
+            # without re-running its body -- so a compliance write
+            # placed here fires exactly once across a pause/resume
+            # cycle, the same guarantee the tool invocation itself
+            # already relies on. A write placed after this task call
+            # instead would re-run on every replay and double- (or
+            # triple-) count one real tool call.
+            await self._record_tool_call_compliance(
+                handle=handle,
+                action=action,
+                result=result,
+            )
+
             return result.to_dict()
 
         result_dict = await _call_replay_safe(
@@ -438,6 +476,65 @@ class AgentContinuationService:
         )
 
         return ToolResult.from_dict(result_dict)
+
+    async def _record_tool_call_compliance(
+        self,
+        *,
+        handle: AgentExecutionHandle,
+        action: AgentActionRequestDTO,
+        result: ToolResult,
+    ) -> None:
+        """
+        Compliance log: TOOL_CALL_EXECUTED for every tool call, plus
+        RETRIEVAL_PERFORMED when the tool actually returned evidence
+        (reuses ToolResultConverter -- the same RetrievedContentDTO
+        conversion the reasoning-context path already applies to this
+        result, not a second evidence shape).
+        """
+
+        context = handle.request.context
+
+        if not context.request_id:
+            # A resume()'d execution's AgentContextDTO is reconstructed
+            # from LangGraph checkpoint state (see AgentExecutionResult
+            # -- Executor.resume()) and may not carry request_id the
+            # same way a fresh handle() call does (see
+            # AgentContextDTO.request_id's own docstring) -- skip
+            # rather than fail a real tool call over a missing
+            # correlation id for what is still a known, narrow gap.
+            return
+
+        try:
+            request_id = UUID(context.request_id)
+        except ValueError:
+            return
+
+        await self._compliance_log.record_tool_call_executed(
+            request_id=request_id,
+            user_id=context.user_id,
+            tenant_id=context.user_id,
+            thread_id=context.thread_id,
+            agent_id=action.agent_id,
+            tool_name=action.tool_name or "",
+            success=result.success,
+        )
+
+        # Gated on result.evidence specifically, not the converted
+        # reasoning-context tuple -- ToolResultConverter falls back to
+        # wrapping a tool's plain top-level content as one context
+        # item when there's no explicit evidence, which would make
+        # every successful non-retrieval tool call (e.g. a
+        # send-email/slack action) misreported as a retrieval. Only an
+        # explicit ToolEvidence list is a real retrieval signal.
+        if result.success and result.evidence:
+            await self._compliance_log.record_retrieval_performed(
+                request_id=request_id,
+                user_id=context.user_id,
+                tenant_id=context.user_id,
+                thread_id=context.thread_id,
+                agent_id=action.agent_id,
+                retrieved=ToolResultConverter.to_reasoning_context(result=result),
+            )
 
     async def _delegate(
         self,
@@ -526,12 +623,20 @@ class AgentContinuationService:
         *,
         handle: AgentExecutionHandle,
         result: AgentExecutionResult,
-    ) -> AgentExecutionResult | None:
+    ) -> tuple[AgentExecutionResult | None, AnswerEvaluationSummary | None]:
         """
         Evaluate a proposed FINAL answer against accumulated evidence.
 
-        Returns a new result to continue on (insufficient + budget left),
-        or None to accept the FINAL result as-is.
+        Returns (a new result to continue on, None) when insufficient
+        and budget allows a retry, or (None, evaluation_summary) to
+        accept the FINAL result as-is -- evaluation_summary is the
+        groundedness/relevance pair from the evaluation that was just
+        accepted (see AnswerEvaluationSummary's docstring), None on
+        every other return path since none of them has an accepted
+        evaluation to report. Purely additive: every branch below
+        still returns the exact same first element it always did: the
+        second is only ever read by callers that want the compliance-
+        log summary, never by the gating decision itself.
 
         A groundedness or relevance failure specifically triggers a
         structural corrective-retrieval retry (_force_corrective_retrieval):
@@ -550,7 +655,7 @@ class AgentContinuationService:
         answer = decision.final_response if decision is not None else None
 
         if not answer:
-            return None
+            return None, None
 
         evidence = tuple(item.content for item in handle.reasoning_context)
 
@@ -561,14 +666,17 @@ class AgentContinuationService:
         )
 
         if self._answer_quality_policy.is_sufficient(evaluation):
-            return None
+            return None, AnswerEvaluationSummary(
+                groundedness=evaluation.groundedness,
+                relevance=evaluation.relevance,
+            )
 
         step_budget = handle.lifecycle.begin_step()
         if not step_budget.allowed:
             # An insufficient FINAL must never be accepted merely because the
             # continuation step budget is exhausted. Preserve the proposed
             # answer, but return the lifecycle's non-completed terminal result.
-            return handle.terminal_result()
+            return handle.terminal_result(), None
 
         groundedness_failed = (
             evaluation.groundedness_detail.applicable
@@ -583,7 +691,7 @@ class AgentContinuationService:
             )
 
             if retried is not None:
-                return retried
+                return retried, None
 
             # Corrective retrieval itself couldn't run (budget exhausted
             # or the tool call failed) -- fall through to the weak
@@ -607,7 +715,7 @@ class AgentContinuationService:
             ),
         )
 
-        return await handle.reason()
+        return await handle.reason(), None
 
     async def _force_corrective_retrieval(
         self,

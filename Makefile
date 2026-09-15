@@ -361,7 +361,23 @@ docker-clean: ## Remove all local Compose services, volumes, and images
 # an independent lifecycle.
 # ============================================================================
 
-.PHONY: infra-build infra-up infra-down infra-restart infra-logs infra-ps
+.PHONY: infra-build infra-up infra-down infra-restart infra-logs infra-ps infra-volumes
+
+# Prometheus (distroless), Tempo, and Grafana (distroless-slim) all run
+# as non-root by default (baked into each image's own USER directive)
+# and bind-mount deploy/docker/.volumes/<service> for persistent data.
+# Docker auto-creates a bind-mount target that doesn't exist yet as
+# root, not as the container's UID -- every one of these three then
+# fails on first boot with a plain "permission denied" writing to its
+# own data dir. Not a one-off local corruption: reproducible on any
+# fresh clone, since .volumes/ isn't tracked in git. Idempotent, no
+# sudo required -- same throwaway-alpine-container trick clean-local
+# already uses for host-filesystem operations.
+infra-volumes:
+	@mkdir -p deploy/docker/.volumes/prometheus deploy/docker/.volumes/tempo deploy/docker/.volumes/grafana
+	@docker run --rm -v "$$(pwd)/deploy/docker/.volumes/prometheus:/data" alpine chown -R 65532:65532 /data
+	@docker run --rm -v "$$(pwd)/deploy/docker/.volumes/tempo:/data" alpine chown -R 10001:10001 /data
+	@docker run --rm -v "$$(pwd)/deploy/docker/.volumes/grafana:/data" alpine chown -R 472:472 /data
 
 infra-build: docker-networks ## Pull observability infrastructure images
 	@$(DOCKER_COMPOSE) $(DOCKER_COMPOSE_ALL_FILES) \
@@ -370,7 +386,7 @@ infra-build: docker-networks ## Pull observability infrastructure images
 	  prometheus \
 	  grafana
 
-infra-up: docker-networks ## Start OpenTelemetry, Prometheus, and Grafana
+infra-up: docker-networks infra-volumes ## Start OpenTelemetry, Prometheus, and Grafana
 	@$(DOCKER_COMPOSE) $(DOCKER_COMPOSE_ALL_FILES) \
 	  up -d \
 	  otel-collector \
@@ -563,6 +579,16 @@ endif
 	  -m "$(msg)"
 
 # ============================================================================
+# Local dev DB role separation
+# ============================================================================
+
+.PHONY: db-setup-role
+
+db-setup-role: ## Create/sync the restricted local-dev runtime role (APP_DB_USER) -- safe to re-run, needed once per Postgres volume
+	@chmod +x scripts/bash/setup_app_role.sh
+	@./scripts/bash/setup_app_role.sh
+
+# ============================================================================
 # LocalStack Resource Inspection
 # ============================================================================
 
@@ -726,7 +752,7 @@ clean-local: ## Remove SAM artifacts and LocalStack persistent data
 	@echo "$(CYAN)Cleaning SAM artifacts and LocalStack data...$(RESET)"
 	@rm -rf .aws-sam
 	@docker run --rm \
-	  -v "$$(pwd)/docker/.init/localstack:/var/lib/localstack" \
+	  -v "$$(pwd)/docker/init/localstack:/var/lib/localstack" \
 	  alpine \
 	  sh -c "rm -rf /var/lib/localstack/*"
 
@@ -743,9 +769,11 @@ restart-hard: ## Wipe local environment and redeploy
 	@sleep 10
 	@echo "5) Starting observability..."
 	@$(MAKE) infra-up MODE=dev
-	@echo "6) Applying database migrations..."
+	@echo "6) Setting up local dev DB role separation..."
+	@$(MAKE) db-setup-role
+	@echo "7) Applying database migrations..."
 	@$(MAKE) alembic-upgrade
-	@echo "7) Deploying SAM stack..."
+	@echo "8) Deploying SAM stack..."
 	@$(MAKE) cf-deploy MODE=dev
 
 # ============================================================================
@@ -766,6 +794,7 @@ dev-deploy: ## Deploy development SAM stack
 dev: ## Start complete local development environment
 	@$(MAKE) dev-start
 	@$(MAKE) infra-up MODE=dev
+	@$(MAKE) db-setup-role
 	@$(MAKE) alembic-upgrade
 	@$(MAKE) dev-deploy
 

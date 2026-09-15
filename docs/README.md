@@ -264,6 +264,32 @@ If Tempo is included in `docker/docker-compose-infra.yml`, it should be managed 
 
 # 8. Database Migrations
 
+## Local DB role separation (one-time per Postgres volume)
+
+The app connects as a restricted, non-superuser role (`APP_DB_USER`)
+distinct from the admin/migration role (`DB_USER`) that owns the
+schema. A **fresh** Postgres container/volume creates this role
+automatically on first boot
+(`deploy/docker/init/postgres/01-create-app-role.sh`, a
+`docker-entrypoint-initdb.d` hook). That hook only ever runs against
+an empty volume, though — if your local Postgres volume predates this
+role split (or you're not sure), run:
+
+```bash
+make db-setup-role
+```
+
+Safe to re-run any time (idempotent — creates the role if missing,
+re-syncs its password to `.env` if it already exists). Run this
+**before** `make alembic-upgrade` below: one migration
+(`dd110a14caf1_restrict_compliance_log_to_insert_.py`) restricts this
+role's access to a specific table and requires the role to already
+exist, or it errors.
+
+Local dev only — this does not apply to any cloud/RDS deployment.
+
+## Apply migrations
+
 Apply all pending migrations:
 
 ```bash
@@ -660,32 +686,41 @@ make docker-up MODE=dev
 make infra-up MODE=dev
 ```
 
-## Step 4 — Apply database migrations
+## Step 4 — Set up local DB role separation
+
+```bash
+make db-setup-role
+```
+
+Idempotent — safe on every session, but only strictly needed once per
+Postgres volume (see section 8 above for why). Must come before Step 5.
+
+## Step 5 — Apply database migrations
 
 ```bash
 make alembic-upgrade
 ```
 
-## Step 5 — Check containers
+## Step 6 — Check containers
 
 ```bash
 make docker-ps MODE=dev
 make infra-ps MODE=dev
 ```
 
-## Step 6 — Check application logs
+## Step 7 — Check application logs
 
 ```bash
 make docker-app-logs MODE=dev
 ```
 
-## Step 7 — Run tests
+## Step 8 — Run tests
 
 ```bash
 make test-unit
 ```
 
-## Step 8 — Run quality checks
+## Step 9 — Run quality checks
 
 ```bash
 make lint
@@ -708,6 +743,8 @@ This starts the complete local development workflow:
 Application Docker services
         ↓
 Observability infrastructure
+        ↓
+Local DB role separation setup (idempotent)
         ↓
 Database migrations
         ↓
@@ -819,6 +856,28 @@ If necessary:
 ```bash
 docker volume prune -f
 ```
+
+---
+
+## App fails to connect to Postgres / "password authentication failed" for APP_DB_USER
+
+Your Postgres volume predates local DB role separation, so
+`APP_DB_USER` (e.g. `juris_ai_app`) was never created —
+`docker-entrypoint-initdb.d` only runs against a brand-new, empty
+volume, never an existing one. Run:
+
+```bash
+make db-setup-role
+```
+
+then restart the `api` container so it picks up the (possibly new)
+`.env` values:
+
+```bash
+docker compose -f deploy/docker/docker-compose.yml up -d --force-recreate --no-deps api
+```
+
+See section 8 above for the full explanation.
 
 Then restart:
 

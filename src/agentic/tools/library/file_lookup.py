@@ -61,12 +61,20 @@ class LibraryLookupTool(Tool):
         if library is None:
             return f"No upload file found with id '{library_id}'."
 
+        # Library has no `title`/`content` field -- it persists upload
+        # metadata only (see LibraryRepository's own docstring: parsing/
+        # text extraction/content are explicitly not this table's job).
+        # filename falls back to original_filename, matching list_library()
+        # below; full document content isn't stored inline here at all,
+        # so this can only describe the file, not reproduce its text.
+        display_name = library.filename or library.original_filename or library.id
+
         return (
             f"Upload File {library.id}\n"
-            f"Title: {library.title}\n"
+            f"Filename: {display_name}\n"
             f"Status: {library.status}\n"
-            f"---\n"
-            f"{library.content}"
+            f"Type: {library.mime_type or 'unknown'}\n"
+            f"Storage path: {library.storage_path or 'not stored'}"
         )
 
     async def list_library(
@@ -84,11 +92,18 @@ class LibraryLookupTool(Tool):
         allowed_library_ids = get_request_context().allowed_library_ids
 
         try:
-            fetch_limit = limit * 3 if allowed_library_ids is not None else limit
-
             async with self._session_factory() as session:
                 repository = LibraryRepository(session=session)
-                library = await repository.search(query=query, limit=fetch_limit)
+                # allowed_library_ids is now applied in the SQL WHERE
+                # clause itself (LibraryRepository.search()), not just
+                # filtered out of an unscoped result afterward -- the
+                # comprehension below is defense-in-depth on top of
+                # that, not the enforcement point.
+                library = await repository.search(
+                    query=query,
+                    limit=limit,
+                    allowed_library_ids=allowed_library_ids,
+                )
 
         except DomainError:
             log.exception("Repository error listing upload files.")
@@ -103,7 +118,9 @@ class LibraryLookupTool(Tool):
         if not allowed:
             return "No upload files found."
 
-        return "\n".join(f"- {d.id}: {d.title} ({d.status})" for d in allowed)
+        return "\n".join(
+            f"- {d.id}: {d.filename or d.original_filename or d.id} ({d.status})" for d in allowed
+        )
 
     async def execute(
         self,

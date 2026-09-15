@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
+from uuid import UUID
 
 import pytest
 
@@ -32,6 +33,7 @@ from agentic.agents.runtime.retry import RetryClassifier
 from agentic.decisions.decision import AgentDecisionType
 from agentic.decisions.schemas import AgentDecision, AgentToolCall
 from agentic.decisions.validator import AgentDecisionValidator
+from agentic.execution.aggregation.mapper import AgentResponseMapper
 from agentic.policy.agent_policy import StaticAgentPolicyProvider
 from agentic.policy.guard import AgentPolicyGuard
 from agentic.policy.schemas import AgentPolicy
@@ -64,6 +66,32 @@ def _tool_decision() -> AgentDecision:
             parameters={"query": "test"},
         ),
     )
+
+
+def _sufficient_answer_evaluator(
+    *,
+    groundedness: float = 0.91,
+    relevance: float = 0.87,
+) -> tuple[AsyncMock, MagicMock]:
+    """
+    Return mocks that model a numeric SUFFICIENT evaluation -- the
+    is_sufficient()=True path _gate_final takes when it accepts a
+    FINAL answer and reports its AnswerEvaluationSummary.
+    """
+
+    answer_evaluator = AsyncMock()
+    answer_evaluator.evaluate.return_value = SimpleNamespace(
+        groundedness=groundedness,
+        relevance=relevance,
+        completeness=0.9,
+        groundedness_detail=SimpleNamespace(applicable=True),
+    )
+
+    answer_quality_policy = MagicMock()
+    answer_quality_policy.is_sufficient.return_value = True
+    answer_quality_policy.min_groundedness = 0.50
+    answer_quality_policy.min_relevance = 0.60
+    return answer_evaluator, answer_quality_policy
 
 
 def _insufficient_answer_evaluator() -> tuple[AsyncMock, MagicMock]:
@@ -320,6 +348,7 @@ async def test_tool_result_is_real_continuation_input(
         answer_evaluator=answer_evaluator,
         answer_quality_policy=answer_quality_policy,
         agent_policy_guard=MagicMock(),
+        compliance_log=AsyncMock(),
     )
 
     result = await continuation.execute(
@@ -364,6 +393,7 @@ async def test_failed_tool_terminates_real_lifecycle_without_next_reasoning(
         answer_evaluator=answer_evaluator,
         answer_quality_policy=answer_quality_policy,
         agent_policy_guard=MagicMock(),
+        compliance_log=AsyncMock(),
     )
 
     result = await continuation.execute(
@@ -411,6 +441,7 @@ async def test_empty_tool_evidence_is_preserved_as_no_new_reasoning_context(
         answer_evaluator=answer_evaluator,
         answer_quality_policy=answer_quality_policy,
         agent_policy_guard=MagicMock(),
+        compliance_log=AsyncMock(),
     )
 
     result = await continuation.execute(
@@ -602,6 +633,7 @@ async def test_final_without_evidence_must_not_be_accepted_as_terminal(
         answer_evaluator=answer_evaluator,
         answer_quality_policy=answer_quality_policy,
         agent_policy_guard=MagicMock(),
+        compliance_log=AsyncMock(),
     )
 
     result = await continuation.execute(
@@ -664,6 +696,7 @@ async def test_high_score_irrelevant_evidence_must_not_make_final_sufficient(
         answer_evaluator=answer_evaluator,
         answer_quality_policy=answer_quality_policy,
         agent_policy_guard=MagicMock(),
+        compliance_log=AsyncMock(),
     )
 
     result = await continuation.execute(
@@ -731,6 +764,7 @@ async def test_conflicting_evidence_must_not_allow_unresolved_final(
         answer_evaluator=answer_evaluator,
         answer_quality_policy=answer_quality_policy,
         agent_policy_guard=MagicMock(),
+        compliance_log=AsyncMock(),
     )
 
     result = await continuation.execute(
@@ -785,6 +819,7 @@ async def test_insufficient_final_does_not_get_replaced_by_answer_string_compari
         answer_evaluator=answer_evaluator,
         answer_quality_policy=answer_quality_policy,
         agent_policy_guard=MagicMock(),
+        compliance_log=AsyncMock(),
     )
 
     result = await continuation.execute(
@@ -794,3 +829,380 @@ async def test_insufficient_final_does_not_get_replaced_by_answer_string_compari
 
     assert result.result.status.value != "completed"
     assert llm_client.generate_structured.await_count >= 2
+
+
+@pytest.mark.asyncio
+async def test_tool_call_records_compliance_log_entries(
+    execution: AgentExecution,
+    llm_client: object,
+    tool_execution_service: ToolExecutionService,
+    collaboration_bus,
+) -> None:
+    """
+    A real tool call that returns evidence must record both a
+    TOOL_CALL_EXECUTED and a RETRIEVAL_PERFORMED compliance log entry
+    -- written from inside the LangGraph @task body for replay safety
+    (see AgentContinuationService._execute_tool's docstring), verified
+    here via the real continuation runtime rather than a mock of the
+    task machinery itself.
+    """
+
+    request = AgentRequestDTO(
+        conversation=ConversationDTO(
+            messages=(
+                MessageDTO(
+                    role=MessageRoleEnum.USER,
+                    content="What does the supplied evidence establish?",
+                ),
+            ),
+        ),
+        instruction="Answer the user's legal question using the supplied evidence.",
+        arguments={},
+        context=AgentContextDTO(
+            user_id="test-user",
+            execution_id="test-execution",
+            thread_id="test-thread",
+            conversation_event_id="test-event",
+            request_id="55673c69-323d-49d2-95c0-c4cba4cbaacc",
+        ),
+    )
+
+    llm_client.generate_structured.side_effect = [
+        _tool_decision(),
+        _final_decision("Final answer after retrieval."),
+    ]
+
+    tool_execution_service.execute = AsyncMock(
+        return_value=_tool_result(
+            content="Retrieved evidence supporting the answer.",
+            score=0.91,
+        ),
+    )
+
+    handle = await execution.start(
+        agent_id=AGENT_ID,
+        request=request,
+        reasoning_context=(),
+    )
+    initial = await handle.reason()
+
+    answer_evaluator = AsyncMock()
+    answer_quality_policy = MagicMock()
+    answer_quality_policy.is_sufficient.return_value = True
+
+    compliance_log = AsyncMock()
+
+    continuation = AgentContinuationService(
+        tool_execution_service=tool_execution_service,
+        collaboration_bus=collaboration_bus,
+        answer_evaluator=answer_evaluator,
+        answer_quality_policy=answer_quality_policy,
+        agent_policy_guard=MagicMock(),
+        compliance_log=compliance_log,
+    )
+
+    await continuation.execute(
+        handle=handle,
+        initial_result=initial,
+    )
+
+    compliance_log.record_tool_call_executed.assert_awaited_once_with(
+        request_id=UUID("55673c69-323d-49d2-95c0-c4cba4cbaacc"),
+        user_id="test-user",
+        tenant_id="test-user",
+        thread_id="test-thread",
+        agent_id=AGENT_ID,
+        tool_name=TOOL_NAME,
+        success=True,
+    )
+
+    compliance_log.record_retrieval_performed.assert_awaited_once()
+    retrieval_call = compliance_log.record_retrieval_performed.await_args.kwargs
+    assert retrieval_call["request_id"] == UUID("55673c69-323d-49d2-95c0-c4cba4cbaacc")
+    assert len(retrieval_call["retrieved"]) == 1
+    assert retrieval_call["retrieved"][0].content == "Retrieved evidence supporting the answer."
+
+
+@pytest.mark.asyncio
+async def test_tool_call_without_evidence_records_tool_call_but_not_retrieval(
+    execution: AgentExecution,
+    llm_client: object,
+    tool_execution_service: ToolExecutionService,
+    collaboration_bus,
+) -> None:
+    """
+    A successful tool call with no explicit ToolEvidence (e.g. a
+    send-email/slack action) must record TOOL_CALL_EXECUTED but must
+    NOT be misreported as a RETRIEVAL_PERFORMED -- see
+    _record_tool_call_compliance's comment on why this is gated on
+    result.evidence specifically, not the converted reasoning-context
+    fallback.
+    """
+
+    request = AgentRequestDTO(
+        conversation=ConversationDTO(
+            messages=(
+                MessageDTO(
+                    role=MessageRoleEnum.USER,
+                    content="What does the supplied evidence establish?",
+                ),
+            ),
+        ),
+        instruction="Answer the user's legal question using the supplied evidence.",
+        arguments={},
+        context=AgentContextDTO(
+            user_id="test-user",
+            execution_id="test-execution",
+            thread_id="test-thread",
+            conversation_event_id="test-event",
+            request_id="55673c69-323d-49d2-95c0-c4cba4cbaacc",
+        ),
+    )
+
+    llm_client.generate_structured.side_effect = [
+        _tool_decision(),
+        _final_decision("Final answer after the action."),
+    ]
+
+    tool_execution_service.execute = AsyncMock(
+        return_value=ToolResult(
+            tool_name=TOOL_NAME,
+            success=True,
+            content="Action completed successfully.",
+            evidence=(),
+        ),
+    )
+
+    handle = await execution.start(
+        agent_id=AGENT_ID,
+        request=request,
+        reasoning_context=(),
+    )
+    initial = await handle.reason()
+
+    answer_evaluator = AsyncMock()
+    answer_quality_policy = MagicMock()
+    answer_quality_policy.is_sufficient.return_value = True
+
+    compliance_log = AsyncMock()
+
+    continuation = AgentContinuationService(
+        tool_execution_service=tool_execution_service,
+        collaboration_bus=collaboration_bus,
+        answer_evaluator=answer_evaluator,
+        answer_quality_policy=answer_quality_policy,
+        agent_policy_guard=MagicMock(),
+        compliance_log=compliance_log,
+    )
+
+    await continuation.execute(
+        handle=handle,
+        initial_result=initial,
+    )
+
+    compliance_log.record_tool_call_executed.assert_awaited_once()
+    compliance_log.record_retrieval_performed.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_tool_call_skips_compliance_write_when_request_id_missing(
+    execution: AgentExecution,
+    llm_client: object,
+    tool_execution_service: ToolExecutionService,
+    collaboration_bus,
+) -> None:
+    """
+    AgentContextDTO.request_id defaults to "" -- _record_tool_call_
+    compliance must skip gracefully (not raise UUID("")) rather than
+    fail a real tool call over a missing correlation id.
+    """
+
+    llm_client.generate_structured.side_effect = [
+        _tool_decision(),
+        _final_decision("Final answer after retrieval."),
+    ]
+
+    tool_execution_service.execute = AsyncMock(
+        return_value=_tool_result(
+            content="Retrieved evidence supporting the answer.",
+            score=0.91,
+        ),
+    )
+
+    # _request() (the shared helper) builds a context with no
+    # request_id set, i.e. the default "".
+    handle = await _start_handle(execution)
+    initial = await handle.reason()
+
+    answer_evaluator = AsyncMock()
+    answer_quality_policy = MagicMock()
+    answer_quality_policy.is_sufficient.return_value = True
+
+    compliance_log = AsyncMock()
+
+    continuation = AgentContinuationService(
+        tool_execution_service=tool_execution_service,
+        collaboration_bus=collaboration_bus,
+        answer_evaluator=answer_evaluator,
+        answer_quality_policy=answer_quality_policy,
+        agent_policy_guard=MagicMock(),
+        compliance_log=compliance_log,
+    )
+
+    await continuation.execute(
+        handle=handle,
+        initial_result=initial,
+    )
+
+    compliance_log.record_tool_call_executed.assert_not_awaited()
+    compliance_log.record_retrieval_performed.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_accepted_final_carries_real_evaluation_summary(
+    execution: AgentExecution,
+    llm_client: object,
+    tool_execution_service: ToolExecutionService,
+    collaboration_bus,
+) -> None:
+    """
+    A FINAL decision _gate_final accepts (is_sufficient() -> True)
+    must carry the accepted evaluation's real groundedness/relevance
+    on AgentContinuationResult.evaluation_summary -- the threading
+    this test exists for. Purely additive: does not touch is_sufficient
+    itself (mocked True here, same as any other accepted-FINAL test).
+    """
+
+    llm_client.generate_structured.return_value = _final_decision(
+        "The answer is supported by the supplied evidence.",
+    )
+
+    handle = await _start_handle(
+        execution,
+        reasoning_context=(_evidence(content="Supporting evidence.", score=0.9),),
+    )
+    initial = await handle.reason()
+
+    answer_evaluator, answer_quality_policy = _sufficient_answer_evaluator(
+        groundedness=0.91,
+        relevance=0.87,
+    )
+
+    continuation = AgentContinuationService(
+        tool_execution_service=tool_execution_service,
+        collaboration_bus=collaboration_bus,
+        answer_evaluator=answer_evaluator,
+        answer_quality_policy=answer_quality_policy,
+        agent_policy_guard=MagicMock(),
+        compliance_log=AsyncMock(),
+    )
+
+    result = await continuation.execute(
+        handle=handle,
+        initial_result=initial,
+    )
+
+    assert result.evaluation_summary is not None
+    assert result.evaluation_summary.groundedness == 0.91
+    assert result.evaluation_summary.relevance == 0.87
+
+    answer_evaluator.evaluate.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_final_with_empty_answer_carries_no_evaluation_summary(
+    execution: AgentExecution,
+    llm_client: object,
+    tool_execution_service: ToolExecutionService,
+    collaboration_bus,
+) -> None:
+    """
+    _gate_final's "no answer" early-exit never calls the evaluator at
+    all -- evaluation_summary must stay None for this accepted-FINAL
+    path, same as any other case where no evaluation was accepted.
+    """
+
+    llm_client.generate_structured.return_value = _final_decision("")
+
+    handle = await _start_handle(execution)
+    initial = await handle.reason()
+
+    answer_evaluator, answer_quality_policy = _sufficient_answer_evaluator()
+
+    continuation = AgentContinuationService(
+        tool_execution_service=tool_execution_service,
+        collaboration_bus=collaboration_bus,
+        answer_evaluator=answer_evaluator,
+        answer_quality_policy=answer_quality_policy,
+        agent_policy_guard=MagicMock(),
+        compliance_log=AsyncMock(),
+    )
+
+    result = await continuation.execute(
+        handle=handle,
+        initial_result=initial,
+    )
+
+    assert result.evaluation_summary is None
+    answer_evaluator.evaluate.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_evaluation_summary_flows_into_mapped_agent_response_metadata(
+    execution: AgentExecution,
+    llm_client: object,
+    tool_execution_service: ToolExecutionService,
+    collaboration_bus,
+) -> None:
+    """
+    End of the threading path: AgentResponseMapper.map() (the same
+    call AgentExecutionNode makes) must surface evaluation_summary's
+    fields on AgentResponseDTO.metadata -- what the orchestrator's
+    compliance write actually reads. Also covers metadata["evidence_text"],
+    the same threading for the guardrail's PII-provenance check
+    (AIOrchestrator._evidence_text) -- both are populated from this
+    one map() call, so one real-runtime test covers both.
+    """
+
+    llm_client.generate_structured.return_value = _final_decision(
+        "The answer is supported by the supplied evidence.",
+    )
+
+    handle = await _start_handle(
+        execution,
+        reasoning_context=(_evidence(content="Supporting evidence.", score=0.9),),
+    )
+    initial = await handle.reason()
+
+    answer_evaluator, answer_quality_policy = _sufficient_answer_evaluator(
+        groundedness=0.75,
+        relevance=0.65,
+    )
+
+    continuation = AgentContinuationService(
+        tool_execution_service=tool_execution_service,
+        collaboration_bus=collaboration_bus,
+        answer_evaluator=answer_evaluator,
+        answer_quality_policy=answer_quality_policy,
+        agent_policy_guard=MagicMock(),
+        compliance_log=AsyncMock(),
+    )
+
+    result = await continuation.execute(
+        handle=handle,
+        initial_result=initial,
+    )
+
+    mapper = AgentResponseMapper(agent_name=AGENT_ID)
+    response = mapper.map(
+        state=handle.lifecycle.state,
+        execution_id=handle.request.context.execution_id,
+        context=handle.reasoning_context,
+        evaluation_summary=result.evaluation_summary,
+    )
+
+    assert response.metadata["groundedness"] == 0.75
+    assert response.metadata["relevance"] == 0.65
+    # The real, untruncated evidence text -- this test's reasoning_context
+    # was seeded with _evidence(content="Supporting evidence.", ...).
+    assert response.metadata["evidence_text"] == "Supporting evidence."

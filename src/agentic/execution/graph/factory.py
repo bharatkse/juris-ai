@@ -4,6 +4,8 @@ LangGraph execution graph factory.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph.state import CompiledStateGraph
 
@@ -21,6 +23,11 @@ from agentic.policy.guard import AgentPolicyGuard
 from agentic.registry.agent import AgentRegistry
 from agentic.tools.runtime.invocation import ToolExecutionService
 from core.dto.planning import ExecutionPlanDTO
+
+if TYPE_CHECKING:
+    # Same deferred-import reasoning as continuation.py -- see its
+    # TYPE_CHECKING block.
+    from application.services.compliance_log import StandaloneComplianceLogWriter
 
 
 class ExecutionGraphFactory:
@@ -49,6 +56,7 @@ class ExecutionGraphFactory:
         answer_evaluator: AnswerEvaluator,
         answer_quality_policy: AnswerQualityPolicy,
         checkpointer: BaseCheckpointSaver,
+        compliance_log: StandaloneComplianceLogWriter,
     ) -> None:
         self._builder = builder
         self._agent_registry = agent_registry
@@ -62,6 +70,7 @@ class ExecutionGraphFactory:
         self._answer_quality_policy = answer_quality_policy
         self._decision_validator = AgentDecisionValidator()
         self._checkpointer = checkpointer
+        self._compliance_log = compliance_log
 
     def create(
         self,
@@ -91,6 +100,7 @@ class ExecutionGraphFactory:
             answer_evaluator=self._answer_evaluator,
             answer_quality_policy=self._answer_quality_policy,
             agent_policy_guard=self._agent_policy_guard,
+            compliance_log=self._compliance_log,
         )
 
         step_node = AgentExecutionNode(

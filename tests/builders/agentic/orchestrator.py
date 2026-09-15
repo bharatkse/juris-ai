@@ -130,6 +130,8 @@ def build_orchestrator_response(
     conversation_id: ConversationId | None = None,
     content: str = "Legal answer",
     metadata: ResponseMetadata | None = None,
+    citations: list[Citation] | None = None,
+    sources: list[Source] | None = None,
 ) -> OrchestratorResponse:
     """
     Build an OrchestratorResponse.
@@ -139,6 +141,8 @@ def build_orchestrator_response(
         conversation_id=(conversation_id or unknown_conversation_id()),
         content=content,
         metadata=(metadata or build_response_metadata()),
+        citations=citations or [],
+        sources=sources or [],
     )
 
 
