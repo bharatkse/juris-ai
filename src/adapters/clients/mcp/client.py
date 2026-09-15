@@ -82,7 +82,7 @@ class MCPClientImpl(MCPClient):
                 )
 
             self._session = await self._exit_stack.enter_async_context(ClientSession(read, write))
-            await self._session.initialize()
+            await self._sessioninitialize()
 
             log.info("Connected to MCP server '%s'.", self._config.name)
 

@@ -28,6 +28,20 @@ class AgentContextDTO:
         ...,
     ] = ()
 
+    # The originating OrchestratorRequest.request_id (as a string),
+    # kept separate from thread_id: thread_id identifies the LangGraph
+    # checkpoint thread and can differ from the request on a guardrail
+    # regenerate attempt (see AIOrchestrator.handle()'s retry loop,
+    # which mints a fresh thread_id per attempt) -- request_id must
+    # always stay the same real request across every attempt, since
+    # it is the correlation key the compliance log
+    # (application/services/compliance_log.py) uses to group every row
+    # for one turn. Defaults to "" rather than being required so every
+    # existing AgentContextDTO() call site (most of them predate this
+    # field and don't need it for anything other than compliance
+    # logging) keeps working unchanged.
+    request_id: str = ""
+
     metadata: dict[str, Any] = field(
         default_factory=dict,
     )

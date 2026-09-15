@@ -48,9 +48,15 @@ class ConversationEventService(BaseService):
         content: str,
         parent_event_id: ConversationEventId | None = None,
         metadata: dict[str, Any] | None = None,
+        citations: dict[str, Any] | None = None,
     ) -> ConversationEvent:
         """
         Create and persist a conversation event.
+
+        ``citations`` is the {"citations": [...], "sources": [...]}
+        payload backing an ASSISTANT event's answer, when any were
+        produced -- left None for USER events and for answers with no
+        citations/sources.
 
         Transaction ownership remains with the calling service.
         """
@@ -62,6 +68,7 @@ class ConversationEventService(BaseService):
             role=role,
             content=content,
             event_metadata=metadata or {},
+            citations=citations,
         )
 
         try:

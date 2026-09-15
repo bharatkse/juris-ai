@@ -11,7 +11,7 @@ import pytest
 from fastapi import status
 from fastapi.responses import StreamingResponse
 
-from api.dependencies.authorization import bind_document_acl
+from api.dependencies.authorization import bind_library_acl
 from api.schemas.chat import ChatStreamResponse, ConversationEventResponse
 from api.utilities.api_response import ApiResponse
 from api.v1.endpoints.chat import chat, stream_chat
@@ -35,7 +35,7 @@ def _build_authorization_service() -> MagicMock:
         spec=AuthorizationService,
     )
 
-    authorization_service.get_allowed_document_ids.return_value = {
+    authorization_service.get_allowed_library_ids.return_value = {
         "document-1",
         "document-2",
     }
@@ -63,7 +63,7 @@ async def _bind_test_acl(
         conversation_id=str(chat_request.conversation_id),
     ).__enter__()
 
-    await bind_document_acl(
+    await bind_library_acl(
         current_user=current_user,
         authorization_service=authorization_service,
     )
@@ -87,8 +87,8 @@ async def _bind_test_acl(
 #     stream_route_dependencies = {
 #         dependency.call for dependency in stream_route.dependent.dependencies
 #     }  # noqa: C416
-#     assert bind_document_acl in route_dependencies
-#     assert bind_document_acl in stream_route_dependencies
+#     assert bind_library_acl in route_dependencies
+#     assert bind_library_acl in stream_route_dependencies
 
 
 @pytest.mark.asyncio
@@ -122,7 +122,7 @@ async def test_chat(
         request_id=http_request.state.context.request_id,
         conversation_id=str(request.conversation_id),
     ):
-        await bind_document_acl(
+        await bind_library_acl(
             current_user=current_user,
             authorization_service=authorization_service,
         )
@@ -149,7 +149,7 @@ async def test_chat(
         files=(),
     )
 
-    authorization_service.get_allowed_document_ids.assert_called_once_with(
+    authorization_service.get_allowed_library_ids.assert_called_once_with(
         user_id=current_user.id,
     )
 
@@ -191,7 +191,7 @@ async def test_stream_chat_returns_streaming_response() -> None:
         request_id=http_request.state.context.request_id,
         conversation_id=str(request.conversation_id),
     ):
-        await bind_document_acl(
+        await bind_library_acl(
             current_user=current_user,
             authorization_service=authorization_service,
         )
@@ -214,7 +214,7 @@ async def test_stream_chat_returns_streaming_response() -> None:
     assert response.headers["Connection"] == "keep-alive"
     assert response.headers["X-Accel-Buffering"] == "no"
 
-    authorization_service.get_allowed_document_ids.assert_called_once_with(
+    authorization_service.get_allowed_library_ids.assert_called_once_with(
         user_id=current_user.id,
     )
 
@@ -251,7 +251,7 @@ async def test_stream_chat_streams_events(
         request_id=http_request.state.context.request_id,
         conversation_id=str(request.conversation_id),
     ):
-        await bind_document_acl(
+        await bind_library_acl(
             current_user=current_user,
             authorization_service=authorization_service,
         )
@@ -278,7 +278,7 @@ async def test_stream_chat_streams_events(
         files=(),
     )
 
-    authorization_service.get_allowed_document_ids.assert_called_once_with(
+    authorization_service.get_allowed_library_ids.assert_called_once_with(
         user_id=current_user.id,
     )
 
@@ -325,7 +325,7 @@ async def test_stream_chat_propagates_cancelled_error(
         request_id=http_request.state.context.request_id,
         conversation_id=str(request.conversation_id),
     ):
-        await bind_document_acl(
+        await bind_library_acl(
             current_user=current_user,
             authorization_service=authorization_service,
         )
@@ -343,7 +343,7 @@ async def test_stream_chat_propagates_cancelled_error(
             async for _ in response.body_iterator:
                 pass
 
-    authorization_service.get_allowed_document_ids.assert_called_once_with(
+    authorization_service.get_allowed_library_ids.assert_called_once_with(
         user_id=current_user.id,
     )
 

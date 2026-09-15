@@ -4,7 +4,7 @@ Unit tests for the authorization service.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -296,3 +296,65 @@ def test_authorize_request_does_not_invoke_execute_gate(
     )
 
     mock_execute_gate.authorize.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# get_allowed_library_ids
+#
+# Real per-user ownership resolution -- the actual security boundary
+# this method didn't have before (it unconditionally returned None).
+# The real SQL-level ownership proof lives in
+# tests/unit/adapters/repositories/test_library.py; these tests cover
+# this service's own wiring (session_factory -> LibraryRepository ->
+# the result), with the repository mocked.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@patch("application.authorization.service.LibraryRepository")
+async def test_get_allowed_library_ids_returns_the_repositorys_result(
+    mock_library_repository_cls: MagicMock,
+    authorization_service: AuthorizationService,
+    mock_library_session_factory: MagicMock,
+) -> None:
+    mock_session = AsyncMock()
+    mock_session.__aenter__.return_value = mock_session
+    mock_library_session_factory.return_value = mock_session
+
+    mock_repository = MagicMock()
+    mock_repository.list_owned_ids = AsyncMock(return_value={"liby_1", "liby_2"})
+    mock_library_repository_cls.return_value = mock_repository
+
+    result = await authorization_service.get_allowed_library_ids(user_id="user_123")
+
+    assert result == {"liby_1", "liby_2"}
+
+    mock_library_repository_cls.assert_called_once_with(session=mock_session)
+    mock_repository.list_owned_ids.assert_awaited_once_with(user_id="user_123")
+
+
+@pytest.mark.asyncio
+@patch("application.authorization.service.LibraryRepository")
+async def test_get_allowed_library_ids_returns_empty_set_never_none(
+    mock_library_repository_cls: MagicMock,
+    authorization_service: AuthorizationService,
+    mock_library_session_factory: MagicMock,
+) -> None:
+    """
+    A user who owns nothing gets an empty set back -- a real,
+    meaningful "nothing," never None ("no restriction"). This method
+    has no code path that returns None today.
+    """
+
+    mock_session = AsyncMock()
+    mock_session.__aenter__.return_value = mock_session
+    mock_library_session_factory.return_value = mock_session
+
+    mock_repository = MagicMock()
+    mock_repository.list_owned_ids = AsyncMock(return_value=set())
+    mock_library_repository_cls.return_value = mock_repository
+
+    result = await authorization_service.get_allowed_library_ids(user_id="user_with_nothing")
+
+    assert result == set()
+    assert result is not None

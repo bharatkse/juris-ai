@@ -6,10 +6,12 @@ Coordinates the AI request lifecycle.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from adapters.observability.logger import get_logger
 from adapters.observability.tracing import span
+from agentic.guardrails.schemas import GuardrailActionEnum, GuardrailReviewResult
 from agentic.orchestration.schemas.context import (
     ConversationContext,
     DocumentContext,
@@ -21,7 +23,10 @@ from agentic.orchestration.schemas.context import (
 from agentic.orchestration.schemas.request import OrchestratorRequest
 from agentic.orchestration.schemas.response import (
     ApprovalResponse,
+    Citation,
+    GuardrailInfo,
     OrchestratorResponse,
+    Source,
     Usage,
 )
 from core.dto.agent import AgentContextDTO, AgentResponseDTO
@@ -40,12 +45,81 @@ if TYPE_CHECKING:
     from agentic.execution.aggregation.response import ResponseAggregator
     from agentic.execution.executor import Executor
     from agentic.execution.validation.response import ResponseValidator
+    from agentic.guardrails.service import OutputGuardrailService
     from agentic.planning.planner import ExecutionPlanner
     from application.authorization.service import AuthorizationService
     from application.services.action_workflow import ActionWorkflowService
+    from application.services.compliance_log import StandaloneComplianceLogWriter
     from core.dto.planning import ExecutionPlanDTO
 
 log = get_logger(__name__)
+
+# Fixed fallback content for a response an output guardrail blocked
+# and could not clear even after regeneration -- same "fixed,
+# never-regenerated" shape as the EmptyAggregationError fallback below
+# (a tool/execution failure), not another LLM call (which could just
+# reproduce the same harmful content again).
+_GUARDRAIL_BLOCKED_MESSAGE = (
+    "I'm not able to provide a response to this request. If you believe "
+    "this is a mistake, please rephrase your question or contact support."
+)
+
+
+def _evidence_text(
+    *,
+    agent_responses: Sequence[AgentResponseDTO],
+    citations: Sequence[Citation],
+    sources: Sequence[Source],
+) -> str:
+    """
+    Build the text OutputGuardrailService checks PII provenance
+    against (see agentic/guardrails/pii.py's evidence-matched logic).
+
+    Prefers each response's real, untruncated retrieved-evidence text
+    -- threaded through AgentResponseDTO.metadata["evidence_text"] by
+    AgentResponseMapper.map(), the exact same handle.reasoning_context
+    content AgentContinuationService._gate_final evaluated the answer
+    against. Previously this function only had citation snippets
+    (280-char truncated excerpts) and source titles to work with,
+    since the full evidence never left agentic.agents.runtime -- that
+    gap is what metadata["evidence_text"] closes. Citations/sources
+    remain a fallback for the case no response carried evidence_text
+    (e.g. a FINAL answer with no retrieval at all), not the primary
+    source anymore.
+    """
+
+    evidence_parts = [
+        text for response in agent_responses if (text := response.metadata.get("evidence_text"))
+    ]
+
+    if evidence_parts:
+        return "\n".join(evidence_parts)
+
+    parts = [item.snippet for item in citations if item.snippet]
+    parts.extend(item.title for item in sources if item.title)
+
+    return "\n".join(parts)
+
+
+def _build_guardrail_info(
+    result: GuardrailReviewResult,
+) -> GuardrailInfo | None:
+    """
+    Build the OrchestratorResponse.guardrail payload, or None when
+    nothing fired -- a plain chat turn shouldn't grow a stored
+    {"action": "none", ...} on every single response.
+    """
+
+    if result.action is GuardrailActionEnum.NONE:
+        return None
+
+    return GuardrailInfo(
+        action=result.action,
+        detection_count=len(result.detections),
+        categories=sorted({detection.entity_type for detection in result.detections}),
+        harmful=bool(result.harmful and result.harmful.harmful),
+        harmful_category=(result.harmful.category if result.harmful else None),
+    )
 
 
 def _to_action_request(
@@ -117,6 +191,8 @@ class AIOrchestrator:
     - Execute the plan.
     - Validate agent responses.
     - Aggregate the execution result.
+    - Review the aggregated response through output guardrails
+      (PII redaction, harmful-content blocking) before it leaves.
     - Return the final response and any proposed action.
 
     The orchestrator does not:
@@ -137,12 +213,18 @@ class AIOrchestrator:
         validator: ResponseValidator,
         aggregator: ResponseAggregator,
         authorization: AuthorizationService,
+        guardrails: OutputGuardrailService,
+        compliance_log: StandaloneComplianceLogWriter,
+        guardrail_max_regenerate_attempts: int = 1,
     ) -> None:
         self._planner = planner
         self._executor = executor
         self._validator = validator
         self._aggregator = aggregator
         self._authorization = authorization
+        self._guardrails = guardrails
+        self._compliance_log = compliance_log
+        self._guardrail_max_regenerate_attempts = guardrail_max_regenerate_attempts
 
     async def resume(
         self,
@@ -246,14 +328,55 @@ class AIOrchestrator:
             responses=agent_responses,
         )
 
+        # A single guardrail pass, not the bounded regenerate loop
+        # handle() runs on a BLOCKED verdict: resuming a HITL-paused
+        # execution already carries a real human decision (approve/
+        # reject/edit) attached to it -- discarding that to re-run
+        # generation from scratch on a fresh thread would be a much
+        # bigger behavior change than this guardrail is meant to make.
+        # A BLOCKED verdict here falls straight to the fixed refusal
+        # instead.
+        guardrail_result = await self._guardrails.review(
+            content=aggregation_result.response.content,
+            evidence_text=_evidence_text(
+                agent_responses=agent_responses,
+                citations=aggregation_result.response.citations,
+                sources=aggregation_result.response.sources,
+            ),
+        )
+
+        if guardrail_result.action is GuardrailActionEnum.BLOCKED:
+            log.warning(
+                "Output guardrail blocked a resumed response.",
+                extra={
+                    "operation": "resume",
+                    "thread_id": thread_id,
+                    "harmful_category": (
+                        guardrail_result.harmful.category if guardrail_result.harmful else None
+                    ),
+                },
+            )
+
+            return OrchestratorResponse(
+                conversation_id=conversation_id,
+                content=_GUARDRAIL_BLOCKED_MESSAGE,
+                citations=[],
+                sources=[],
+                usage=Usage(),
+                action=_to_action_request(execution_result.action),
+                approval=_to_approval_response(execution_result.approval),
+                guardrail=_build_guardrail_info(guardrail_result),
+            )
+
         return OrchestratorResponse(
             conversation_id=conversation_id,
-            content=aggregation_result.response.content,
+            content=guardrail_result.content,
             citations=aggregation_result.response.citations,
             sources=aggregation_result.response.sources,
             usage=aggregation_result.response.metadata.usage,
             action=_to_action_request(execution_result.action),
             approval=_to_approval_response(execution_result.approval),
+            guardrail=_build_guardrail_info(guardrail_result),
         )
 
     async def handle(
@@ -376,6 +499,16 @@ class AIOrchestrator:
                     },
                 )
 
+                await self._compliance_log.record_plan_created(
+                    request_id=request.request_id,
+                    user_id=str(request.user_id),
+                    tenant_id=str(request.user_id),
+                    conversation_id=str(request.conversation_id),
+                    intent=str(execution_plan.intent),
+                    mode=str(execution_plan.mode),
+                    step_count=len(execution_plan.steps),
+                )
+
                 # ---------------------------------------------------------
                 # 3. Build execution context
                 # ---------------------------------------------------------
@@ -390,152 +523,302 @@ class AIOrchestrator:
                     thread_id=str(request.request_id),
                     conversation_event_id=request.current_event_id,
                     uploaded_files=tuple(request.attachments),
+                    request_id=str(request.request_id),
                 )
 
                 # ---------------------------------------------------------
-                # 4. Execute reasoning workflow
+                # 4-6b. Execute -> validate -> aggregate -> guardrail
+                #
+                # Runs in a bounded loop: a harmful-content BLOCKED
+                # verdict (6b) triggers one full regeneration on a
+                # fresh thread_id (never a replay of the blocked run --
+                # see the comment below) before falling back to a fixed
+                # refusal. A response carrying a pending action (a
+                # gated tool call awaiting human approval) never enters
+                # the regenerate branch -- see the comment at 6b.
                 # ---------------------------------------------------------
 
-                execution_result = await self._executor.execute(
-                    request_id=request.request_id,
-                    conversation=conversation,
-                    plan=execution_plan,
-                    context=context,
-                    action_workflow_service=action_workflow_service,
-                )
+                max_attempts = self._guardrail_max_regenerate_attempts + 1
 
-                if execution_result.state.status is ExecutionStatusEnum.FAILED:
-                    failed_steps = [
-                        step
-                        for step in execution_result.state.steps.values()
-                        if step.status is ExecutionStatusEnum.FAILED
-                    ]
+                for attempt in range(1, max_attempts + 1):
+                    attempt_context = (
+                        context
+                        if attempt == 1
+                        else AgentContextDTO(
+                            user_id=context.user_id,
+                            # A NEW thread_id, deliberately -- reusing
+                            # the original would make this a LangGraph
+                            # resume/replay of the blocked run rather
+                            # than an independent regeneration attempt,
+                            # and could re-surface the same cached,
+                            # already-blocked FINAL answer via
+                            # checkpointed replay (see continuation.py's
+                            # extensive replay-safety notes on why
+                            # thread_id identity matters here).
+                            execution_id=context.execution_id,
+                            thread_id=f"{context.thread_id}:guardrail-retry-{attempt}",
+                            conversation_event_id=context.conversation_event_id,
+                            uploaded_files=context.uploaded_files,
+                            # Same real request across every attempt --
+                            # see AgentContextDTO.request_id's docstring.
+                            request_id=context.request_id,
+                        )
+                    )
 
-                    log.error(
-                        "Execution failed.",
+                    # ---------------------------------------------------------
+                    # 4. Execute reasoning workflow
+                    # ---------------------------------------------------------
+
+                    execution_result = await self._executor.execute(
+                        request_id=request.request_id,
+                        conversation=conversation,
+                        plan=execution_plan,
+                        context=attempt_context,
+                        action_workflow_service=action_workflow_service,
+                    )
+
+                    if execution_result.state.status is ExecutionStatusEnum.FAILED:
+                        failed_steps = [
+                            step
+                            for step in execution_result.state.steps.values()
+                            if step.status is ExecutionStatusEnum.FAILED
+                        ]
+
+                        log.error(
+                            "Execution failed.",
+                            extra={
+                                "operation": "orchestrate_execution_failed",
+                                "request_id": str(request.request_id),
+                                "conversation_id": str(request.conversation_id),
+                                "failed_steps": [
+                                    {
+                                        "step_id": step.step_id,
+                                        "error": step.error,
+                                        "retry_count": step.retry_count,
+                                    }
+                                    for step in failed_steps
+                                ],
+                            },
+                        )
+
+                    log.info(
+                        "Execution completed.",
                         extra={
-                            "operation": "orchestrate_execution_failed",
+                            "operation": "execute_plan",
                             "request_id": str(request.request_id),
                             "conversation_id": str(request.conversation_id),
-                            "failed_steps": [
-                                {
-                                    "step_id": step.step_id,
-                                    "error": step.error,
-                                    "retry_count": step.retry_count,
-                                }
-                                for step in failed_steps
-                            ],
+                            "mode": execution_plan.mode,
                         },
                     )
 
-                log.info(
-                    "Execution completed.",
-                    extra={
-                        "operation": "execute_plan",
-                        "request_id": str(request.request_id),
-                        "conversation_id": str(request.conversation_id),
-                        "mode": execution_plan.mode,
-                    },
-                )
+                    # ---------------------------------------------------------
+                    # 5. Extract and validate agent responses
+                    # ---------------------------------------------------------
 
-                # ---------------------------------------------------------
-                # 5. Extract and validate agent responses
-                # ---------------------------------------------------------
+                    agent_responses = self._extract_agent_responses(
+                        execution_result=execution_result,
+                    )
 
-                agent_responses = self._extract_agent_responses(
-                    execution_result=execution_result,
-                )
+                    # A tool call that fails (any tool, not just a gated
+                    # one -- see AgentContinuationService's TOOL_CALL
+                    # branch in continuation.py) ends the turn in a
+                    # terminal FAILED/PARTIAL state without ever reaching
+                    # FINAL, so AgentResponseMapper never runs and
+                    # execution_result.artifacts has nothing to extract.
+                    # ResponseAggregator.aggregate() raises
+                    # EmptyAggregationError on an empty responses tuple --
+                    # previously uncaught here, surfacing as an unhandled
+                    # 500 for what is an ordinary, expected outcome (a
+                    # tool failed), not a bug in this orchestration code.
+                    # Same fallback shape as AIOrchestrator.resume() uses
+                    # for a rejected/failed gated action. A fixed fallback
+                    # string like this needs no guardrail review.
+                    if not agent_responses:
+                        log.error(
+                            "Execution ended without a FINAL response (a "
+                            "tool call failed) -- returning a graceful "
+                            "fallback instead of raising EmptyAggregationError.",
+                            extra={
+                                "operation": "orchestrate",
+                                "request_id": str(request.request_id),
+                                "conversation_id": str(request.conversation_id),
+                                "execution_status": execution_result.state.status.value,
+                            },
+                        )
 
-                # A tool call that fails (any tool, not just a gated
-                # one -- see AgentContinuationService's TOOL_CALL
-                # branch in continuation.py) ends the turn in a
-                # terminal FAILED/PARTIAL state without ever reaching
-                # FINAL, so AgentResponseMapper never runs and
-                # execution_result.artifacts has nothing to extract.
-                # ResponseAggregator.aggregate() raises
-                # EmptyAggregationError on an empty responses tuple --
-                # previously uncaught here, surfacing as an unhandled
-                # 500 for what is an ordinary, expected outcome (a
-                # tool failed), not a bug in this orchestration code.
-                # Same fallback shape as AIOrchestrator.resume() uses
-                # for a rejected/failed gated action.
-                if not agent_responses:
-                    log.error(
-                        "Execution ended without a FINAL response (a "
-                        "tool call failed) -- returning a graceful "
-                        "fallback instead of raising EmptyAggregationError.",
+                        return OrchestratorResponse(
+                            conversation_id=request.conversation_id,
+                            content=(
+                                "I wasn't able to complete this request -- "
+                                "something went wrong while gathering the "
+                                "information needed to answer. Please try "
+                                "again."
+                            ),
+                            citations=[],
+                            sources=[],
+                            usage=Usage(),
+                            action=_to_action_request(execution_result.action),
+                            approval=_to_approval_response(execution_result.approval),
+                        )
+
+                    await self._validator.validate(
+                        responses=agent_responses,
+                    )
+
+                    log.debug(
+                        "Agent responses validated.",
+                        extra={
+                            "operation": "validate_responses",
+                            "request_id": str(request.request_id),
+                            "conversation_id": str(request.conversation_id),
+                            "response_count": len(agent_responses),
+                        },
+                    )
+
+                    # ---------------------------------------------------------
+                    # 6. Aggregate
+                    #
+                    # This produces the final draft response.
+                    # ---------------------------------------------------------
+
+                    aggregation_result = await self._aggregator.aggregate(
+                        responses=agent_responses,
+                    )
+
+                    log.debug(
+                        "Agent responses aggregated.",
+                        extra={
+                            "operation": "aggregate_responses",
+                            "request_id": str(request.request_id),
+                            "conversation_id": str(request.conversation_id),
+                        },
+                    )
+
+                    # Compliance log: what each agent decided. Only
+                    # FINAL decisions ever reach agent_responses (see
+                    # _extract_agent_responses), so decision_type is
+                    # fixed here. groundedness/relevance come from
+                    # AgentContinuationService._gate_final's accepted
+                    # evaluation, threaded up through AgentResponseDTO.
+                    # metadata (see AgentResponseMapper.map() and
+                    # AnswerEvaluationSummary's docstring) -- None when
+                    # no evaluation was ever accepted for this response
+                    # (e.g. an empty FINAL answer, which _gate_final
+                    # skips evaluating entirely).
+                    for agent_response in agent_responses:
+                        await self._compliance_log.record_agent_decision(
+                            request_id=request.request_id,
+                            user_id=str(request.user_id),
+                            tenant_id=str(request.user_id),
+                            conversation_id=str(request.conversation_id),
+                            agent_id=agent_response.agent_name,
+                            decision_type="final",
+                            groundedness=agent_response.metadata.get("groundedness"),
+                            relevance=agent_response.metadata.get("relevance"),
+                        )
+
+                    # ---------------------------------------------------------
+                    # 6b. Output guardrail review
+                    # ---------------------------------------------------------
+
+                    action_request: AgentActionRequestDTO | None = _to_action_request(
+                        execution_result.action
+                    )
+
+                    guardrail_result = await self._guardrails.review(
+                        content=aggregation_result.response.content,
+                        evidence_text=_evidence_text(
+                            agent_responses=agent_responses,
+                            citations=aggregation_result.response.citations,
+                            sources=aggregation_result.response.sources,
+                        ),
+                    )
+
+                    if guardrail_result.action is not GuardrailActionEnum.NONE:
+                        await self._compliance_log.record_guardrail_fired(
+                            request_id=request.request_id,
+                            user_id=str(request.user_id),
+                            tenant_id=str(request.user_id),
+                            conversation_id=str(request.conversation_id),
+                            action=guardrail_result.action.value,
+                            detection_count=len(guardrail_result.detections),
+                            categories=sorted({d.entity_type for d in guardrail_result.detections}),
+                            harmful=bool(
+                                guardrail_result.harmful and guardrail_result.harmful.harmful
+                            ),
+                            harmful_category=(
+                                guardrail_result.harmful.category
+                                if guardrail_result.harmful
+                                else None
+                            ),
+                        )
+
+                    if guardrail_result.action is not GuardrailActionEnum.BLOCKED:
+                        break
+
+                    if action_request is not None:
+                        # A pending action awaiting human approval is
+                        # already attached to this attempt -- do not
+                        # discard it by regenerating from scratch (see
+                        # the loop's docstring). Accept the BLOCKED
+                        # verdict as final for this attempt instead of
+                        # looping.
+                        break
+
+                    if attempt == max_attempts:
+                        log.error(
+                            "Output guardrail blocked the response after "
+                            "%d attempt(s); returning a fixed refusal.",
+                            attempt,
+                            extra={
+                                "operation": "orchestrate",
+                                "request_id": str(request.request_id),
+                                "conversation_id": str(request.conversation_id),
+                                "harmful_category": (
+                                    guardrail_result.harmful.category
+                                    if guardrail_result.harmful
+                                    else None
+                                ),
+                            },
+                        )
+                        break
+
+                    log.warning(
+                        "Output guardrail blocked a response; " "regenerating (attempt %d of %d).",
+                        attempt,
+                        max_attempts,
                         extra={
                             "operation": "orchestrate",
                             "request_id": str(request.request_id),
                             "conversation_id": str(request.conversation_id),
-                            "execution_status": execution_result.state.status.value,
                         },
                     )
-
-                    return OrchestratorResponse(
-                        conversation_id=request.conversation_id,
-                        content=(
-                            "I wasn't able to complete this request -- "
-                            "something went wrong while gathering the "
-                            "information needed to answer. Please try "
-                            "again."
-                        ),
-                        citations=[],
-                        sources=[],
-                        usage=Usage(),
-                        action=_to_action_request(execution_result.action),
-                        approval=_to_approval_response(execution_result.approval),
-                    )
-
-                await self._validator.validate(
-                    responses=agent_responses,
-                )
-
-                log.debug(
-                    "Agent responses validated.",
-                    extra={
-                        "operation": "validate_responses",
-                        "request_id": str(request.request_id),
-                        "conversation_id": str(request.conversation_id),
-                        "response_count": len(agent_responses),
-                    },
-                )
-
-                # ---------------------------------------------------------
-                # 6. Aggregate
-                #
-                # This produces the final draft response.
-                # ---------------------------------------------------------
-
-                aggregation_result = await self._aggregator.aggregate(
-                    responses=agent_responses,
-                )
-
-                log.debug(
-                    "Agent responses aggregated.",
-                    extra={
-                        "operation": "aggregate_responses",
-                        "request_id": str(request.request_id),
-                        "conversation_id": str(request.conversation_id),
-                    },
-                )
 
                 # ---------------------------------------------------------
                 # 7. Build response
                 # ---------------------------------------------------------
 
-                action_request: AgentActionRequestDTO | None = _to_action_request(
-                    execution_result.action
-                )
+                if guardrail_result.action is GuardrailActionEnum.BLOCKED:
+                    return OrchestratorResponse(
+                        conversation_id=request.conversation_id,
+                        content=_GUARDRAIL_BLOCKED_MESSAGE,
+                        citations=[],
+                        sources=[],
+                        usage=Usage(),
+                        action=action_request,
+                        approval=_to_approval_response(execution_result.approval),
+                        guardrail=_build_guardrail_info(guardrail_result),
+                    )
 
                 orchestrator_response = OrchestratorResponse(
                     conversation_id=request.conversation_id,
-                    content=aggregation_result.response.content,
+                    content=guardrail_result.content,
                     citations=aggregation_result.response.citations,
                     sources=aggregation_result.response.sources,
                     usage=aggregation_result.response.metadata.usage,
                     action=action_request,
                     approval=_to_approval_response(execution_result.approval),
+                    guardrail=_build_guardrail_info(guardrail_result),
                 )
 
                 if action_request is None:

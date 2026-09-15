@@ -6,6 +6,7 @@ Defines the interface implemented by all LLM providers.
 
 from __future__ import annotations
 
+import time
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from dataclasses import replace
@@ -14,6 +15,7 @@ from typing import TypeVar
 from pydantic import BaseModel, ValidationError
 
 from adapters.observability.logger import get_logger
+from adapters.observability.metrics import metrics
 from core.dto.clients.llm import LLMRequestDTO, LLMResponseDTO, LLMStreamChunkDTO
 from core.exceptions.client import ClientProviderError
 
@@ -52,7 +54,6 @@ class LLMClient(ABC):
         """
         raise NotImplementedError
 
-    @abstractmethod
     async def generate(
         self,
         *,
@@ -60,6 +61,58 @@ class LLMClient(ABC):
     ) -> LLMResponseDTO:
         """
         Generate a text completion.
+
+        Concrete, not abstract: wraps each provider's _generate() with
+        call-duration and token-usage instrumentation (juris_ai_llm_call_duration_seconds,
+        juris_ai_llm_tokens_total) so every provider gets it once, here,
+        rather than each duplicating the same timing code around its
+        own _generate(). generate_structured() below calls this
+        method (not _generate() directly), so structured calls are
+        covered too. stream() is not instrumented the same way --
+        LLMStreamChunkDTO carries no usage data, and "duration" means
+        something different for a stream (time to first chunk vs.
+        total time), so it's left out rather than given a
+        half-meaningful number.
+        """
+
+        start = time.perf_counter()
+        response: LLMResponseDTO | None = None
+
+        try:
+            response = await self._generate(
+                request=request,
+            )
+
+            return response
+
+        finally:
+            # response.provider/response.model, not self.provider/
+            # self.model, when available: request.inference.model can
+            # override the client's own default model per-call (see
+            # wiring/factories/evaluation.py::build_llm_judge(), which
+            # always does this) -- self.model would misreport which
+            # model an overridden call actually used. Only fall back
+            # to the client's own identity when _generate() raised
+            # before producing a response to read it from.
+            metrics.record_llm_call(
+                provider=response.provider if response is not None else self.provider,
+                model=response.model if response is not None else self.model,
+                duration=time.perf_counter() - start,
+                usage=response.usage if response is not None else None,
+            )
+
+    @abstractmethod
+    async def _generate(
+        self,
+        *,
+        request: LLMRequestDTO,
+    ) -> LLMResponseDTO:
+        """
+        Provider-specific completion generation. Called by generate()
+        above, which is what every caller should actually invoke --
+        this method exists so instrumentation lives in exactly one
+        place (generate()) rather than being duplicated in every
+        provider implementation.
         """
         raise NotImplementedError
 

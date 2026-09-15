@@ -7,7 +7,9 @@ from pydantic import Field, model_validator
 
 from config.agent_policy import AgentPolicySettings
 from config.base import AppSettings, BaseAppSettings
+from config.compliance import ComplianceSettings
 from config.database import DatabaseSettings
+from config.guardrails import GuardrailSettings
 from config.llm import LLMSettings
 from config.logging import LoggingSettings
 from config.rate_limit import RateLimitSettings
@@ -25,6 +27,8 @@ class Settings(BaseAppSettings):
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
     rate_limit: RateLimitSettings = Field(default_factory=RateLimitSettings)
     agent_policy: AgentPolicySettings = Field(default_factory=AgentPolicySettings)
+    guardrails: GuardrailSettings = Field(default_factory=GuardrailSettings)
+    compliance: ComplianceSettings = Field(default_factory=ComplianceSettings)
 
     # --------------------------------------------------------------------------
     # Backward Compatibility Proxies
@@ -32,6 +36,10 @@ class Settings(BaseAppSettings):
     @property
     def async_database_url(self) -> str:
         return self.database.get_async_database_url(self.app.ENVIRONMENT)
+
+    @property
+    def admin_async_database_url(self) -> str:
+        return self.database.get_admin_async_database_url(self.app.ENVIRONMENT)
 
     @property
     def database_url(self) -> str:
@@ -58,6 +66,13 @@ class Settings(BaseAppSettings):
                 "DB_NAME": self.database.DB_NAME,
                 "DB_USER": self.database.DB_USER,
                 "DB_PASSWORD": self.database.DB_PASSWORD,
+                # Restricted runtime role -- only required in
+                # DEVELOPMENT, where get_async_database_url() actually
+                # resolves to it. Local dev only; not required for
+                # STAGING/PRODUCTION (get_async_database_url() doesn't
+                # implement those environments at all).
+                "APP_DB_USER": self.database.APP_DB_USER,
+                "APP_DB_PASSWORD": self.database.APP_DB_PASSWORD,
                 "GROQ_API_KEY": self.llm.GROQ_API_KEY,
             }
             self._check_missing(required)

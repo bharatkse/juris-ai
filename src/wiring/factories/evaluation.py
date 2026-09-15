@@ -18,6 +18,7 @@ from __future__ import annotations
 import hashlib
 from typing import TYPE_CHECKING
 
+from adapters.observability.metrics import metrics
 from core.dto.clients.llm import LLMMessageDTO, LLMRequestDTO
 from core.dto.inference import LLMInferenceConfig
 from core.enums import MessageRoleEnum
@@ -80,7 +81,10 @@ def build_llm_judge(*, settings: Settings, cache: AbstractCache) -> Judge:
         cached = await cache.get(cache_key)
 
         if cached is not None:
+            metrics.record_cache_request(result="hit", cache="judge")
             return cached
+
+        metrics.record_cache_request(result="miss", cache="judge")
 
         response = await client.generate(
             request=LLMRequestDTO(

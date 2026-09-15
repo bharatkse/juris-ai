@@ -69,6 +69,7 @@ from agentic.agents.base import BaseAgent
 from agentic.agents.runtime.continuation import AgentContinuationService
 from agentic.decisions.decision import AgentDecisionType
 from agentic.decisions.schemas import AgentDecision, AgentToolCall
+from agentic.evaluation.answer import AnswerEvaluationSummary
 from agentic.planning.llm_planner import LLMPlanGenerator
 from application.authorization.rbac.resolver import RBACService
 from application.services.conversation_event import ConversationEventService
@@ -179,8 +180,13 @@ async def test_hitl_approve_flow_executes_gated_tool_exactly_once(
 
     async def fake_gate_final(self, *, handle, result):
         # Answer-quality gating is out of scope for this test -- always
-        # accept the FINAL result as-is (see module docstring).
-        return None
+        # accept the FINAL result as-is (see module docstring). Returns
+        # the same (accepted_result, evaluation_summary) shape the real
+        # _gate_final does on its accept path -- deterministic stand-in
+        # scores, not a real judge call, but real enough to verify the
+        # compliance log's AGENT_DECISION row actually receives them
+        # (see application/services/compliance_log.py).
+        return None, AnswerEvaluationSummary(groundedness=0.95, relevance=0.90)
 
     mcp_calls: list[dict] = []
 

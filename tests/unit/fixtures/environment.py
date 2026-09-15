@@ -22,6 +22,8 @@ def clean_environment(
         "DB_NAME",
         "DB_USER",
         "DB_PASSWORD",
+        "APP_DB_USER",
+        "APP_DB_PASSWORD",
         "GROQ_API_KEY",
         "SEARXNG_BASE_URL",
         "LANGSMITH_TRACING",

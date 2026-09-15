@@ -16,19 +16,20 @@ def test_create_engine(
     mock_create_async_engine: MagicMock,
 ) -> None:
     """
-    It should create the SQLAlchemy engine using application settings.
+    It should create the SQLAlchemy engine against the given URL,
+    using application settings for everything else.
     """
 
     engine = MagicMock()
 
     mock_create_async_engine.return_value = engine
 
-    created = session._create_engine()
+    created = session._create_engine("postgresql+asyncpg://u:p@host/db")
 
     assert created is engine
 
     mock_create_async_engine.assert_called_once_with(
-        url=session.settings.async_database_url,
+        url="postgresql+asyncpg://u:p@host/db",
         echo=session.settings.app.DEBUG,
         pool_pre_ping=True,
         pool_size=session.settings.database.DATABASE_POOL_SIZE,
@@ -41,6 +42,21 @@ def test_create_engine(
             },
         },
     )
+
+
+def test_engine_and_admin_engine_are_built_from_different_urls() -> None:
+    """
+    The restricted runtime engine and the admin engine must not
+    silently collapse onto the same connection -- that would defeat
+    the point of the role split. (In this test process they resolve
+    to the same TEST_DATABASE_URL, since get_async_database_url()'s
+    TESTING branch ignores APP_DB_USER/DB_USER entirely -- so this
+    only asserts the two module-level engines are genuinely distinct
+    AsyncEngine instances, not that their URLs differ here.)
+    """
+
+    assert session.engine is not session.admin_engine
+    assert session.session_factory is not session.admin_session_factory
 
 
 def test_create_db_session(
@@ -67,6 +83,49 @@ def test_create_db_session(
     assert created is db_session
 
     session_factory.assert_called_once_with()
+
+
+def test_create_admin_db_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    It should create a standalone database session bound to the admin
+    (schema-owning) role -- via admin_session_factory, distinct from
+    create_db_session()'s restricted-role session_factory.
+    """
+
+    admin_db_session = MagicMock()
+
+    admin_session_factory = MagicMock(
+        return_value=admin_db_session,
+    )
+
+    monkeypatch.setattr(
+        session,
+        "admin_session_factory",
+        admin_session_factory,
+    )
+
+    created = session.create_admin_db_session()
+
+    assert created is admin_db_session
+
+    admin_session_factory.assert_called_once_with()
+
+
+@pytest.mark.asyncio
+async def test_dispose_admin_engine() -> None:
+    """
+    It should dispose the admin engine's pool without touching the
+    restricted-role engine's pool.
+    """
+
+    mock_admin_engine = AsyncMock()
+
+    with patch.object(session, "admin_engine", mock_admin_engine):
+        await session.dispose_admin_engine()
+
+    mock_admin_engine.dispose.assert_awaited_once_with()
 
 
 @pytest.mark.asyncio

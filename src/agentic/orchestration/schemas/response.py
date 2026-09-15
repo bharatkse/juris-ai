@@ -11,6 +11,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from agentic.guardrails.schemas import GuardrailActionEnum
 from core.dto.agent_action import AgentActionRequestDTO
 from core.enums import ApprovalStatusEnum
 from core.types import ConversationId
@@ -148,6 +149,31 @@ class AgentResponse(ResponsePayload):
     agent_name: str
 
 
+class GuardrailInfo(BaseModel):
+    """
+    What the output guardrail did to this response, if anything.
+
+    Deliberately carries only the action taken plus counts/categories
+    -- never the matched PII text itself (see agentic.guardrails'
+    no-raw-content-in-detections design) -- since this is what gets
+    persisted into assistant_event.metadata (ChatService) and, later,
+    the compliance log.
+    """
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+    )
+
+    action: GuardrailActionEnum
+    detection_count: int = 0
+    categories: list[str] = Field(
+        default_factory=list,
+    )
+    harmful: bool = False
+    harmful_category: str | None = None
+
+
 class ApprovalResponse(BaseModel):
     """
     Human approval information returned by the orchestrator.
@@ -171,3 +197,4 @@ class OrchestratorResponse(ResponsePayload):
     conversation_id: ConversationId
     approval: ApprovalResponse | None = None
     action: AgentActionRequestDTO | None = None
+    guardrail: GuardrailInfo | None = None

@@ -13,6 +13,9 @@ from adapters.persistence.sqlalchemy.repositories.agent_action import (
     AgentActionRepository,
 )
 from adapters.persistence.sqlalchemy.repositories.approval import ApprovalRepository
+from adapters.persistence.sqlalchemy.repositories.compliance_log import (
+    ComplianceLogRepository,
+)
 from adapters.persistence.sqlalchemy.repositories.conversation import (
     ConversationRepository,
 )
@@ -45,6 +48,19 @@ def conversation_event_repository(
     """
 
     return ConversationEventRepository(
+        session=db_session,
+    )
+
+
+@pytest.fixture
+def compliance_log_repository(
+    db_session: AsyncSession,
+) -> ComplianceLogRepository:
+    """
+    Return a compliance log repository.
+    """
+
+    return ComplianceLogRepository(
         session=db_session,
     )
 

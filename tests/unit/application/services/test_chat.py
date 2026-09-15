@@ -4,17 +4,26 @@ Unit tests for ChatService.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
 from sqlalchemy.exc import SQLAlchemyError
 
+from agentic.guardrails.schemas import GuardrailActionEnum
 from agentic.orchestration.schemas.request import OrchestratorRequest
+from agentic.orchestration.schemas.response import (
+    ApprovalResponse,
+    Citation,
+    GuardrailInfo,
+    Source,
+)
 from application.services.chat import ChatService
 from application.services.conversation_summarization import UNSUMMARIZED_EVENT_LIMIT
 from application.services.internal_dto.chat import ChatResultDTO
-from core.enums import MessageRoleEnum
+from application.services.internal_dto.stream import ChatStreamChunkDTO
+from core.enums import ApprovalStatusEnum, MessageRoleEnum
 from core.exceptions.httpx import ConversationInactiveError, NotFoundError
 from tests.builders.agentic.orchestrator import build_orchestrator_response
 from tests.unit.factories.conversation import ConversationFactory
@@ -145,10 +154,181 @@ async def test_chat_returns_chat_result(
         metadata=response.metadata.model_dump(
             mode="json",
         ),
+        citations=None,
     )
 
     chat_service.commit.assert_awaited_once_with()
     chat_service.rollback.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_chat_persists_citations_and_sources_when_present(
+    chat_service: ChatService,
+    mock_conversation_service: MagicMock,
+    mock_conversation_event_service: MagicMock,
+    mock_orchestrator: MagicMock,
+) -> None:
+    """
+    An answer carrying citations/sources should have them persisted
+    onto the assistant conversation_event's ``citations`` column, so a
+    reopened conversation can show what backed a prior answer.
+    """
+
+    conversation = ConversationFactory.build()
+    request_id = uuid4()
+
+    user_event = ConversationEventFactory.build(
+        conversation_id=conversation.id,
+        request_id=request_id,
+        role=MessageRoleEnum.USER,
+        content=TEST_MESSAGE,
+    )
+
+    citation = Citation(
+        title="IT Act 2000, Section 43A",
+        source="it-act-2000",
+        reference="s.43A",
+        snippet="Compensation for failure to protect data.",
+    )
+    source = Source(
+        title="Information Technology Act, 2000",
+        uri="https://example.test/it-act-2000",
+        type="statute",
+    )
+
+    response = build_orchestrator_response(
+        conversation_id=conversation.id,
+        content="Answer with citations.",
+        citations=[citation],
+        sources=[source],
+    )
+
+    assistant_event = ConversationEventFactory.build(
+        conversation_id=conversation.id,
+        request_id=request_id,
+        parent_event_id=user_event.id,
+        role=MessageRoleEnum.ASSISTANT,
+        content=response.content,
+    )
+
+    mock_conversation_service.get_or_raise = AsyncMock(
+        return_value=conversation,
+    )
+
+    mock_conversation_event_service.create = AsyncMock(
+        side_effect=[user_event, assistant_event],
+    )
+
+    mock_conversation_event_service.list = AsyncMock(
+        return_value=[],
+    )
+
+    mock_orchestrator.handle = AsyncMock(
+        return_value=response,
+    )
+
+    chat_service.commit = AsyncMock()
+
+    await chat_service.chat(
+        user_id=conversation.user_id,
+        conversation_id=conversation.id,
+        message=TEST_MESSAGE,
+        request_id=request_id,
+    )
+
+    mock_conversation_event_service.create.assert_any_await(
+        conversation_id=conversation.id,
+        request_id=request_id,
+        parent_event_id=user_event.id,
+        role=MessageRoleEnum.ASSISTANT,
+        content=response.content,
+        metadata=response.metadata.model_dump(
+            mode="json",
+        ),
+        citations={
+            "citations": [citation.model_dump(mode="json")],
+            "sources": [source.model_dump(mode="json")],
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_chat_records_compliance_log_entries(
+    chat_service: ChatService,
+    mock_conversation_service: MagicMock,
+    mock_conversation_event_service: MagicMock,
+    mock_orchestrator: MagicMock,
+    mock_compliance_log_service: MagicMock,
+) -> None:
+    """
+    A successful chat turn must record both a REQUEST_RECEIVED and a
+    RESPONSE_RETURNED compliance log entry -- the "who asked/what was
+    returned" halves of the audit trail (application/services/
+    compliance_log.py).
+    """
+
+    conversation = ConversationFactory.build()
+    request_id = uuid4()
+
+    user_event = ConversationEventFactory.build(
+        conversation_id=conversation.id,
+        request_id=request_id,
+        role=MessageRoleEnum.USER,
+        content=TEST_MESSAGE,
+    )
+
+    response = build_orchestrator_response(
+        conversation_id=conversation.id,
+        content="Hello!",
+    )
+
+    assistant_event = ConversationEventFactory.build(
+        conversation_id=conversation.id,
+        request_id=request_id,
+        parent_event_id=user_event.id,
+        role=MessageRoleEnum.ASSISTANT,
+        content=response.content,
+    )
+
+    mock_conversation_service.get_or_raise = AsyncMock(return_value=conversation)
+    mock_conversation_event_service.create = AsyncMock(
+        side_effect=[user_event, assistant_event],
+    )
+    mock_conversation_event_service.list = AsyncMock(return_value=[])
+    mock_orchestrator.handle = AsyncMock(return_value=response)
+    chat_service.commit = AsyncMock()
+
+    await chat_service.chat(
+        user_id=conversation.user_id,
+        conversation_id=conversation.id,
+        message=TEST_MESSAGE,
+        request_id=request_id,
+    )
+
+    mock_compliance_log_service.record_request_received.assert_awaited_once_with(
+        request_id=request_id,
+        user_id=str(conversation.user_id),
+        tenant_id=str(conversation.user_id),
+        conversation_id=str(conversation.id),
+        conversation_event_id=str(user_event.id),
+        message=TEST_MESSAGE,
+    )
+
+    mock_compliance_log_service.record_response_returned.assert_awaited_once_with(
+        request_id=request_id,
+        user_id=str(conversation.user_id),
+        tenant_id=str(conversation.user_id),
+        conversation_id=str(conversation.id),
+        conversation_event_id=str(assistant_event.id),
+        content=response.content,
+        citation_count=0,
+        action_required=False,
+    )
+
+    # Both compliance writes must happen strictly inside the same
+    # transaction as the conversation-event writes -- before commit(),
+    # never after.
+    chat_service.commit.assert_awaited_once_with()
 
 
 @pytest.mark.asyncio
@@ -749,6 +929,279 @@ async def test_stream_chat_rolls_back_when_agent_fails(
     )
 
     mock_orchestrator.stream.assert_called_once()
+
+    chat_service.rollback.assert_awaited_once()
+    chat_service.commit.assert_not_awaited()
+
+
+def _fake_stream(chunks: list[ChatStreamChunkDTO]):
+    """
+    Build a callable matching AIOrchestrator.stream()'s real shape: a
+    plain (non-async) method that returns an async generator, called
+    with request=/action_workflow_service= kwargs and iterated via
+    ``async for`` -- not awaited itself. mock_orchestrator.stream is a
+    bare MagicMock (see tests/unit/fixtures/agentic/orchestrator.py),
+    not an AsyncMock, precisely so it can be given this shape.
+    """
+
+    async def _generator(**_kwargs):
+        for chunk in chunks:
+            yield chunk
+
+    return _generator
+
+
+@pytest.mark.asyncio
+async def test_stream_chat_yields_every_chunk_and_persists_the_final_response(
+    chat_service: ChatService,
+    mock_conversation_service: MagicMock,
+    mock_conversation_event_service: MagicMock,
+    mock_orchestrator: MagicMock,
+    mock_compliance_log_service: MagicMock,
+    mock_usage_service: MagicMock,
+) -> None:
+    """
+    Regression test for the two bugs found in stream_chat(): it read
+    chunk.is_complete (the DTO field is is_final) and typed
+    final_response as AgentResponseDTO (the DTO's response field is
+    actually OrchestratorResponse) -- both would have raised or
+    silently never matched on the very first real chunk, which is
+    exactly why no earlier test caught this: none of the existing
+    stream_chat() tests ever iterated a real chunk sequence through to
+    a final one.
+
+    Also the core parity assertion for this fix: a successful stream
+    must persist the assistant event, log both compliance entries, and
+    record usage -- exactly like chat() -- not just yield chunks
+    through to the caller.
+    """
+
+    conversation = ConversationFactory.build()
+    request_id = _request_id()
+
+    user_event = ConversationEventFactory.build(
+        conversation_id=conversation.id,
+        request_id=request_id,
+        role=MessageRoleEnum.USER,
+        content=TEST_MESSAGE,
+    )
+
+    response = build_orchestrator_response(
+        conversation_id=conversation.id,
+        content="Hello!",
+    )
+
+    assistant_event = ConversationEventFactory.build(
+        conversation_id=conversation.id,
+        request_id=request_id,
+        parent_event_id=user_event.id,
+        role=MessageRoleEnum.ASSISTANT,
+        content=response.content,
+    )
+
+    mock_conversation_service.get_or_raise = AsyncMock(return_value=conversation)
+    mock_conversation_event_service.create = AsyncMock(
+        side_effect=[user_event, assistant_event],
+    )
+    mock_conversation_event_service.list = AsyncMock(return_value=[])
+
+    chunks = [
+        ChatStreamChunkDTO(content="Hello ", is_final=False),
+        ChatStreamChunkDTO(content="world!", is_final=False),
+        ChatStreamChunkDTO(content="", is_final=True, response=response),
+    ]
+    mock_orchestrator.stream = MagicMock(side_effect=_fake_stream(chunks))
+
+    chat_service.commit = AsyncMock()
+    chat_service.rollback = AsyncMock()
+
+    received = [
+        chunk
+        async for chunk in chat_service.stream_chat(
+            user_id=conversation.user_id,
+            conversation_id=conversation.id,
+            message=TEST_MESSAGE,
+            request_id=request_id,
+        )
+    ]
+
+    # Every chunk reaches the caller, in order -- streaming itself
+    # isn't swallowed by the persistence tail.
+    assert received == chunks
+
+    mock_conversation_event_service.create.assert_any_await(
+        conversation_id=conversation.id,
+        request_id=request_id,
+        parent_event_id=user_event.id,
+        role=MessageRoleEnum.ASSISTANT,
+        content=response.content,
+        metadata=response.metadata.model_dump(mode="json"),
+        citations=None,
+    )
+
+    mock_compliance_log_service.record_request_received.assert_awaited_once_with(
+        request_id=request_id,
+        user_id=str(conversation.user_id),
+        tenant_id=str(conversation.user_id),
+        conversation_id=str(conversation.id),
+        conversation_event_id=str(user_event.id),
+        message=TEST_MESSAGE,
+    )
+
+    mock_compliance_log_service.record_response_returned.assert_awaited_once_with(
+        request_id=request_id,
+        user_id=str(conversation.user_id),
+        tenant_id=str(conversation.user_id),
+        conversation_id=str(conversation.id),
+        conversation_event_id=str(assistant_event.id),
+        content=response.content,
+        citation_count=0,
+        action_required=False,
+    )
+
+    mock_usage_service.record.assert_awaited_once_with(
+        user_id=conversation.user_id,
+        input_tokens=response.usage.prompt_tokens,
+        output_tokens=response.usage.completion_tokens,
+    )
+
+    chat_service.commit.assert_awaited_once_with()
+    chat_service.rollback.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_stream_chat_merges_approval_and_guardrail_into_assistant_event_metadata(
+    chat_service: ChatService,
+    mock_conversation_service: MagicMock,
+    mock_conversation_event_service: MagicMock,
+    mock_orchestrator: MagicMock,
+) -> None:
+    """
+    chat() merges both result.approval and result.guardrail into the
+    persisted assistant event's metadata; stream_chat() previously
+    merged neither (approval) or hadn't been touched at all
+    (guardrail, added in this same fix). Both must reach parity
+    through the shared _persist_assistant_response() helper.
+    """
+
+    conversation = ConversationFactory.build()
+    request_id = _request_id()
+
+    user_event = ConversationEventFactory.build(
+        conversation_id=conversation.id,
+        request_id=request_id,
+        role=MessageRoleEnum.USER,
+        content=TEST_MESSAGE,
+    )
+
+    approval = ApprovalResponse(
+        approval_id="apvl_test",
+        status=ApprovalStatusEnum.WAITING,
+        expires_at=datetime.now(UTC) + timedelta(hours=1),
+    )
+
+    guardrail = GuardrailInfo(
+        action=GuardrailActionEnum.REDACTED,
+        detection_count=1,
+        categories=["PII"],
+    )
+
+    response = build_orchestrator_response(
+        conversation_id=conversation.id,
+        content="Redacted answer.",
+    )
+    response = response.model_copy(
+        update={
+            "approval": approval,
+            "guardrail": guardrail,
+        },
+    )
+
+    assistant_event = ConversationEventFactory.build(
+        conversation_id=conversation.id,
+        request_id=request_id,
+        parent_event_id=user_event.id,
+        role=MessageRoleEnum.ASSISTANT,
+        content=response.content,
+    )
+
+    mock_conversation_service.get_or_raise = AsyncMock(return_value=conversation)
+    mock_conversation_event_service.create = AsyncMock(
+        side_effect=[user_event, assistant_event],
+    )
+    mock_conversation_event_service.list = AsyncMock(return_value=[])
+
+    chunks = [
+        ChatStreamChunkDTO(content="Redacted answer.", is_final=True, response=response),
+    ]
+    mock_orchestrator.stream = MagicMock(side_effect=_fake_stream(chunks))
+
+    chat_service.commit = AsyncMock()
+    chat_service.rollback = AsyncMock()
+
+    async for _ in chat_service.stream_chat(
+        user_id=conversation.user_id,
+        conversation_id=conversation.id,
+        message=TEST_MESSAGE,
+        request_id=request_id,
+    ):
+        pass
+
+    expected_metadata = response.metadata.model_dump(mode="json")
+    expected_metadata["approval"] = approval.model_dump(mode="json")
+    expected_metadata["guardrail"] = guardrail.model_dump(mode="json")
+
+    mock_conversation_event_service.create.assert_any_await(
+        conversation_id=conversation.id,
+        request_id=request_id,
+        parent_event_id=user_event.id,
+        role=MessageRoleEnum.ASSISTANT,
+        content=response.content,
+        metadata=expected_metadata,
+        citations=None,
+    )
+
+
+@pytest.mark.asyncio
+async def test_stream_chat_raises_when_the_stream_never_yields_a_final_chunk(
+    chat_service: ChatService,
+    mock_conversation_service: MagicMock,
+    mock_conversation_event_service: MagicMock,
+    mock_orchestrator: MagicMock,
+) -> None:
+    """
+    A stream that ends without ever yielding is_final=True must raise
+    rather than silently return -- there is no response to persist.
+    """
+
+    conversation = ConversationFactory.build()
+    request_id = _request_id()
+
+    user_event = ConversationEventFactory.build(
+        conversation_id=conversation.id,
+        request_id=request_id,
+        role=MessageRoleEnum.USER,
+        content=TEST_MESSAGE,
+    )
+
+    mock_conversation_service.get_or_raise = AsyncMock(return_value=conversation)
+    mock_conversation_event_service.create = AsyncMock(return_value=user_event)
+    mock_conversation_event_service.list = AsyncMock(return_value=[])
+
+    chunks = [ChatStreamChunkDTO(content="incomplete", is_final=False)]
+    mock_orchestrator.stream = MagicMock(side_effect=_fake_stream(chunks))
+
+    chat_service.commit = AsyncMock()
+    chat_service.rollback = AsyncMock()
+
+    with pytest.raises(RuntimeError, match="without a final response"):
+        async for _ in chat_service.stream_chat(
+            user_id=conversation.user_id,
+            conversation_id=conversation.id,
+            message=TEST_MESSAGE,
+            request_id=request_id,
+        ):
+            pass
 
     chat_service.rollback.assert_awaited_once()
     chat_service.commit.assert_not_awaited()

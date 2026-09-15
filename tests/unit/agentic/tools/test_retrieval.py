@@ -17,8 +17,7 @@ async def test_execute_returns_safe_fallback_when_retrieval_fails() -> None:
     hybrid_retriever.retrieve.side_effect = RuntimeError("reranker unavailable")
     tool = RetrieverTool(hybrid_retriever=hybrid_retriever)
 
-    with bind_request_context() as context:
-        context.allowed_document_ids = set()
+    with bind_request_context():
         result = await tool.execute(query="payment terms")
 
     assert result == "Retrieval failed — please try again."
@@ -46,8 +45,7 @@ async def test_execute_formats_successful_retrieval_results() -> None:
     hybrid_retriever.retrieve.return_value = [result]
     tool = RetrieverTool(hybrid_retriever=hybrid_retriever)
 
-    with bind_request_context() as context:
-        context.allowed_document_ids = set()
+    with bind_request_context():
         output = await tool.execute(query="penalty for damage")
 
     assert "IT Act 2000" in output
@@ -76,8 +74,7 @@ async def test_execute_falls_back_to_source_when_title_absent() -> None:
     hybrid_retriever.retrieve.return_value = [result]
     tool = RetrieverTool(hybrid_retriever=hybrid_retriever)
 
-    with bind_request_context() as context:
-        context.allowed_document_ids = set()
+    with bind_request_context():
         output = await tool.execute(query="anything")
 
     assert "ksrc_legacy" in output
@@ -113,8 +110,7 @@ async def test_execute_formats_multiple_results_without_crashing() -> None:
     hybrid_retriever.retrieve.return_value = results
     tool = RetrieverTool(hybrid_retriever=hybrid_retriever)
 
-    with bind_request_context() as context:
-        context.allowed_document_ids = set()
+    with bind_request_context():
         output = await tool.execute(query="anything")
 
     assert "First chunk." in output

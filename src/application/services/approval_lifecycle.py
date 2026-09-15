@@ -5,7 +5,7 @@ Human approval lifecycle application service.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,6 +30,9 @@ from core.exceptions.approval import (
     ApprovalNotFoundError,
     ApprovalValidationError,
 )
+
+if TYPE_CHECKING:
+    from application.services.compliance_log import ComplianceLogService
 
 logger = get_logger(__name__)
 
@@ -61,6 +64,7 @@ class ApprovalLifecycleService(BaseService, ApprovalLifecycleServiceProtocol):
         *,
         session: AsyncSession,
         repository: ApprovalRepository,
+        compliance_log_service: ComplianceLogService,
         approval_ttl_seconds: int = 900,
     ) -> None:
         super().__init__(session)
@@ -70,6 +74,7 @@ class ApprovalLifecycleService(BaseService, ApprovalLifecycleServiceProtocol):
             )
 
         self._repository = repository
+        self._compliance_log_service = compliance_log_service
         self._approval_ttl_seconds = approval_ttl_seconds
 
     async def create(
@@ -593,6 +598,30 @@ class ApprovalLifecycleService(BaseService, ApprovalLifecycleServiceProtocol):
                     ),
                     "user_id": user_id,
                 },
+            )
+
+            # Compliance log: a thin pointer into this HITL decision --
+            # see ComplianceLogService.record_hitl_approval_decision's
+            # docstring for why request_id is not supplied here.
+            # Best-effort in the sense that a write failure must not
+            # undo a real, already-persisted human decision
+            # (StandaloneComplianceLogWriter's own except-and-log
+            # stance doesn't apply here since this uses the
+            # request-scoped ComplianceLogService instead -- a real
+            # failure here would propagate through the outer
+            # ApprovalError handling below like any other write in
+            # this method, which is correct: this call shares the
+            # same transaction/commit boundary as the approval
+            # decision itself, same as ChatService's compliance
+            # writes).
+            await self._compliance_log_service.record_hitl_approval_decision(
+                user_id=user_id,
+                tenant_id=user_id,
+                agent_action_id=persisted.agent_action_id,
+                approval_id=persisted.id,
+                decision_type=(
+                    persisted.decision_type.value if persisted.decision_type else "unknown"
+                ),
             )
 
             return persisted.to_dto()

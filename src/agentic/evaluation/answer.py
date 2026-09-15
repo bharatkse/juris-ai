@@ -246,6 +246,27 @@ class AnswerEvaluationResult:
     groundedness_detail: GroundednessResult
 
 
+@dataclass(frozen=True, slots=True)
+class AnswerEvaluationSummary:
+    """
+    The two AnswerEvaluationResult fields the compliance log needs
+    (application/services/compliance_log.py's AGENT_DECISION event),
+    threaded up from AgentContinuationService._gate_final through
+    AgentContinuationResult -> AgentExecutionNode -> AgentResponseMapper
+    -> AgentResponseDTO.metadata.
+
+    Deliberately narrow: not a general "expose all evaluation
+    internals" carrier, just groundedness/relevance, and only ever
+    populated at the one point _gate_final actually accepts a FINAL
+    answer (is_sufficient() returned True) -- every other _gate_final
+    return path (no answer, budget exhausted, insufficient + retrying)
+    has no accepted evaluation to report and carries None instead.
+    """
+
+    groundedness: float | None
+    relevance: float | None
+
+
 class AnswerEvaluator:
     """Evaluates a proposed answer's quality signals.
 
