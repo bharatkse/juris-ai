@@ -8,6 +8,7 @@ orchestrator after planning, execution, validation, and aggregation.
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -198,3 +199,36 @@ class OrchestratorResponse(ResponsePayload):
     approval: ApprovalResponse | None = None
     action: AgentActionRequestDTO | None = None
     guardrail: GuardrailInfo | None = None
+
+
+class OrchestratorStreamChunk(BaseModel):
+    """
+    Chunk yielded while streaming a chat response
+    (AIOrchestrator.stream()).
+
+    The final chunk (is_final=True) carries the complete
+    OrchestratorResponse -- the same object handle() would return for
+    the same inputs, built the same way (see stream()'s docstring).
+    Intermediate chunks carry only display content.
+
+    Defined here, not in application/services/internal_dto/stream.py
+    (where the field-identical ChatStreamChunkDTO used to live as its
+    own class): AIOrchestrator (agentic/) is what actually constructs
+    this, and agentic/ must never import from application/ -- the
+    reverse of this project's layering (application/ already depends
+    on agentic/, e.g. ChatService imports AIOrchestrator directly).
+    ChatStreamChunkDTO is now a plain alias for this class instead of
+    a separate, field-duplicating one -- see that module's comment.
+    """
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+    )
+
+    content: str = ""
+    is_final: bool = False
+    response: OrchestratorResponse | None = None
+    metadata: dict[str, Any] = Field(
+        default_factory=dict,
+    )

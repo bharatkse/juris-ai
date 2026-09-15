@@ -100,19 +100,49 @@ class BaseAgent:
             response_model=AgentDecision,
         )
 
-    async def stream(
+    async def stream_final_answer(
         self,
         *,
         request: AgentRequestDTO,
+        context: tuple[
+            RetrievedContentDTO,
+            ...,
+        ] = (),
     ) -> AsyncIterator[AgentStreamChunkDTO]:
         """
-        Stream the agent response.
+        Stream the freeform final-answer text for a request the graph
+        has already resolved to a FINAL decision
+        (agentic.decisions.decision.AgentDecisionType.FINAL, checked
+        in agentic/agents/runtime/continuation.py).
 
-        The same inference policy used by non-streaming generation is
-        carried through to the provider-independent request.
+        This is a second, separate LLM call from the structured
+        AgentDecision _reason() produces above -- a JSON-schema
+        -constrained structured response cannot be meaningfully
+        streamed token-by-token (a client receiving
+        '{"decision_type": "FINAL", "final_r' mid-stream has nothing
+        usable). Once the graph already knows the decision is FINAL,
+        this method re-generates just the answer text as a plain
+        completion instead.
+
+        context is the caller's responsibility to supply -- normally
+        AgentExecutionHandle.reasoning_context, the same accumulated
+        retrieval/tool-call evidence _reason() already used to reach
+        the FINAL decision. Passing it explicitly (default: empty) is
+        what makes this method actually grounded rather than a bare,
+        contextless completion -- the previous stream() on this class
+        hardcoded no context and had zero callers; this replaces it.
         """
-        llm_request = await self._build_llm_request(
+        llm_request = self._prompt_builder.build(
             request=request,
+            context=context,
+            model=self._llm.model,
+            reserved_output_tokens=self._reserved_output_tokens(),
+        )
+
+        llm_request = self._apply_inference(
+            request=llm_request,
+            task=self.inference_task,
+            structured_output=False,
         )
 
         async for chunk in self._llm.stream(
@@ -122,39 +152,15 @@ class BaseAgent:
                 content=chunk.content,
                 is_final=chunk.is_final,
                 finish_reason=chunk.finish_reason,
-                metadata=chunk.metadata,
+                # LLMStreamChunkDTO.metadata is a read-only Mapping
+                # (MappingProxyType default); AgentStreamChunkDTO.metadata
+                # is a plain, mutable dict -- pre-existing type gap
+                # between the two DTOs, only now visible to mypy since
+                # fixing LLMClient.stream()'s signature above let it
+                # analyze this far. Copying is cheap and correct
+                # either way.
+                metadata=dict(chunk.metadata),
             )
-
-    async def _build_llm_request(
-        self,
-        *,
-        request: AgentRequestDTO,
-    ) -> LLMRequestDTO:
-        """
-        Build the provider-independent LLM request and attach the
-        agent-owned inference intent.
-
-        No retrieval context is sourced here. The graph execution path
-        (_reason()) receives context externally via
-        AgentExecutionHandle.reasoning_context, populated by TOOL_CALL
-        results through the Tool Registry + policy path -- not through
-        this agent holding a retriever reference. stream() (the only
-        caller of this method) therefore runs with no retrieved
-        context, same as before this change since it was already
-        unreachable in production.
-        """
-        llm_request = self._prompt_builder.build(
-            request=request,
-            context=(),
-            model=self._llm.model,
-            reserved_output_tokens=self._reserved_output_tokens(),
-        )
-
-        return self._apply_inference(
-            request=llm_request,
-            task=self.inference_task,
-            structured_output=True,
-        )
 
     def _reserved_output_tokens(self) -> int:
         """

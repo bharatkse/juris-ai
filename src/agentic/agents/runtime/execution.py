@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -59,7 +60,7 @@ from agentic.policy.guard import AgentPolicyGuard
 from agentic.policy.schemas import AgentPolicy
 from agentic.registry.agent import AgentRegistry
 from agentic.tools.constants import GATED_TOOLS
-from core.dto.agent import AgentRequestDTO
+from core.dto.agent import AgentRequestDTO, AgentStreamChunkDTO
 from core.dto.agent_action import AgentActionRequestDTO
 from core.dto.tool import RetrievedContentDTO
 from core.enums import (
@@ -205,6 +206,31 @@ class AgentExecutionHandle:
         """Return the evidence supplied to the current reasoning slice."""
 
         return self._reasoning_context
+
+    def stream_final_answer(self) -> AsyncIterator[AgentStreamChunkDTO]:
+        """
+        Stream the freeform final-answer text for this execution's
+        FINAL decision, using the request and accumulated
+        reasoning_context this handle already owns.
+
+        Thin delegation to BaseAgent.stream_final_answer(), matching
+        this handle's existing convention (reason() similarly wraps
+        agent-level reasoning together with handle-owned state) rather
+        than exposing the private agent reference directly. No retry/
+        lifecycle wrapping the way reason() has -- by the time a
+        caller reaches this, the decision is already confirmed FINAL;
+        this is a second, separate generation of the answer text, not
+        another reasoning attempt.
+
+        Callers (AgentExecutionNode, gated to streaming sessions only)
+        are responsible for confirming last_decision.decision_type is
+        FINAL before calling this -- it does not check itself.
+        """
+
+        return self._agent.stream_final_answer(
+            request=self._request,
+            context=self._reasoning_context,
+        )
 
     def extend_reasoning_context(
         self,
