@@ -53,7 +53,7 @@ uvicorn = { extras = ["standard"], version = "^0.31.1" }
 pwdlib = { extras = ["argon2"], version = "^0.3.0" }
 
 # Multipart form/file uploads
-python-multipart = "^0.0.9"
+python-multipart = "^0.0.31"
 
 # Data validation and application configuration
 pydantic = { version = "^2.7.1", extras = ["email"] }
