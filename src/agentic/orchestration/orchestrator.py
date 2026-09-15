@@ -6,11 +6,12 @@ Coordinates the AI request lifecycle.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from typing import TYPE_CHECKING
 
 from adapters.observability.logger import get_logger
 from adapters.observability.tracing import span
+from agentic.execution.schemas.result import ExecutionResultSchema
 from agentic.guardrails.schemas import GuardrailActionEnum, GuardrailReviewResult
 from agentic.orchestration.schemas.context import (
     ConversationContext,
@@ -26,10 +27,11 @@ from agentic.orchestration.schemas.response import (
     Citation,
     GuardrailInfo,
     OrchestratorResponse,
+    OrchestratorStreamChunk,
     Source,
     Usage,
 )
-from core.dto.agent import AgentContextDTO, AgentResponseDTO
+from core.dto.agent import AgentContextDTO, AgentResponseDTO, AgentStreamChunkDTO
 from core.dto.agent_action import AgentActionRequestDTO, AgentActionResponseDTO
 from core.dto.approval import ApprovalResponseDTO
 from core.dto.conversation import ConversationDTO
@@ -854,6 +856,437 @@ class AIOrchestrator:
                     "AI orchestration failed.",
                     extra={
                         "operation": "orchestrate",
+                        "request_id": str(request.request_id),
+                        "conversation_id": str(request.conversation_id),
+                        "user_id": str(request.user_id),
+                    },
+                )
+
+                raise
+
+    async def stream(
+        self,
+        *,
+        request: OrchestratorRequest,
+        action_workflow_service: ActionWorkflowService,
+    ) -> AsyncIterator[OrchestratorStreamChunk]:
+        """
+        Streaming counterpart to handle() above.
+
+        Planning, authorization, the regenerate loop's structure, and
+        response-building are identical to handle() -- see that
+        method's docstring for the base lifecycle. The differences are
+        all about how the FINAL step's answer reaches the caller:
+
+        Each regenerate-loop attempt calls Executor.execute_streaming()
+        instead of execute(), but its output (AgentStreamChunkDTO
+        chunks, then one ExecutionResultSchema) is fully buffered
+        here, not forwarded -- nothing reaches this method's own
+        caller until the loop has fully resolved (cleared, accepted-
+        blocked with a pending action, or out of attempts). This is
+        the whole point: a caller must never see a partial answer from
+        an attempt that gets thrown away and regenerated. It costs
+        latency before the first chunk goes out (the system has to
+        finish confirming an attempt won't be discarded first) --
+        an accepted, deliberate tradeoff, not an oversight.
+
+        Once resolved, what actually reaches the caller depends on the
+        winning attempt's guardrail verdict:
+
+        - NONE or FLAGGED (content unmodified from what was
+          generated): the buffered chunks are replayed verbatim, then
+          one empty is_final=True chunk carries the full
+          OrchestratorResponse -- content is empty there deliberately,
+          since the caller already received it incrementally via the
+          replayed chunks; repeating it would duplicate the text for
+          an append-based consumer.
+        - REDACTED (content modified by PII redaction) or BLOCKED: the
+          buffered chunks are discarded entirely and never reach the
+          caller. Redacted content differs from what was actually
+          streamed during generation -- replaying the pre-redaction
+          chunks would leak the exact PII redaction exists to prevent,
+          just moved into the streaming path instead of prevented by
+          it. A single is_final=True chunk carries the correct
+          (redacted, or fixed-refusal) content instead, matching
+          handle()'s non-streaming behavior for these two cases
+          exactly, just delivered over the stream as one chunk.
+
+        aggregate()/validate() are the exact same calls handle() makes
+        (reusing agent_responses extracted from the same
+        ExecutionResultSchema shape execute_streaming() and execute()
+        both produce via the same underlying _finish()) -- usage and
+        citations on the terminal chunk are therefore built identically
+        to handle()'s, not a second, parallel computation that could
+        drift from it.
+        """
+
+        log.info(
+            "Starting streaming AI orchestration.",
+            extra={
+                "operation": "orchestrate_stream",
+                "request_id": str(request.request_id),
+                "conversation_id": str(request.conversation_id),
+                "user_id": str(request.user_id),
+                "event_id": request.current_event_id,
+            },
+        )
+
+        with span(
+            "juris_agentic.orchestration_stream",
+            attributes={
+                "request.id": str(request.request_id),
+                "conversation.id": str(request.conversation_id),
+                "event.id": request.request_id,
+            },
+        ) as current_span:
+            try:
+                orchestration_context = self._build_context(
+                    request=request,
+                )
+
+                self._authorization.authorize_request(
+                    user_id=request.user_id,
+                    message=request.message,
+                )
+
+                execution_plan = await self._planner.create_plan(
+                    context=orchestration_context,
+                )
+
+                current_span.set_attribute(
+                    "execution.intent",
+                    execution_plan.intent,
+                )
+                current_span.set_attribute(
+                    "execution.mode",
+                    execution_plan.mode,
+                )
+                current_span.set_attribute(
+                    "execution.step_count",
+                    len(execution_plan.steps),
+                )
+
+                log.info(
+                    "Execution plan created.",
+                    extra={
+                        "operation": "create_plan",
+                        "request_id": str(request.request_id),
+                        "conversation_id": str(request.conversation_id),
+                        "intent": execution_plan.intent,
+                        "mode": execution_plan.mode,
+                        "step_count": len(execution_plan.steps),
+                    },
+                )
+
+                await self._compliance_log.record_plan_created(
+                    request_id=request.request_id,
+                    user_id=str(request.user_id),
+                    tenant_id=str(request.user_id),
+                    conversation_id=str(request.conversation_id),
+                    intent=str(execution_plan.intent),
+                    mode=str(execution_plan.mode),
+                    step_count=len(execution_plan.steps),
+                )
+
+                conversation = self._build_conversation(
+                    request=request,
+                )
+
+                context = AgentContextDTO(
+                    user_id=request.user_id,
+                    execution_id=str(request.current_event_id),
+                    thread_id=str(request.request_id),
+                    conversation_event_id=request.current_event_id,
+                    uploaded_files=tuple(request.attachments),
+                    request_id=str(request.request_id),
+                )
+
+                max_attempts = self._guardrail_max_regenerate_attempts + 1
+
+                for attempt in range(1, max_attempts + 1):
+                    attempt_context = (
+                        context
+                        if attempt == 1
+                        else AgentContextDTO(
+                            user_id=context.user_id,
+                            execution_id=context.execution_id,
+                            thread_id=f"{context.thread_id}:guardrail-retry-{attempt}",
+                            conversation_event_id=context.conversation_event_id,
+                            uploaded_files=context.uploaded_files,
+                            request_id=context.request_id,
+                        )
+                    )
+
+                    # ---------------------------------------------------------
+                    # Execute (streaming), fully buffered -- see this
+                    # method's own docstring for why nothing is
+                    # forwarded here.
+                    # ---------------------------------------------------------
+
+                    buffered_chunks: list[AgentStreamChunkDTO] = []
+                    execution_result: ExecutionResultSchema | None = None
+
+                    async for item in self._executor.execute_streaming(
+                        request_id=request.request_id,
+                        conversation=conversation,
+                        plan=execution_plan,
+                        context=attempt_context,
+                        action_workflow_service=action_workflow_service,
+                    ):
+                        if isinstance(item, ExecutionResultSchema):
+                            execution_result = item
+                        else:
+                            buffered_chunks.append(item)
+
+                    if execution_result is None:
+                        raise RuntimeError(
+                            "Streaming execution completed without a final result.",
+                        )
+
+                    if execution_result.state.status is ExecutionStatusEnum.FAILED:
+                        failed_steps = [
+                            step
+                            for step in execution_result.state.steps.values()
+                            if step.status is ExecutionStatusEnum.FAILED
+                        ]
+
+                        log.error(
+                            "Execution failed.",
+                            extra={
+                                "operation": "orchestrate_execution_failed",
+                                "request_id": str(request.request_id),
+                                "conversation_id": str(request.conversation_id),
+                                "failed_steps": [
+                                    {
+                                        "step_id": step.step_id,
+                                        "error": step.error,
+                                        "retry_count": step.retry_count,
+                                    }
+                                    for step in failed_steps
+                                ],
+                            },
+                        )
+
+                    agent_responses = self._extract_agent_responses(
+                        execution_result=execution_result,
+                    )
+
+                    # Same fallback as handle() for a tool failure that
+                    # ends the turn without ever reaching FINAL -- a
+                    # fixed string needs no guardrail review, and
+                    # buffered_chunks is guaranteed empty here anyway
+                    # (AgentExecutionNode only ever streams a FINAL
+                    # decision's answer).
+                    if not agent_responses:
+                        log.error(
+                            "Execution ended without a FINAL response (a "
+                            "tool call failed) -- returning a graceful "
+                            "fallback instead of raising EmptyAggregationError.",
+                            extra={
+                                "operation": "orchestrate_stream",
+                                "request_id": str(request.request_id),
+                                "conversation_id": str(request.conversation_id),
+                                "execution_status": execution_result.state.status.value,
+                            },
+                        )
+
+                        fallback_response = OrchestratorResponse(
+                            conversation_id=request.conversation_id,
+                            content=(
+                                "I wasn't able to complete this request -- "
+                                "something went wrong while gathering the "
+                                "information needed to answer. Please try "
+                                "again."
+                            ),
+                            citations=[],
+                            sources=[],
+                            usage=Usage(),
+                            action=_to_action_request(execution_result.action),
+                            approval=_to_approval_response(execution_result.approval),
+                        )
+
+                        yield OrchestratorStreamChunk(
+                            content=fallback_response.content,
+                            is_final=True,
+                            response=fallback_response,
+                        )
+
+                        return
+
+                    await self._validator.validate(
+                        responses=agent_responses,
+                    )
+
+                    aggregation_result = await self._aggregator.aggregate(
+                        responses=agent_responses,
+                    )
+
+                    for agent_response in agent_responses:
+                        await self._compliance_log.record_agent_decision(
+                            request_id=request.request_id,
+                            user_id=str(request.user_id),
+                            tenant_id=str(request.user_id),
+                            conversation_id=str(request.conversation_id),
+                            agent_id=agent_response.agent_name,
+                            decision_type="final",
+                            groundedness=agent_response.metadata.get("groundedness"),
+                            relevance=agent_response.metadata.get("relevance"),
+                        )
+
+                    action_request: AgentActionRequestDTO | None = _to_action_request(
+                        execution_result.action
+                    )
+
+                    guardrail_result = await self._guardrails.review(
+                        content=aggregation_result.response.content,
+                        evidence_text=_evidence_text(
+                            agent_responses=agent_responses,
+                            citations=aggregation_result.response.citations,
+                            sources=aggregation_result.response.sources,
+                        ),
+                    )
+
+                    if guardrail_result.action is not GuardrailActionEnum.NONE:
+                        await self._compliance_log.record_guardrail_fired(
+                            request_id=request.request_id,
+                            user_id=str(request.user_id),
+                            tenant_id=str(request.user_id),
+                            conversation_id=str(request.conversation_id),
+                            action=guardrail_result.action.value,
+                            detection_count=len(guardrail_result.detections),
+                            categories=sorted({d.entity_type for d in guardrail_result.detections}),
+                            harmful=bool(
+                                guardrail_result.harmful and guardrail_result.harmful.harmful
+                            ),
+                            harmful_category=(
+                                guardrail_result.harmful.category
+                                if guardrail_result.harmful
+                                else None
+                            ),
+                        )
+
+                    if guardrail_result.action is not GuardrailActionEnum.BLOCKED:
+                        break
+
+                    if action_request is not None:
+                        break
+
+                    if attempt == max_attempts:
+                        log.error(
+                            "Output guardrail blocked the response after "
+                            "%d attempt(s); returning a fixed refusal.",
+                            attempt,
+                            extra={
+                                "operation": "orchestrate_stream",
+                                "request_id": str(request.request_id),
+                                "conversation_id": str(request.conversation_id),
+                                "harmful_category": (
+                                    guardrail_result.harmful.category
+                                    if guardrail_result.harmful
+                                    else None
+                                ),
+                            },
+                        )
+                        break
+
+                    log.warning(
+                        "Output guardrail blocked a response; " "regenerating (attempt %d of %d).",
+                        attempt,
+                        max_attempts,
+                        extra={
+                            "operation": "orchestrate_stream",
+                            "request_id": str(request.request_id),
+                            "conversation_id": str(request.conversation_id),
+                        },
+                    )
+
+                # ---------------------------------------------------------
+                # Resolve: emit exactly what handle() would have
+                # returned, over the stream.
+                #
+                # execution_result is reassigned fresh (starting None)
+                # on every loop iteration above, which is why mypy
+                # can't carry its non-None narrowing this far past the
+                # loop on its own -- range(1, max_attempts + 1) always
+                # iterates at least once (max_attempts >= 1), and the
+                # loop body's own guard already raises before this
+                # point if a given attempt's execution_result was ever
+                # None, so this is a restatement of an already-enforced
+                # guarantee, not a new runtime check.
+                # ---------------------------------------------------------
+
+                assert execution_result is not None
+
+                if guardrail_result.action is GuardrailActionEnum.BLOCKED:
+                    blocked_response = OrchestratorResponse(
+                        conversation_id=request.conversation_id,
+                        content=_GUARDRAIL_BLOCKED_MESSAGE,
+                        citations=[],
+                        sources=[],
+                        usage=Usage(),
+                        action=action_request,
+                        approval=_to_approval_response(execution_result.approval),
+                        guardrail=_build_guardrail_info(guardrail_result),
+                    )
+
+                    yield OrchestratorStreamChunk(
+                        content=blocked_response.content,
+                        is_final=True,
+                        response=blocked_response,
+                    )
+
+                    return
+
+                orchestrator_response = OrchestratorResponse(
+                    conversation_id=request.conversation_id,
+                    content=guardrail_result.content,
+                    citations=aggregation_result.response.citations,
+                    sources=aggregation_result.response.sources,
+                    usage=aggregation_result.response.metadata.usage,
+                    action=action_request,
+                    approval=_to_approval_response(execution_result.approval),
+                    guardrail=_build_guardrail_info(guardrail_result),
+                )
+
+                if guardrail_result.action is GuardrailActionEnum.REDACTED:
+                    # Content differs from what was actually generated
+                    # and buffered -- see this method's docstring for
+                    # why the buffered chunks must not be replayed here.
+                    yield OrchestratorStreamChunk(
+                        content=orchestrator_response.content,
+                        is_final=True,
+                        response=orchestrator_response,
+                    )
+                else:
+                    # NONE or FLAGGED: content is verbatim what was
+                    # streamed -- safe to replay.
+                    for chunk in buffered_chunks:
+                        yield OrchestratorStreamChunk(
+                            content=chunk.content,
+                            metadata=dict(chunk.metadata),
+                        )
+
+                    yield OrchestratorStreamChunk(
+                        content="",
+                        is_final=True,
+                        response=orchestrator_response,
+                    )
+
+                log.info(
+                    "Streaming chat response completed.",
+                    extra={
+                        "operation": "orchestrate_stream",
+                        "request_id": str(request.request_id),
+                        "conversation_id": str(request.conversation_id),
+                        "action_required": action_request is not None,
+                    },
+                )
+
+            except Exception:
+                log.exception(
+                    "Streaming AI orchestration failed.",
+                    extra={
+                        "operation": "orchestrate_stream",
                         "request_id": str(request.request_id),
                         "conversation_id": str(request.conversation_id),
                         "user_id": str(request.user_id),

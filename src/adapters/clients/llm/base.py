@@ -174,12 +174,29 @@ class LLMClient(ABC):
         return result
 
     @abstractmethod
-    async def stream(
+    def stream(
         self,
         *,
         request: LLMRequestDTO,
     ) -> AsyncIterator[LLMStreamChunkDTO]:
         """
         Stream a completion.
+
+        Declared without ``async`` deliberately: an ``async def``
+        abstract method whose body never ``yield``s (just ``raise``s)
+        is inferred by mypy as returning a plain
+        ``Coroutine[..., AsyncIterator[...]]``, not an async generator
+        -- which then makes every real (``async def`` + ``yield``)
+        override look "incompatible" to mypy, and makes
+        ``async for chunk in self._llm.stream(...)`` fail typing at
+        every call site (confirmed: this broke both
+        ``local.py``'s override and ``agents/base.py``'s call before
+        this fix). A plain method returning ``AsyncIterator[...]`` is
+        exactly what an async-generator-function call site expects,
+        and concrete subclasses still implement it as
+        ``async def stream(...)`` with real ``yield`` statements --
+        Python itself doesn't require the abstract and concrete
+        signatures to match on ``async``-ness, only mypy's shape
+        inference cared.
         """
         raise NotImplementedError

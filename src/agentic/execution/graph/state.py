@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from operator import add
-from typing import Annotated, Any, TypedDict
+from typing import Annotated, Any, NotRequired, TypedDict
 from uuid import UUID
 
 from agentic.decisions.schemas import AgentDecision
@@ -124,3 +124,11 @@ class ExecutionGraphState(TypedDict):
 
     action: AgentActionRequestDTO | None
     termination_reason: str | None
+
+    # NotRequired, not a plain bool with a default: ExecutionSession.
+    # _build_initial_state() (used by both execute()/resume(), which
+    # stay entirely untouched by this field's addition) never sets
+    # this key at all -- only the new execute_streaming() does. Read
+    # via state.get("streaming", False), never state["streaming"],
+    # so existing non-streaming graph runs need no change.
+    streaming: NotRequired[bool]

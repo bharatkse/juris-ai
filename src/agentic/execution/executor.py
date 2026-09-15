@@ -4,6 +4,7 @@ Execution runtime coordinator.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
@@ -12,7 +13,7 @@ from agentic.execution.graph.factory import ExecutionGraphFactory
 from agentic.execution.schemas.result import ExecutionResultSchema
 from agentic.execution.session import ExecutionSession
 from agentic.execution.state import ExecutionStateAssembler
-from core.dto.agent import AgentContextDTO
+from core.dto.agent import AgentContextDTO, AgentStreamChunkDTO
 from core.dto.conversation import ConversationDTO
 from core.dto.planning import ExecutionPlanDTO
 
@@ -84,6 +85,37 @@ class Executor:
         )
 
         return await session.execute()
+
+    async def execute_streaming(
+        self,
+        *,
+        request_id: UUID,
+        conversation: ConversationDTO,
+        plan: ExecutionPlanDTO,
+        context: AgentContextDTO,
+        action_workflow_service: ActionWorkflowService,
+    ) -> AsyncIterator[AgentStreamChunkDTO | ExecutionResultSchema]:
+        """
+        Streaming counterpart to execute() above -- same
+        ExecutionSession construction, calling session.execute_streaming()
+        instead of session.execute(). See that method's docstring for
+        the yielded shape (AgentStreamChunkDTO instances, then exactly
+        one ExecutionResultSchema as the final item).
+        """
+
+        session = ExecutionSession(
+            request_id=request_id,
+            conversation=conversation,
+            plan=plan,
+            context=context,
+            graph_factory=self._graph_factory,
+            state_assembler=self._state_assembler,
+            timeout_policy=self._timeout_policy,
+            action_workflow_service=action_workflow_service,
+        )
+
+        async for item in session.execute_streaming():
+            yield item
 
     async def resume(
         self,

@@ -13,11 +13,16 @@ AgentExecutionNode only:
     4. invokes the request-scoped execution handle
     5. invokes AgentContinuationService for internal tool continuation
     6. converts the final AgentExecutionResult into graph updates
+    7. for a streaming session's FINAL step only, also emits the
+       streamed answer via LangGraph's custom stream channel -- pure
+       side channel, never alters point 6's return value
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
+
+from langgraph.config import get_stream_writer
 
 from agentic.agents.runtime.continuation import AgentContinuationService
 from agentic.decisions.decision import AgentDecisionType
@@ -100,6 +105,15 @@ class AgentExecutionNode:
             initial_result=initial_result,
         )
 
+        if state.get(
+            "streaming",
+            False,
+        ):
+            await self._stream_final_answer_if_reached(
+                handle=handle,
+                result=continuation_result.result,
+            )
+
         return self._to_graph_update(
             handle=handle,
             result=continuation_result.result,
@@ -107,6 +121,38 @@ class AgentExecutionNode:
             evaluation_summary=continuation_result.evaluation_summary,
             step=step,
         )
+
+    @staticmethod
+    async def _stream_final_answer_if_reached(
+        *,
+        handle: AgentExecutionHandle,
+        result: AgentExecutionResult,
+    ) -> None:
+        """
+        Emit the FINAL step's answer text via LangGraph's custom
+        stream channel (get_stream_writer()) -- purely additive: the
+        caller's graph-state return value (_to_graph_update(), built
+        from the same `result` either way) is completely unaffected by
+        whether this runs.
+
+        Only fires for a FINAL decision -- a step that resolves to
+        TOOL_CALL/DELEGATE/NEED_INPUT/FAIL never streams, whether or
+        not this is a streaming session. In a multi-step plan this
+        means at most one step ever streams: the one that reaches
+        FINAL.
+
+        Callers must already have confirmed this is a streaming
+        session (state["streaming"]) before calling this -- checked
+        once, by __call__ above, not repeated here.
+        """
+
+        if result.decision is None or result.decision.decision_type is not AgentDecisionType.FINAL:
+            return
+
+        writer = get_stream_writer()
+
+        async for chunk in handle.stream_final_answer():
+            writer(chunk)
 
     @staticmethod
     def _build_agent_request(
