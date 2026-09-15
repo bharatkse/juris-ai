@@ -15,7 +15,7 @@ services:
 
     environment:
       POSTGRES_USER: ${DB_USER:-juris}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-jurispassword}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
       POSTGRES_DB: ${DB_NAME:-jurisai}
 
     ports:
@@ -23,7 +23,7 @@ services:
 
     volumes:
       - ./.volumes/postgres:/var/lib/postgresql/data
-      - ./.init/postgres:/docker-entrypoint-initdb.d:ro
+      - ./init/postgres:/docker-entrypoint-initdb.d:ro
 
     healthcheck:
       test:
@@ -105,7 +105,7 @@ services:
       # Seed DB connection string into Secrets Manager
       # --------------------
       DB_USER: ${DB_USER:-juris}
-      DB_PASSWORD: ${DB_PASSWORD:-jurispassword}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
       DB_NAME: ${DB_NAME:-jurisai}
       DB_HOST: postgres
       DB_PORT: 5432
@@ -121,7 +121,7 @@ services:
       - ./.volumes/localstack:/var/lib/localstack
       - /var/run/docker.sock:/var/run/docker.sock:z
       # Initialization scripts — source controlled
-      - ./.init/localstack:/etc/localstack/init/ready.d:ro
+      - ./init/localstack:/etc/localstack/init/ready.d:ro
 
     healthcheck:
       test:

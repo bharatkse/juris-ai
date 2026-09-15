@@ -7,6 +7,10 @@ receivers:
       http:
         endpoint: "0.0.0.0:4318"
 
+extensions:
+  health_check:
+    endpoint: "0.0.0.0:13133"
+
 processors:
   batch:
 
@@ -23,6 +27,9 @@ exporters:
     endpoint: "0.0.0.0:8889"
 
 service:
+  extensions:
+    - health_check
+
   pipelines:
     traces:
       receivers:
