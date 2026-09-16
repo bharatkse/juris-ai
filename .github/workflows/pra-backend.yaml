@@ -83,7 +83,6 @@ jobs:
           poetry run pytest \
             tests/unit \
             --cov=src \
-            --cov-config=.coveragerc \
             --cov-branch \
             --cov-report=term-missing \
             --cov-report=xml:coverage.xml \
