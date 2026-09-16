@@ -111,6 +111,12 @@ git clone <repository-url>
 cd juris-ai
 ```
 
+## Set up commit signing (required for PRs)
+
+Both `develop` and `main` require every commit to be signed before it
+can merge. Set this up now, before your first commit — see
+[`docs/setup/commit-signing.md`](docs/setup/commit-signing.md).
+
 ## Create a virtual environment
 
 ```bash
