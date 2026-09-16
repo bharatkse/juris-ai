@@ -315,4 +315,13 @@ Senior Software Engineer | Backend & Cloud
 
 # 📄 License
 
-This project is licensed under the MIT License. See the `LICENSE` file for details.
+This project is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0-only)**. See the `LICENSE` file for the full text.
+
+Need to keep your modifications or hosted offering proprietary? See [legal/COMMERCIAL-LICENSE.md](legal/COMMERCIAL-LICENSE.md) for commercial licensing options.
+
+### Licensing FAQ for self-hosters
+
+- **Running Juris AI unmodified (including as a network service)?** No obligation to disclose or publish anything. Use it privately or in your org with no source-sharing requirement.
+- **Modified it for internal use only, never exposed to outside users?** Still no disclosure obligation — the AGPL's network-use clause (§13) only triggers when other users interact with your modified version over a network.
+- **Modified it *and* let others interact with your modified version over a network** (e.g. offering it as a hosted service to customers or the public)? You must make the Corresponding Source of your modified version available to those users, per AGPL-3.0 §13.
+- **Just want to use it as a dependency/library in a separate proprietary project without networked interaction with it?** Talk to a lawyer — AGPL's copyleft can still reach combined/derivative works; this FAQ is not legal advice.

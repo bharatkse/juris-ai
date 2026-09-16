@@ -9,7 +9,7 @@ version = "0.1.0"
 description = "Juris AI is a modern backend service for AI-powered legal assistance."
 authors = [{ name = "Bharat Kumar", email = "kumar.bhart28@gmail.com" }]
 readme = "README.md"
-license = "MIT"
+license = "AGPL-3.0-only"
 requires-python = ">=3.11,<4.0"
 dynamic = ["dependencies"]
 keywords = ["LangChain", "Legal", "AI", "FastAPI", "groq", "LangSmith", "Agent"]
