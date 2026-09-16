@@ -54,7 +54,7 @@ pwdlib = { extras = ["argon2"], version = "^0.3.0" }
 python-jose = "^3.5.0"
 
 # Multipart form/file uploads
-python-multipart = "^0.0.9"
+python-multipart = "^0.0.31"
 
 # Data validation and application configuration
 pydantic = { version = "^2.7.1", extras = ["email"] }
