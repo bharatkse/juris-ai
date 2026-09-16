@@ -50,12 +50,19 @@ services:
 
 
   # -----------------------------------------------------
-  # LocalStack — simulates AWS services (no RDS)
+  # Floci — simulates AWS services (no RDS)
   # RDS removed from SERVICES; DB handled by postgres above
+  #
+  # Known rough edge: an in-place `sam deploy` param update (e.g.
+  # changing LocalFastApiUrl) can hit UPDATE_ROLLBACK_FAILED on
+  # unrelated resources due to a Floci/CloudFormation same-name
+  # conflict. If a deploy update fails this way, run
+  # `sam delete --stack-name <name>` and redeploy fresh rather than
+  # retrying the update. See claude.md's Known gaps for detail.
   # -----------------------------------------------------
-  localstack:
-    image: localstack/localstack:4.12.0
-    container_name: juris_ai_localstack
+  floci:
+    image: floci/floci:latest
+    container_name: juris_ai_floci
     restart: unless-stopped
 
     depends_on:
@@ -67,42 +74,28 @@ services:
       - "4510-4559:4510-4559"
 
     environment:
-      # --------------------
-      # Core LocalStack
-      # --------------------
-      DEBUG: "0"
       PERSISTENCE: "1"
-      LOCALSTACK_VOLUME_DIR: /var/lib/localstack
-      DOCKER_HOST: unix:///var/run/docker.sock
+      # LOCALSTACK_VOLUME_DIR has no Floci equivalent. Do NOT set
+      # FLOCI_STORAGE_PERSISTENT_PATH to redirect this -- Floci's
+      # entrypoint (docker-entrypoint.sh) auto-chowns its default
+      # path, /app/data, to the non-root `floci` user (uid 1001) on
+      # every start, self-healing a root-owned host bind-mount.
+      # That self-heal is hardcoded to /app/data only; overriding the
+      # persistent path to somewhere else (e.g. /var/lib/localstack)
+      # skips it and the container refuses to start if the host
+      # directory isn't already writable by uid 1001. Mounting the
+      # volume straight at /app/data below keeps the self-heal intact.
 
       # --------------------
       # AWS SDK visibility
       # Visible to Lambda containers
       # --------------------
-      AWS_ENDPOINT_URL: http://localstack:4566
+      AWS_ENDPOINT_URL: http://floci:4566
       AWS_REGION: us-east-1
       AWS_DEFAULT_REGION: us-east-1
 
       # --------------------
-      # Enabled services
-      # --------------------
-      SERVICES: >-
-        s3,
-        apigateway,
-        cloudformation,
-        logs,
-        iam,
-        sts,
-        cloudwatch,
-        secretsmanager,
-        ssm,
-        cognito-idp,
-        ecs,
-        elasticache,
-        ec2
-
-      # --------------------
-      # Seed DB connection string into Secrets Manager
+      # Seed DB connection string (consumed by nothing today -- init/localstack/ is empty)
       # --------------------
       DB_USER: ${DB_USER:-juris}
       DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
@@ -110,16 +103,8 @@ services:
       DB_HOST: postgres
       DB_PORT: 5432
 
-      # --------------------
-      # Misc
-      # --------------------
-      AWS_SUPPRESS_XDG_RUNTIME_DIR: "true"
-      PYTHONUNBUFFERED: "1"
-      ENFORCE_IAM_POLICIES: "false"
-
     volumes:
-      - ./.volumes/localstack:/var/lib/localstack
-      - /var/run/docker.sock:/var/run/docker.sock:z
+      - ./.volumes/floci:/app/data
       # Initialization scripts — source controlled
       - ./init/localstack:/etc/localstack/init/ready.d:ro
 

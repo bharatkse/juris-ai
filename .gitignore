@@ -224,6 +224,30 @@ deploy/docker/.volumes/
 .sam/
 .aws-sam/
 
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+*.tfplan*
+
+# All .tfvars are ignored by default -- they commonly hold
+# environment-specific or sensitive values (see prod.*.tfvars, not
+# yet created). dev.floci.tfvars is the one deliberate exception:
+# safe, no real secrets (fake "test"/"test" Floci credentials only),
+# and needed for `make iac-apply` to work out of the box.
+*.tfvars
+*.tfvars.json
+!deploy/terraform/dev.floci.tfvars
+
+# .terraform.lock.hcl is NOT ignored -- Terraform's own guidance is to
+# commit it so provider version selection is reproducible.
+
 
 # TEST DB
 pytests.db
@@ -231,8 +255,6 @@ pytests.db
 
 ./.process_dataset
 .processed_datasets/
-
-localstack-data
 
 
 # Claude .md files

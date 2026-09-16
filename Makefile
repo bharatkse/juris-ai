@@ -58,12 +58,12 @@ export RAGAS_DO_NOT_TRACK
 #   make <target> MODE=dev
 #   make <target> MODE=snd
 # ============================================================================
-LOCALSTACK_HEALTH_URL := http://localhost:4566/_localstack/health
+FLOCI_HEALTH_URL := http://localhost:4566/_localstack/health
 
-_LOCALSTACK_UP := $(shell curl -sf --max-time 2 $(LOCALSTACK_HEALTH_URL) > /dev/null 2>&1 && echo "yes" || echo "no")
+_FLOCI_UP := $(shell curl -sf --max-time 2 $(FLOCI_HEALTH_URL) > /dev/null 2>&1 && echo "yes" || echo "no")
 
 ifndef MODE
-  ifeq ($(_LOCALSTACK_UP),yes)
+  ifeq ($(_FLOCI_UP),yes)
     MODE := dev
   else
     MODE := snd
@@ -87,6 +87,25 @@ ifndef FILES
   else
     FILES := main
   endif
+endif
+
+# ============================================================================
+# Terraform / IaC provider selection
+#
+# Only PROVIDER=aws has a real implementation today -- see
+# deploy/terraform/modules/*/gcp|azure/README.md for the not-yet-built
+# contracts. Passing PROVIDER=gcp fails fast with a clear message via
+# the provider_name variable's own validation block, not a Makefile
+# guard, so the error is the same whether Terraform is invoked
+# through make or directly.
+# ============================================================================
+PROVIDER ?= aws
+TF_DIR   := deploy/terraform
+
+ifeq ($(MODE),dev)
+  TFVARS := dev.floci.tfvars
+else
+  TFVARS := prod.$(PROVIDER).tfvars
 endif
 
 # ============================================================================
@@ -123,7 +142,7 @@ DOCKER_COMPOSE := docker compose \
 	-p $(DOCKER_PROJECT_NAME)
 
 DOCKER_COMPOSE_MAIN_FILE       := deploy/docker/docker-compose.yml
-DOCKER_COMPOSE_LOCALSTACK_FILE := deploy/docker/docker-compose-localstack.yml
+DOCKER_COMPOSE_LOCALSTACK_FILE := deploy/docker/docker-compose-floci.yml
 DOCKER_COMPOSE_INFRA_FILE      := deploy/docker/docker-compose-infra.yml
 DOCKER_COMPOSE_LLM_FILE        := deploy/docker/docker-compose-llm.yml
 DOCKER_COMPOSE_SEARCHXNG_FILE  := deploy/docker/docker-compose-searxng.yml
@@ -140,7 +159,7 @@ DOCKER_COMPOSE_ALL_FILES := \
 	-f $(DOCKER_COMPOSE_LLM_FILE) \
 	-f $(DOCKER_COMPOSE_SEARCHXNG_FILE)
 
-LOCALSTACK_APP_CONTAINER := localstack
+FLOCI_APP_CONTAINER := floci
 API_APP_CONTAINER        := api
 
 # Default values (safe fallback)
@@ -162,7 +181,7 @@ ifeq ($(MODE),dev)
     APP_CONTAINERS := $(API_APP_CONTAINER)
   else
 	COMPOSE_FILES  := -f $(DOCKER_COMPOSE_LOCALSTACK_FILE)
-	APP_CONTAINERS := $(LOCALSTACK_APP_CONTAINER)
+	APP_CONTAINERS := $(FLOCI_APP_CONTAINER)
   endif
 else ifeq ($(MODE),snd)
   COMPOSE_FILES  := -f $(DOCKER_COMPOSE_MAIN_FILE)
@@ -217,7 +236,7 @@ _require-dev:
 	  echo "$(RED) This target requires MODE=dev$(RESET)"; \
 	  exit 1; \
 	fi; \
-	if [ "$(_LOCALSTACK_UP)" != "yes" ]; then \
+	if [ "$(_FLOCI_UP)" != "yes" ]; then \
 	  echo "$(YELLOW)⚠ LocalStack is not running, but MODE=dev is forced$(RESET)"; \
 	fi
 
@@ -283,6 +302,7 @@ env-info: ## Show active environment and resolved configuration
 
 	@echo "  $(GREEN)MODE$(RESET)            $(MODE)"
 	@echo "  $(GREEN)FILES$(RESET)           $(FILES)"
+	@echo "  $(GREEN)PROVIDER$(RESET)        $(PROVIDER)"
 	@echo "  $(GREEN)REGION$(RESET)          $(AWS_REGION)"
 	@echo "  $(GREEN)STACK$(RESET)           $(STACK_NAME)"
 	@echo "  $(GREEN)TEMPLATE$(RESET)        $(TEMPLATE)"
@@ -294,7 +314,7 @@ env-info: ## Show active environment and resolved configuration
 	  echo "  $(GREEN)ENDPOINT$(RESET)        $(ENDPOINT)"; \
 	fi
 
-	@echo "  $(GREEN)LocalStack$(RESET)      $(_LOCALSTACK_UP)"
+	@echo "  $(GREEN)LocalStack$(RESET)      $(_FLOCI_UP)"
 	@echo ''
 	@echo "  Override with: $(YELLOW)make <target> MODE=dev|snd FILES=main|both|local$(RESET)"
 	@echo ''
@@ -671,6 +691,35 @@ cf-delete: ## Clean local Docker/SAM resources
 	@$(MAKE) clean-local || true
 
 # ============================================================================
+# Terraform / IaC (multi-cloud Phase 1 -- AWS only today)
+# ============================================================================
+
+.PHONY: iac-init iac-plan iac-apply iac-output iac-destroy
+
+iac-init: ## Initialize the Terraform working directory
+	@cd $(TF_DIR) && terraform init
+
+iac-plan: iac-init ## Show the Terraform execution plan [PROVIDER=aws]
+	@cd $(TF_DIR) && $(AWS_ENV) terraform plan \
+	  -var-file=$(TFVARS) \
+	  -var="provider_name=$(PROVIDER)"
+
+iac-apply: docker-up iac-init ## Apply the Terraform configuration [PROVIDER=aws]
+	@cd $(TF_DIR) && $(AWS_ENV) terraform apply \
+	  -var-file=$(TFVARS) \
+	  -var="provider_name=$(PROVIDER)" \
+	  -auto-approve
+
+iac-output: ## Show Terraform outputs
+	@cd $(TF_DIR) && terraform output
+
+iac-destroy: ## Destroy Terraform-managed infrastructure [PROVIDER=aws]
+	@cd $(TF_DIR) && $(AWS_ENV) terraform destroy \
+	  -var-file=$(TFVARS) \
+	  -var="provider_name=$(PROVIDER)" \
+	  -auto-approve
+
+# ============================================================================
 # Testing
 # ============================================================================
 
@@ -752,9 +801,9 @@ clean-local: ## Remove SAM artifacts and LocalStack persistent data
 	@echo "$(CYAN)Cleaning SAM artifacts and LocalStack data...$(RESET)"
 	@rm -rf .aws-sam
 	@docker run --rm \
-	  -v "$$(pwd)/docker/init/localstack:/var/lib/localstack" \
+	  -v "$$(pwd)/deploy/docker/.volumes/floci:/data" \
 	  alpine \
-	  sh -c "rm -rf /var/lib/localstack/*"
+	  sh -c "rm -rf /data/*"
 
 restart-hard: ## Wipe local environment and redeploy
 	@echo "$(YELLOW)HARD RESET — wiping local environment$(RESET)"
@@ -817,7 +866,7 @@ help: ## Show available Make targets
 	@echo '$(CYAN)$(BOLD)Juris AI — Make Targets$(RESET)'
 	@echo ''
 
-	@if [ "$(_LOCALSTACK_UP)" = "yes" ]; then \
+	@if [ "$(_FLOCI_UP)" = "yes" ]; then \
 	  echo "  $(GREEN)Active env:$(RESET) $(BOLD)dev$(RESET)  (LocalStack detected)"; \
 	else \
 	  echo "  $(YELLOW)Active env:$(RESET) $(BOLD)snd$(RESET)  (LocalStack not detected)"; \

@@ -18,7 +18,7 @@
 #
 # Cloud/RDS role separation is explicitly out of scope -- this script
 # is mounted only into the local docker-compose Postgres container
-# (docker-compose-localstack.yml's `postgres` service), not any cloud
+# (docker-compose-floci.yml's `postgres` service), not any cloud
 # provisioning path.
 #
 # Runs as POSTGRES_USER (the admin/owner role, set by the postgres

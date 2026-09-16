@@ -1,10 +1,20 @@
 # Juris-AI Development Guide
 
-The **Makefile is the primary entry point** for local development, testing, code quality, database migrations, Docker, LocalStack, SAM, and observability.
+The **Makefile is the primary entry point** for local development, testing, code quality, database migrations, Docker, Floci, SAM, and observability.
 
 You generally should not need to run raw Docker, Poetry, Alembic, SAM, or AWS CLI commands for normal development.
 
-The Makefile also auto-detects the active environment from LocalStack health.
+The Makefile also auto-detects the active environment from Floci health.
+
+> Floci is a drop-in, MIT-licensed local AWS emulator that replaced
+> LocalStack here (see `claude.md`'s Known gaps for the one rough
+> edge found during that swap). It serves the same
+> `/_localstack/health` endpoint for compatibility. Most internal
+> Makefile identifiers were renamed to match (`FLOCI_HEALTH_URL`,
+> `_FLOCI_UP`, `FLOCI_APP_CONTAINER`) — the `DOCKER_COMPOSE_LOCALSTACK_FILE`
+> variable name, the `ls-*` target names, and `make env-info`'s/`make help`'s
+> printed labels below were deliberately left as "LocalStack" (see
+> the repo-wide LocalStack sweep for the reasoning per item).
 
 ---
 
@@ -38,7 +48,7 @@ Before starting, make sure the following are installed:
 - Make
 - Git
 
-For local development, LocalStack is required.
+For local development, Floci is required.
 
 ---
 
@@ -48,14 +58,14 @@ The Makefile automatically determines the environment:
 
 | Environment | Meaning                                     |
 | ----------- | ------------------------------------------- |
-| `dev`       | Local development using Docker + LocalStack |
+| `dev`       | Local development using Docker + Floci      |
 | `snd`       | Shared AWS environment                      |
 
-Detection is based on LocalStack health:
+Detection is based on Floci health:
 
 ```text
-LocalStack running      → MODE=dev
-LocalStack not running  → MODE=snd
+Floci running      → MODE=dev
+Floci not running  → MODE=snd
 ```
 
 You can always override the detected mode:
@@ -85,10 +95,10 @@ This shows the resolved configuration, including:
 - CloudFormation stack
 - template
 - AWS region
-- LocalStack status
+- Floci status
 - S3 bucket
 
-Example:
+Example (the Makefile's own output still prints the historical `LocalStack` label — see the note in the introduction above):
 
 ```text
 ENV             dev
@@ -173,7 +183,7 @@ Local development uses:
 - Docker
 - PostgreSQL
 - Redis
-- LocalStack
+- Floci
 - AWS SAM
 - OpenTelemetry Collector
 - Prometheus
@@ -334,9 +344,9 @@ make alembic-stamp rev=head
 
 ---
 
-# 9. LocalStack
+# 9. Floci
 
-LocalStack is automatically detected by the Makefile.
+Floci is automatically detected by the Makefile.
 
 Check:
 
@@ -344,7 +354,7 @@ Check:
 make env-info
 ```
 
-You should see:
+You should see (still labeled `LocalStack` in the Makefile's own output — see the note in the introduction):
 
 ```text
 MODE        dev
@@ -375,7 +385,7 @@ List APIs and keys together:
 make ls-api
 ```
 
-List all supported LocalStack resources:
+List all supported Floci resources:
 
 ```bash
 make ls-resources
@@ -397,9 +407,19 @@ These resource inspection commands require development mode.
 
 ---
 
-# 10. Build and Deploy the SAM / CloudFormation Application
+# 10. Build and Deploy the Application
 
-## Build
+Two infrastructure-as-code paths exist side by side. **SAM/CloudFormation
+is the original path and still works.** **Terraform
+(`deploy/terraform/`) is the newer, multi-cloud-oriented path** — AWS
+is fully built and parity-tested against it; GCP/Azure exist only as
+interface-contract stubs (`deploy/terraform/modules/*/{gcp,azure}/README.md`),
+not working code. Prefer Terraform for new infrastructure work; SAM
+remains available and is not scheduled for removal yet.
+
+## SAM / CloudFormation (existing)
+
+### Build
 
 ```bash
 make cf-build MODE=dev
@@ -407,7 +427,7 @@ make cf-build MODE=dev
 
 The Makefile exports the main Poetry dependencies and runs SAM build.
 
-## Deploy locally
+### Deploy locally
 
 ```bash
 make cf-deploy MODE=dev
@@ -415,17 +435,66 @@ make cf-deploy MODE=dev
 
 This builds the application and deploys the selected CloudFormation stack.
 
-## Check stack status
+### Check stack status
 
 ```bash
 make cf-status MODE=dev
 ```
 
-## View CloudFormation events
+### View CloudFormation events
 
 ```bash
 make cf-logs MODE=dev
 ```
+
+## Terraform (new)
+
+### Initialize
+
+```bash
+make iac-init
+```
+
+Run once per checkout, and again any time a module is added.
+
+### Plan
+
+```bash
+make iac-plan PROVIDER=aws
+```
+
+### Deploy locally
+
+```bash
+make iac-apply PROVIDER=aws
+```
+
+Applies all four Phase 1 modules (`secrets`, `api-gateway`, `storage`,
+`observability`) against Floci, using `deploy/terraform/dev.floci.tfvars`.
+
+### Show outputs
+
+```bash
+make iac-output
+```
+
+### Destroy
+
+```bash
+make iac-destroy PROVIDER=aws
+```
+
+> **Do not run `make iac-apply` a second time against an
+> already-applied Floci stack expecting a clean incremental update.**
+> A confirmed Floci defect on `aws_api_gateway_integration`'s
+> `timeout_milliseconds` makes any update attempt against an existing
+> Floci-created integration fail outright — see `claude.md`'s Known
+> gaps. Always `make iac-destroy` before re-applying against Floci;
+> real AWS deploys are unaffected.
+
+`PROVIDER` only accepts `aws` today — anything else fails fast with a
+clear message from the Terraform configuration's own variable
+validation, not a Makefile guard.
 
 ---
 
@@ -805,7 +874,7 @@ Remove local Compose services, volumes, images, and orphans:
 make docker-clean MODE=dev
 ```
 
-Clean SAM artifacts and LocalStack persistent data:
+Clean SAM artifacts and Floci persistent data:
 
 ```bash
 make clean-local
@@ -823,7 +892,7 @@ make restart-hard MODE=dev
 
 # 19. Troubleshooting
 
-## LocalStack is not detected
+## Floci is not detected
 
 Check:
 
@@ -831,7 +900,7 @@ Check:
 make env-info
 ```
 
-If you intended to use LocalStack, make sure it is running.
+If you intended to use Floci, make sure it is running.
 
 You can explicitly force development mode:
 
@@ -839,7 +908,7 @@ You can explicitly force development mode:
 make docker-up MODE=dev
 ```
 
-The Makefile will warn if LocalStack is not healthy.
+The Makefile will warn if Floci is not healthy.
 
 ---
 
@@ -933,7 +1002,7 @@ For local development, use:
 MODE=dev
 ```
 
-so AWS operations are directed toward LocalStack rather than real AWS.
+so AWS operations are directed toward Floci rather than real AWS.
 
 ---
 
@@ -1020,16 +1089,21 @@ make infra-logs MODE=dev
 | Database      | `alembic-current`   | Show current revision                  |
 | Database      | `alembic-history`   | Show migration history                 |
 | Database      | `alembic-revision`  | Create migration                       |
-| LocalStack    | `ls-s3`             | List S3 buckets                        |
-| LocalStack    | `ls-api-id`         | List API Gateway APIs                  |
-| LocalStack    | `ls-api-key`        | Show API key                           |
-| LocalStack    | `ls-api`            | List APIs and keys                     |
-| LocalStack    | `ls-resources`      | List LocalStack resources              |
-| LocalStack    | `ls-s3-objects`     | List S3 objects                        |
+| Floci         | `ls-s3`             | List S3 buckets                        |
+| Floci         | `ls-api-id`         | List API Gateway APIs                  |
+| Floci         | `ls-api-key`        | Show API key                           |
+| Floci         | `ls-api`            | List APIs and keys                     |
+| Floci         | `ls-resources`      | List Floci resources                   |
+| Floci         | `ls-s3-objects`     | List S3 objects                        |
 | SAM           | `cf-build`          | Build SAM application                  |
 | SAM           | `cf-deploy`         | Deploy CloudFormation                  |
 | SAM           | `cf-status`         | Show stack status                      |
 | SAM           | `cf-logs`           | Show stack events                      |
+| Terraform     | `iac-init`          | Initialize Terraform                   |
+| Terraform     | `iac-plan`          | Show execution plan                    |
+| Terraform     | `iac-apply`         | Apply configuration                    |
+| Terraform     | `iac-output`        | Show outputs                           |
+| Terraform     | `iac-destroy`       | Destroy managed infrastructure         |
 | Tests         | `test`              | Run all tests                          |
 | Tests         | `test-unit`         | Run unit tests                         |
 | Tests         | `test-integration`  | Run integration tests                  |
@@ -1047,7 +1121,7 @@ make infra-logs MODE=dev
 | Poetry        | `poetry-lock`       | Regenerate lock                        |
 | Poetry        | `poetry-show`       | Show dependency tree                   |
 | Poetry        | `poetry-export`     | Export requirements                    |
-| Cleanup       | `clean-local`       | Remove SAM/LocalStack data             |
+| Cleanup       | `clean-local`       | Remove SAM/Floci data                  |
 | Cleanup       | `restart-hard`      | Reset and redeploy local environment   |
 | Development   | `dev`               | Start complete development environment |
 
