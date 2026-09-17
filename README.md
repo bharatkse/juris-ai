@@ -1,6 +1,8 @@
 # ⚖️ Juris AI
 
-AI-powered legal assistant for Indian law — multi-agent reasoning, hybrid RAG retrieval, self-hostable.
+**Legal research and contract review, grounded in real sources — not model guesswork.**
+
+Ask a question about Indian law and get an answer backed by actual statutes and case law, with citations you can check. Hand over a contract and get its risks, ambiguities, and obligations flagged in plain language. Anything that reaches outside the system — sending an email, posting to Slack — waits for your explicit approval first. Self-hosted, so your matters and documents stay on your own infrastructure.
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
 [![CI](https://github.com/bharatkse/juris-ai/actions/workflows/ci-server.yml/badge.svg)](https://github.com/bharatkse/juris-ai/actions/workflows/ci-server.yml)
@@ -9,14 +11,14 @@ AI-powered legal assistant for Indian law — multi-agent reasoning, hybrid RAG 
 
 ## Capabilities
 
-- **Hybrid RAG retrieval** — vector + keyword search fused via Reciprocal Rank Fusion, then cross-encoder reranked
-- **Policy-gated agent/tool architecture** — every tool call, LLM-proposed or system-forced, checked against a seeded, DB-backed permission policy before it runs
-- **Human-in-the-loop approval** — gated tools (email, Slack) pause execution via LangGraph's `interrupt()`/resume instead of running immediately; verified end-to-end against a real Postgres checkpointer
-- **PII redaction + harmful-content guardrails** — Presidio-based, with custom Indian-identifier recognizers, on every generated response
-- **Immutable compliance audit logging** — DB-trigger-enforced, independent of conversation history
-- **Per-user rate limiting and daily token quotas**
-- **Real-time response streaming** — guardrail-aware: content that gets redacted or blocked is never streamed, only the corrected final answer is
-- **AWS deployment** — via Terraform (parity-tested against a local Floci emulator) or AWS SAM/CloudFormation
+- **Grounded legal research** — answers backed by real source documents with citations, not model guesswork (hybrid vector + keyword retrieval, reranked for relevance)
+- **Contract review** — risks, ambiguities, and obligations flagged in plain language, with the relevant clause quoted alongside each finding
+- **Human approval before anything leaves the system** — sending an email or posting to Slack pauses for your sign-off; it never happens automatically
+- **Privacy-aware by default** — personal information, including Indian ID numbers, is automatically redacted from generated answers before you see them
+- **Tamper-proof audit trail** — every request and decision is logged in a way that can't be edited or deleted afterward, independent of your chat history
+- **Usage controls built in** — per-user rate limits and daily quotas out of the box
+- **Live, streaming answers** — text appears as it's generated, without ever streaming content that a later safety check would redact or block
+- **Ready for real cloud deployment** — Terraform and AWS SAM/CloudFormation paths, both tested against a local AWS emulator before you touch real infrastructure
 
 ## 🚀 Quick Start
 
@@ -40,11 +42,7 @@ Developer setup (running from source, tests) or a cloud deploy (Terraform/AWS SA
 
 ## Architecture
 
-FastAPI serves the HTTP/SSE layer. A LangGraph-compiled graph drives multi-agent execution: a **Planner** LLM call produces an `ExecutionPlan`, an **Executor** runs it (sequential/parallel/hybrid, derived structurally from step dependencies), each **Agent** reasons and proposes tool calls, and every tool call — LLM-proposed or system-forced — is checked against a seeded, DB-backed permission policy before the **Tool Registry** dispatches it to a retrieval, search, or parsing tool. Retrieval is hybrid: vector + keyword search fused with Reciprocal Rank Fusion, then cross-encoder reranked. Every response, streamed or not, passes through a guardrails layer (PII redaction, harmful-content review) before reaching the client, and an immutable compliance log records the request/decision trail independently of conversation history.
-
-<img src="docs/server/images/architecture.png" alt="Architecture" width="800">
-
-Full diagrams and current implementation status: [`docs/server/architecture/overview.md`](docs/server/architecture/overview.md).
+Under the hood, a multi-agent system plans, researches, and reasons before answering, with every generated response passing through a privacy and safety review before it reaches you. Full technical breakdown: [`docs/server/architecture/overview.md`](docs/server/architecture/overview.md).
 
 ## Repository Map
 
