@@ -6,8 +6,8 @@ services:
   # -----------------------------------------------------
   documents-server:
     build:
-      context: ../..
-      dockerfile: deploy/docker/Dockerfile
+      context: ../../server
+      dockerfile: ../docker/server/Dockerfile
 
     container_name: juris_ai_documents_server
     restart: unless-stopped
@@ -18,10 +18,10 @@ services:
       - "8001:8001"
 
     env_file:
-      - ../../.env
+      - ../../server/.env
 
     volumes:
-      - ../../src:/juris_ai/src
+      - ../../server/src:/juris_ai/src
 
     healthcheck:
       test: ["CMD", "python", "-c",
@@ -41,8 +41,8 @@ services:
   # -----------------------------------------------------
   legal-search-server:
     build:
-      context: ../..
-      dockerfile: deploy/docker/Dockerfile
+      context: ../../server
+      dockerfile: ../docker/server/Dockerfile
 
     container_name: juris_ai_legal_search_server
     restart: unless-stopped
@@ -53,10 +53,10 @@ services:
       - "8002:8002"
 
     env_file:
-      - ../../.env
+      - ../../server/.env
 
     volumes:
-      - ../../src:/juris_ai/src
+      - ../../server/src:/juris_ai/src
 
     healthcheck:
       test: ["CMD", "python", "-c",
@@ -80,8 +80,8 @@ services:
   # -----------------------------------------------------
   rag-server:
     build:
-      context: ../..
-      dockerfile: deploy/docker/Dockerfile.rag
+      context: ../../server
+      dockerfile: ../docker/server/Dockerfile.rag
 
     container_name: juris_ai_rag_server
     restart: unless-stopped
@@ -95,10 +95,10 @@ services:
       DB_HOST: postgres
 
     env_file:
-      - ../../.env
+      - ../../server/.env
 
     volumes:
-      - ../../src:/juris_ai/src
+      - ../../server/src:/juris_ai/src
 
     depends_on:
       postgres:

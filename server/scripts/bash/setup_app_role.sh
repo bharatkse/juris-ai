@@ -3,7 +3,7 @@
 # (APP_DB_USER, e.g. juris_ai_app) against an already-running Postgres
 # container -- regardless of when its data volume was created.
 #
-# Why this exists: deploy/docker/init/postgres/01-create-app-role.sh
+# Why this exists: ../docker/server/init/postgres/01-create-app-role.sh
 # only runs automatically via docker-entrypoint-initdb.d, which
 # Postgres only executes the first time a container boots against an
 # EMPTY data volume. Anyone with a pre-existing local Postgres volume
@@ -16,7 +16,7 @@
 # Idempotent -- safe to run again any time (e.g. after rotating
 # APP_DB_PASSWORD in .env, or just to confirm current state). Shares
 # its actual SQL with the docker-entrypoint-initdb.d hook via
-# deploy/docker/init/postgres/_create_app_role.lib -- one source of
+# ../docker/server/init/postgres/_create_app_role.lib -- one source of
 # truth, not two versions that can drift.
 #
 # Usage: scripts/bash/setup_app_role.sh
@@ -30,7 +30,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 POSTGRES_CONTAINER="${POSTGRES_CONTAINER:-juris_ai_postgres}"
 
 # shellcheck source=/dev/null
-source "$REPO_ROOT/deploy/docker/init/postgres/_create_app_role.lib"
+source "$REPO_ROOT/../docker/server/init/postgres/_create_app_role.lib"
 
 if [[ ! -f "$REPO_ROOT/.env" ]]; then
     echo "error: $REPO_ROOT/.env not found. Copy env.example to .env and fill it in first." >&2

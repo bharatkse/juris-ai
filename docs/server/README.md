@@ -268,7 +268,7 @@ Prometheus
 Grafana
 ```
 
-If Tempo is included in `docker/docker-compose-infra.yml`, it should be managed alongside the observability stack.
+If Tempo is included in `../docker/server/docker-compose-infra.yml`, it should be managed alongside the observability stack.
 
 ---
 
@@ -280,7 +280,7 @@ The app connects as a restricted, non-superuser role (`APP_DB_USER`)
 distinct from the admin/migration role (`DB_USER`) that owns the
 schema. A **fresh** Postgres container/volume creates this role
 automatically on first boot
-(`deploy/docker/init/postgres/01-create-app-role.sh`, a
+(`../docker/server/init/postgres/01-create-app-role.sh`, a
 `docker-entrypoint-initdb.d` hook). That hook only ever runs against
 an empty volume, though — if your local Postgres volume predates this
 role split (or you're not sure), run:
@@ -411,9 +411,9 @@ These resource inspection commands require development mode.
 
 Two infrastructure-as-code paths exist side by side. **SAM/CloudFormation
 is the original path and still works.** **Terraform
-(`deploy/terraform/`) is the newer, multi-cloud-oriented path** — AWS
+(`../iac/terraform/`) is the newer, multi-cloud-oriented path** — AWS
 is fully built and parity-tested against it; GCP/Azure exist only as
-interface-contract stubs (`deploy/terraform/modules/*/{gcp,azure}/README.md`),
+interface-contract stubs (`../iac/terraform/modules/*/{gcp,azure}/README.md`),
 not working code. Prefer Terraform for new infrastructure work; SAM
 remains available and is not scheduled for removal yet.
 
@@ -470,7 +470,7 @@ make iac-apply PROVIDER=aws
 ```
 
 Applies all four Phase 1 modules (`secrets`, `api-gateway`, `storage`,
-`observability`) against Floci, using `deploy/terraform/dev.floci.tfvars`.
+`observability`) against Floci, using `../iac/terraform/dev.floci.tfvars`.
 
 ### Show outputs
 
@@ -943,7 +943,7 @@ then restart the `api` container so it picks up the (possibly new)
 `.env` values:
 
 ```bash
-docker compose -f deploy/docker/docker-compose.yml up -d --force-recreate --no-deps api
+docker compose -f ../docker/server/docker-compose.yml up -d --force-recreate --no-deps api
 ```
 
 See section 8 above for the full explanation.

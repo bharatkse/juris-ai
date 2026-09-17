@@ -33,4 +33,4 @@ calling convention regardless of which provider backs it.
 
 Not implemented. Do not add a `provider "google" {}` block to the root
 module's `providers.tf` until this module has real resources — see
-`deploy/terraform/main.tf`'s `provider_name` variable validation.
+`../../../main.tf`'s `provider_name` variable validation.
