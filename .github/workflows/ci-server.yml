@@ -89,6 +89,7 @@ jobs:
     uses: ./.github/workflows/code-quality.yaml
     with:
       python-version: ${{ needs.ci-setup.outputs.python-version }}
+      working-directory: server
 
   # ============================================================================
   # Backend Tests
@@ -102,7 +103,7 @@ jobs:
       python-version: ${{ needs.ci-setup.outputs.python-version }}
       app-environment: ${{ needs.ci-setup.outputs.app-environment }}
       searnxg-base-url: ${{ needs.ci-setup.outputs.searnxg-base-url }}
-      working-directory: .
+      working-directory: server
     secrets: inherit
 
   # ===========================================================================

@@ -41,7 +41,7 @@ runs:
       uses: actions/cache@v4
       with:
         path: |
-          .venv
+          ${{ inputs.working-directory }}/.venv
           ~/.cache/pypoetry
         key: venv-${{ runner.os }}-${{ inputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
         restore-keys: |

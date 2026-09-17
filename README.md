@@ -1,327 +1,110 @@
 # ⚖️ Juris AI
 
-Juris-AI is an AI-powered legal assistant built around explicit,
-LangGraph-based agent execution and provider-independent LLM
-infrastructure — planning, execution, reasoning, external actions,
-persistence, and API concerns are kept in separate layers so the
-system can grow from a small multi-agent app into a multi-agent,
-multi-provider legal platform.
+AI-powered legal assistant for Indian law — multi-agent reasoning, hybrid RAG retrieval, self-hostable.
+
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
+[![CI](https://github.com/bharatkse/juris-ai/actions/workflows/ci-server.yml/badge.svg)](https://github.com/bharatkse/juris-ai/actions/workflows/ci-server.yml)
+![Python](https://img.shields.io/badge/python-3.11%2B-blue)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
+
+## Capabilities
+
+- **Hybrid RAG retrieval** — vector + keyword search fused via Reciprocal Rank Fusion, then cross-encoder reranked
+- **Policy-gated agent/tool architecture** — every tool call, LLM-proposed or system-forced, checked against a seeded, DB-backed permission policy before it runs
+- **Human-in-the-loop approval** — gated tools (email, Slack) pause execution via LangGraph's `interrupt()`/resume instead of running immediately; verified end-to-end against a real Postgres checkpointer
+- **PII redaction + harmful-content guardrails** — Presidio-based, with custom Indian-identifier recognizers, on every generated response
+- **Immutable compliance audit logging** — DB-trigger-enforced, independent of conversation history
+- **Per-user rate limiting and daily token quotas**
+- **Real-time response streaming** — guardrail-aware: content that gets redacted or blocked is never streamed, only the corrected final answer is
+- **AWS deployment** — via Terraform (parity-tested against a local Floci emulator) or AWS SAM/CloudFormation
+
+## 🚀 Quick Start
+
+```bash
+git clone https://github.com/bharatkse/juris-ai.git && cd juris-ai
+./install.sh
+```
+
+First run builds the image locally (a few minutes) — this will switch to a fast image pull once the first versioned release is published. `install.sh` generates real secrets, prompts only for your `GROQ_API_KEY` ([get one here](https://console.groq.com/keys)), and waits for a real health check before printing the URL.
+
+- Swagger UI: http://localhost:8001/docs
+
+## Deployment Tiers
+
+| Tier | What | Best for |
+| --- | --- | --- |
+| **1 — `install.sh`** (Quick Start above) | Auto-generates secrets, prompts only for `GROQ_API_KEY`, waits for a real health check | Just want it running |
+| **2 — Manual `docker compose`** | `cp env.example .env`, fill in every value yourself, then `docker compose up -d --build` | Full control over configuration, or scripting your own install |
+
+Developer setup (running from source, tests) or a cloud deploy (Terraform/AWS SAM)? See [`docs/server/`](docs/server/).
 
 ## Architecture
 
-<img src="docs/images/architecture.png" alt="Architecture" width="800">
+FastAPI serves the HTTP/SSE layer. A LangGraph-compiled graph drives multi-agent execution: a **Planner** LLM call produces an `ExecutionPlan`, an **Executor** runs it (sequential/parallel/hybrid, derived structurally from step dependencies), each **Agent** reasons and proposes tool calls, and every tool call — LLM-proposed or system-forced — is checked against a seeded, DB-backed permission policy before the **Tool Registry** dispatches it to a retrieval, search, or parsing tool. Retrieval is hybrid: vector + keyword search fused with Reciprocal Rank Fusion, then cross-encoder reranked. Every response, streamed or not, passes through a guardrails layer (PII redaction, harmful-content review) before reaching the client, and an immutable compliance log records the request/decision trail independently of conversation history.
 
-Full diagrams and design rationale: [`docs/architecture/overview.md`](docs/architecture/overview.md).
-Current, real (not aspirational) module behavior:
-[`src/agentic/README.md`](src/agentic/README.md) ·
-[`src/rag/README.md`](src/rag/README.md).
+<img src="docs/server/images/architecture.png" alt="Architecture" width="800">
 
-## What's actually true today
+Full diagrams and current implementation status: [`docs/server/architecture/overview.md`](docs/server/architecture/overview.md).
 
-Stated plainly, not aspirationally — verified against the code and,
-where numeric, against a live run on 2026-09-13:
-
-- **RAG retrieval works.** Live evaluation against the golden
-  dataset (29 cases, `scripts/python/evaluate_rag_retrieval.py`): **22/29
-  passed (75.86% pass rate)**, `recall@5=0.759`, `precision@5=0.152`,
-  `mrr@5=0.602`. 7 failures share one pattern (expected evidence never
-  in the top 5) — see `src/rag/README.md` for detail.
-- **Agent tool-permission enforcement is live.** `agent_policies` is
-  a real, seeded DB table (previously a static, empty dict that made
-  every real agent execution crash outright). Both LLM-proposed and
-  system-forced tool calls are checked.
-- **Per-user rate limiting and daily token quota exist** on
-  `POST /chat` (fixed-window request-rate limit + token quota, 429 on
-  breach).
-- **`POST /chat/stream` is broken.** `ChatService.stream_chat()`
-  calls `AIOrchestrator.stream()`, which does not exist — every real
-  request to this endpoint raises `AttributeError` server-side. Known,
-  not yet fixed; rate limiting still applies to it regardless (it's
-  broken, not a quota bypass). See `src/agentic/README.md` → Known
-  gaps.
-- Only **Groq** and a **local Ollama model** (Qwen3, 32K context)
-  are actually wired up today — the LLM provider abstraction supports
-  more, but OpenAI/Anthropic have no concrete client yet.
-
-For the full, current list of open gaps (with owners), see `claude.md`
-→ Known gaps.
-
-## Execution Strategies
-
-Juris-AI supports three explicit execution strategies, derived
-structurally from each execution step's `depends_on` graph (not a
-mode switch the Executor reads — see `src/agentic/README.md`):
-
-### Sequential
+## Repository Map
 
 ```text
-Step A -> Step B -> Step C
+juris-ai/
+├── server/            # FastAPI backend -- source, tests, Makefile-driven dev workflow
+├── clients/           # Reserved for future first-party client apps (none yet)
+├── docker/
+│   ├── server/         # Backend Docker Compose stacks (dev, local AWS emulation, observability)
+│   └── clients/        # Reserved for future client Docker assets (none yet)
+├── docs/
+│   ├── server/         # Backend architecture, setup guides, API reference
+│   └── clients/        # Reserved for future client docs (none yet)
+├── iac/
+│   ├── terraform/      # Multi-cloud IaC (AWS built and parity-tested; GCP/Azure are stubs)
+│   └── cloud/          # AWS SAM/CloudFormation templates (original deploy path)
+├── legal/              # Commercial licensing terms
+├── docker-compose.yml   # Release bundle: run Juris AI (builds from source until first GHCR publish)
+├── install.sh           # Release-flow installer -- see Quick Start above
+├── env.example          # Release-flow configuration template
+└── claude.md            # Working conventions and the authoritative Known-gaps list
 ```
 
-### Parallel
+## Data Processing & Privacy
 
-```text
-          ExecutionPlan
-               │
-        ┌──────┼──────┐
-        ▼      ▼      ▼
-      Agent A Agent B Agent C
-        │      │      │
-        └──────┼──────┘
-               ▼
-           Aggregator
-```
+Describes what the code actually does — not a legal privacy policy. If you deploy this for others, you own your own compliance obligations.
 
-### Hybrid
-
-```text
-Step A -> Step B -> ┬─ Step C ─┐
-                     └─ Step D ─┴─> Step E
-```
-
----
-
-# ✨ Features
-
-- AI-powered legal assistant (Legal, Contract agents)
-- LangGraph-based execution graph, derived from explicit step dependencies
-- LLM-based execution planning, provider-independent LLM abstraction
-- Hybrid (vector + keyword) retrieval with RRF fusion and cross-encoder reranking
-- Document retrieval, upload parsing (PDF/DOCX/text/Markdown), and web search
-- Prompt-injection screening on ingested, fetched, and uploaded content
-- Per-user rate limiting and daily token quota
-- Conversation memory: rolling cross-conversation summarization
-- Conversation and event persistence
-- User registration and authentication
-- FastAPI REST APIs with OpenAPI documentation
-- Secure password hashing using Argon2 (`pwdlib`)
-- PostgreSQL + pgvector, SQLAlchemy 2.x, Alembic migrations
-- Environment-based configuration using Pydantic Settings
-- Docker and Docker Compose support
-- Automated testing, linting, formatting, and CI/CD
-
----
-
-# 🚀 Quick Start
-
-## Clone the repository
-
-```bash
-git clone <repository-url>
-cd juris-ai
-```
-
-## Set up commit signing (required for PRs)
-
-Both `develop` and `main` require every commit to be signed before it
-can merge. Set this up now, before your first commit — see
-[`docs/setup/commit-signing.md`](docs/setup/commit-signing.md).
-
-## Create a virtual environment
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-```
-
-## Install System Dependency
-
-```bash
-make bootstrap
-```
-
-## Install dependencies
-
-```bash
-poetry install
-```
-
-## Configure environment
-
-```bash
-cp env.example .env
-```
-
-Update the required values in `.env` — at minimum `SECRET_KEY`,
-`JWT_SECRET_KEY`, `DB_*`, and `GROQ_API_KEY`. Rate limiting, the
-`legal` agent's web-research grant, and the faithfulness-evaluation
-backend all have working defaults but are worth reviewing — see the
-comments in `env.example`.
-
-## Start the application
-
-```bash
-make dev-deploy
-```
-
-## Set up local DB role separation
-
-The app connects to Postgres as a restricted, non-superuser role
-(`APP_DB_USER`/`APP_DB_PASSWORD` in `.env`) distinct from the
-admin/migration role (`DB_USER`/`DB_PASSWORD`) that owns the schema
-and runs migrations. A fresh Postgres container creates this role
-automatically on first boot, but **if your local Postgres volume
-already existed before this**, run it explicitly once (safe to
-re-run any time):
-
-```bash
-make db-setup-role
-```
-
-Do this *before* `make alembic-upgrade` below — one migration
-restricts this role's access to a specific table, which requires the
-role to already exist.
-
-## Run database migrations
-
-```bash
-make alembic-upgrade
-```
-
-The API will be available at:
-
-- Swagger UI: http://localhost:8001/docs
-- ReDoc: http://localhost:8001/redoc
-
-Observability containers:
-
-- Grafana: http://localhost:3000
-- Prometheus: http://localhost:9090
-
-For Grafana, the default login is typically `admin` / `admin` unless
-you configured credentials through `.env` or the Compose file.
-
----
-
-# 📂 Project Structure
-
-```text
-src/
-├── api/                # HTTP layer: routes, auth, validation, SSE -- no AI logic
-├── application/         # Services (chat, conversation, auth), authorization (RBAC, capability, approval)
-├── agentic/             # Planning, orchestration, execution, agents, tools -- see src/agentic/README.md
-├── rag/                 # Ingestion, indexing, hybrid retrieval, evaluation -- see src/rag/README.md
-├── adapters/            # External I/O: DB (SQLAlchemy), LLM/MCP/search/storage clients, security, observability
-├── core/                # DTOs, exceptions, enums, shared models -- no dependency on any layer above
-├── wiring/              # Dependency-injection composition root and factories
-└── main.py              # Application entry point
-```
-
-This replaces an older, flatter layout (`agents/`, `services/`,
-`repositories/`, `tools/`, etc. all directly under `src/`) — the
-current structure groups by architectural layer instead. See
-`claude.md`'s Layer map for the dependency rule between these
-(`core/` must never import from anything above it).
-
----
-
-# 🛠 Technology Stack
-
-| Layer              | Technology              |
-| ------------------ | ----------------------- |
-| Language           | Python 3.11+            |
-| Framework          | FastAPI                 |
-| ASGI Server        | Uvicorn                 |
-| Database           | PostgreSQL + pgvector   |
-| ORM                | SQLAlchemy 2.x          |
-| Database Migration | Alembic                 |
-| Validation         | Pydantic v2              |
-| Authentication     | pwdlib (Argon2)         |
-| Agent execution    | LangGraph               |
-| AI Providers       | Groq (primary), Ollama/local (Qwen3) |
-| Containerization   | Docker & Docker Compose |
-| Code Quality       | Ruff, MyPy, Pre-commit  |
-| Testing            | Pytest                  |
-
----
-
-# 🔄 Request Lifecycle
-
-For a normal chat request (`POST /chat`) — the real graph-based path,
-not the `BaseAgent.run()`/`stream()` methods (dead code, see
-`src/agentic/README.md`):
-
-```mermaid
-flowchart TD
-    A[POST /chat] --> B["enforce_usage_limits<br/>(rate limit + token quota)"]
-    B --> C[ChatService]
-    C -->|create USER event| D[AIOrchestrator]
-    D --> E["Planner<br/>(LLM #1, temperature=0.0)"]
-    E --> F[ExecutionPlan]
-    F --> G["Executor -> compiled LangGraph"]
-    G --> H["Agent<br/>(LLM #2, temperature=0.2)"]
-    H -->|TOOL_CALL, policy-checked| I["Tool Registry<br/>(Retriever / Search / Parser)"]
-    I --> H
-    H -->|FINAL, quality-gated| J["AgentResponseMapper<br/>(citations/sources)"]
-    J --> K[ResponseValidator]
-    K --> L[Aggregator]
-    L --> D
-    D --> C
-    C -->|create ASSISTANT event<br/>record token usage<br/>COMMIT| M[API Response]
-```
-
-Full detail, including the FINAL quality gate's two remedy branches
-and the rate-limiting sequence: `src/agentic/README.md`.
-
----
-
-# 🧩 Responsibility Matrix
-
-| Component                    | Owns                                   | Must NOT Own            |
-| ---------------------------- | --------------------------------------- | ----------------------- |
-| **FastAPI**                  | HTTP, authentication, validation, SSE  | AI logic                |
-| **ChatService**              | Conversation lifecycle, DB transaction | Planning                |
-| **AIOrchestrator**           | AI lifecycle coordination              | Agent execution         |
-| **Planner**                  | Intent and `ExecutionPlan`             | Actual execution        |
-| **Executor**                 | Plan execution (via LangGraph)         | Planning/reasoning      |
-| **Agent**                    | Domain reasoning                       | Infrastructure          |
-| **Tool**                     | External actions                       | Domain reasoning        |
-| **AgentPolicyGuard**         | Tool-call authorization                | Tool execution          |
-| **Agent Registry**           | Agent lookup                           | Agent execution         |
-| **Tool Registry**            | Tool lookup                            | Tool execution          |
-| **LLM client abstraction**   | Provider translation                   | Business logic          |
-| **Aggregator**               | Merge outputs/provenance               | Planning                |
-| **AnswerQualityPolicy**      | Gate FINAL answers                     | Answer generation       |
-| **UsageService**             | Rate limit + token quota               | Chat business logic     |
-| **ConversationEventService** | DB event persistence                   | AI execution            |
-| **Observability**            | Logs, traces, metrics                  | Business decisions      |
-
----
-
-# 📚 Documentation
-
-| Document | Description |
+| What | Detail |
 | --- | --- |
-| [`docs/README.md`](docs/README.md) | Development guide (Makefile-driven workflow, environments, troubleshooting) |
-| [`docs/architecture/overview.md`](docs/architecture/overview.md) | System architecture — intended design, with status callouts marking known divergences |
-| [`docs/architecture/api.md`](docs/architecture/api.md) | REST API reference |
-| [`src/agentic/README.md`](src/agentic/README.md) | Real current behavior: planning, orchestration, execution, agents, tools |
-| [`src/rag/README.md`](src/rag/README.md) | Real current behavior: ingestion, indexing, retrieval, evaluation |
-| [`claude.md`](claude.md) | Repo-wide working conventions and the authoritative Known-gaps list |
+| LLM inference | **Groq** (`GROQ_API_KEY`) — chat messages + retrieved context, always on |
+| Web search | **Brave Search** — only when the web-research tool runs |
+| Tracing | **LangSmith** — off by default; can include conversation content if enabled |
+| PII redaction | Presidio-based, on generated output only; custom `IN_PAN`/`IN_AADHAAR` recognizers |
+| Local data | Legal corpus (`raw_datasets/`) is local public-domain text; local Ollama model runs on your own infra |
+| Retention | No automatic deletion — conversations/events persist in Postgres until you remove them |
 
----
+## Audit Status
 
-# 👨‍💻 Maintainer
+| Area | Status |
+| --- | --- |
+| Compliance logging | Real, DB-trigger-enforced immutability on `compliance_log` — verified by e2e tests against a real Postgres instance |
+| Security | `python-jose` transitive-dependency gap found and fixed; verified end-to-end (login, JWT validation, tampered-token rejection) |
+| Streaming | `POST /chat/stream` works — guardrail-aware (redacted/blocked content is never streamed) — verified by e2e tests |
+| Known production gaps | No real `ENVIRONMENT=production` path · `DB_SECRET_ARN` unused by the app · 6 documented Floci emulator defects + 1 CloudFormation template defect |
+| Test suite | 1,219 passing (unit/e2e/smoke) · 2 known gaps tracked, not hidden · coverage via Codecov in CI |
 
-**Bharat Kumar**
+Full detail and owners: [`claude.md`](claude.md) → Known gaps.
 
-Senior Software Engineer | Backend & Cloud
+## Contributing
 
-📧 `kumar.bhart28@gmail.com`
+- Backend: see [`server/CONTRIBUTING.md`](server/CONTRIBUTING.md).
+- Clients: see [`clients/CONTRIBUTING.md`](clients/CONTRIBUTING.md).
 
-🔗 [LinkedIn](https://www.linkedin.com/in/bharat-kumar28)
+## Community
 
----
+- Found a bug or want a feature? Open a [GitHub Issue](https://github.com/bharatkse/juris-ai/issues).
+- Want to contribute code? See [`server/CONTRIBUTING.md`](server/CONTRIBUTING.md) or [`clients/CONTRIBUTING.md`](clients/CONTRIBUTING.md), then open a pull request.
 
-# 📄 License
+Nothing beyond GitHub exists yet — no Discord, Slack, or mailing list.
 
-This project is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0-only)**. See the `LICENSE` file for the full text.
+## License
 
-Need to keep your modifications or hosted offering proprietary? See [legal/COMMERCIAL-LICENSE.md](legal/COMMERCIAL-LICENSE.md) for commercial licensing options.
-
-### Licensing FAQ for self-hosters
-
-- **Running Juris AI unmodified (including as a network service)?** No obligation to disclose or publish anything. Use it privately or in your org with no source-sharing requirement.
-- **Modified it for internal use only, never exposed to outside users?** Still no disclosure obligation — the AGPL's network-use clause (§13) only triggers when other users interact with your modified version over a network.
-- **Modified it *and* let others interact with your modified version over a network** (e.g. offering it as a hosted service to customers or the public)? You must make the Corresponding Source of your modified version available to those users, per AGPL-3.0 §13.
-- **Just want to use it as a dependency/library in a separate proprietary project without networked interaction with it?** Talk to a lawyer — AGPL's copyleft can still reach combined/derivative works; this FAQ is not legal advice.
+AGPL-3.0-only — see [`LICENSE`](LICENSE). Need a proprietary/commercial license instead? See [`legal/COMMERCIAL-LICENSE.md`](legal/COMMERCIAL-LICENSE.md).

@@ -9,6 +9,10 @@ on:
       python-version:
         required: true
         type: string
+      working-directory:
+        required: false
+        type: string
+        default: .
 
 jobs:
   code-quality:
@@ -28,6 +32,7 @@ jobs:
         with:
           python-version: ${{ inputs.python-version }}
           poetry-groups: "--only=dev"
+          working-directory: ${{ inputs.working-directory }}
 
       - name: Cache pre-commit hooks
         uses: actions/cache@v4
@@ -41,7 +46,9 @@ jobs:
         uses: pre-commit/action@v3.0.1
 
       - name: Run Ruff Linter (Python Only)
+        working-directory: ${{ inputs.working-directory }}
         run: poetry run ruff check . --output-format=github
 
       - name: Run Ruff Formatter Check (Python Only)
+        working-directory: ${{ inputs.working-directory }}
         run: poetry run ruff format --check .

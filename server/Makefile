@@ -93,14 +93,14 @@ endif
 # Terraform / IaC provider selection
 #
 # Only PROVIDER=aws has a real implementation today -- see
-# deploy/terraform/modules/*/gcp|azure/README.md for the not-yet-built
+# ../iac/terraform/modules/*/gcp|azure/README.md for the not-yet-built
 # contracts. Passing PROVIDER=gcp fails fast with a clear message via
 # the provider_name variable's own validation block, not a Makefile
 # guard, so the error is the same whether Terraform is invoked
 # through make or directly.
 # ============================================================================
 PROVIDER ?= aws
-TF_DIR   := deploy/terraform
+TF_DIR   := ../iac/terraform
 
 ifeq ($(MODE),dev)
   TFVARS := dev.floci.tfvars
@@ -119,8 +119,8 @@ API_NAME := juris-ai-api-snd
 AWS_REGION := us-east-1
 ENDPOINT   := http://localhost:4566
 
-MAIN_TEMPLATE  := deploy/cloud/template.yaml
-ECS_TEMPLATE   := deploy/cloud/ecs-template.yaml
+MAIN_TEMPLATE  := ../iac/cloud/template.yaml
+ECS_TEMPLATE   := ../iac/cloud/ecs-template.yaml
 BUILD_TEMPLATE := .aws-sam/build/template.yaml
 
 POETRY  := poetry
@@ -141,11 +141,11 @@ DOCKER_COMPOSE := docker compose \
 	--env-file .env \
 	-p $(DOCKER_PROJECT_NAME)
 
-DOCKER_COMPOSE_MAIN_FILE       := deploy/docker/docker-compose.yml
-DOCKER_COMPOSE_LOCALSTACK_FILE := deploy/docker/docker-compose-floci.yml
-DOCKER_COMPOSE_INFRA_FILE      := deploy/docker/docker-compose-infra.yml
-DOCKER_COMPOSE_LLM_FILE        := deploy/docker/docker-compose-llm.yml
-DOCKER_COMPOSE_SEARCHXNG_FILE  := deploy/docker/docker-compose-searxng.yml
+DOCKER_COMPOSE_MAIN_FILE       := ../docker/server/docker-compose.yml
+DOCKER_COMPOSE_LOCALSTACK_FILE := ../docker/server/docker-compose-floci.yml
+DOCKER_COMPOSE_INFRA_FILE      := ../docker/server/docker-compose-infra.yml
+DOCKER_COMPOSE_LLM_FILE        := ../docker/server/docker-compose-llm.yml
+DOCKER_COMPOSE_SEARCHXNG_FILE  := ../docker/server/docker-compose-searxng.yml
 
 # Complete local Compose definition.
 #
@@ -385,7 +385,7 @@ docker-clean: ## Remove all local Compose services, volumes, and images
 
 # Prometheus (distroless), Tempo, and Grafana (distroless-slim) all run
 # as non-root by default (baked into each image's own USER directive)
-# and bind-mount deploy/docker/.volumes/<service> for persistent data.
+# and bind-mount ../docker/server/.volumes/<service> for persistent data.
 # Docker auto-creates a bind-mount target that doesn't exist yet as
 # root, not as the container's UID -- every one of these three then
 # fails on first boot with a plain "permission denied" writing to its
@@ -394,10 +394,10 @@ docker-clean: ## Remove all local Compose services, volumes, and images
 # sudo required -- same throwaway-alpine-container trick clean-local
 # already uses for host-filesystem operations.
 infra-volumes:
-	@mkdir -p deploy/docker/.volumes/prometheus deploy/docker/.volumes/tempo deploy/docker/.volumes/grafana
-	@docker run --rm -v "$$(pwd)/deploy/docker/.volumes/prometheus:/data" alpine chown -R 65532:65532 /data
-	@docker run --rm -v "$$(pwd)/deploy/docker/.volumes/tempo:/data" alpine chown -R 10001:10001 /data
-	@docker run --rm -v "$$(pwd)/deploy/docker/.volumes/grafana:/data" alpine chown -R 472:472 /data
+	@mkdir -p ../docker/server/.volumes/prometheus ../docker/server/.volumes/tempo ../docker/server/.volumes/grafana
+	@docker run --rm -v "$$(pwd)/../docker/server/.volumes/prometheus:/data" alpine chown -R 65532:65532 /data
+	@docker run --rm -v "$$(pwd)/../docker/server/.volumes/tempo:/data" alpine chown -R 10001:10001 /data
+	@docker run --rm -v "$$(pwd)/../docker/server/.volumes/grafana:/data" alpine chown -R 472:472 /data
 
 infra-build: docker-networks ## Pull observability infrastructure images
 	@$(DOCKER_COMPOSE) $(DOCKER_COMPOSE_ALL_FILES) \
@@ -537,7 +537,7 @@ format: ## Format code and run pre-commit hooks
 	@echo '$(CYAN)Running auto-formatters...$(RESET)'
 	@$(POETRY) run ruff check . --fix
 	@$(POETRY) run ruff format .
-	@$(POETRY) run pre-commit run --all-files
+	@$(POETRY) run pre-commit run -c ../.pre-commit-config.yaml --all-files
 	@echo '$(GREEN)Auto-formatting complete$(RESET)'
 
 type-check: ## Run mypy type checker
@@ -554,11 +554,11 @@ ci: ## Run lint, type-check, and tests
 
 pre-commit: ## Run pre-commit hooks
 	@echo '$(CYAN)Running pre-commit hooks...$(RESET)'
-	@$(POETRY) run pre-commit run --all-files
+	@$(POETRY) run pre-commit run -c ../.pre-commit-config.yaml --all-files
 	@echo '$(GREEN)Pre-commit hooks passed$(RESET)'
 
 install-hooks: ## Install pre-commit git hooks
-	@$(POETRY) run pre-commit install
+	@$(POETRY) run pre-commit install -c ../.pre-commit-config.yaml
 
 # ============================================================================
 # Alembic / Database Migrations
@@ -801,7 +801,7 @@ clean-local: ## Remove SAM artifacts and LocalStack persistent data
 	@echo "$(CYAN)Cleaning SAM artifacts and LocalStack data...$(RESET)"
 	@rm -rf .aws-sam
 	@docker run --rm \
-	  -v "$$(pwd)/deploy/docker/.volumes/floci:/data" \
+	  -v "$$(pwd)/../docker/server/.volumes/floci:/data" \
 	  alpine \
 	  sh -c "rm -rf /data/*"
 

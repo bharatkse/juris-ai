@@ -10,7 +10,7 @@ services:
     restart: unless-stopped
 
     env_file:
-      - ../../.env
+      - ../../server/.env
 
     command:
       - "--config=/etc/otelcol-contrib/config.yaml"
@@ -54,7 +54,7 @@ services:
       - "9090:9090"
 
     env_file:
-      - ../../.env
+      - ../../server/.env
 
     volumes:
       # Source-controlled configuration

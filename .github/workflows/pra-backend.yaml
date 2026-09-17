@@ -69,8 +69,10 @@ jobs:
         uses: ./.github/actions/setup-python-poetry
         with:
           python-version: ${{ inputs.python-version }}
+          working-directory: ${{ inputs.working-directory }}
 
       - name: Install extra test dependencies
+        working-directory: ${{ inputs.working-directory }}
         run: |
           poetry run pip install \
             keyring \
