@@ -762,34 +762,48 @@ make db-setup-role
 ```
 
 Idempotent — safe on every session, but only strictly needed once per
-Postgres volume (see section 8 above for why). Must come before Step 5.
+Postgres volume (see section 8 above for why). Must come before Step 6.
 
-## Step 5 — Apply database migrations
+## Step 5 — Set up the local Ollama model
+
+```bash
+make ollama-setup
+```
+
+Idempotent — checks `ollama list` inside the container first and
+skips the (multi-GB) pull if the configured model (`LLM_LOCAL_MODEL`
+in `.env`, default `qwen3:8b`) is already present. Only wired into
+explicit setup flows like this one and `make dev`/`make
+restart-hard`, never into a plain `docker compose up`, so a routine
+restart never blocks on a multi-GB download. See
+`scripts/bash/pull_ollama_models.sh`.
+
+## Step 6 — Apply database migrations
 
 ```bash
 make alembic-upgrade
 ```
 
-## Step 6 — Check containers
+## Step 7 — Check containers
 
 ```bash
 make docker-ps MODE=dev
 make infra-ps MODE=dev
 ```
 
-## Step 7 — Check application logs
+## Step 8 — Check application logs
 
 ```bash
 make docker-app-logs MODE=dev
 ```
 
-## Step 8 — Run tests
+## Step 9 — Run tests
 
 ```bash
 make test-unit
 ```
 
-## Step 9 — Run quality checks
+## Step 10 — Run quality checks
 
 ```bash
 make lint
@@ -814,6 +828,8 @@ Application Docker services
 Observability infrastructure
         ↓
 Local DB role separation setup (idempotent)
+        ↓
+Local Ollama model setup (idempotent)
         ↓
 Database migrations
         ↓
