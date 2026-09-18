@@ -130,7 +130,6 @@ STACK_NAME :=
 TEMPLATE  :=
 
 STACK_DEPLOY := main
-LLM_MODEL ?= qwen3:4b
 
 # ============================================================================
 # Docker Configuration
@@ -451,41 +450,42 @@ infra-ps: ## Show observability infrastructure containers
 # The LLM infrastructure has an independent lifecycle from the application.
 # ============================================================================
 
-.PHONY: llm-build llm-up llm-down llm-restart llm-logs llm-ps llm-pull
+.PHONY: llm-build llm-up llm-down llm-restart llm-logs llm-ps llm-pull ollama-setup
 
 llm-build: docker-networks ## Pull LLM infrastructure images
-	@$(DOCKER_COMPOSE) $(DOCKER_COMPOSE_LLM_FILE) \
+	@$(DOCKER_COMPOSE) -f $(DOCKER_COMPOSE_LLM_FILE) \
 	  pull \
 	  ollama
 
 llm-up: docker-networks ## Start Ollama and ensure the configured model is available
-	@$(DOCKER_COMPOSE) $(DOCKER_COMPOSE_LLM_FILE) \
+	@$(DOCKER_COMPOSE) -f $(DOCKER_COMPOSE_LLM_FILE) \
 	  up -d \
 	  ollama
 	@$(MAKE) llm-pull
 
-llm-pull: ## Pull the configured local LLM model into Ollama
-	@echo "Pulling Ollama model: $(LLM_MODEL)"
-	@docker exec juris_ai_ollama \
-	  ollama pull $(LLM_MODEL)
+llm-pull: ## Pull the configured local LLM model into Ollama (idempotent, skips if already present)
+	@scripts/bash/pull_ollama_models.sh
+
+ollama-setup: ## Start Ollama and ensure the configured model is pulled -- same idempotent pattern as db-setup-role
+	@$(MAKE) llm-up
 
 llm-down: ## Stop Ollama LLM infrastructure
-	@$(DOCKER_COMPOSE) $(DOCKER_COMPOSE_LLM_FILE) \
+	@$(DOCKER_COMPOSE) -f $(DOCKER_COMPOSE_LLM_FILE) \
 	  stop \
 	  ollama
 
 llm-restart: ## Restart Ollama LLM infrastructure
-	@$(DOCKER_COMPOSE) $(DOCKER_COMPOSE_LLM_FILE) \
+	@$(DOCKER_COMPOSE) -f $(DOCKER_COMPOSE_LLM_FILE) \
 	  restart \
 	  ollama
 
 llm-logs: ## Follow Ollama LLM infrastructure logs
-	@$(DOCKER_COMPOSE) $(DOCKER_COMPOSE_LLM_FILE) \
+	@$(DOCKER_COMPOSE) -f $(DOCKER_COMPOSE_LLM_FILE) \
 	  logs -f \
 	  ollama
 
 llm-ps: ## Show Ollama LLM infrastructure container
-	@$(DOCKER_COMPOSE) $(DOCKER_COMPOSE_LLM_FILE) \
+	@$(DOCKER_COMPOSE) -f $(DOCKER_COMPOSE_LLM_FILE) \
 	  ps \
 	  ollama
 
@@ -820,9 +820,11 @@ restart-hard: ## Wipe local environment and redeploy
 	@$(MAKE) infra-up MODE=dev
 	@echo "6) Setting up local dev DB role separation..."
 	@$(MAKE) db-setup-role
-	@echo "7) Applying database migrations..."
+	@echo "7) Setting up Ollama local model..."
+	@$(MAKE) ollama-setup
+	@echo "8) Applying database migrations..."
 	@$(MAKE) alembic-upgrade
-	@echo "8) Deploying SAM stack..."
+	@echo "9) Deploying SAM stack..."
 	@$(MAKE) cf-deploy MODE=dev
 
 # ============================================================================
@@ -844,6 +846,7 @@ dev: ## Start complete local development environment
 	@$(MAKE) dev-start
 	@$(MAKE) infra-up MODE=dev
 	@$(MAKE) db-setup-role
+	@$(MAKE) ollama-setup
 	@$(MAKE) alembic-upgrade
 	@$(MAKE) dev-deploy
 
