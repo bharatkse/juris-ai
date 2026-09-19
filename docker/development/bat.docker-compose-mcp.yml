@@ -24,8 +24,13 @@ services:
       - ../../server/src:/juris_ai/src
 
     healthcheck:
-      test: ["CMD", "python", "-c",
-        "import socket; socket.create_connection(('localhost', 8001), timeout=3)"]
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import socket; socket.create_connection(('localhost', 8001), timeout=3)",
+        ]
       interval: 15s
       timeout: 5s
       retries: 3
@@ -59,8 +64,13 @@ services:
       - ../../server/src:/juris_ai/src
 
     healthcheck:
-      test: ["CMD", "python", "-c",
-        "import socket; socket.create_connection(('localhost', 8002), timeout=3)"]
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import socket; socket.create_connection(('localhost', 8002), timeout=3)",
+        ]
       interval: 15s
       timeout: 5s
       retries: 3
@@ -91,34 +101,44 @@ services:
     ports:
       - "8003:8003"
 
-    environment:
-      DB_HOST: postgres
-
     env_file:
       - ../../server/.env
+
+    # Do not hard-code the database host. The server may use either
+    # the local PostgreSQL dependency (postgres) or an external database.
+    environment:
+      DB_HOST: ${DB_HOST:-postgres}
 
     volumes:
       - ../../server/src:/juris_ai/src
 
-    depends_on:
-      postgres:
-        condition: service_healthy
-
     healthcheck:
-      test: ["CMD", "python", "-c",
-        "import socket; socket.create_connection(('localhost', 8003), timeout=3)"]
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import socket; socket.create_connection(('localhost', 8003), timeout=3)",
+        ]
       interval: 15s
       timeout: 5s
       retries: 3
-      start_period: 30s   # longer — embedding model load on first start
+      start_period: 30s
 
     networks:
       - juris_ai_network
 
 
 # ============================================================================
-# External Network — same network as docker-compose.yml / docker-compose-infra.yml
+# Shared external network
+#
+# This network is intentionally external because the MCP servers, API server,
+# and local dependencies are managed by separate Compose projects/files.
+#
+# setup.sh is responsible for creating it once:
+#   docker network create juris_ai_network
 # ============================================================================
 networks:
   juris_ai_network:
+    name: juris_ai_network
     external: true

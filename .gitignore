@@ -260,7 +260,11 @@ pytests.db
 # Claude .md files
 CLAUDE.md
 claude.md
-
 .claude/
 
 .logs/
+
+# docker volume and .setup
+docker/.volumes/
+docker/.setup-state
+docker/dependencies/.volumes/

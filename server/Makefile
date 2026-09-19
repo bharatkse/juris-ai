@@ -2,7 +2,7 @@
 # Juris AI - Local Development Makefile
 #
 # Purpose:
-#   - Manage local development using LocalStack, Docker, SAM, and Poetry
+#   - Manage local development using Floci, Docker, SAM, and Poetry
 #   - Provide developer-friendly commands for setup, testing, deployment
 #   - Keep workflows CI-friendly and reproducible
 #
@@ -10,7 +10,7 @@
 #   - Makefile is the single entry point
 #   - Intent-based commands instead of raw CLI usage
 #   - Safe defaults with override-friendly variables
-#   - Auto-detects dev vs snd based on LocalStack health
+#   - Auto-detects dev vs snd based on Floci health
 #   - Application and observability use the same Docker Compose project
 # ============================================================================
 
@@ -51,8 +51,8 @@ export RAGAS_DO_NOT_TRACK
 # ============================================================================
 # Environment Detection
 #
-# LocalStack running  -> MODE=dev
-# LocalStack not found -> MODE=snd
+# Floci running  -> MODE=dev
+# Floci not found -> MODE=snd
 #
 # Override:
 #   make <target> MODE=dev
@@ -75,8 +75,8 @@ endif
 #
 # dev:
 #   FILES=main  -> application only
-#   FILES=both  -> application + LocalStack
-#   FILES=local -> LocalStack only
+#   FILES=both  -> application + Floci
+#   FILES=local -> Floci only
 #
 # snd:
 #   main application compose
@@ -134,32 +134,41 @@ STACK_DEPLOY := main
 # ============================================================================
 # Docker Configuration
 # ============================================================================
-DOCKER_PROJECT_NAME := juris-ai
-
 DOCKER_COMPOSE := docker compose \
-	--env-file .env \
-	-p $(DOCKER_PROJECT_NAME)
+	--env-file .env
 
 DOCKER_COMPOSE_MAIN_FILE       := ../docker/server/docker-compose.yml
-DOCKER_COMPOSE_LOCALSTACK_FILE := ../docker/server/docker-compose-floci.yml
-DOCKER_COMPOSE_INFRA_FILE      := ../docker/server/docker-compose-infra.yml
-DOCKER_COMPOSE_LLM_FILE        := ../docker/server/docker-compose-llm.yml
-DOCKER_COMPOSE_SEARCHXNG_FILE  := ../docker/server/docker-compose-searxng.yml
+DOCKER_COMPOSE_FLOCI_FILE      := ../docker/dependencies/docker-compose-floci.yml
+DOCKER_COMPOSE_POSTGRES_FILE   := ../docker/dependencies/docker-compose-postgres.yml
+DOCKER_COMPOSE_REDIS_FILE      := ../docker/dependencies/docker-compose-redis.yml
+DOCKER_COMPOSE_INFRA_FILE      := ../docker/observability/docker-compose.yml
+DOCKER_COMPOSE_LLM_FILE        := ../docker/development/docker-compose-llm.yml
+DOCKER_COMPOSE_SEARCHXNG_FILE  := ../docker/development/docker-compose-searxng.yml
 
-# Complete local Compose definition.
+# Compose projects are intentionally independent.
 #
-# Used when commands need awareness of every service in the same
-# Compose project, especially observability commands, to avoid
-# orphan-container warnings.
-DOCKER_COMPOSE_ALL_FILES := \
-	-f $(DOCKER_COMPOSE_MAIN_FILE) \
-	-f $(DOCKER_COMPOSE_LOCALSTACK_FILE) \
-	-f $(DOCKER_COMPOSE_INFRA_FILE) \
-	-f $(DOCKER_COMPOSE_LLM_FILE) \
-	-f $(DOCKER_COMPOSE_SEARCHXNG_FILE)
+# Each Compose file has its own project name so starting/stopping one
+# stack never removes containers from another stack.
+SERVER_PROJECT_NAME       := juris-ai-server
+FLOCI_PROJECT_NAME        := juris-ai-floci
+POSTGRES_PROJECT_NAME     := juris-ai-postgres
+REDIS_PROJECT_NAME        := juris-ai-redis
+OBSERVABILITY_PROJECT_NAME := juris-ai-observability
+OLLAMA_PROJECT_NAME       := juris-ai-ollama
+SEARXNG_PROJECT_NAME      := juris-ai-searxng
+
+SERVER_COMPOSE       := $(DOCKER_COMPOSE) --project-name $(SERVER_PROJECT_NAME) -f $(DOCKER_COMPOSE_MAIN_FILE)
+FLOCI_COMPOSE        := $(DOCKER_COMPOSE) --project-name $(FLOCI_PROJECT_NAME) -f $(DOCKER_COMPOSE_FLOCI_FILE)
+POSTGRES_COMPOSE     := $(DOCKER_COMPOSE) --project-name $(POSTGRES_PROJECT_NAME) -f $(DOCKER_COMPOSE_POSTGRES_FILE)
+REDIS_COMPOSE        := $(DOCKER_COMPOSE) --project-name $(REDIS_PROJECT_NAME) -f $(DOCKER_COMPOSE_REDIS_FILE)
+OBSERVABILITY_COMPOSE := $(DOCKER_COMPOSE) --project-name $(OBSERVABILITY_PROJECT_NAME) -f $(DOCKER_COMPOSE_INFRA_FILE)
+OLLAMA_COMPOSE       := $(DOCKER_COMPOSE) --project-name $(OLLAMA_PROJECT_NAME) -f $(DOCKER_COMPOSE_LLM_FILE)
+SEARXNG_COMPOSE      := $(DOCKER_COMPOSE) --project-name $(SEARXNG_PROJECT_NAME) -f $(DOCKER_COMPOSE_SEARCHXNG_FILE)
+
+VOLUMES_DIR := ../docker/.volumes
 
 FLOCI_APP_CONTAINER := floci
-API_APP_CONTAINER        := api
+API_APP_CONTAINER   := api
 
 # Default values (safe fallback)
 COMPOSE_FILES  :=
@@ -169,23 +178,13 @@ TEST      ?=
 S3_BUCKET ?= juris-ai-document-snd
 
 # ============================================================================
-# Mode + Files -> Application Compose Selection
+# Application Compose Selection
+#
+# The server Compose file is API-only. Dependencies and development
+# infrastructure have independent Compose projects/lifecycles.
 # ============================================================================
-ifeq ($(MODE),dev)
-  ifeq ($(FILES),main)
-    COMPOSE_FILES  := -f $(DOCKER_COMPOSE_MAIN_FILE)
-    APP_CONTAINERS := $(API_APP_CONTAINER)
-  else ifeq ($(FILES),both)
-    COMPOSE_FILES  := -f $(DOCKER_COMPOSE_LOCALSTACK_FILE) -f $(DOCKER_COMPOSE_LLM_FILE) -f $(DOCKER_COMPOSE_MAIN_FILE) -f $(DOCKER_COMPOSE_SEARCHXNG_FILE)
-    APP_CONTAINERS := $(API_APP_CONTAINER)
-  else
-	COMPOSE_FILES  := -f $(DOCKER_COMPOSE_LOCALSTACK_FILE)
-	APP_CONTAINERS := $(FLOCI_APP_CONTAINER)
-  endif
-else ifeq ($(MODE),snd)
-  COMPOSE_FILES  := -f $(DOCKER_COMPOSE_MAIN_FILE)
-  APP_CONTAINERS := $(API_APP_CONTAINER)
-endif
+COMPOSE_FILES  := -f $(DOCKER_COMPOSE_MAIN_FILE)
+APP_CONTAINERS := $(API_APP_CONTAINER)
 
 # ============================================================================
 # CloudFormation Template Selection
@@ -206,7 +205,7 @@ endif
 # AWS Environment
 #
 # dev:
-#   LocalStack endpoint + dummy credentials
+#   Floci endpoint + dummy credentials
 #
 # snd:
 #   Real AWS region
@@ -236,7 +235,7 @@ _require-dev:
 	  exit 1; \
 	fi; \
 	if [ "$(_FLOCI_UP)" != "yes" ]; then \
-	  echo "$(YELLOW)⚠ LocalStack is not running, but MODE=dev is forced$(RESET)"; \
+	  echo "$(YELLOW)⚠ Floci is not running, but MODE=dev is forced$(RESET)"; \
 	fi
 
 .PHONY: _confirm-snd
@@ -294,7 +293,7 @@ env-info: ## Show active environment and resolved configuration
 	@echo ''
 
 	@if [ "$(MODE)" = "dev" ]; then \
-	  echo "  $(GREEN)ENV$(RESET)             dev  $(CYAN)(LocalStack — local)$(RESET)"; \
+	  echo "  $(GREEN)ENV$(RESET)             dev  $(CYAN)(Floci — local)$(RESET)"; \
 	else \
 	  echo "  $(YELLOW)ENV$(RESET)             snd  $(RED)(real AWS — be careful)$(RESET)"; \
 	fi
@@ -305,7 +304,7 @@ env-info: ## Show active environment and resolved configuration
 	@echo "  $(GREEN)REGION$(RESET)          $(AWS_REGION)"
 	@echo "  $(GREEN)STACK$(RESET)           $(STACK_NAME)"
 	@echo "  $(GREEN)TEMPLATE$(RESET)        $(TEMPLATE)"
-	@echo "  $(GREEN)COMPOSE_FILES$(RESET)   $(COMPOSE_FILES)"
+	@echo "  $(GREEN)SERVER_COMPOSE$(RESET)  $(DOCKER_COMPOSE_MAIN_FILE)"
 	@echo "  $(GREEN)APP_CONTAINERS$(RESET)  $(APP_CONTAINERS)"
 	@echo "  $(GREEN)S3_BUCKET$(RESET)       $(S3_BUCKET)"
 
@@ -313,7 +312,7 @@ env-info: ## Show active environment and resolved configuration
 	  echo "  $(GREEN)ENDPOINT$(RESET)        $(ENDPOINT)"; \
 	fi
 
-	@echo "  $(GREEN)LocalStack$(RESET)      $(_FLOCI_UP)"
+	@echo "  $(GREEN)Floci$(RESET)      $(_FLOCI_UP)"
 	@echo ''
 	@echo "  Override with: $(YELLOW)make <target> MODE=dev|snd FILES=main|both|local$(RESET)"
 	@echo ''
@@ -340,33 +339,35 @@ docker-networks: ## Create shared Docker network
 	  || docker network create juris_ai_network
 
 docker-build: ## Build application Docker images
-	@$(DOCKER_COMPOSE) $(COMPOSE_FILES) build --no-cache
+	@$(SERVER_COMPOSE) build --no-cache
 
 docker-up: docker-networks ## Start application Docker services
-	@$(DOCKER_COMPOSE) $(COMPOSE_FILES) up -d
+	@$(SERVER_COMPOSE) up -d
 
 docker-down: ## Stop application Docker services
-	@$(DOCKER_COMPOSE) $(COMPOSE_FILES) down
+	@$(SERVER_COMPOSE) down
 
 docker-restart: ## Rebuild and restart application services
-	@$(DOCKER_COMPOSE) $(COMPOSE_FILES) down
-	@$(DOCKER_COMPOSE) $(COMPOSE_FILES) up -d --build
+	@$(SERVER_COMPOSE) down
+	@$(SERVER_COMPOSE) up -d --build
 
 docker-app-logs: ## Follow application container logs
-	@$(DOCKER_COMPOSE) $(COMPOSE_FILES) logs -f $(APP_CONTAINERS)
+	@$(SERVER_COMPOSE) logs -f $(APP_CONTAINERS)
 
 docker-ps: ## Show application containers
-	@$(DOCKER_COMPOSE) $(COMPOSE_FILES) ps
+	@$(SERVER_COMPOSE) ps
 
 docker-exec-app: ## Open shell in application container
-	@$(DOCKER_COMPOSE) $(COMPOSE_FILES) exec $(APP_CONTAINERS) bash
+	@$(SERVER_COMPOSE) exec $(APP_CONTAINERS) bash
 
-docker-clean: ## Remove all local Compose services, volumes, and images
-	@$(DOCKER_COMPOSE) $(DOCKER_COMPOSE_ALL_FILES) down \
-	  --rmi local \
-	  --volumes \
-	  --remove-orphans
-	@docker volume prune -f
+docker-clean: ## Remove application containers and local Docker resources
+	@$(SERVER_COMPOSE) down --remove-orphans
+	@$(FLOCI_COMPOSE) down --remove-orphans
+	@$(POSTGRES_COMPOSE) down --remove-orphans
+	@$(REDIS_COMPOSE) down --remove-orphans
+	@$(OBSERVABILITY_COMPOSE) down --remove-orphans
+	@$(OLLAMA_COMPOSE) down --remove-orphans
+	@$(SEARXNG_COMPOSE) down --remove-orphans
 
 # ============================================================================
 # Docker - Observability Infrastructure
@@ -382,63 +383,34 @@ docker-clean: ## Remove all local Compose services, volumes, and images
 
 .PHONY: infra-build infra-up infra-down infra-restart infra-logs infra-ps infra-volumes
 
-# Prometheus (distroless), Tempo, and Grafana (distroless-slim) all run
-# as non-root by default (baked into each image's own USER directive)
-# and bind-mount ../docker/server/.volumes/<service> for persistent data.
-# Docker auto-creates a bind-mount target that doesn't exist yet as
-# root, not as the container's UID -- every one of these three then
-# fails on first boot with a plain "permission denied" writing to its
-# own data dir. Not a one-off local corruption: reproducible on any
-# fresh clone, since .volumes/ isn't tracked in git. Idempotent, no
-# sudo required -- same throwaway-alpine-container trick clean-local
-# already uses for host-filesystem operations.
 infra-volumes:
-	@mkdir -p ../docker/server/.volumes/prometheus ../docker/server/.volumes/tempo ../docker/server/.volumes/grafana
-	@docker run --rm -v "$$(pwd)/../docker/server/.volumes/prometheus:/data" alpine chown -R 65532:65532 /data
-	@docker run --rm -v "$$(pwd)/../docker/server/.volumes/tempo:/data" alpine chown -R 10001:10001 /data
-	@docker run --rm -v "$$(pwd)/../docker/server/.volumes/grafana:/data" alpine chown -R 472:472 /data
+	@mkdir -p $(VOLUMES_DIR)/prometheus $(VOLUMES_DIR)/tempo $(VOLUMES_DIR)/grafana
+
 
 infra-build: docker-networks ## Pull observability infrastructure images
-	@$(DOCKER_COMPOSE) $(DOCKER_COMPOSE_ALL_FILES) \
-	  pull \
-	  otel-collector \
-	  prometheus \
-	  grafana
+	@$(OBSERVABILITY_COMPOSE) pull
 
-infra-up: docker-networks infra-volumes ## Start OpenTelemetry, Prometheus, and Grafana
-	@$(DOCKER_COMPOSE) $(DOCKER_COMPOSE_ALL_FILES) \
-	  up -d \
-	  otel-collector \
-	  prometheus \
-	  grafana
 
-infra-down: ## Stop OpenTelemetry, Prometheus, and Grafana
-	@$(DOCKER_COMPOSE) $(DOCKER_COMPOSE_ALL_FILES) \
-	  stop \
-	  otel-collector \
-	  prometheus \
-	  grafana
+infra-up: docker-networks infra-volumes ## Start OpenTelemetry, Prometheus, Grafana, and Tempo
+	@$(OBSERVABILITY_COMPOSE) up -d
 
-infra-restart: ## Restart OpenTelemetry, Prometheus, and Grafana
-	@$(DOCKER_COMPOSE) $(DOCKER_COMPOSE_ALL_FILES) \
-	  restart \
-	  otel-collector \
-	  prometheus \
-	  grafana
+
+infra-down: ## Stop observability infrastructure
+	@$(OBSERVABILITY_COMPOSE) down
+
+
+infra-restart: ## Restart observability infrastructure
+	@$(OBSERVABILITY_COMPOSE) restart
+
 
 infra-logs: ## Follow observability infrastructure logs
-	@$(DOCKER_COMPOSE) $(DOCKER_COMPOSE_ALL_FILES) \
-	  logs -f \
-	  otel-collector \
-	  prometheus \
-	  grafana
+	@$(OBSERVABILITY_COMPOSE) logs -f
+
 
 infra-ps: ## Show observability infrastructure containers
-	@$(DOCKER_COMPOSE) $(DOCKER_COMPOSE_ALL_FILES) \
-	  ps \
-	  otel-collector \
-	  prometheus \
-	  grafana
+	@$(OBSERVABILITY_COMPOSE) ps
+
+
 
 # ============================================================================
 # Docker - LLM Infrastructure
@@ -453,15 +425,13 @@ infra-ps: ## Show observability infrastructure containers
 .PHONY: llm-build llm-up llm-down llm-restart llm-logs llm-ps llm-pull ollama-setup
 
 llm-build: docker-networks ## Pull LLM infrastructure images
-	@$(DOCKER_COMPOSE) -f $(DOCKER_COMPOSE_LLM_FILE) \
-	  pull \
-	  ollama
+	@$(OLLAMA_COMPOSE) pull
+
 
 llm-up: docker-networks ## Start Ollama and ensure the configured model is available
-	@$(DOCKER_COMPOSE) -f $(DOCKER_COMPOSE_LLM_FILE) \
-	  up -d \
-	  ollama
+	@$(OLLAMA_COMPOSE) up -d --force-recreate
 	@$(MAKE) llm-pull
+
 
 llm-pull: ## Pull the configured local LLM model into Ollama (idempotent, skips if already present)
 	@scripts/bash/pull_ollama_models.sh
@@ -470,24 +440,21 @@ ollama-setup: ## Start Ollama and ensure the configured model is pulled -- same 
 	@$(MAKE) llm-up
 
 llm-down: ## Stop Ollama LLM infrastructure
-	@$(DOCKER_COMPOSE) -f $(DOCKER_COMPOSE_LLM_FILE) \
-	  stop \
-	  ollama
+	@$(OLLAMA_COMPOSE) down
+
 
 llm-restart: ## Restart Ollama LLM infrastructure
-	@$(DOCKER_COMPOSE) -f $(DOCKER_COMPOSE_LLM_FILE) \
-	  restart \
-	  ollama
+	@$(OLLAMA_COMPOSE) restart
+
 
 llm-logs: ## Follow Ollama LLM infrastructure logs
-	@$(DOCKER_COMPOSE) -f $(DOCKER_COMPOSE_LLM_FILE) \
-	  logs -f \
-	  ollama
+	@$(OLLAMA_COMPOSE) logs -f
+
 
 llm-ps: ## Show Ollama LLM infrastructure container
-	@$(DOCKER_COMPOSE) -f $(DOCKER_COMPOSE_LLM_FILE) \
-	  ps \
-	  ollama
+	@$(OLLAMA_COMPOSE) ps
+
+
 
 # ============================================================================
 # Poetry / Python
@@ -609,15 +576,15 @@ db-setup-role: ## Create/sync the restricted local-dev runtime role (APP_DB_USER
 	@./scripts/bash/setup_app_role.sh
 
 # ============================================================================
-# LocalStack Resource Inspection
+# Floci Resource Inspection
 # ============================================================================
 
 .PHONY: ls-s3 ls-api-id ls-api-key ls-api ls-resources ls-s3-objects
 
-ls-s3: _require-dev ## List LocalStack S3 buckets
+ls-s3: _require-dev ## List Floci S3 buckets
 	@$(AWS_ENV) aws s3 ls
 
-ls-api-id: _require-dev ## List LocalStack API Gateway REST APIs
+ls-api-id: _require-dev ## List Floci API Gateway REST APIs
 	@$(AWS_ENV) aws apigateway get-rest-apis \
 	  --query 'items[*].[name,id]' \
 	  --output table
@@ -650,7 +617,7 @@ ls-api-key: _require-dev ## Show API key for configured API
 
 ls-api: ls-api-id ls-api-key ## List API IDs and keys
 
-ls-resources: ls-s3 ls-api-id ## List LocalStack resources
+ls-resources: ls-s3 ls-api-id ## List Floci resources
 
 ls-s3-objects: _require-dev ## List objects in S3_BUCKET [S3_BUCKET=<name>]
 	@echo "$(CYAN)Listing objects in: $(S3_BUCKET)$(RESET)"
@@ -797,11 +764,11 @@ test-watch: ## Watch unit tests [TARGET=<path>]
 
 .PHONY: clean-local restart-hard
 
-clean-local: ## Remove SAM artifacts and LocalStack persistent data
-	@echo "$(CYAN)Cleaning SAM artifacts and LocalStack data...$(RESET)"
+clean-local: ## Remove SAM artifacts and Floci persistent data
+	@echo "$(CYAN)Cleaning SAM artifacts and Floci data...$(RESET)"
 	@rm -rf .aws-sam
 	@docker run --rm \
-	  -v "$$(pwd)/../docker/server/.volumes/floci:/data" \
+	  -v "$$(pwd)/../docker/.volumes/floci:/data" \
 	  alpine \
 	  sh -c "rm -rf /data/*"
 
@@ -810,11 +777,11 @@ restart-hard: ## Wipe local environment and redeploy
 	@echo ''
 	@echo "1) Stopping Docker services..."
 	@$(MAKE) docker-clean || true
-	@echo "2) Cleaning LocalStack persistent data..."
+	@echo "2) Cleaning Floci persistent data..."
 	@$(MAKE) clean-local || true
 	@echo "3) Starting application services..."
 	@$(MAKE) docker-up MODE=dev
-	@echo "4) Waiting for LocalStack..."
+	@echo "4) Waiting for Floci..."
 	@sleep 10
 	@echo "5) Starting observability..."
 	@$(MAKE) infra-up MODE=dev
@@ -856,7 +823,7 @@ dev: ## Start complete local development environment
 .PHONY: project-tree
 
 project-tree: ## Show current project directory
-	tree -a -I '__pycache__|*.pyc|.git|.pytest_cache|.volumes|.venv|.vscode|.aws-sam|localstack*|node_modules|htmlcov|*.egg-info|dist|build|.ruff_cache|.mypy_cache'
+	tree -a -I '__pycache__|*.pyc|.git|.pytest_cache|.volumes|.venv|.vscode|.aws-sam|floci*|node_modules|htmlcov|*.egg-info|dist|build|.ruff_cache|.mypy_cache'
 
 # ============================================================================
 # Help
@@ -870,9 +837,9 @@ help: ## Show available Make targets
 	@echo ''
 
 	@if [ "$(_FLOCI_UP)" = "yes" ]; then \
-	  echo "  $(GREEN)Active env:$(RESET) $(BOLD)dev$(RESET)  (LocalStack detected)"; \
+	  echo "  $(GREEN)Active env:$(RESET) $(BOLD)dev$(RESET)  (Floci detected)"; \
 	else \
-	  echo "  $(YELLOW)Active env:$(RESET) $(BOLD)snd$(RESET)  (LocalStack not detected)"; \
+	  echo "  $(YELLOW)Active env:$(RESET) $(BOLD)snd$(RESET)  (Floci not detected)"; \
 	fi
 
 	@echo "  Override: $(YELLOW)make <target> MODE=dev|snd FILES=main|both|local$(RESET)"

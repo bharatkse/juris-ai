@@ -1,41 +1,11 @@
 services:
 
   # -----------------------------------------------------
-  # Redis — application cache / execution state
-  # Accessible inside the network as: redis:6379
-  # Accessible from host as:          localhost:6379
-  # -----------------------------------------------------
-  redis:
-    image: redis:7-alpine
-    container_name: juris_ai_redis
-    restart: unless-stopped
-
-    ports:
-      - "6379:6379"
-
-    command:
-      redis-server
-      --appendonly yes
-      --maxmemory 256mb
-      --maxmemory-policy allkeys-lru
-
-    volumes:
-      - ./.volumes/redis:/data
-
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-    networks:
-      - juris_ai_network
-
-
-  # -----------------------------------------------------
   # FastAPI API service
   # Accessible from host as: localhost:8001
   # Accessible inside the network as: api:8000
+  #
+  # Their actual endpoints are configured through server/.env.
   # -----------------------------------------------------
   api:
     build:
@@ -48,22 +18,13 @@ services:
     ports:
       - "8001:8000"
 
-    environment:
-      DB_HOST: postgres
-
     env_file:
       - ../../server/.env
 
     volumes:
-      - ../../server/src:/juris_ai/src
-      - ../../server/.env:/juris_ai/.env:ro
-      - ../../server/alembic.ini:/juris_ai/alembic.ini:ro
-
-    depends_on:
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
+      - ../../server/src:/juris_ai_server/src
+      - ../../server/.env:/juris_ai_server/.env:ro
+      - ../../server/alembic.ini:/juris_ai_server/alembic.ini:ro
 
     command: >
       poetry run uvicorn
@@ -71,7 +32,7 @@ services:
       --host 0.0.0.0
       --port 8000
       --reload
-      --reload-dir /juris_ai/src
+      --reload-dir /juris_ai_server/src
 
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
