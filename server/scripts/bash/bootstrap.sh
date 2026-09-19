@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 # ============================================================================
-# station-hygiene-service development environment setup
+# juris-ai server environment setup
 #
 # Aligns with pyproject.toml:
 # - Python: ^3.11 (pinned via pyenv for local dev)

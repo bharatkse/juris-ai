@@ -42,7 +42,8 @@ htmlcov/
 !.env.example
 
 # Docker runtime volumes
-deploy/docker/.volumes/
+docker/.volumes/
+docker/dependencies/.volumes/
 
 # Logs
 logs/

@@ -24,10 +24,10 @@ Ask a question about Indian law and get an answer backed by actual statutes and 
 
 ```bash
 git clone https://github.com/bharatkse/juris-ai.git && cd juris-ai
-./install.sh
+./setup.sh
 ```
 
-First run builds the image locally (a few minutes) — this will switch to a fast image pull once the first versioned release is published. `install.sh` generates real secrets, prompts only for your `GROQ_API_KEY` ([get one here](https://console.groq.com/keys)), and waits for a real health check before printing the URL.
+First run builds the image locally (a few minutes) — this will switch to a fast image pull once the first versioned release is published. `setup.sh` generates real secrets, prompts only for your `GROQ_API_KEY` ([get one here](https://console.groq.com/keys)), and waits for a real health check before printing the URL.
 
 - Swagger UI: http://localhost:8001/docs
 
@@ -35,7 +35,7 @@ First run builds the image locally (a few minutes) — this will switch to a fas
 
 | Tier | What | Best for |
 | --- | --- | --- |
-| **1 — `install.sh`** (Quick Start above) | Auto-generates secrets, prompts only for `GROQ_API_KEY`, waits for a real health check | Just want it running |
+| **1 — `setup.sh`** (Quick Start above) | Auto-generates secrets, prompts only for `GROQ_API_KEY`, waits for a real health check | Just want it running |
 | **2 — Manual `docker compose`** | `cp env.example .env`, fill in every value yourself, then `docker compose up -d --build` | Full control over configuration, or scripting your own install |
 
 Developer setup (running from source, tests) or a cloud deploy (Terraform/AWS SAM)? See [`docs/server/`](docs/server/).
@@ -61,7 +61,7 @@ juris-ai/
 │   └── cloud/          # AWS SAM/CloudFormation templates (original deploy path)
 ├── legal/              # Commercial licensing terms
 ├── docker-compose.yml   # Release bundle: run Juris AI (builds from source until first GHCR publish)
-├── install.sh           # Release-flow installer -- see Quick Start above
+├── setup.sh           # Release-flow installer -- see Quick Start above
 ├── env.example          # Release-flow configuration template
 └── claude.md            # Working conventions and the authoritative Known-gaps list
 ```

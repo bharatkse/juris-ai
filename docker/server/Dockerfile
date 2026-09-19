@@ -3,8 +3,8 @@
 # ==============================================================================
 FROM python:3.11-slim AS builder
 
-# Set WORKDIR to /juris_ai so virtualenv paths match the runtime container
-WORKDIR /juris_ai
+# Set WORKDIR to /juris_ai_server so virtualenv paths match the runtime container
+WORKDIR /juris_ai_server
 
 ENV POETRY_VIRTUALENVS_IN_PROJECT=true
 
@@ -29,11 +29,11 @@ FROM python:3.11-slim AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/juris_ai/src \
-    PATH="/juris_ai/.venv/bin:$PATH" \
+    PYTHONPATH=/juris_ai_server/src \
+    PATH="/juris_ai_server/.venv/bin:$PATH" \
     POETRY_VIRTUALENVS_IN_PROJECT=true
 
-WORKDIR /juris_ai
+WORKDIR /juris_ai_server
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
@@ -50,13 +50,13 @@ RUN useradd -m -u 1000 appuser \
     data/vector_db \
     data/cache \
     logs \
-    && chown -R appuser:appuser /juris_ai
+    && chown -R appuser:appuser /juris_ai_server
 
 # Copy virtual environment from builder.
 COPY --from=builder \
     --chown=appuser:appuser \
-    /juris_ai/.venv \
-    /juris_ai/.venv
+    /juris_ai_server/.venv \
+    /juris_ai_server/.venv
 
 # Copy project definition files.
 COPY --chown=appuser:appuser pyproject.toml poetry.lock* ./

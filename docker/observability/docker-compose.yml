@@ -17,7 +17,7 @@ services:
 
     volumes:
       # Source-controlled configuration
-      - ../observability/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+      - ./otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
 
     ports:
       - "4317:4317"     # OTLP gRPC
@@ -58,10 +58,10 @@ services:
 
     volumes:
       # Source-controlled configuration
-      - ../observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
 
       # Persistent Prometheus TSDB data
-      - ./.volumes/prometheus:/prometheus
+      - ../.volumes/prometheus:/prometheus
 
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
@@ -89,10 +89,10 @@ services:
 
     volumes:
       # Source-controlled configuration
-      - ../observability/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - ./tempo.yaml:/etc/tempo/tempo.yaml:ro
 
       # Persistent Tempo trace data
-      - ./.volumes/tempo:/var/tempo
+      - ../.volumes/tempo:/var/tempo
 
     ports:
       - "3200:3200"   # Tempo HTTP API
@@ -119,7 +119,7 @@ services:
 
     volumes:
       # Persistent Grafana state
-      - ./.volumes/grafana:/var/lib/grafana
+      - ../.volumes/grafana:/var/lib/grafana
 
     # grafana/grafana:*-distroless-slim has no shell/curl/wget, so Docker's
     # exec-form `healthcheck:` can't run inside it even though the app

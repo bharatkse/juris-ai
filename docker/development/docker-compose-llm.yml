@@ -14,7 +14,7 @@ services:
       - "11434:11434"
 
     volumes:
-      - ./.volumes/ollama:/root/.ollama
+      - ../.volumes/ollama:/root/.ollama
 
     networks:
       - juris_ai_network

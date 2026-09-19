@@ -1,0 +1,52 @@
+services:
+
+  # -----------------------------------------------------
+  # PostgreSQL
+  # -----------------------------------------------------
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: juris_ai_postgres
+    restart: unless-stopped
+
+    env_file:
+      - ../../server/.env
+
+    environment:
+      POSTGRES_USER: ${DB_USER:-juris}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
+      POSTGRES_DB: ${DB_NAME:-jurisai}
+
+    ports:
+      - "5432:5432"
+
+    volumes:
+      - ../.volumes/postgres:/var/lib/postgresql/data
+      - ./init/postgres:/docker-entrypoint-initdb.d:ro
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${DB_USER:-juris} -d ${DB_NAME:-jurisai}"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+    networks:
+      - juris_ai_network
+
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 128M
+
+
+networks:
+  juris_ai_network:
+    external: true
