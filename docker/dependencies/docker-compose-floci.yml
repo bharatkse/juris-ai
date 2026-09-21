@@ -1,3 +1,7 @@
+# Compose project name lives here so setup.sh, the Makefile and a bare
+# `docker compose up` all resolve to the same project.
+name: juris-ai-floci
+
 services:
 
   # -----------------------------------------------------

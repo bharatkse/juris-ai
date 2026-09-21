@@ -23,7 +23,8 @@ purge_compliance_log.py) is the one thing that actually gets past it
 since ALTER TABLE ... DISABLE TRIGGER requires table ownership.
 
 Requires the real Postgres/Redis docker compose services running
-(`make docker-up`), with migrations applied through 48e4b24358b7.
+(`./setup.sh --install --dependency postgres
+--dependency redis`), with migrations applied through 48e4b24358b7.
 Run via `make test-e2e`.
 """
 

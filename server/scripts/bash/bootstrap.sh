@@ -247,24 +247,6 @@ setup_precommit() {
 }
 
 # ============================================================================
-# Environment file
-# ============================================================================
-create_env_file() {
-  if [[ -f .env ]]; then
-    log ".env file exists"
-    return
-  fi
-
-  if [[ ! -f .env.example ]]; then
-    warn ".env.example not found"
-    return
-  fi
-
-  cp .env.example .env
-  log ".env file created from .env.example"
-}
-
-# ============================================================================
 # AWS CLI v2
 # ============================================================================
 install_aws_cli() {
@@ -302,7 +284,6 @@ main() {
   install_poetry
   install_dependencies
   # setup_precommit
-  create_env_file
 
   log "Setup complete"
 }

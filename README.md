@@ -48,7 +48,7 @@ Under the hood, a multi-agent system plans, researches, and reasons before answe
 
 ```text
 juris-ai/
-├── server/            # FastAPI backend -- source, tests, Makefile-driven dev workflow
+├── server/            # FastAPI backend -- source, tests, Poetry project
 ├── clients/           # Reserved for future first-party client apps (none yet)
 ├── docker/
 │   ├── server/         # Backend Docker Compose stacks (dev, local AWS emulation, observability)
@@ -62,6 +62,7 @@ juris-ai/
 ├── legal/              # Commercial licensing terms
 ├── docker-compose.yml   # Release bundle: run Juris AI (builds from source until first GHCR publish)
 ├── setup.sh           # Release-flow installer -- see Quick Start above
+├── Makefile           # Build, test, lint, migrate, deploy -- run `make help` from here
 ├── env.example          # Release-flow configuration template
 └── claude.md            # Working conventions and the authoritative Known-gaps list
 ```

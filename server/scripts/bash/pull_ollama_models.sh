@@ -13,13 +13,14 @@
 # Idempotent -- checks `ollama list` inside the container first and
 # skips the (multi-GB) pull entirely if the configured model is
 # already present. Deliberately NOT wired into plain `docker compose
-# up`/`docker-up` -- only into the explicit setup/bootstrap targets
+# up` or `setup.sh` -- only into the explicit setup/bootstrap targets
 # (`make dev`, `make restart-hard`) that already run
 # scripts/bash/setup_app_role.sh the same way, so a routine restart
 # never blocks on a multi-GB download.
 #
 # Usage: scripts/bash/pull_ollama_models.sh
-# Requires: the local Ollama container running (`make llm-up`), and
+# Requires: the local Ollama container running (`./setup.sh --install
+# --bundle development` from the repo root), and
 # LLM_LOCAL_MODEL set in .env (see env.example; falls back to
 # qwen3:8b, config/llm.py's LLMSettings.LLM_LOCAL_MODEL default, if
 # unset or .env doesn't exist).
@@ -46,7 +47,7 @@ fi
 LLM_LOCAL_MODEL="${LLM_LOCAL_MODEL:-qwen3:8b}"
 
 if ! docker inspect "$OLLAMA_CONTAINER" >/dev/null 2>&1; then
-    echo "error: container '$OLLAMA_CONTAINER' not found. Start it first: make llm-up" >&2
+    echo "error: container '$OLLAMA_CONTAINER' not found. Start it first: ./setup.sh --install --bundle development (from the repo root)" >&2
     exit 1
 fi
 
