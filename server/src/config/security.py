@@ -23,7 +23,37 @@ class SecuritySettings(BaseAppSettings):
     CACHE_BACKEND: CacheBackendEnum = CacheBackendEnum.REDIS
     CACHE_TTL: int = 3600
     CACHE_MAX_SIZE: int = 1000
-    REDIS_URL: str = "redis://localhost:6379/0"
+
+    # REDIS_HOST/REDIS_PORT, not a single REDIS_URL field -- same
+    # host/port composition pattern as DatabaseSettings.DB_HOST/
+    # DB_PORT below, and what setup.sh's normalize_local_endpoint()
+    # already writes into REDIS_HOST (localhost -> "redis", the
+    # compose service name, for a local Docker install; see
+    # configure_local_dependency_endpoints()). A prior version of this
+    # field was a static `REDIS_URL: str = "redis://localhost:6379/0"`
+    # that nothing ever overrode -- REDIS_HOST/REDIS_PORT existed in
+    # env.example and setup.sh's own bookkeeping, but pydantic-settings
+    # (extra="ignore") silently dropped them since neither matched a
+    # declared field name, so every container always connected to
+    # "localhost", which inside the api container is the container
+    # itself, not the redis service -- broke any request that touched
+    # the cache (guardrail/RAG-judge/embedding memoization), silently
+    # in dev (redis's published host port made a non-containerized
+    # `localhost:6379` connection accidentally work) and loudly in the
+    # containerized release stack.
+    REDIS_HOST: str = "localhost"
+    REDIS_PORT: int = 6379
+
+    @field_validator("REDIS_PORT")
+    @classmethod
+    def validate_redis_port(cls, value: int) -> int:
+        if not (1 <= value <= 65535):
+            raise ValueError("REDIS_PORT must be between 1 and 65535.")
+        return value
+
+    @property
+    def REDIS_URL(self) -> str:
+        return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/0"
 
     # TTL specifically for LLM-judge/embedding memoization
     # (wiring/factories/cache.py) -- deliberately separate from

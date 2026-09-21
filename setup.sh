@@ -23,6 +23,9 @@
 #   ./setup.sh --cleanup --bundle observability
 #   ./setup.sh --uninstall --bundle server
 #
+# Size/split policy for this file and Makefile: see
+# server/CONTRIBUTING.md ("Splitting large scripts").
+#
 # IMPORTANT:
 #   Never run this script with sudo or as root.
 
@@ -51,7 +54,6 @@ FLOCI_COMPOSE="$DEPENDENCIES_DIR/docker-compose-floci.yml"
 
 OBSERVABILITY_COMPOSE="$OBSERVABILITY_DIR/docker-compose.yml"
 LLM_COMPOSE="$DEVELOPMENT_DIR/docker-compose-llm.yml"
-MCP_COMPOSE="$DEVELOPMENT_DIR/docker-compose-mcp.yml"
 SEARXNG_COMPOSE="$DEVELOPMENT_DIR/docker-compose-searxng.yml"
 
 ENV_FILE="$SCRIPT_DIR/server/.env"
@@ -166,53 +168,13 @@ parse_args() {
                 [[ -z "$ACTION" ]] || fail "only one lifecycle operation can be selected."
                 ACTION="${1#--}"
                 ;;
-            --mode)
+            --mode|--bundle|--dependency)
+                [[ $# -gt 1 ]] || fail "$1 requires a value."
+                set_option "$1" "$2"
                 shift
-                [[ $# -gt 0 ]] || fail "--mode requires release or dev."
-                case "$1" in
-                    release|dev) MODE="$1" ;;
-                    *) fail "invalid mode '$1'; expected release or dev." ;;
-                esac
                 ;;
-            --mode=release)
-                MODE="release"
-                ;;
-            --mode=dev)
-                MODE="dev"
-                ;;
-            --bundle)
-                shift
-                [[ $# -gt 0 ]] || fail "--bundle requires a bundle name."
-                add_bundle "$1"
-                ;;
-            --bundle=server)
-                add_bundle "server"
-                ;;
-            --bundle=dependencies)
-                add_bundle "dependencies"
-                ;;
-            --bundle=observability)
-                add_bundle "observability"
-                ;;
-            --bundle=clients)
-                add_bundle "clients"
-                ;;
-            --bundle=development)
-                add_bundle "development"
-                ;;
-            --dependency)
-                shift
-                [[ $# -gt 0 ]] || fail "--dependency requires a dependency name."
-                add_dependency "$1"
-                ;;
-            --dependency=postgres)
-                add_dependency "postgres"
-                ;;
-            --dependency=redis)
-                add_dependency "redis"
-                ;;
-            --dependency=floci)
-                add_dependency "floci"
+            --mode=*|--bundle=*|--dependency=*)
+                set_option "${1%%=*}" "${1#*=}"
                 ;;
             --non-interactive)
                 NON_INTERACTIVE=true
@@ -227,6 +189,19 @@ parse_args() {
         esac
         shift
     done
+}
+
+set_option() {
+    case "$1" in
+        --mode)
+            case "$2" in
+                release|dev) MODE="$2" ;;
+                *) fail "invalid mode '$2'; expected release or dev." ;;
+            esac
+            ;;
+        --bundle) add_bundle "$2" ;;
+        --dependency) add_dependency "$2" ;;
+    esac
 }
 
 add_bundle() {
@@ -300,58 +275,12 @@ select_action() {
     done
 }
 
-select_mode_and_bundles() {
-    return 0
-}
-
-CLI_BUNDLES_SELECTED=false
-
-compose_project_name() {
-    local file="$1"
-
-    case "$file" in
-        "$SERVER_COMPOSE")
-            printf '%s\n' "juris-ai-server"
-            ;;
-        "$POSTGRES_COMPOSE")
-            printf '%s\n' "juris-ai-postgres"
-            ;;
-        "$REDIS_COMPOSE")
-            printf '%s\n' "juris-ai-redis"
-            ;;
-        "$FLOCI_COMPOSE")
-            printf '%s\n' "juris-ai-floci"
-            ;;
-        "$OBSERVABILITY_COMPOSE")
-            printf '%s\n' "juris-ai-observability"
-            ;;
-        "$LLM_COMPOSE")
-            printf '%s\n' "juris-ai-ollama"
-            ;;
-        "$MCP_COMPOSE")
-            printf '%s\n' "juris-ai-mcp"
-            ;;
-        "$SEARXNG_COMPOSE")
-            printf '%s\n' "juris-ai-searxng"
-            ;;
-        *)
-            fail "unknown Compose file: $file"
-            ;;
-    esac
-}
-
 compose() {
     local file="$1"
     shift
 
-    local project_name
-    project_name="$(compose_project_name "$file")"
-
-    docker compose \
-        --project-name "$project_name" \
-        --env-file "$ENV_FILE" \
-        -f "$file" \
-        "$@"
+    # Project name comes from the top-level `name:` in each Compose file.
+    docker compose --env-file "$ENV_FILE" -f "$file" "$@"
 }
 
 require_file() {
@@ -386,10 +315,8 @@ ensure_compose_files() {
 
     if contains development "${SELECTED_BUNDLES[@]}"; then
         require_file "$LLM_COMPOSE"
-        # require_file "$MCP_COMPOSE"
         require_file "$SEARXNG_COMPOSE"
         compose "$LLM_COMPOSE" config >/dev/null
-        # compose "$MCP_COMPOSE" config >/dev/null
         compose "$SEARXNG_COMPOSE" config >/dev/null
     fi
 }
@@ -494,9 +421,7 @@ prepare_env() {
     local key value
     for key in SECRET_KEY JWT_SECRET_KEY DB_PASSWORD APP_DB_PASSWORD; do
         value="$(env_value "$key")"
-        if [[ -z "$value" ||
-              "$value" == "CHANGE_ME" ||
-              "$value" == "CHANGE_ME_IN_ENV_OR_SECRETS_MANAGER" ]]; then
+        if [[ -z "$value" || "$value" == CHANGE_ME* || "$value" == replace-with-* ]]; then
             value="$(openssl rand -hex 32)"
             set_env_value "$key" "$value"
             log "Generated $key"
@@ -527,15 +452,16 @@ prepare_env() {
 VOLUMES_DIR="$DOCKER_DIR/.volumes"
 
 prepare_storage() {
-    mkdir -p \
-        "$VOLUMES_DIR/postgres" \
-        "$VOLUMES_DIR/redis" \
-        "$VOLUMES_DIR/floci" \
-        "$VOLUMES_DIR/ollama" \
-        "$VOLUMES_DIR/searxng" \
-        "$VOLUMES_DIR/prometheus" \
-        "$VOLUMES_DIR/tempo" \
-        "$VOLUMES_DIR/grafana"
+    echo "Preparing persistent storage in $VOLUMES_DIR"
+    # mkdir -p \
+    #     "$VOLUMES_DIR/postgres" \
+    #     "$VOLUMES_DIR/redis" \
+    #     "$VOLUMES_DIR/floci" \
+    #     "$VOLUMES_DIR/ollama" \
+    #     "$VOLUMES_DIR/searxng" \
+    #     "$VOLUMES_DIR/prometheus" \
+    #     "$VOLUMES_DIR/tempo" \
+    #     "$VOLUMES_DIR/grafana"
 }
 
 # ---------------------------------------------------------------------------
@@ -587,9 +513,8 @@ up_file() {
 
     log "Starting: $name"
 
-    # Do not use --remove-orphans here.
-    # Each logical stack is an independent Compose project and must never
-    # remove containers owned by another stack.
+    # Do not use --remove-orphans here: each stack file sets its own
+    # project `name:` and must never remove containers owned by another stack.
     compose "$file" up -d --force-recreate
 }
 
@@ -612,28 +537,23 @@ remove_persistent_data() {
     rmdir "$directory" 2>/dev/null || true
 }
 
-force_remove_container() {
-    local container="$1"
-
-    if docker container inspect "$container" >/dev/null 2>&1; then
-        log "Stopping container: $container"
-
-        docker stop "$container" >/dev/null 2>&1 || true
-        docker rm -f "$container" >/dev/null 2>&1 || true
-    fi
-}
-
 down_file() {
     local name="$1"
     local file="$2"
+    shift 2
 
     [[ -f "$file" ]] || return 0
 
     log "Stopping: $name"
 
-    # Do not use --remove-orphans here either.
-    # The Compose project name isolates this stack from all other stacks.
-    compose "$file" down
+    # Do not use --remove-orphans here either; extra args (e.g. --volumes)
+    # are passed through to `down`.
+    compose "$file" down "$@"
+}
+
+down_development() {
+    down_file "SearXNG" "$SEARXNG_COMPOSE"
+    down_file "Ollama" "$LLM_COMPOSE"
 }
 
 wait_for_service_health() {
@@ -773,16 +693,12 @@ start_dependencies() {
 
 cleanup_dependencies() {
     local dependency
-    local container
 
     for dependency in floci postgres redis; do
         if contains "$dependency" "${SELECTED_DEPENDENCIES[@]}"; then
             down_file \
                 "$(dependency_display_name "$dependency")" \
                 "$(dependency_compose_file "$dependency")"
-
-            container="$(dependency_container_name "$dependency")"
-            force_remove_container "$container"
 
             mark_uninstalled "$dependency"
         fi
@@ -804,7 +720,9 @@ uninstall_dependencies() {
                     remove_persistent_data "$VOLUMES_DIR/redis"
                     ;;
                 floci)
-                    remove_persistent_data "$VOLUMES_DIR/floci"
+                    # docker-compose-floci.yml mounts ./.volumes/floci, i.e.
+                    # docker/dependencies/.volumes/floci -- not docker/.volumes.
+                    remove_persistent_data "$DEPENDENCIES_DIR/.volumes/floci"
                     ;;
             esac
         fi
@@ -814,10 +732,6 @@ uninstall_dependencies() {
 server_running() {
     docker inspect -f '{{.State.Running}}' juris_ai_api 2>/dev/null |
         grep -q '^true$'
-}
-
-item_installed() {
-    bundle_installed "$1"
 }
 
 normalize_local_endpoint() {
@@ -858,11 +772,11 @@ validate_server_endpoints() {
     [[ -n "$db_host" ]] || fail "DB_HOST is missing from $ENV_FILE"
     [[ -n "$redis_host" ]] || fail "REDIS_HOST is missing from $ENV_FILE"
 
-    if [[ "$db_host" == "postgres" ]] && ! item_installed postgres; then
+    if [[ "$db_host" == "postgres" ]] && ! bundle_installed postgres; then
         fail "DB_HOST=postgres but local PostgreSQL is not installed. Install it with: ./setup.sh --install --dependency postgres, or configure DB_HOST for an external PostgreSQL/RDS instance."
     fi
 
-    if [[ "$redis_host" == "redis" ]] && ! item_installed redis; then
+    if [[ "$redis_host" == "redis" ]] && ! bundle_installed redis; then
         fail "REDIS_HOST=redis but local Redis is not installed. Install it with: ./setup.sh --install --dependency redis, or configure REDIS_HOST for an external Redis instance."
     fi
 
@@ -911,7 +825,7 @@ wait_for_api() {
         sleep 2
     done
 
-    fail "API did not become healthy. Check: docker compose --project-name juris-ai-server --env-file $ENV_FILE -f $SERVER_COMPOSE logs api"
+    fail "API did not become healthy. Check: docker logs juris_ai_api"
 }
 
 pull_server() {
@@ -933,7 +847,6 @@ pull_selected() {
 
     if contains development "${SELECTED_BUNDLES[@]}"; then
         pull_file "Ollama" "$LLM_COMPOSE"
-        # pull_file "MCP" "$MCP_COMPOSE"
         pull_file "SearXNG" "$SEARXNG_COMPOSE"
     fi
 
@@ -954,7 +867,6 @@ start_selected() {
 
     if contains development "${SELECTED_BUNDLES[@]}"; then
         up_file "Ollama" "$LLM_COMPOSE"
-        # up_file "MCP" "$MCP_COMPOSE"
         up_file "SearXNG" "$SEARXNG_COMPOSE"
         mark_installed development
     fi
@@ -977,16 +889,19 @@ cleanup_selected() {
         mark_uninstalled clients
     fi
 
+    if contains observability "${SELECTED_BUNDLES[@]}"; then
+        down_file "observability" "$OBSERVABILITY_COMPOSE"
+        mark_uninstalled observability
+    fi
+
     if contains development "${SELECTED_BUNDLES[@]}"; then
-        down_file "SearXNG" "$SEARXNG_COMPOSE"
-        force_remove_container "juris_ai_searxng"
-
-        # down_file "MCP" "$MCP_COMPOSE"
-
-        down_file "Ollama" "$LLM_COMPOSE"
-        force_remove_container "juris_ai_ollama"
-
+        down_development
         mark_uninstalled development
+    fi
+
+    if contains server "${SELECTED_BUNDLES[@]}"; then
+        down_file "server" "$SERVER_COMPOSE"
+        mark_uninstalled server
     fi
 
     if contains dependencies "${SELECTED_BUNDLES[@]}"; then
@@ -1039,28 +954,13 @@ uninstall_selected() {
     fi
 
     if contains observability "${SELECTED_BUNDLES[@]}"; then
-        down_file "observability" "$OBSERVABILITY_COMPOSE"
-
-        force_remove_container "juris_ai_grafana"
-        force_remove_container "juris_ai_prometheus"
-        force_remove_container "juris_ai_tempo"
-        force_remove_container "juris_ai_otel_collector"
-
-        remove_persistent_data "$VOLUMES_DIR/prometheus"
-        remove_persistent_data "$VOLUMES_DIR/tempo"
-        remove_persistent_data "$VOLUMES_DIR/grafana"
+        # Prometheus/Tempo/Grafana data lives in named volumes.
+        down_file "observability" "$OBSERVABILITY_COMPOSE" --volumes
         mark_uninstalled observability
     fi
 
     if contains development "${SELECTED_BUNDLES[@]}"; then
-        down_file "SearXNG" "$SEARXNG_COMPOSE"
-        force_remove_container "juris_ai_searxng"
-
-        # down_file "MCP" "$MCP_COMPOSE"
-
-        down_file "Ollama" "$LLM_COMPOSE"
-        force_remove_container "juris_ai_ollama"
-
+        down_development
         remove_persistent_data "$VOLUMES_DIR/ollama"
         remove_persistent_data "$VOLUMES_DIR/searxng"
         mark_uninstalled development
@@ -1068,13 +968,7 @@ uninstall_selected() {
 
     if contains server "${SELECTED_BUNDLES[@]}"; then
         down_file "server" "$SERVER_COMPOSE"
-        force_remove_container "juris_ai_api"
         mark_uninstalled server
-
-        # if [[ -f "$ENV_FILE" ]]; then
-        #     log "Removing $ENV_FILE"
-        #     rm -f -- "$ENV_FILE"
-        # fi
     fi
 
     if contains dependencies "${SELECTED_BUNDLES[@]}"; then
@@ -1116,6 +1010,55 @@ select_interactive_action_if_needed() {
     fi
 }
 
+prompt_bundles() {
+    show_state
+
+    printf 'Select bundle(s):\n'
+    printf '  1) Server\n'
+    printf '  2) Dependencies\n'
+    printf '  3) Observability\n'
+    printf '  4) Development\n'
+    printf '  5) Clients\n'
+    printf '  6) All\n'
+    printf '\n'
+    printf 'Select bundle(s) [1-6, comma-separated]: '
+
+    local selection
+    local normalized
+    local parts=()
+    local part
+
+    IFS= read -r selection
+    normalized="${selection// /}"
+
+    case "$normalized" in
+        1) REQUESTED_BUNDLES=(server) ;;
+        2) REQUESTED_BUNDLES=(dependencies) ;;
+        3) REQUESTED_BUNDLES=(observability) ;;
+        4) REQUESTED_BUNDLES=(development) ;;
+        5) REQUESTED_BUNDLES=(clients) ;;
+        6)
+            REQUESTED_BUNDLES=(server dependencies observability development clients)
+            REQUESTED_DEPENDENCIES=(floci postgres redis)
+            ;;
+        *)
+            REQUESTED_BUNDLES=()
+            IFS=',' read -ra parts <<< "$normalized"
+
+            for part in "${parts[@]}"; do
+                case "$part" in
+                    1) add_bundle server ;;
+                    2) add_bundle dependencies ;;
+                    3) add_bundle observability ;;
+                    4) add_bundle development ;;
+                    5) add_bundle clients ;;
+                    *) fail "invalid bundle selection '$part'." ;;
+                esac
+            done
+            ;;
+    esac
+}
+
 select_bundles() {
     # With no explicit CLI mode/bundle/dependency selection, show the mode
     # selector first. Dev is the default.
@@ -1145,114 +1088,14 @@ select_bundles() {
         REQUESTED_BUNDLES+=(dependencies)
     fi
 
-    if ((${#REQUESTED_BUNDLES[@]} > 0)); then
-        CLI_BUNDLES_SELECTED=true
-    fi
-
-    if [[ "$MODE" == "dev" && ${#REQUESTED_BUNDLES[@]} -eq 0 ]]; then
-        if [[ "$NON_INTERACTIVE" == true ]]; then
+    if ((${#REQUESTED_BUNDLES[@]} == 0)); then
+        if [[ "$NON_INTERACTIVE" == false ]]; then
+            prompt_bundles
+        elif [[ "$MODE" == "dev" ]]; then
             REQUESTED_BUNDLES=(server dependencies observability development clients)
             REQUESTED_DEPENDENCIES=(floci postgres redis)
         else
-            printf '\nCurrent installation:\n'
-            show_state
-
-            printf 'Select bundle(s):\n'
-            printf '  1) Server\n'
-            printf '  2) Dependencies\n'
-            printf '  3) Observability\n'
-            printf '  4) Development\n'
-            printf '  5) Clients\n'
-            printf '  6) All\n'
-            printf '\n'
-            printf 'Select bundle(s) [1-6, comma-separated]: '
-
-            local selection
-            local normalized
-            local parts=()
-            local part
-
-            IFS= read -r selection
-            normalized="${selection// /}"
-
-            case "$normalized" in
-                1) REQUESTED_BUNDLES=(server) ;;
-                2) REQUESTED_BUNDLES=(dependencies) ;;
-                3) REQUESTED_BUNDLES=(observability) ;;
-                4) REQUESTED_BUNDLES=(development) ;;
-                5) REQUESTED_BUNDLES=(clients) ;;
-                6)
-                    REQUESTED_BUNDLES=(server dependencies observability development clients)
-                    REQUESTED_DEPENDENCIES=(floci postgres redis)
-                    ;;
-                *)
-                    REQUESTED_BUNDLES=()
-                    IFS=',' read -ra parts <<< "$normalized"
-
-                    for part in "${parts[@]}"; do
-                        case "$part" in
-                            1) add_bundle server ;;
-                            2) add_bundle dependencies ;;
-                            3) add_bundle observability ;;
-                            4) add_bundle development ;;
-                            5) add_bundle clients ;;
-                            *) fail "invalid bundle selection '$part'." ;;
-                        esac
-                    done
-                    ;;
-            esac
-        fi
-    elif [[ "$MODE" == "release" && ${#REQUESTED_BUNDLES[@]} -eq 0 ]]; then
-        if [[ "$NON_INTERACTIVE" == true ]]; then
             REQUESTED_BUNDLES=(server)
-        else
-            printf '\nCurrent installation:\n'
-            show_state
-
-            printf 'Select bundle(s):\n'
-            printf '  1) Server\n'
-            printf '  2) Dependencies\n'
-            printf '  3) Observability\n'
-            printf '  4) Development\n'
-            printf '  5) Clients\n'
-            printf '  6) All\n'
-            printf '\n'
-            printf 'Select bundle(s) [1-6, comma-separated]: '
-
-            local selection
-            local normalized
-            local parts=()
-            local part
-
-            IFS= read -r selection
-            normalized="${selection// /}"
-
-            case "$normalized" in
-                1) REQUESTED_BUNDLES=(server) ;;
-                2) REQUESTED_BUNDLES=(dependencies) ;;
-                3) REQUESTED_BUNDLES=(observability) ;;
-                4) REQUESTED_BUNDLES=(development) ;;
-                5) REQUESTED_BUNDLES=(clients) ;;
-                6)
-                    REQUESTED_BUNDLES=(server dependencies observability development clients)
-                    REQUESTED_DEPENDENCIES=(floci postgres redis)
-                    ;;
-                *)
-                    REQUESTED_BUNDLES=()
-                    IFS=',' read -ra parts <<< "$normalized"
-
-                    for part in "${parts[@]}"; do
-                        case "$part" in
-                            1) add_bundle server ;;
-                            2) add_bundle dependencies ;;
-                            3) add_bundle observability ;;
-                            4) add_bundle development ;;
-                            5) add_bundle clients ;;
-                            *) fail "invalid bundle selection '$part'." ;;
-                        esac
-                    done
-                    ;;
-            esac
         fi
     fi
 

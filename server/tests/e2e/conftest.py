@@ -11,7 +11,8 @@ own routing, persistence, authorization, or HITL logic. See each
 test module's own docstring for what it mocks and why.
 
 Run via `make test-e2e` (needs the real docker compose Postgres/Redis
-services up -- `make docker-up`), not part of the fast unit-test loop.
+services up -- `./setup.sh --install --dependency postgres
+--dependency redis`), not part of the fast unit-test loop.
 """
 
 from __future__ import annotations

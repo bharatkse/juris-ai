@@ -3,24 +3,26 @@
 # (APP_DB_USER, e.g. juris_ai_app) against an already-running Postgres
 # container -- regardless of when its data volume was created.
 #
-# Why this exists: ../docker/server/init/postgres/01-create-app-role.sh
+# Why this exists: docker/dependencies/init/postgres/01-create-app-role.sh
 # only runs automatically via docker-entrypoint-initdb.d, which
 # Postgres only executes the first time a container boots against an
 # EMPTY data volume. Anyone with a pre-existing local Postgres volume
 # (from before this role-separation work landed, or from any earlier
 # `docker compose up`) never gets APP_DB_USER created, and nothing
 # tells them why the app then fails to connect. Run this script once
-# instead of wiping your volume (`make docker-clean`) just to pick up
+# instead of wiping your volume (`./setup.sh --uninstall --dependency
+# postgres`) just to pick up
 # a role.
 #
 # Idempotent -- safe to run again any time (e.g. after rotating
 # APP_DB_PASSWORD in .env, or just to confirm current state). Shares
 # its actual SQL with the docker-entrypoint-initdb.d hook via
-# ../docker/server/init/postgres/_create_app_role.lib -- one source of
+# docker/dependencies/init/postgres/_create_app_role.lib -- one source of
 # truth, not two versions that can drift.
 #
 # Usage: scripts/bash/setup_app_role.sh
-# Requires: the local Postgres container running (`make docker-up`),
+# Requires: the local Postgres container running (`./setup.sh --install
+# --dependency postgres` from the repo root),
 # and DB_USER/DB_PASSWORD/DB_NAME/APP_DB_USER/APP_DB_PASSWORD set in
 # .env (see env.example).
 set -euo pipefail
@@ -30,7 +32,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 POSTGRES_CONTAINER="${POSTGRES_CONTAINER:-juris_ai_postgres}"
 
 # shellcheck source=/dev/null
-source "$REPO_ROOT/../docker/server/init/postgres/_create_app_role.lib"
+source "$REPO_ROOT/../docker/dependencies/init/postgres/_create_app_role.lib"
 
 if [[ ! -f "$REPO_ROOT/.env" ]]; then
     echo "error: $REPO_ROOT/.env not found. Copy env.example to .env and fill it in first." >&2
@@ -65,7 +67,7 @@ done
 : "${APP_DB_PASSWORD:?APP_DB_PASSWORD must be set in .env -- see env.example}"
 
 if ! docker inspect "$POSTGRES_CONTAINER" >/dev/null 2>&1; then
-    echo "error: container '$POSTGRES_CONTAINER' not found. Start it first: make docker-up" >&2
+    echo "error: container '$POSTGRES_CONTAINER' not found. Start it first: ./setup.sh --install --dependency postgres (from the repo root)" >&2
     exit 1
 fi
 

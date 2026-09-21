@@ -28,7 +28,8 @@ boundary test_hitl_approval_flow.py mocks, nothing more:
     (_gate_final's real evaluation + the compliance write it feeds).
 
 Requires the real Postgres/Redis docker compose services running
-(`make docker-up`). Run via `make test-e2e`.
+(`./setup.sh --install --dependency postgres
+--dependency redis`). Run via `make test-e2e`.
 """
 
 from __future__ import annotations

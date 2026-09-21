@@ -44,7 +44,8 @@ runs and really calls _call_mcp(), only the network hop underneath it
 is faked.
 
 Requires the real Postgres/Redis docker compose services running
-(`make docker-up`). Run via `make test-e2e`.
+(`./setup.sh --install --dependency postgres
+--dependency redis`). Run via `make test-e2e`.
 """
 
 from __future__ import annotations

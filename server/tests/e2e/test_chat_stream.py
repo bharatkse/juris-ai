@@ -35,7 +35,8 @@ the buffered STREAMED chunks' own aggregated content, not a separately
 -generated string -- see orchestrator.py's stream() docstring.
 
 Requires the real Postgres/Redis docker compose services running
-(`make docker-up`). Run via `make test-e2e`.
+(`./setup.sh --install --dependency postgres
+--dependency redis`). Run via `make test-e2e`.
 """
 
 from __future__ import annotations

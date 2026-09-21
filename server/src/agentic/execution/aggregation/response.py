@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from adapters.observability.logger import get_logger
 from agentic.execution.aggregation.base import BaseAggregator
 from agentic.execution.aggregation.schemas import (
     AggregatedResponse,
@@ -15,6 +16,8 @@ from agentic.execution.aggregation.schemas import (
 from agentic.orchestration.schemas.response import Usage
 from core.dto.agent import AgentResponseDTO
 from core.exceptions.aggregation import EmptyAggregationError
+
+logger = get_logger(__name__)
 
 
 class ResponseAggregator(BaseAggregator):
@@ -31,6 +34,7 @@ class ResponseAggregator(BaseAggregator):
         """
 
         if not responses:
+            logger.error("No responses to aggregate. Response: %s", responses)
             raise EmptyAggregationError()
 
         return AggregationResult(
@@ -108,6 +112,33 @@ class ResponseAggregator(BaseAggregator):
 
         usage = [response.usage for response in responses if response.usage is not None]
 
+        # First non-None value wins across responses -- same
+        # convention as usage.provider/usage.model just below.
+        termination_reason = next(
+            (
+                response.metadata.get("termination_reason")
+                for response in responses
+                if response.metadata.get("termination_reason") is not None
+            ),
+            None,
+        )
+        groundedness = next(
+            (
+                response.metadata.get("groundedness")
+                for response in responses
+                if response.metadata.get("groundedness") is not None
+            ),
+            None,
+        )
+        relevance = next(
+            (
+                response.metadata.get("relevance")
+                for response in responses
+                if response.metadata.get("relevance") is not None
+            ),
+            None,
+        )
+
         return AggregationMetadata(
             agents=agents,
             merged_responses=len(responses),
@@ -119,4 +150,7 @@ class ResponseAggregator(BaseAggregator):
                 total_tokens=sum(item.total_tokens for item in usage),
                 latency_ms=(sum(item.latency_ms or 0 for item in usage) if usage else None),
             ),
+            termination_reason=termination_reason,
+            groundedness=groundedness,
+            relevance=relevance,
         )

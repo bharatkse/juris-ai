@@ -98,6 +98,21 @@ class SmokeTool(Tool):
         return self.result
 
 
+def _compliance_log() -> MagicMock:
+    """
+    Minimal StandaloneComplianceLogWriter double -- AgentContinuationService
+    requires compliance_log (see _record_tool_call_compliance()), which
+    predates none of the tests below but was added after most of them
+    were written; every AgentContinuationService(...) construction in
+    this file needs one.
+    """
+
+    compliance_log = MagicMock()
+    compliance_log.record_tool_call_executed = AsyncMock()
+    compliance_log.record_retrieval_performed = AsyncMock()
+    return compliance_log
+
+
 class SmokeCollaborationHandler:
     def __init__(self, result: object) -> None:
         self.result = result
@@ -306,6 +321,7 @@ def _result(
     action: AgentActionRequestDTO | None = None,
     termination_reason: str | None = None,
     error: str | None = None,
+    partial_response: str | None = None,
 ) -> AgentExecutionResult:
     started_at = datetime.now(UTC)
 
@@ -316,7 +332,7 @@ def _result(
         completed_at=datetime.now(UTC),
         termination_reason=termination_reason,
         error=error,
-        partial_response=None,
+        partial_response=partial_response,
         decision=decision,
         action=action,
     )
@@ -475,6 +491,7 @@ async def test_smoke_tool_call_executes_and_continues_reasoning() -> None:
         answer_evaluator=AsyncMock(),
         answer_quality_policy=MagicMock(is_sufficient=MagicMock(return_value=True)),
         agent_policy_guard=MagicMock(),
+        compliance_log=_compliance_log(),
     )
 
     decision = _tool_decision()
@@ -535,6 +552,7 @@ async def test_smoke_tool_failure_is_failed_tool() -> None:
         answer_evaluator=AsyncMock(),
         answer_quality_policy=MagicMock(is_sufficient=MagicMock(return_value=True)),
         agent_policy_guard=MagicMock(),
+        compliance_log=_compliance_log(),
     )
 
     decision = _tool_decision()
@@ -581,6 +599,7 @@ async def test_smoke_tool_budget_denial_is_partial_not_failed() -> None:
         answer_evaluator=AsyncMock(),
         answer_quality_policy=MagicMock(is_sufficient=MagicMock(return_value=True)),
         agent_policy_guard=MagicMock(),
+        compliance_log=_compliance_log(),
     )
 
     decision = _tool_decision()
@@ -644,6 +663,7 @@ async def test_smoke_delegate_routes_through_bus_and_continues() -> None:
         answer_evaluator=AsyncMock(),
         answer_quality_policy=MagicMock(is_sufficient=MagicMock(return_value=True)),
         agent_policy_guard=MagicMock(),
+        compliance_log=_compliance_log(),
     )
 
     decision = _delegate_decision()
@@ -703,6 +723,7 @@ async def test_smoke_delegate_budget_denial_is_partial() -> None:
         answer_evaluator=AsyncMock(),
         answer_quality_policy=MagicMock(is_sufficient=MagicMock(return_value=True)),
         agent_policy_guard=MagicMock(),
+        compliance_log=_compliance_log(),
     )
 
     decision = _delegate_decision()
@@ -739,6 +760,68 @@ async def test_smoke_delegate_budget_denial_is_partial() -> None:
 
     assert result.result.status is ExecutionStatusEnum.PARTIAL
     assert handler.messages == []
+
+
+# ---------------------------------------------------------------------------
+# Continuation: NEED_INPUT
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_smoke_need_input_stops_continuation_without_a_second_reasoning_call() -> None:
+    """
+    NEED_INPUT is terminal-for-now (the agent is waiting on the user),
+    same as FINAL, not mid-continuation like TOOL_CALL/DELEGATE.
+    AgentContinuationService.execute() must hand a NEED_INPUT result
+    straight back to the caller (AgentExecutionNode, which now maps it
+    to a real response artifact -- see test_graph_node.py) without
+    executing any tool/delegation and, critically, without calling
+    handle.reason() again -- the question text is already complete,
+    there is nothing to reason further about until the user replies.
+    """
+
+    continuation = AgentContinuationService(
+        tool_execution_service=ToolExecutionService(
+            tool_registry=ToolRegistry(),
+        ),
+        collaboration_bus=CollaborationBus(),
+        answer_evaluator=AsyncMock(),
+        answer_quality_policy=MagicMock(is_sufficient=MagicMock(return_value=True)),
+        agent_policy_guard=MagicMock(),
+        compliance_log=_compliance_log(),
+    )
+
+    decision = _need_input_decision()
+
+    initial_result = _result(
+        status=ExecutionStatusEnum.COMPLETED,
+        decision=decision,
+        termination_reason=TerminationReason.USER_INPUT_REQUIRED.value,
+        partial_response=decision.user_input.question,
+    )
+
+    handle = SmokeHandle(
+        decision=decision,
+        action=None,
+        # A NEED_INPUT decision carries action=None (see execution.py's
+        # NEED_INPUT branch) -- next_result is never consumed because a
+        # correct implementation never calls reason() again for this
+        # decision type.
+        next_result=_result(status=ExecutionStatusEnum.FAILED),
+    )
+
+    result = await continuation.execute(
+        handle=handle,
+        initial_result=initial_result,
+    )
+
+    assert result.result is initial_result
+    assert result.result.status is ExecutionStatusEnum.COMPLETED
+    assert result.result.decision.decision_type is AgentDecisionType.NEED_INPUT
+    assert result.result.partial_response == "Which jurisdiction applies?"
+    assert result.action is None
+    assert result.tool_results == ()
+    assert handle._reason_calls == 0
 
 
 # ---------------------------------------------------------------------------
@@ -936,6 +1019,7 @@ async def test_smoke_concurrent_continuations_keep_request_context_isolated() ->
         answer_evaluator=AsyncMock(),
         answer_quality_policy=MagicMock(is_sufficient=MagicMock(return_value=True)),
         agent_policy_guard=MagicMock(),
+        compliance_log=_compliance_log(),
     )
 
     decision = _tool_decision()

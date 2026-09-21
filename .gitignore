@@ -268,3 +268,6 @@ claude.md
 docker/.volumes/
 docker/.setup-state
 docker/dependencies/.volumes/
+
+# Known issues documentation
+docs/known-issues.md

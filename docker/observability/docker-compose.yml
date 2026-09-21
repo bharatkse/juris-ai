@@ -1,3 +1,7 @@
+# Compose project name lives here so setup.sh, the Makefile and a bare
+# `docker compose up` all resolve to the same project.
+name: juris-ai-observability
+
 services:
 
   # ==========================================================================
@@ -61,7 +65,7 @@ services:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
 
       # Persistent Prometheus TSDB data
-      - ../.volumes/prometheus:/prometheus
+      - prometheus_data:/prometheus
 
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
@@ -92,7 +96,7 @@ services:
       - ./tempo.yaml:/etc/tempo/tempo.yaml:ro
 
       # Persistent Tempo trace data
-      - ../.volumes/tempo:/var/tempo
+      - tempo_data:/var/tempo
 
     ports:
       - "3200:3200"   # Tempo HTTP API
@@ -119,7 +123,7 @@ services:
 
     volumes:
       # Persistent Grafana state
-      - ../.volumes/grafana:/var/lib/grafana
+      - grafana_data:/var/lib/grafana
 
     # grafana/grafana:*-distroless-slim has no shell/curl/wget, so Docker's
     # exec-form `healthcheck:` can't run inside it even though the app
@@ -135,6 +139,20 @@ services:
     networks:
       - juris_ai_network
 
+
+# ============================================================================
+# Persistent volumes
+# ============================================================================
+
+volumes:
+  prometheus_data:
+    name: juris_ai_prometheus_data
+
+  tempo_data:
+    name: juris_ai_tempo_data
+
+  grafana_data:
+    name: juris_ai_grafana_data
 
 # ============================================================================
 # Shared Docker network

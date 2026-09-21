@@ -11,6 +11,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from redis.asyncio import Redis
+from redis.exceptions import RedisError
 
 from adapters.observability.logger import get_logger, setup_logging
 from adapters.observability.telemetry import configure_telemetry, shutdown_telemetry
@@ -20,6 +22,7 @@ from api.utilities.api_response import ApiResponse
 from api.v1.routers import api_router
 from config.settings import get_settings
 from core.constants import API_DESCRIPTION, API_TITLE
+from core.enums import CacheBackendEnum
 from core.utils.file_system import ensure_dir
 from wiring.composition import create_ai_orchestrator
 from wiring.factories.agent_policies import seed_default_agent_policies
@@ -27,6 +30,8 @@ from wiring.factories.agent_policies import seed_default_agent_policies
 logger = get_logger(__name__)
 
 settings = get_settings()
+
+REDIS_CHECK_TIMEOUT_SECONDS = 5
 
 
 def initialize_logging() -> None:
@@ -63,6 +68,57 @@ def initialize_observability() -> None:
     configure_telemetry()
 
 
+async def check_redis() -> None:
+    """
+    Verify the configured Redis is reachable before serving traffic.
+
+    Regression guard for REDIS_HOST/REDIS_PORT resolving to the wrong
+    place -- a hardcoded "localhost" inside the api container is the
+    container itself, not the redis service, and nothing surfaced it
+    until the first request touched the cache. Not optional under
+    CACHE_BACKEND=REDIS: the LLM-judge and embedding memoization call
+    the cache with no fallback, so an unreachable Redis fails every
+    guardrail-reviewed request. Fail fast at startup instead. Skipped
+    for the in-memory backend, which never connects to Redis.
+    """
+
+    if settings.security.CACHE_BACKEND is not CacheBackendEnum.REDIS:
+        return
+
+    host = settings.security.REDIS_HOST
+    port = settings.security.REDIS_PORT
+
+    # Same URL wiring/factories/cache.py connects with, so this
+    # exercises exactly the connection the cache will use.
+    client = Redis.from_url(
+        settings.security.REDIS_URL,
+        socket_connect_timeout=REDIS_CHECK_TIMEOUT_SECONDS,
+        socket_timeout=REDIS_CHECK_TIMEOUT_SECONDS,
+    )
+
+    try:
+        await client.ping()
+
+    except (RedisError, OSError) as exc:
+        raise RuntimeError(
+            f"Redis is unreachable at {host}:{port} "
+            "(check REDIS_HOST/REDIS_PORT -- inside a container 'localhost' "
+            "is the container itself, not the redis service)."
+        ) from exc
+
+    finally:
+        await client.aclose()
+
+    logger.info(
+        "Redis connection verified.",
+        extra={
+            "operation": "check_redis",
+            "host": host,
+            "port": port,
+        },
+    )
+
+
 async def startup() -> None:
     """
     Perform application startup tasks.
@@ -81,6 +137,7 @@ async def startup() -> None:
 
     initialize_storage()
     initialize_observability()
+    await check_redis()
 
     logger.info(
         "Application started successfully.",

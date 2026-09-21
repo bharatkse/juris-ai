@@ -1,6 +1,10 @@
 # Juris-AI Development Guide
 
-The **Makefile is the primary entry point** for local development, testing, code quality, database migrations, Docker, Floci, SAM, and observability.
+The **Makefile is the primary entry point** for testing, code quality, database migrations, SAM/Terraform deployment, and inspecting the running stack (logs, shells, container status).
+
+**Installing, starting, stopping, reinstalling and removing the Docker stacks is done by [`setup.sh`](../../setup.sh) at the repo root, not by `make`.** Run it, like every `make` command in this guide, from the repo root — e.g. `./setup.sh --install --mode dev`; `./setup.sh --help` lists every option. The sections below say which commands are `make` and which are `setup.sh`.
+
+The `Makefile` lives at the repo root (next to `setup.sh`) and runs the Python tooling — Poetry, Alembic, pytest, Ruff, SAM, and the `server/scripts/` helpers — inside `server/` for you. `TARGET=` paths in the test targets are therefore relative to `server/` (for example `tests/unit/services/test_user.py`).
 
 You generally should not need to run raw Docker, Poetry, Alembic, SAM, or AWS CLI commands for normal development.
 
@@ -11,8 +15,7 @@ The Makefile also auto-detects the active environment from Floci health.
 > edge found during that swap). It serves the same
 > `/_localstack/health` endpoint for compatibility. Most internal
 > Makefile identifiers were renamed to match (`FLOCI_HEALTH_URL`,
-> `_FLOCI_UP`, `FLOCI_APP_CONTAINER`) — the `DOCKER_COMPOSE_LOCALSTACK_FILE`
-> variable name, the `ls-*` target names, and `make env-info`'s/`make help`'s
+> `_FLOCI_UP`) — the `ls-*` target names, and `make env-info`'s/`make help`'s
 > printed labels below were deliberately left as "LocalStack" (see
 > the repo-wide LocalStack sweep for the reasoning per item).
 
@@ -91,7 +94,7 @@ This shows the resolved configuration, including:
 
 - environment
 - mode
-- Compose files
+- API service name
 - CloudFormation stack
 - template
 - AWS region
@@ -103,7 +106,6 @@ Example (the Makefile's own output still prints the historical `LocalStack` labe
 ```text
 ENV             dev
 MODE            dev
-FILES           both
 REGION          us-east-1
 LocalStack      yes
 ```
@@ -127,7 +129,7 @@ make bootstrap
 This executes:
 
 ```text
-scripts/bash/bootstrap.sh
+server/scripts/bash/bootstrap.sh
 ```
 
 and prepares the development environment.
@@ -148,7 +150,7 @@ make poetry-check
 
 # 5. Configure Environment Variables
 
-Juris-AI uses `.env` for local configuration.
+Juris-AI uses `server/.env` for local configuration.
 
 Typical external services include:
 
@@ -158,7 +160,7 @@ Typical external services include:
 - PostgreSQL
 - OpenTelemetry
 
-Do not commit `.env`.
+Do not commit `server/.env`.
 
 Use `.env.example` as the safe template.
 
@@ -196,8 +198,11 @@ No real AWS resources are intended for the local workflow.
 
 ## 6.1 Start the Application
 
+Install and start the stacks with `setup.sh`, then run the Makefile's post-install steps:
+
 ```bash
-make dev
+./setup.sh --install --mode dev   # server, dependencies, observability, development
+make dev                           # DB role, Ollama model, migrations, local SAM deploy
 ```
 
 Check the application containers:
@@ -220,15 +225,20 @@ make docker-exec-app MODE=dev
 
 ---
 
-# 7. Start Observability Infrastructure
+# 7. Observability Infrastructure
 
-Observability has an independent lifecycle from the application.
+Observability has an independent lifecycle from the application, owned by `setup.sh`.
 
-Start:
+Start, or recreate and pull current images:
 
 ```bash
-make infra-up MODE=dev
+./setup.sh --install --bundle observability
+./setup.sh --reinstall --bundle observability
 ```
+
+Stop, keeping data: `./setup.sh --cleanup --bundle observability`.
+
+Remove, including data: `./setup.sh --uninstall --bundle observability` — destructive: also deletes the Prometheus, Tempo and Grafana data volumes, and asks for confirmation.
 
 Check:
 
@@ -242,25 +252,7 @@ View logs:
 make infra-logs MODE=dev
 ```
 
-Restart:
-
-```bash
-make infra-restart MODE=dev
-```
-
-Stop:
-
-```bash
-make infra-down MODE=dev
-```
-
-Pull the observability images:
-
-```bash
-make infra-build MODE=dev
-```
-
-The current Makefile explicitly manages:
+The observability stack contains:
 
 ```text
 OpenTelemetry Collector
@@ -268,7 +260,7 @@ Prometheus
 Grafana
 ```
 
-If Tempo is included in `../docker/server/docker-compose-infra.yml`, it should be managed alongside the observability stack.
+If Tempo is included in `docker/observability/docker-compose.yml`, it should be managed alongside the observability stack.
 
 ---
 
@@ -280,7 +272,7 @@ The app connects as a restricted, non-superuser role (`APP_DB_USER`)
 distinct from the admin/migration role (`DB_USER`) that owns the
 schema. A **fresh** Postgres container/volume creates this role
 automatically on first boot
-(`../docker/server/init/postgres/01-create-app-role.sh`, a
+(`docker/dependencies/init/postgres/01-create-app-role.sh`, a
 `docker-entrypoint-initdb.d` hook). That hook only ever runs against
 an empty volume, though — if your local Postgres volume predates this
 role split (or you're not sure), run:
@@ -411,9 +403,9 @@ These resource inspection commands require development mode.
 
 Two infrastructure-as-code paths exist side by side. **SAM/CloudFormation
 is the original path and still works.** **Terraform
-(`../iac/terraform/`) is the newer, multi-cloud-oriented path** — AWS
+(`iac/terraform/`) is the newer, multi-cloud-oriented path** — AWS
 is fully built and parity-tested against it; GCP/Azure exist only as
-interface-contract stubs (`../iac/terraform/modules/*/{gcp,azure}/README.md`),
+interface-contract stubs (`iac/terraform/modules/*/{gcp,azure}/README.md`),
 not working code. Prefer Terraform for new infrastructure work; SAM
 remains available and is not scheduled for removal yet.
 
@@ -470,7 +462,7 @@ make iac-apply PROVIDER=aws
 ```
 
 Applies all four Phase 1 modules (`secrets`, `api-gateway`, `storage`,
-`observability`) against Floci, using `../iac/terraform/dev.floci.tfvars`.
+`observability`) against Floci, using `iac/terraform/dev.floci.tfvars`.
 
 ### Show outputs
 
@@ -743,31 +735,27 @@ For a normal development session:
 make env-info
 ```
 
-## Step 2 — Start application services
+## Step 2 — Install / start the stacks
 
 ```bash
-make docker-up MODE=dev
+./setup.sh --install --mode dev
 ```
 
-## Step 3 — Start observability
+Starts the server, PostgreSQL/Redis/Floci, observability, and the Ollama/SearXNG stacks. Anything already running is left unchanged.
 
-```bash
-make infra-up MODE=dev
-```
-
-## Step 4 — Set up local DB role separation
+## Step 3 — Set up local DB role separation
 
 ```bash
 make db-setup-role
 ```
 
 Idempotent — safe on every session, but only strictly needed once per
-Postgres volume (see section 8 above for why). Must come before Step 6.
+Postgres volume (see section 8 above for why). Must come before Step 5.
 
-## Step 5 — Set up the local Ollama model
+## Step 4 — Set up the local Ollama model
 
 ```bash
-make ollama-setup
+make llm-pull
 ```
 
 Idempotent — checks `ollama list` inside the container first and
@@ -775,35 +763,35 @@ skips the (multi-GB) pull if the configured model (`LLM_LOCAL_MODEL`
 in `.env`, default `qwen3:8b`) is already present. Only wired into
 explicit setup flows like this one and `make dev`/`make
 restart-hard`, never into a plain `docker compose up`, so a routine
-restart never blocks on a multi-GB download. See
-`scripts/bash/pull_ollama_models.sh`.
+restart never blocks on a multi-GB download. `setup.sh` starts Ollama
+but does not pull the model. See `server/scripts/bash/pull_ollama_models.sh`.
 
-## Step 6 — Apply database migrations
+## Step 5 — Apply database migrations
 
 ```bash
 make alembic-upgrade
 ```
 
-## Step 7 — Check containers
+## Step 6 — Check containers
 
 ```bash
 make docker-ps MODE=dev
 make infra-ps MODE=dev
 ```
 
-## Step 8 — Check application logs
+## Step 7 — Check application logs
 
 ```bash
 make docker-app-logs MODE=dev
 ```
 
-## Step 9 — Run tests
+## Step 8 — Run tests
 
 ```bash
 make test-unit
 ```
 
-## Step 10 — Run quality checks
+## Step 9 — Run quality checks
 
 ```bash
 make lint
@@ -812,7 +800,7 @@ make type-check
 
 ---
 
-# 16. One-Command Development Start
+# 16. One-Command Post-Install Steps
 
 The Makefile also provides:
 
@@ -820,41 +808,31 @@ The Makefile also provides:
 make dev
 ```
 
-This starts the complete local development workflow:
+This runs the Makefile-native steps of the local development workflow. **Install and start the stacks first** with `./setup.sh --install --mode dev` — `make dev` does not start Docker services itself.
 
 ```text
-Application Docker services
-        ↓
-Observability infrastructure
-        ↓
 Local DB role separation setup (idempotent)
         ↓
-Local Ollama model setup (idempotent)
+Local Ollama model pull (idempotent)
         ↓
 Database migrations
         ↓
 SAM build/deployment
 ```
 
-For a clean environment, use:
+To redo those steps from a clean SAM state, use:
 
 ```bash
 make restart-hard MODE=dev
 ```
 
-This performs a hard reset, starts the application, starts observability, applies migrations, and deploys the local SAM stack.
+This cleans SAM artifacts and reruns `db-setup-role`, `llm-pull`, `alembic-upgrade` and `cf-deploy`. To recreate the Docker stacks first, run `./setup.sh --reinstall --mode dev`.
 
 ---
 
 # 17. Application-Specific Development Targets
 
 The Makefile also provides smaller development workflows:
-
-Start development services:
-
-```bash
-make dev-start
-```
 
 Build the development SAM application:
 
@@ -868,7 +846,7 @@ Deploy the development SAM stack:
 make dev-deploy
 ```
 
-Complete development workflow:
+Post-install development steps (run `./setup.sh --install --mode dev` first):
 
 ```bash
 make dev
@@ -878,31 +856,28 @@ make dev
 
 # 18. Cleanup
 
-Stop application services:
+Stop or remove Docker stacks with `setup.sh`:
 
 ```bash
-make docker-down MODE=dev
+./setup.sh --cleanup --bundle <bundle>     # stop and remove containers, keep data
+./setup.sh --uninstall --bundle <bundle>   # also remove persistent data (destructive, asks to confirm)
 ```
 
-Remove local Compose services, volumes, images, and orphans:
+`<bundle>` is `server`, `dependencies`, `observability`, `development` or `clients`; use `--dependency postgres|redis|floci` to target one dependency. See `./setup.sh --help`.
 
-```bash
-make docker-clean MODE=dev
-```
-
-Clean SAM artifacts and Floci persistent data:
+Clean SAM build artifacts:
 
 ```bash
 make clean-local
 ```
 
-For a complete local reset:
+To redo the post-install steps from a clean SAM state:
 
 ```bash
 make restart-hard MODE=dev
 ```
 
-> `docker-clean` is destructive. Use it when you intentionally want to remove local Docker state.
+> `setup.sh --uninstall` is destructive. Use it when you intentionally want to remove local Docker state and its data.
 
 ---
 
@@ -921,19 +896,19 @@ If you intended to use Floci, make sure it is running.
 You can explicitly force development mode:
 
 ```bash
-make docker-up MODE=dev
+make ls-s3 MODE=dev
 ```
 
-The Makefile will warn if Floci is not healthy.
+The Makefile will warn if Floci is not healthy. To start Floci: `./setup.sh --install --dependency floci`.
 
 ---
 
 ## PostgreSQL database files are incompatible
 
-If PostgreSQL reports a version/storage incompatibility, reset the local Docker state:
+If PostgreSQL reports a version/storage incompatibility, reset the local Postgres state (destructive: deletes the local Postgres data, asks to confirm):
 
 ```bash
-make docker-clean MODE=dev
+./setup.sh --uninstall --dependency postgres
 ```
 
 If necessary:
@@ -959,7 +934,7 @@ then restart the `api` container so it picks up the (possibly new)
 `.env` values:
 
 ```bash
-docker compose -f ../docker/server/docker-compose.yml up -d --force-recreate --no-deps api
+docker compose -f docker/server/docker-compose.yml up -d --force-recreate --no-deps api
 ```
 
 See section 8 above for the full explanation.
@@ -967,7 +942,8 @@ See section 8 above for the full explanation.
 Then restart:
 
 ```bash
-make docker-up MODE=dev
+./setup.sh --install --dependency postgres
+./setup.sh --reinstall --bundle server
 ```
 
 Apply migrations:
@@ -1027,23 +1003,23 @@ so AWS operations are directed toward Floci rather than real AWS.
 For a complete local rebuild:
 
 ```bash
-make docker-clean MODE=dev
+./setup.sh --uninstall --mode dev   # destructive; asks for confirmation
+./setup.sh --install --mode dev
 make clean-local
-make docker-build MODE=dev
-make docker-up MODE=dev
-make infra-up MODE=dev
+make db-setup-role
+make llm-pull
 make alembic-upgrade
 make cf-build MODE=dev
 make cf-deploy MODE=dev
 ```
 
-For most cases, prefer:
+For most cases, recreate the stacks with `./setup.sh --reinstall --mode dev` and then prefer:
 
 ```bash
 make restart-hard MODE=dev
 ```
 
-because it already orchestrates the hard-reset workflow.
+because it already runs the post-install steps (SAM clean, DB role, model pull, migrations, deploy).
 
 ---
 
@@ -1055,11 +1031,8 @@ Most development work should only require a small subset of the Makefile:
 # Check environment
 make env-info
 
-# Start application
-make docker-up MODE=dev
-
-# Start observability
-make infra-up MODE=dev
+# Start the stacks (skips anything already running)
+./setup.sh --install --mode dev
 
 # Apply migrations
 make alembic-upgrade
@@ -1087,19 +1060,13 @@ make infra-logs MODE=dev
 | Environment   | `env-info`          | Show resolved environment              |
 | Setup         | `bootstrap`         | Run project bootstrap                  |
 | Docker        | `docker-build`      | Build application images               |
-| Docker        | `docker-up`         | Start application services             |
-| Docker        | `docker-down`       | Stop application services              |
-| Docker        | `docker-restart`    | Rebuild and restart application        |
 | Docker        | `docker-ps`         | Show application containers            |
 | Docker        | `docker-app-logs`   | Follow application logs                |
 | Docker        | `docker-exec-app`   | Open API container shell               |
-| Docker        | `docker-clean`      | Remove local Compose state             |
-| Observability | `infra-build`       | Pull observability images              |
-| Observability | `infra-up`          | Start observability                    |
-| Observability | `infra-down`        | Stop observability                     |
-| Observability | `infra-restart`     | Restart observability                  |
 | Observability | `infra-logs`        | Follow observability logs              |
 | Observability | `infra-ps`          | Show observability containers          |
+| Database      | `db-setup-role`     | Create restricted runtime DB role      |
+| LLM           | `llm-pull`          | Pull the Ollama model                  |
 | Database      | `alembic-upgrade`   | Apply migrations                       |
 | Database      | `alembic-downgrade` | Roll back migration                    |
 | Database      | `alembic-current`   | Show current revision                  |
@@ -1137,9 +1104,11 @@ make infra-logs MODE=dev
 | Poetry        | `poetry-lock`       | Regenerate lock                        |
 | Poetry        | `poetry-show`       | Show dependency tree                   |
 | Poetry        | `poetry-export`     | Export requirements                    |
-| Cleanup       | `clean-local`       | Remove SAM/Floci data                  |
-| Cleanup       | `restart-hard`      | Reset and redeploy local environment   |
-| Development   | `dev`               | Start complete development environment |
+| Cleanup       | `clean-local`       | Remove SAM build artifacts             |
+| Cleanup       | `restart-hard`      | Clean SAM and redo post-install steps  |
+| Development   | `dev`               | Post-install steps (DB role, model, migrations, deploy) |
+
+**Not in this table:** installing, starting, stopping, reinstalling, cleaning up and uninstalling the Docker stacks (server, PostgreSQL/Redis/Floci, observability, Ollama/SearXNG). That is [`setup.sh`](../../setup.sh) — run `./setup.sh --help`.
 
 ---
 

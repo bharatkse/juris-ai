@@ -25,7 +25,8 @@ either is independently load-bearing:
   and the admin role is also exempt from GRANT-level restriction.)
 
 Requires the real Postgres/Redis docker compose services running
-(`make docker-up`), with migrations applied through dd110a14caf1, and
+(`./setup.sh --install --dependency postgres
+--dependency redis`), with migrations applied through dd110a14caf1, and
 the local juris_ai_app role provisioned (deploy/docker/init/postgres/
 01-create-app-role.sh -- see that script's docstring for how to pick
 this up on an already-existing local Postgres volume). Skips itself,

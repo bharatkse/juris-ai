@@ -14,20 +14,22 @@ Both `develop` and `main` require every commit to be signed before it
 can merge. Set this up now, before your first commit — see
 [`docs/server/setup/commit-signing.md`](../docs/server/setup/commit-signing.md).
 
-## Clone and enter the server directory
+## Clone the repository
 
 ```bash
 git clone <repository-url>
-cd juris-ai/server
+cd juris-ai
 ```
 
-Everything below runs from `server/` unless noted otherwise.
+Everything below runs from the **repo root** unless noted otherwise. The
+`Makefile` and `setup.sh` both live there; the Makefile runs the Python
+tooling (Poetry, Alembic, pytest, Ruff, SAM) inside `server/` for you.
 
 ## Create a virtual environment
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
+python -m venv server/.venv
+source server/.venv/bin/activate
 ```
 
 ## Install system dependencies
@@ -39,18 +41,18 @@ make bootstrap
 ## Install Python dependencies
 
 ```bash
-poetry install
+make poetry-install
 ```
 
 ## Configure environment
 
 ```bash
-cp env.example .env
+cp server/env.example server/.env
 ```
 
-Update the required values in `.env` — at minimum `SECRET_KEY`,
+Update the required values in `server/.env` — at minimum `SECRET_KEY`,
 `JWT_SECRET_KEY`, `DB_*`, and `GROQ_API_KEY`. See the comments in
-`env.example` for what else is configurable.
+`server/env.example` for what else is configurable.
 
 ## Install git hooks
 
@@ -64,12 +66,16 @@ Runs the repo-root [`.pre-commit-config.yaml`](../.pre-commit-config.yaml)
 ## Start the full local environment
 
 ```bash
-make dev
+./setup.sh --install --mode dev    # Docker stacks
+make dev                           # post-install steps
 ```
 
-This starts Docker services (Postgres, Redis, SearXNG, the local
-Floci AWS emulator), the observability stack, sets up the restricted
-DB role, runs migrations, and deploys the local SAM stack. See
+`setup.sh` starts the Docker stacks (Postgres, Redis, SearXNG, Ollama,
+the local Floci AWS emulator, and the observability stack); it is the
+single owner of stack lifecycle (install/start/stop/reinstall/cleanup/
+uninstall), not the Makefile. `make dev` then sets up the restricted
+DB role, pulls the Ollama model, runs migrations, and deploys the
+local SAM stack. See
 [`docs/server/README.md`](../docs/server/README.md) for what each
 step does and the full Makefile command reference — it's long enough
 to warrant its own document rather than duplicating it here.
@@ -96,6 +102,34 @@ make test-cov
 
 Both also run in CI (`.github/workflows/ci-server.yml`) — running them
 locally first saves a round-trip.
+
+## Splitting large scripts
+
+`setup.sh` and `Makefile` (both at the repo root) are single files on purpose. Revisit
+that with the rule below, not on taste. Split a concern into its own
+file (`lib/setup/<concern>.sh` / `mk/<concern>.mk`) when either holds:
+
+- **Size and churn** — the concern's block is over ~250 lines (bash)
+  or ~150 lines (make) **and** at least 3 commits in the last 30 days
+  touched it without touching the rest of the file (check with
+  `git log -L :<function>:<file>`), or
+- **Second consumer** — another script needs the same code (for
+  example `bootstrap.sh` and `setup.sh` both creating `.env`). Extract
+  it regardless of size.
+
+Hold any split while paths are about to move — everything would be edited
+twice. (The Makefile has already moved to the repo root, so that is settled.)
+
+Snapshot at the time of writing (2026-09-21): `setup.sh` is about
+1,240 lines; its largest concern, argument parsing and menus, is about 355
+lines, but the file has a single commit of history, so there is no churn
+signal. `Makefile` is about 760 lines; its largest section is about 70.
+Neither meets the rule. If a split is approved later: `setup.sh` stays the
+entrypoint and `source`s `lib/setup/{common,args,env,compose,state,health,
+dependencies,lifecycle}.sh` (function definitions only; globals stay in
+`setup.sh`); the Makefile keeps its variables, `MODE` detection and `help`
+and `include`s `mk/{docker,db,quality,test,iac}.mk` via
+`MK_DIR := $(dir $(lastword $(MAKEFILE_LIST)))`, defined before the includes.
 
 ## Known gaps
 
