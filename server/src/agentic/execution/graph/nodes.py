@@ -141,6 +141,14 @@ class AgentExecutionNode:
         means at most one step ever streams: the one that reaches
         FINAL.
 
+        NEED_INPUT is deliberately excluded even though _to_graph_update()
+        below now maps it to a memory artifact like FINAL -- its question
+        text is already complete (set via set_partial_response() in
+        execution.py), so there is nothing to regenerate. Streaming it
+        here would mean calling handle.stream_final_answer(), which
+        performs a second, real LLM generation call -- not a replay of
+        already-produced text.
+
         Callers must already have confirmed this is a streaming
         session (state["streaming"]) before calling this -- checked
         once, by __call__ above, not repeated here.
@@ -215,7 +223,21 @@ class AgentExecutionNode:
                 ),
             ]
 
-            if result.decision.decision_type is AgentDecisionType.FINAL:
+            if result.decision.decision_type in (
+                AgentDecisionType.FINAL,
+                AgentDecisionType.NEED_INPUT,
+            ):
+                # NEED_INPUT is terminal-for-now (the agent is waiting
+                # on the user, same as FINAL, not mid-continuation like
+                # TOOL_CALL/DELEGATE) -- AgentResponseMapper.map() only
+                # reads state.partial_response/termination_reason and
+                # accumulated reasoning_context, both already set by
+                # execution.py's NEED_INPUT branch. No second LLM call:
+                # contrast with _stream_final_answer_if_reached below,
+                # which stays FINAL-only because streaming re-generates
+                # the answer text via a real second generation call --
+                # the NEED_INPUT question is already fully formed text,
+                # nothing to stream-regenerate.
                 mapper = AgentResponseMapper(agent_name=handle.agent_id)
 
                 response = mapper.map(

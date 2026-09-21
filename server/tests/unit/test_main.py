@@ -11,9 +11,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from redis.exceptions import ConnectionError as RedisConnectionError
 
 import main
 from api.middleware.request_context import RequestContextMiddleware
+from core.enums import CacheBackendEnum
 
 
 @patch("main.register_exception_handlers")
@@ -116,6 +118,7 @@ async def test_root_endpoint() -> None:
 
 
 @pytest.mark.asyncio
+@patch("main.check_redis")
 @patch("main.seed_default_agent_policies")
 @patch("main.create_ai_orchestrator")
 @patch("main.AsyncPostgresSaver.from_conn_string")
@@ -129,6 +132,7 @@ async def test_lifespan(
     mock_from_conn_string: MagicMock,
     mock_create_ai_orchestrator: MagicMock,
     mock_seed_default_agent_policies: MagicMock,
+    mock_check_redis: AsyncMock,
 ) -> None:
     """
     It should perform startup and shutdown tasks.
@@ -166,6 +170,8 @@ async def test_lifespan(
     mock_ensure_dir.assert_any_call(
         main.settings.logging.LOG_DIRECTORY,
     )
+
+    mock_check_redis.assert_awaited_once_with()
 
     mock_seed_default_agent_policies.assert_awaited_once_with()
 
@@ -211,3 +217,66 @@ async def test_lifespan_propagates_startup_errors(
             pass
 
     mock_setup_logging.assert_called_once()
+
+
+@pytest.mark.asyncio
+@patch("main.logger")
+@patch("main.Redis.from_url")
+async def test_check_redis_pings_and_closes_client(
+    mock_from_url: MagicMock,
+    mock_log: MagicMock,
+) -> None:
+    """
+    It should ping Redis at the resolved URL and always close the client.
+    """
+
+    client = AsyncMock()
+    mock_from_url.return_value = client
+
+    with patch.object(main.settings.security, "CACHE_BACKEND", CacheBackendEnum.REDIS):
+        await main.check_redis()
+
+    assert mock_from_url.call_args.args == (main.settings.security.REDIS_URL,)
+    client.ping.assert_awaited_once_with()
+    client.aclose.assert_awaited_once_with()
+    mock_log.info.assert_called_once()
+
+
+@pytest.mark.asyncio
+@patch("main.Redis.from_url")
+async def test_check_redis_raises_naming_host_and_port_when_unreachable(
+    mock_from_url: MagicMock,
+) -> None:
+    """
+    It should raise a RuntimeError naming the host and port, and still
+    close the client, when Redis cannot be reached.
+    """
+
+    client = AsyncMock()
+    client.ping.side_effect = RedisConnectionError("Connection refused")
+    mock_from_url.return_value = client
+
+    security = main.settings.security
+
+    with (
+        patch.object(security, "CACHE_BACKEND", CacheBackendEnum.REDIS),
+        pytest.raises(RuntimeError, match=f"{security.REDIS_HOST}:{security.REDIS_PORT}"),
+    ):
+        await main.check_redis()
+
+    client.aclose.assert_awaited_once_with()
+
+
+@pytest.mark.asyncio
+@patch("main.Redis.from_url")
+async def test_check_redis_skipped_for_memory_backend(
+    mock_from_url: MagicMock,
+) -> None:
+    """
+    It should not connect to Redis when the in-memory cache backend is used.
+    """
+
+    with patch.object(main.settings.security, "CACHE_BACKEND", CacheBackendEnum.MEMORY):
+        await main.check_redis()
+
+    mock_from_url.assert_not_called()

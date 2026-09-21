@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 
 from adapters.observability.logger import get_logger
 from adapters.observability.tracing import span
+from agentic.execution.aggregation.schemas import AggregationMetadata
 from agentic.execution.schemas.result import ExecutionResultSchema
 from agentic.guardrails.schemas import GuardrailActionEnum, GuardrailReviewResult
 from agentic.orchestration.schemas.context import (
@@ -28,6 +29,7 @@ from agentic.orchestration.schemas.response import (
     GuardrailInfo,
     OrchestratorResponse,
     OrchestratorStreamChunk,
+    ResponseMetadata,
     Source,
     Usage,
 )
@@ -121,6 +123,29 @@ def _build_guardrail_info(
         categories=sorted({detection.entity_type for detection in result.detections}),
         harmful=bool(result.harmful and result.harmful.harmful),
         harmful_category=(result.harmful.category if result.harmful else None),
+    )
+
+
+def _to_response_metadata(
+    metadata: AggregationMetadata,
+) -> ResponseMetadata:
+    """
+    Carry AggregationMetadata's per-turn signals (agents,
+    termination_reason, groundedness, relevance) through to
+    OrchestratorResponse.metadata. Every OrchestratorResponse(...)
+    construction below used to omit metadata= entirely, so this data
+    -- present on AgentResponseDTO.metadata since AgentResponseMapper
+    builds it -- never survived past aggregation. usage is carried
+    separately at each call site
+    (aggregation_result.response.metadata.usage), not duplicated
+    here.
+    """
+
+    return ResponseMetadata(
+        agents=metadata.agents,
+        termination_reason=metadata.termination_reason,
+        groundedness=metadata.groundedness,
+        relevance=metadata.relevance,
     )
 
 
@@ -376,6 +401,7 @@ class AIOrchestrator:
             citations=aggregation_result.response.citations,
             sources=aggregation_result.response.sources,
             usage=aggregation_result.response.metadata.usage,
+            metadata=_to_response_metadata(aggregation_result.response.metadata),
             action=_to_action_request(execution_result.action),
             approval=_to_approval_response(execution_result.approval),
             guardrail=_build_guardrail_info(guardrail_result),
@@ -621,30 +647,47 @@ class AIOrchestrator:
                         execution_result=execution_result,
                     )
 
-                    # A tool call that fails (any tool, not just a gated
-                    # one -- see AgentContinuationService's TOOL_CALL
-                    # branch in continuation.py) ends the turn in a
-                    # terminal FAILED/PARTIAL state without ever reaching
-                    # FINAL, so AgentResponseMapper never runs and
-                    # execution_result.artifacts has nothing to extract.
+                    # A terminal decision with no mappable agent response
+                    # can happen for several distinct reasons -- a tool
+                    # call, policy check, or validation failing (FAILED),
+                    # a budget/iteration/timeout limit hit mid-
+                    # continuation (PARTIAL), or in principle a terminal
+                    # decision type AgentExecutionNode does not map to an
+                    # artifact reaching the graph boundary (COMPLETED) --
+                    # see nodes.py, which maps FINAL and NEED_INPUT today.
                     # ResponseAggregator.aggregate() raises
                     # EmptyAggregationError on an empty responses tuple --
                     # previously uncaught here, surfacing as an unhandled
-                    # 500 for what is an ordinary, expected outcome (a
-                    # tool failed), not a bug in this orchestration code.
+                    # 500 for what can be an ordinary, expected outcome.
                     # Same fallback shape as AIOrchestrator.resume() uses
                     # for a rejected/failed gated action. A fixed fallback
                     # string like this needs no guardrail review.
                     if not agent_responses:
+                        step_termination_reasons = tuple(
+                            step.termination_reason
+                            for step in execution_result.state.steps.values()
+                            if step.termination_reason
+                        )
+                        step_errors = tuple(
+                            step.error
+                            for step in execution_result.state.steps.values()
+                            if step.error
+                        )
+
                         log.error(
-                            "Execution ended without a FINAL response (a "
-                            "tool call failed) -- returning a graceful "
-                            "fallback instead of raising EmptyAggregationError.",
+                            "Execution ended without a mappable agent "
+                            "response -- returning a graceful fallback "
+                            "instead of raising EmptyAggregationError. "
+                            "See execution_status/termination_reasons/"
+                            "step_errors for the actual cause -- this is "
+                            "not always a tool call failing.",
                             extra={
                                 "operation": "orchestrate",
                                 "request_id": str(request.request_id),
                                 "conversation_id": str(request.conversation_id),
                                 "execution_status": execution_result.state.status.value,
+                                "termination_reasons": step_termination_reasons,
+                                "step_errors": step_errors,
                             },
                         )
 
@@ -818,6 +861,7 @@ class AIOrchestrator:
                     citations=aggregation_result.response.citations,
                     sources=aggregation_result.response.sources,
                     usage=aggregation_result.response.metadata.usage,
+                    metadata=_to_response_metadata(aggregation_result.response.metadata),
                     action=action_request,
                     approval=_to_approval_response(execution_result.approval),
                     guardrail=_build_guardrail_info(guardrail_result),
@@ -1243,6 +1287,7 @@ class AIOrchestrator:
                     citations=aggregation_result.response.citations,
                     sources=aggregation_result.response.sources,
                     usage=aggregation_result.response.metadata.usage,
+                    metadata=_to_response_metadata(aggregation_result.response.metadata),
                     action=action_request,
                     approval=_to_approval_response(execution_result.approval),
                     guardrail=_build_guardrail_info(guardrail_result),

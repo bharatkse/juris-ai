@@ -11,7 +11,7 @@ import pytest
 
 from agentic.execution.aggregation.response import ResponseAggregator
 from agentic.execution.schemas.result import ExecutionResultSchema
-from agentic.execution.schemas.state import ExecutionStateSchema
+from agentic.execution.schemas.state import ExecutionStateSchema, StepExecutionStateSchema
 from agentic.execution.validation.response import ResponseValidator
 from agentic.guardrails.schemas import GuardrailActionEnum, GuardrailReviewResult
 from agentic.orchestration.orchestrator import AIOrchestrator
@@ -169,6 +169,136 @@ async def test_handle_still_raises_for_a_real_orchestration_error(
             request=request,
             action_workflow_service=MagicMock(),
         )
+
+
+@pytest.mark.asyncio
+async def test_handle_returns_need_input_question_instead_of_generic_fallback(
+    orchestrator: AIOrchestrator,
+) -> None:
+    """
+    NEED_INPUT fix: a clarifying-question turn now produces a real
+    AgentResponseDTO artifact (AgentResponseMapper runs for NEED_INPUT
+    the same way it does for FINAL -- see nodes.py), so agent_responses
+    is non-empty and the orchestrator must surface the question as
+    real content instead of ever reaching the "no mappable response"
+    fallback that test_handle_returns_graceful_fallback_on_non_gated_tool_failure
+    exercises for the genuinely-empty case.
+    """
+
+    question = "Which jurisdiction applies to this contract?"
+
+    orchestrator._executor.execute = AsyncMock(
+        return_value=build_success_execution_result(
+            content=question,
+            metadata={"termination_reason": "user_input_required"},
+        ),
+    )
+    orchestrator._guardrails.review = AsyncMock(
+        return_value=GuardrailReviewResult(
+            content=question,
+            action=GuardrailActionEnum.NONE,
+        ),
+    )
+
+    response = await orchestrator.handle(
+        request=build_orchestrator_request(),
+        action_workflow_service=MagicMock(),
+    )
+
+    assert response.content == question
+    assert "wasn't able to complete" not in response.content
+
+
+@pytest.mark.asyncio
+async def test_handle_survives_need_input_termination_reason_into_response_metadata(
+    orchestrator: AIOrchestrator,
+) -> None:
+    """
+    Not just the question text -- metadata["termination_reason"] set
+    by AgentResponseMapper for a NEED_INPUT turn must survive both
+    aggregation steps (ResponseAggregator._aggregate_metadata() and
+    AIOrchestrator's own OrchestratorResponse construction, which used
+    to omit metadata= entirely) and land on the real, aggregated
+    OrchestratorResponse -- not just be present at the AgentResponseDTO
+    level, where a caller can't see it.
+    """
+
+    question = "Which jurisdiction applies to this contract?"
+
+    orchestrator._executor.execute = AsyncMock(
+        return_value=build_success_execution_result(
+            content=question,
+            metadata={"termination_reason": "user_input_required"},
+        ),
+    )
+    orchestrator._guardrails.review = AsyncMock(
+        return_value=GuardrailReviewResult(
+            content=question,
+            action=GuardrailActionEnum.NONE,
+        ),
+    )
+
+    response = await orchestrator.handle(
+        request=build_orchestrator_request(),
+        action_workflow_service=MagicMock(),
+    )
+
+    assert response.metadata.termination_reason == "user_input_required"
+
+
+@pytest.mark.asyncio
+async def test_handle_logs_accurate_diagnostics_not_a_generic_tool_failure_claim(
+    orchestrator: AIOrchestrator,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """
+    The fallback log message used to unconditionally claim "(a tool
+    call failed)" -- wrong even for the FAILED case it was written
+    for whenever the real cause was a policy/validation failure, not a
+    tool. It must no longer make that specific claim, and must carry
+    the real per-step termination_reason/error so the actual cause is
+    diagnosable from the log instead of asserted incorrectly.
+    """
+
+    step_id = "step-a"
+
+    orchestrator._executor.execute = AsyncMock(
+        return_value=ExecutionResultSchema(
+            state=ExecutionStateSchema(
+                request_id=uuid4(),
+                status=ExecutionStatusEnum.FAILED,
+                steps={
+                    step_id: StepExecutionStateSchema(
+                        step_id=step_id,
+                        status=ExecutionStatusEnum.FAILED,
+                        error="Delegation to legal is not permitted by policy.",
+                        termination_reason="failed_policy",
+                    ),
+                },
+            ),
+            artifacts={},
+            action=None,
+            approval=None,
+        ),
+    )
+
+    with caplog.at_level("ERROR", logger="agentic.orchestration.orchestrator"):
+        response = await orchestrator.handle(
+            request=build_orchestrator_request(),
+            action_workflow_service=MagicMock(),
+        )
+
+    assert "wasn't able to complete" in response.content
+
+    fallback_records = [
+        record for record in caplog.records if "mappable agent response" in record.message
+    ]
+    assert len(fallback_records) == 1
+
+    fallback_record = fallback_records[0]
+    assert "tool call failed" not in fallback_record.message
+    assert fallback_record.termination_reasons == ("failed_policy",)
+    assert fallback_record.step_errors == ("Delegation to legal is not permitted by policy.",)
 
 
 def _build_orchestrator_for_guardrail_tests(

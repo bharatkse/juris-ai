@@ -112,6 +112,12 @@ class ResponseMetadata(BaseModel):
 
     workflow: str | None = None
 
+    termination_reason: str | None = None
+
+    groundedness: float | None = None
+
+    relevance: float | None = None
+
 
 class ResponsePayload(BaseModel):
     """
