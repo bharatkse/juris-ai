@@ -173,16 +173,16 @@ itself, not by this codebase — see `env.example`).
 
 ## Known gaps
 
-RAG-specific items not already covered by `claude.md` → Known gaps
-(read that first — it covers the citation-provenance chain this
-package feeds into):
+RAG-specific items; see `src/agentic/README.md` → Known gaps for the
+citation-provenance chain this package feeds into, and
+`docs/known-issues.md` for repo-wide gaps not specific to `rag/`:
 
 - **Inline legislative amendment-marker brackets are an unhandled
   text-matching artifact class** (e.g. `"1[electronic\nsignature]"`
   mid-sentence in the IT Act corpus). See
-  `evaluation/metrics/text_matching.py`'s module docstring and
-  `src/rag/CLAUDE.md` → Known gaps for the full rationale and how one
-  instance was fixed (`legal_retrieval_gold_v1.json`, case `it-005`).
+  `evaluation/metrics/text_matching.py`'s module docstring for the
+  full rationale and how one instance was fixed
+  (`legal_retrieval_gold_v1.json`, case `it-005`).
 - **Citation-quality thresholds (`min_citation_precision`/
   `min_citation_coverage` in `agentic/evaluation/answer.py`) have no
   empirical calibration, and — unlike groundedness/relevance/
@@ -193,10 +193,13 @@ package feeds into):
   confidence to place in citation quality derived from this package's
   retrieval output. See `agentic/evaluation/answer.py`'s
   `AnswerQualityPolicy` docstring for the honest accounting.
-- **`quality_gate.py` is not wired into CI** — see `src/rag/CLAUDE.md`
-  → Known gaps.
+- **`quality_gate.py` is not wired into CI** — the gate exists and
+  functions (used by `ragas_offline.py`), but nothing in
+  `.github/workflows/` calls it. Owner: `rag/evaluation/`.
 - **Ingestion never writes `url` into chunk metadata** — no
-  web-sourced ingestion path exists yet. See `claude.md` → Known gaps.
+  web-sourced ingestion path exists yet; title is populated
+  (PDF-only, see the ingestion pipeline diagram above), `url` has
+  nothing to populate it with today. Owner: `rag/ingestion/`.
 
 ## Error handling
 

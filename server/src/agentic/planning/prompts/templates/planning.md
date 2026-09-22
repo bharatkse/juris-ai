@@ -111,12 +111,36 @@ A step may depend on zero or more previous steps.
 For example:
 
 ```json
-{
-  "id": "risk-analysis",
-  "agent": "contract",
-  "instruction": "Identify contractual risks based on the contract analysis.",
-  "depends_on": ["contract-analysis"],
-  "stage": 2,
-  "arguments": {}
-}
+[
+  {
+    "id": "contract-analysis",
+    "agent": "contract",
+    "instruction": "Summarize the contract's key obligations.",
+    "depends_on": [],
+    "stage": 1,
+    "arguments": {}
+  },
+  {
+    "id": "risk-analysis",
+    "agent": "contract",
+    "instruction": "Identify contractual risks based on the contract analysis.",
+    "depends_on": ["contract-analysis"],
+    "stage": 2,
+    "arguments": {}
+  }
+]
 ```
+
+## Agent Assignment
+
+Two steps that have no dependency relationship between them -- neither
+depends, directly or indirectly, on the other -- may execute at the same
+time. Never assign the same agent to two such steps: an agent can only
+work on one step at a time, so two independent steps needing the same
+capability must be combined into a single step instead.
+
+The same agent MAY appear in more than one step when those steps are
+connected by `depends_on`, directly or through a chain of steps, as in
+the "contract-analysis" -> "risk-analysis" example above -- one step
+building on what an earlier step (using the same agent) already
+produced.
