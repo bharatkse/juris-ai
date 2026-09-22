@@ -8,6 +8,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from core.dto.user_memory import UserMemoryContextItem
 from core.enums import AttachmentTypeEnum, RequestSourceEnum
 from core.models.conversation import ConversationMessageSchema
 from core.types import ConversationEventId, ConversationId, UserId
@@ -73,6 +74,12 @@ class OrchestratorRequest(BaseModel):
     attachments: list[Attachment] = Field(
         default_factory=list,
     )
+
+    # The user's saved memories selected for this turn (empty unless the
+    # user opted in and this conversation's "don't remember this" switch
+    # is off). Deliberately separate from ``history``: history is trimmed
+    # oldest-first under token pressure, memory must not be.
+    user_memory: tuple[UserMemoryContextItem, ...] = ()
 
     metadata: RequestMetadata = Field(
         default_factory=RequestMetadata,

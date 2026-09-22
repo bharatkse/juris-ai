@@ -1374,6 +1374,7 @@ class AIOrchestrator:
             conversation=ConversationContext(
                 conversation_id=request.conversation_id,
                 history=request.history,
+                user_memory=request.user_memory,
             ),
             user=UserContext(
                 user_id=request.user_id,
@@ -1413,4 +1414,5 @@ class AIOrchestrator:
 
         return ConversationDTO(
             messages=tuple(messages),
+            user_memory=request.user_memory,
         )

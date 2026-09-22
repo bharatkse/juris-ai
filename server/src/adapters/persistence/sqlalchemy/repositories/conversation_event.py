@@ -10,6 +10,9 @@ from adapters.persistence.sqlalchemy.models.conversation_event import Conversati
 from adapters.persistence.sqlalchemy.repositories.base import BaseRepository
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
+    from core.enums import MessageRoleEnum
     from core.types import ConversationEventId, ConversationId
 
 
@@ -123,6 +126,44 @@ class ConversationEventRepository(
             events.reverse()
 
         return events
+
+    async def list_by_role_since(
+        self,
+        *,
+        conversation_id: ConversationId,
+        role: MessageRoleEnum,
+        after: datetime | None,
+        limit: int,
+    ) -> list[ConversationEvent]:
+        """
+        Events of one role created strictly after ``after`` (all of them
+        when None), oldest first, at most ``limit``.
+
+        Used by user-memory extraction, which must only ever read USER
+        messages -- never assistant, tool or system content.
+        """
+
+        statement = self.select().where(
+            self._model.conversation_id == conversation_id,
+            self._model.role == role,
+        )
+
+        if after is not None:
+            statement = statement.where(
+                self._model.created_at > after,
+            )
+
+        result = await self._session.execute(
+            statement.order_by(
+                self._model.created_at.asc(),
+            ).limit(
+                limit,
+            ),
+        )
+
+        return list(
+            result.scalars().all(),
+        )
 
     async def update(
         self,

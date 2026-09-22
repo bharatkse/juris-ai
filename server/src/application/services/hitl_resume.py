@@ -35,6 +35,7 @@ if TYPE_CHECKING:
     from agentic.orchestration.orchestrator import AIOrchestrator
     from application.services.action_workflow import ActionWorkflowService
     from application.services.conversation_event import ConversationEventService
+    from application.services.user_memory_extraction import MemoryExtractionScheduler
 
 logger = get_logger(__name__)
 
@@ -66,12 +67,16 @@ class HitlResumeService(BaseService):
         conversation_event_service: ConversationEventService,
         orchestrator: AIOrchestrator,
         action_workflow_service: ActionWorkflowService,
+        memory_extraction_scheduler: MemoryExtractionScheduler | None = None,
     ) -> None:
         super().__init__(session)
         self._agent_action_repository = agent_action_repository
         self._conversation_event_service = conversation_event_service
         self._orchestrator = orchestrator
         self._action_workflow_service = action_workflow_service
+        # Optional so the service works with user memory not wired
+        # (api.dependencies.hitl_resume provides it).
+        self._memory_extraction_scheduler = memory_extraction_scheduler
 
     async def resume_after_decision(
         self,
@@ -197,6 +202,19 @@ class HitlResumeService(BaseService):
             agent_action.executed_at = datetime.now(UTC)
 
             await self.commit()
+
+            # After the commit, like ChatService: the extractor only ever
+            # sees a finished turn. A resume adds no new USER message, so
+            # this usually finds nothing new and does nothing; it matters
+            # when the run scheduled by the paused chat turn was skipped
+            # because another was already in flight for the conversation.
+            # Fire-and-forget; it re-checks consent and the conversation
+            # switch itself and never raises.
+            if self._memory_extraction_scheduler is not None:
+                self._memory_extraction_scheduler.schedule(
+                    user_id=agent_action.user_id,
+                    conversation_id=conversation_event.conversation_id,
+                )
 
             logger.info(
                 "Resumed execution after HITL decision.",

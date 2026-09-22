@@ -120,6 +120,8 @@ async def test_root_endpoint() -> None:
 @pytest.mark.asyncio
 @patch("main.check_redis")
 @patch("main.seed_default_agent_policies")
+@patch("main.create_memory_extraction_scheduler")
+@patch("main.create_clients")
 @patch("main.create_ai_orchestrator")
 @patch("main.AsyncPostgresSaver.from_conn_string")
 @patch("main.logger")
@@ -131,6 +133,8 @@ async def test_lifespan(
     mock_log: MagicMock,
     mock_from_conn_string: MagicMock,
     mock_create_ai_orchestrator: MagicMock,
+    mock_create_clients: MagicMock,
+    mock_create_memory_extraction_scheduler: MagicMock,
     mock_seed_default_agent_policies: MagicMock,
     mock_check_redis: AsyncMock,
 ) -> None:
@@ -148,10 +152,16 @@ async def test_lifespan(
 
     mock_from_conn_string.side_effect = mock_checkpointer_context
 
+    scheduler = MagicMock()
+    scheduler.shutdown = AsyncMock()
+    mock_create_memory_extraction_scheduler.return_value = scheduler
+
     app = FastAPI()
 
     async with main.lifespan(app):
-        pass
+        # The scheduler is already on app.state DURING the yielded
+        # lifetime, not only after -- built once here, not per request.
+        assert app.state.memory_extraction_scheduler is scheduler
 
     mock_setup_logging.assert_called_once_with(
         level=main.settings.logging.LOG_LEVEL,
@@ -177,11 +187,28 @@ async def test_lifespan(
 
     checkpointer.setup.assert_awaited_once_with()
 
+    # The orchestrator and user memory share one ClientContainer, so the
+    # embedding model is loaded once.
+    mock_create_clients.assert_called_once_with(settings=main.settings)
+
     mock_create_ai_orchestrator.assert_called_once_with(
         checkpointer=checkpointer,
+        clients=mock_create_clients.return_value,
     )
 
     assert app.state.ai_orchestrator is mock_create_ai_orchestrator.return_value
+    assert app.state.embedding_provider is mock_create_clients.return_value.embedding_provider
+
+    mock_create_memory_extraction_scheduler.assert_called_once_with(
+        settings=main.settings,
+        clients=mock_create_clients.return_value,
+    )
+
+    # Shutdown waits for/cancels in-flight extraction runs -- confirmed
+    # to run even though the lifespan block above exited normally.
+    scheduler.shutdown.assert_awaited_once_with(
+        timeout_seconds=main.MEMORY_EXTRACTION_SHUTDOWN_TIMEOUT_SECONDS,
+    )
 
     assert mock_log.info.call_count == 4
 

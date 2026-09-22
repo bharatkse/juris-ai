@@ -43,3 +43,8 @@ class ConversationFactory(BaseFactory):
         UserFactory,
     )
     user_id = factory.SelfAttribute("user.id")
+
+    # Column defaults only apply at INSERT, and this factory builds
+    # unpersisted objects, so NOT NULL columns with defaults are set
+    # explicitly here.
+    memory_disabled = False

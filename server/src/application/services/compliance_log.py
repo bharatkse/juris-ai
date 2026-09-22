@@ -61,7 +61,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from adapters.observability.logger import get_logger
 from adapters.persistence.sqlalchemy.models.compliance_log import ComplianceLog
 from application.services.base import BaseService
-from core.enums import ActorTypeEnum, ComplianceEventTypeEnum
+from core.enums import ActorTypeEnum, ComplianceEventTypeEnum, UserMemoryOperationEnum
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -345,6 +345,57 @@ class ComplianceLogService(BaseService):
             },
         )
 
+    async def record_memory_operation(
+        self,
+        *,
+        user_id: str,
+        tenant_id: str,
+        operation: UserMemoryOperationEnum,
+        actor_type: ActorTypeEnum,
+        memory_id: str | None = None,
+        content_hash: str | None = None,
+        kind: str | None = None,
+        count: int | None = None,
+        request_id: UUID | None = None,
+        conversation_id: str | None = None,
+        conversation_event_id: str | None = None,
+    ) -> ComplianceLog:
+        """
+        A change to, or use of, a user's long-term memory.
+
+        Identifiers, counts and a content hash only. This method takes
+        no free-text parameter on purpose: memory text is user data
+        that must stay erasable, and this table is insert-only and
+        retained indefinitely by default, so text logged here could
+        never be removed. ``content_hash`` (sha256 of the normalized
+        content) is enough to prove which fact was involved without
+        storing it.
+        """
+
+        payload: dict[str, Any] = {"operation": operation.value}
+
+        for key, value in (
+            ("memory_id", memory_id),
+            ("content_hash", content_hash),
+            ("kind", kind),
+            ("count", count),
+        ):
+            if value is not None:
+                payload[key] = value
+
+        return await self._record(
+            request_id=request_id,
+            user_id=user_id,
+            tenant_id=tenant_id,
+            actor_type=actor_type,
+            event_type=ComplianceEventTypeEnum.MEMORY_OPERATION,
+            conversation_id=conversation_id,
+            conversation_event_id=conversation_event_id,
+            resource_type="user_memory",
+            resource_id=memory_id,
+            payload=payload,
+        )
+
     async def purge_older_than(
         self,
         *,
@@ -486,6 +537,9 @@ class StandaloneComplianceLogWriter:
 
     async def record_guardrail_fired(self, **kwargs: Any) -> None:
         await self._run(lambda service: service.record_guardrail_fired(**kwargs))
+
+    async def record_memory_operation(self, **kwargs: Any) -> None:
+        await self._run(lambda service: service.record_memory_operation(**kwargs))
 
     async def _run(
         self,

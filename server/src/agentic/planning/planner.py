@@ -159,6 +159,7 @@ class ExecutionPlanner:
             history=tuple(
                 context.conversation.history,
             ),
+            user_memory=context.conversation.user_memory,
         )
 
     def _validate_plan(

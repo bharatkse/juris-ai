@@ -14,6 +14,7 @@ from .knowledge_sources import KnowledgeSource
 from .library import Library
 from .usage_record import UsageRecord
 from .user import User
+from .user_memory import UserMemory
 
 __all__ = [
     "Conversation",
@@ -28,4 +29,5 @@ __all__ = [
     "UsageRecord",
     "AgentPolicyModel",
     "ComplianceLog",
+    "UserMemory",
 ]

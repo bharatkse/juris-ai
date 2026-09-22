@@ -19,6 +19,7 @@ from core.constants import DEFAULT_CONVERSATION_TITLE
 from core.exceptions.database import DatabaseError
 from core.exceptions.httpx import ConversationInactiveError
 from core.exceptions.httpx import NotFoundError as ConversationNotFoundError
+from core.utils.datetime import utcnow
 
 if TYPE_CHECKING:
     from api.schemas.conversation import CreateConversationRequest
@@ -234,4 +235,79 @@ class ConversationService(BaseService):
 
             raise DatabaseError(
                 "Failed to archive conversation.",
+            ) from exc
+
+    async def set_memory_disabled(
+        self,
+        *,
+        conversation_id: ConversationId,
+        user_id: UserId,
+        disabled: bool,
+    ) -> Conversation:
+        """
+        Turn the per-conversation "don't remember this" switch on or off.
+
+        Forward-only. Turning it on stops anything said in this
+        conversation from now on being saved to the user's long-term
+        memory. It does NOT delete facts already saved from earlier
+        messages in this conversation (or from any other), and it does
+        not touch the conversation's history. Removing what is already
+        stored is done from the user's memory list, one item at a time,
+        or by turning memory off altogether, which deletes everything.
+
+        Turning it back OFF (allowing memory again) moves the extraction
+        watermark to now, so nothing said while it was on is ever read
+        later: the switch is a promise about those messages, not a pause.
+
+        Raises:
+            ConversationNotFoundError
+            ConversationInactiveError
+        """
+
+        conversation = await self.get_or_raise(
+            conversation_id=conversation_id,
+            user_id=user_id,
+        )
+
+        if conversation.memory_disabled == disabled:
+            return conversation
+
+        conversation.memory_disabled = disabled
+
+        if not disabled:
+            conversation.memory_extracted_through_created_at = utcnow()
+
+        try:
+            conversation = await self._repository.update(
+                conversation,
+            )
+
+            await self.commit()
+
+            logger.info(
+                "Conversation memory switch changed.",
+                extra={
+                    "operation": "set_conversation_memory_disabled",
+                    "conversation_id": str(conversation.id),
+                    "user_id": str(user_id),
+                    "memory_disabled": disabled,
+                },
+            )
+
+            return conversation
+
+        except SQLAlchemyError as exc:
+            await self.rollback()
+
+            logger.exception(
+                "Database error while changing conversation memory switch.",
+                extra={
+                    "operation": "set_conversation_memory_disabled",
+                    "conversation_id": str(conversation_id),
+                    "user_id": str(user_id),
+                },
+            )
+
+            raise DatabaseError(
+                "Failed to update conversation memory setting.",
             ) from exc

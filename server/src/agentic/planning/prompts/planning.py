@@ -4,6 +4,7 @@ Planning prompt builder.
 
 from __future__ import annotations
 
+from agentic.agents.prompts.user_memory import render_user_memory_block
 from core.dto.clients.llm import LLMMessageDTO, LLMRequestDTO
 from core.dto.planning import PlanningRequestDTO
 from core.enums import MessageRoleEnum
@@ -40,11 +41,26 @@ class PlanningPromptBuilder(
         Build an execution planning request.
         """
 
+        memory_block = render_user_memory_block(request.user_memory)
+
         return LLMRequestDTO(
             messages=(
                 LLMMessageDTO(
                     role=MessageRoleEnum.SYSTEM,
                     content=self._system_prompt,
+                ),
+                # Its own message, after the system prompt and before the
+                # history -- never a history message, which would let it
+                # be treated as something the user just said.
+                *(
+                    (
+                        LLMMessageDTO(
+                            role=MessageRoleEnum.SYSTEM,
+                            content=memory_block,
+                        ),
+                    )
+                    if memory_block
+                    else ()
                 ),
                 *(
                     LLMMessageDTO(

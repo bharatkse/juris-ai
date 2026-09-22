@@ -376,3 +376,75 @@ class ComplianceEventTypeEnum(StrEnum):
     GUARDRAIL_FIRED = "guardrail_fired"
     HITL_APPROVAL_DECISION = "hitl_approval_decision"
     RESPONSE_RETURNED = "response_returned"
+    # A change to, or use of, a user's long-term memory. The specific
+    # operation is in the payload (see UserMemoryOperationEnum). One
+    # event type rather than one per operation: a native Postgres enum
+    # value can never be removed, so this stays minimal.
+    MEMORY_OPERATION = "memory_operation"
+
+
+# ============================================================================
+# User memory
+# ============================================================================
+
+
+class UserMemoryKindEnum(StrEnum):
+    """
+    Category of a durable, user-stated fact.
+
+    Phase 1 stores only facts that describe the user's own working
+    preferences/profile. Nothing here identifies a client or a matter.
+    """
+
+    PREFERENCE = "preference"
+    PROFILE = "profile"
+    FACT = "fact"
+
+
+class UserMemoryStatusEnum(StrEnum):
+    """
+    Lifecycle state of a user memory.
+
+    Only ACTIVE rows are ever injected into a prompt. PENDING is
+    reserved for facts awaiting the user's confirmation; SUPERSEDED
+    marks a fact replaced by a newer one.
+    """
+
+    ACTIVE = "active"
+    SUPERSEDED = "superseded"
+    PENDING = "pending"
+
+
+class UserMemoryScopeEnum(StrEnum):
+    """
+    What a memory is scoped to.
+
+    Only USER exists today, and user_memories carries a CHECK
+    constraint that rejects anything else. A "matter" scope requires a
+    matters model with hard isolation between matters and is deliberately
+    absent: widening this needs a migration, not just a new member here.
+    """
+
+    USER = "user"
+
+
+class UserMemoryOperationEnum(StrEnum):
+    """
+    What happened to a user's long-term memory, as recorded in the
+    compliance log's MEMORY_OPERATION payload.
+
+    The compliance log is insert-only and retained indefinitely by
+    default, so it can never honour an erasure request. These events
+    therefore carry identifiers, counts and a content hash only -- never
+    memory text.
+    """
+
+    STORED = "stored"
+    UPDATED = "updated"
+    SUPERSEDED = "superseded"
+    DELETED = "deleted"
+    DELETED_ALL = "deleted_all"
+    PURGED_EXPIRED = "purged_expired"
+    CONSENT_GRANTED = "consent_granted"
+    CONSENT_WITHDRAWN = "consent_withdrawn"
+    INJECTED = "injected"

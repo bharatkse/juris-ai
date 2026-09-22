@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 from agentic.orchestration.schemas.request import Attachment
+from core.dto.user_memory import UserMemoryContextItem
 from core.models.conversation import ConversationMessageSchema
 from core.types import ConversationId, UserId
 
@@ -46,6 +47,8 @@ class ConversationContext(BaseModel):
     )
 
     summary: str | None = None
+
+    user_memory: tuple[UserMemoryContextItem, ...] = ()
 
 
 class UserContext(BaseModel):

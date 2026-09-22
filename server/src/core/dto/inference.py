@@ -14,6 +14,7 @@ class LLMTask(StrEnum):
     STRUCTURED_DECISION = "structured_decision"
     FACTUAL_ANSWER = "factual_answer"
     SUMMARIZATION = "summarization"
+    MEMORY_EXTRACTION = "memory_extraction"
     CLASSIFICATION = "classification"
     CREATIVE_GENERATION = "creative_generation"
 
@@ -57,6 +58,7 @@ class InferencePolicy:
     structured_decision_temperature: float = 0.0
     factual_answer_temperature: float | None = 0.2
     summarization_temperature: float | None = 0.3
+    memory_extraction_temperature: float | None = 0.0
     classification_temperature: float | None = 0.0
     creative_generation_temperature: float | None = 0.8
     default_top_p: float | None = None
@@ -72,6 +74,7 @@ class InferencePolicy:
             self.structured_decision_temperature,
             self.factual_answer_temperature,
             self.summarization_temperature,
+            self.memory_extraction_temperature,
             self.classification_temperature,
             self.creative_generation_temperature,
         )
@@ -108,6 +111,7 @@ class InferencePolicy:
             LLMTask.STRUCTURED_DECISION: self.structured_decision_temperature,
             LLMTask.FACTUAL_ANSWER: self.factual_answer_temperature,
             LLMTask.SUMMARIZATION: self.summarization_temperature,
+            LLMTask.MEMORY_EXTRACTION: self.memory_extraction_temperature,
             LLMTask.CLASSIFICATION: self.classification_temperature,
             LLMTask.CREATIVE_GENERATION: self.creative_generation_temperature,
         }

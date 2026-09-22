@@ -70,6 +70,15 @@ class LLMSettings(BaseAppSettings):
     # give a real signal if that happens without having built a full
     # harness today.
     SUMMARIZATION_MODEL: GroqModelEnum = GroqModelEnum.GPT_OSS_20B
+    # Model for extracting durable user facts from conversations
+    # (application/services/user_memory_extraction.py). UNVALIDATED for
+    # this task: it defaults to the same cheaper model as summarization
+    # only because extraction is a low-stakes, temperature-0, structured
+    # JSON call, not because extraction quality was measured. There is no
+    # extraction-precision eval yet (deferred to Phase 2) -- see
+    # docs/server/architecture/user-memory.md. One config point, easy to
+    # move up to GPT_OSS_120B if extracted facts turn out noisy.
+    MEMORY_EXTRACTION_MODEL: GroqModelEnum = GroqModelEnum.GPT_OSS_20B
     BRAVE_API_KEY: SecretStr | None = None
 
     # LangSmith Observability

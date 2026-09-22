@@ -129,6 +129,66 @@ CACHE_PREFIX_DOCUMENT: str = "document:"
 
 DEFAULT_CONVERSATION_TITLE: str = "New Conversation"
 
+# ── User memory ───────────────────────────────────────────────────────────────
+# Sliding retention window: a memory expires this many days after it was
+# last used (see UserMemoryRepository -- expired rows are treated as
+# inactive at query time). PLACEHOLDER, not a legal determination.
+#
+# TODO(legal): replace with the confirmed retention period for this
+# product's jurisdiction and matter types before this ships to real
+# users. This is the only place the window is defined -- everything
+# else derives expires_at from it.
+USER_MEMORY_RETENTION_DAYS: int = 120
+
+# One atomic fact, not a paragraph. Mirrored as the user_memories.content
+# column width in migration a4c1e7d92b35 -- widening it needs a new migration.
+USER_MEMORY_MAX_CONTENT_CHARS: int = 300
+
+# Hard ceiling on stored memories per user. Extraction is best-effort and
+# there is no consolidation job yet (Phase 2), so this bounds growth.
+USER_MEMORY_MAX_PER_USER: int = 200
+
+# Read-path selection (see UserMemoryService.retrieve_for_prompt).
+USER_MEMORY_RETRIEVAL_TOP_K: int = 5
+USER_MEMORY_MAX_PROFILE_ITEMS: int = 3
+
+# Cosine-similarity floor for a non-profile memory to be injected.
+# UNCALIBRATED placeholder: BGE-style embeddings score even unrelated short
+# texts well above zero, so this must be tuned against real memories before
+# it can be trusted. Profile-kind items bypass it by design.
+USER_MEMORY_MIN_SIMILARITY: float = 0.5
+
+# Recency tie-breaker added to similarity: a memory used today gets the
+# full bonus, decaying linearly to zero over the window. Deliberately small
+# so it reorders near-ties without letting a stale-but-recent fact outrank
+# a genuinely relevant one.
+USER_MEMORY_RECENCY_BONUS_MAX: float = 0.05
+USER_MEMORY_RECENCY_WINDOW_DAYS: int = 30
+
+# Token cap for the whole <user_memory> block, enforced at retrieval time
+# because fit_to_budget never truncates the system side of a prompt.
+USER_MEMORY_MAX_PROMPT_TOKENS: int = 400
+
+# Write path (see UserMemoryExtractor). Extraction runs once at least
+# this many new USER messages have accumulated since the conversation's
+# extraction watermark.
+USER_MEMORY_EXTRACTION_TURN_INTERVAL: int = 6
+
+# Bounds on a single extraction call: how many pending USER messages are
+# considered (oldest first, the rest wait for the next pass), how much of
+# each is sent (a pasted document must not become the prompt), and how
+# many existing memories are shown to the model for dedupe/supersede.
+USER_MEMORY_EXTRACTION_MAX_EVENTS: int = 30
+USER_MEMORY_EXTRACTION_EVENT_MAX_CHARS: int = 2000
+USER_MEMORY_EXTRACTION_CONTEXT_K: int = 8
+USER_MEMORY_EXTRACTION_MAX_OUTPUT_TOKENS: int = 700
+USER_MEMORY_EXTRACTION_MAX_OPERATIONS: int = 8
+
+# Operations the model reports below this confidence are dropped.
+# UNCALIBRATED placeholder, like USER_MEMORY_MIN_SIMILARITY: model-stated
+# confidence is not a measured probability.
+USER_MEMORY_MIN_EXTRACTION_CONFIDENCE: float = 0.6
+
 # Test DB Configuration
 TEST_DB_URL = "sqlite+aiosqlite:///./pytests.db"
 
@@ -149,6 +209,7 @@ Juris-AI is an AI-powered legal assistant API supporting:
 - Agent orchestration
 - Human-in-the-loop approval workflows
 - Agent action authorization and execution
+- Long-term user memory (opt-in, cross-conversation preference/profile facts)
 
 ### Authentication
 

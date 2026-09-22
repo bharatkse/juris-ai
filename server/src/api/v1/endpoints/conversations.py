@@ -13,6 +13,7 @@ from api.schemas.conversation import (
     ConversationListResponse,
     ConversationResponse,
     CreateConversationRequest,
+    UpdateConversationMemoryRequest,
 )
 from api.utilities.api_response import ApiResponse
 from application.services.conversation import ConversationService
@@ -184,4 +185,45 @@ async def archive_conversation(
     return ApiResponse(
         message="Conversation archived successfully.",
         status_code=status.HTTP_204_NO_CONTENT,
+    )
+
+
+@router.put(
+    "/{conversation_id}/memory",
+    summary='Turn "don\'t remember this" on or off for a conversation',
+)
+async def update_conversation_memory(
+    conversation_id: ConversationId,
+    request: UpdateConversationMemoryRequest,
+    current_user=Depends(get_current_user),
+    service: ConversationService = Depends(
+        get_conversation_service,
+    ),
+) -> ApiResponse:
+    """
+    Stop (or resume) saving what is said in this conversation to
+    long-term memory.
+
+    Forward-only: turning it on does NOT delete facts already saved from
+    earlier messages. To remove those, delete them from the memory list
+    or turn memory off, which deletes everything.
+    """
+
+    conversation = await service.set_memory_disabled(
+        conversation_id=conversation_id,
+        user_id=current_user.id,
+        disabled=request.memory_disabled,
+    )
+
+    return ApiResponse(
+        data=ConversationResponse.model_validate(
+            conversation,
+            from_attributes=True,
+        ),
+        message=(
+            "New messages in this conversation will not be saved to memory. "
+            "Anything already saved is unchanged."
+            if conversation.memory_disabled
+            else "Memory is allowed again for this conversation."
+        ),
     )

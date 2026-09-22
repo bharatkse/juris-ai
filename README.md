@@ -79,6 +79,7 @@ Describes what the code actually does — not a legal privacy policy. If you dep
 | PII redaction | Presidio-based, on generated output only; custom `IN_PAN`/`IN_AADHAAR` recognizers |
 | Local data | Legal corpus (`raw_datasets/`) is local public-domain text; local Ollama model runs on your own infra |
 | Retention | No automatic deletion — conversations/events persist in Postgres until you remove them |
+| Cross-conversation memory | Off by default (opt-in). When a user turns it on, short preference/profile facts they state are saved and reused in later conversations, sent to the LLM provider on every request that injects them; turning it off deletes them immediately. Unlike conversation history, saved memories DO expire automatically (sliding retention window). See [`docs/server/architecture/user-memory.md`](docs/server/architecture/user-memory.md) |
 
 ## Audit Status
 
