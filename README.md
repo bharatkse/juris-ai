@@ -63,8 +63,7 @@ juris-ai/
 ├── docker-compose.yml   # Release bundle: run Juris AI (builds from source until first GHCR publish)
 ├── setup.sh           # Release-flow installer -- see Quick Start above
 ├── Makefile           # Build, test, lint, migrate, deploy -- run `make help` from here
-├── env.example          # Release-flow configuration template
-└── claude.md            # Working conventions and the authoritative Known-gaps list
+└── env.example          # Release-flow configuration template
 ```
 
 ## Data Processing & Privacy
@@ -91,7 +90,7 @@ Describes what the code actually does — not a legal privacy policy. If you dep
 | Known production gaps | No real `ENVIRONMENT=production` path · `DB_SECRET_ARN` unused by the app · 6 documented Floci emulator defects + 1 CloudFormation template defect |
 | Test suite | 1,219 passing (unit/e2e/smoke) · 2 known gaps tracked, not hidden · coverage via Codecov in CI |
 
-Full detail and owners: [`claude.md`](claude.md) → Known gaps.
+Full detail and owners: [`docs/known-issues.md`](docs/known-issues.md).
 
 ## Contributing
 

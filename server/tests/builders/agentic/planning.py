@@ -85,6 +85,7 @@ def build_context(
 def build_step(
     step_id: str = "step-a",
     *,
+    agent: AgentTypeEnum = AgentTypeEnum.LEGAL,
     depends_on: tuple[str, ...] = (),
     stage: int = 1,
 ) -> ExecutionStepDTO:
@@ -94,7 +95,7 @@ def build_step(
 
     return ExecutionStepDTO(
         id=step_id,
-        agent=AgentTypeEnum.LEGAL,
+        agent=agent,
         instruction=f"Execute {step_id}.",
         depends_on=depends_on,
         stage=stage,

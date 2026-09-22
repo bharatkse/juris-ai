@@ -11,8 +11,8 @@ You generally should not need to run raw Docker, Poetry, Alembic, SAM, or AWS CL
 The Makefile also auto-detects the active environment from Floci health.
 
 > Floci is a drop-in, MIT-licensed local AWS emulator that replaced
-> LocalStack here (see `claude.md`'s Known gaps for the one rough
-> edge found during that swap). It serves the same
+> LocalStack here (see `docs/known-issues.md` for the rough edges
+> found during that swap). It serves the same
 > `/_localstack/health` endpoint for compatibility. Most internal
 > Makefile identifiers were renamed to match (`FLOCI_HEALTH_URL`,
 > `_FLOCI_UP`) — the `ls-*` target names, and `make env-info`'s/`make help`'s
@@ -32,7 +32,7 @@ This guide covers **workflow** (commands, environments, troubleshooting). For **
 | [`docs/architecture/user-memory.md`](architecture/user-memory.md) | Cross-conversation user memory: consent/retention model, write/read path design, pre-ship checklist |
 | [`src/agentic/README.md`](../src/agentic/README.md) | Current, real behavior of planning/orchestration/execution/agents/tools — read this to debug a live agent request |
 | [`src/rag/README.md`](../src/rag/README.md) | Current, real behavior of ingestion/indexing/retrieval/evaluation — read this to debug a retrieval-quality issue |
-| [`claude.md`](../claude.md) (repo root) | Repo-wide working conventions and the authoritative, cross-cutting "Known gaps" list — every module doc cross-references it rather than duplicating it |
+| [`docs/known-issues.md`](../known-issues.md) | Confirmed, repo-wide gaps between design and implementation that are recorded but not yet fixed — module READMEs cross-reference it for anything not specific to their own package |
 
 When `overview.md` and a module README disagree, the module README
 wins — it documents what the code does today, not what it was
@@ -481,8 +481,9 @@ make iac-destroy PROVIDER=aws
 > already-applied Floci stack expecting a clean incremental update.**
 > A confirmed Floci defect on `aws_api_gateway_integration`'s
 > `timeout_milliseconds` makes any update attempt against an existing
-> Floci-created integration fail outright — see `claude.md`'s Known
-> gaps. Always `make iac-destroy` before re-applying against Floci;
+> Floci-created integration fail outright — see
+> `docs/known-issues.md`. Always `make iac-destroy` before re-applying
+> against Floci;
 > real AWS deploys are unaffected.
 
 `PROVIDER` only accepts `aws` today — anything else fails fast with a

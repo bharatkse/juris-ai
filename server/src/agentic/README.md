@@ -1,11 +1,8 @@
 # src/agentic/ — Planning, Orchestration, Execution, Agents, Tools
 
-Read `src/agentic/CLAUDE.md` alongside this file: that one is the
-terse dev-workflow reference (checklists, request-flow order); this
-one documents the real current architecture in more depth, with
+This file documents the real current architecture in depth, with
 diagrams, for someone debugging a production issue six months from
-now. Where they'd disagree, `CLAUDE.md` wins for day-to-day work and
-this file should be corrected.
+now.
 
 ## Module map
 
@@ -16,6 +13,7 @@ this file should be corrected.
 | `execution/` | `Executor`, LangGraph graph construction/compilation, execution state/memory, response aggregation |
 | `agents/` | Domain reasoning (`LegalAgent`, `ContractAgent`), prompt building, token budgeting, agent runtime (lifecycle, continuation) |
 | `evaluation/` | `AnswerEvaluator` + `AnswerQualityPolicy` — post-hoc answer quality gating (groundedness/relevance/correctness/citations) |
+| `guardrails/` | `OutputGuardrailService` — reviews the final aggregated response for harmful content and PII before it leaves the system; called once by `AIOrchestrator` (`handle()`/`resume()`) after aggregation, right before the response is built. See `docs/known-issues.md` for the PII detector's known recall gaps. |
 | `policy/` | `AgentPolicyProvider`/`AgentPolicyGuard`/`ToolPermissionGuard` — what tools an agent may call |
 | `registry/` | Agent and tool lookup by name |
 | `tools/` | External actions: retrieval, web search, case-law search, document parsing, messaging |
@@ -24,9 +22,13 @@ this file should be corrected.
 
 ## Request lifecycle (real, graph-based path)
 
-This is the path every real chat request takes. It is **not** the
-`BaseAgent.run()`/`stream()` methods — those exist on `BaseAgent` but
-are dead code, unreached from this path (see Known gaps).
+This is the path every real chat request takes.
+
+`BaseAgent` has no `run()` method today. Its `stream_final_answer()`
+method (agents/base.py) is real and live — called from
+`graph/nodes.py::_stream_final_answer_if_reached()` on this exact
+path, for a streaming session's FINAL step only (see the request
+lifecycle diagram below and the `/chat/stream` section further down).
 
 ```mermaid
 flowchart TD
@@ -149,15 +151,16 @@ sequenceDiagram
     end
 ```
 
-**`/chat/stream` caveat, stated plainly**: the rate-limit dependency
-runs identically for both endpoints, so a request that would be
-blocked is blocked before either path starts. But the post-dispatch
-`record()` step above only runs on the non-streaming path
-(`ChatService.chat()`) — `ChatService.stream_chat()` has no equivalent
-call, because `AIOrchestrator.stream()` doesn't exist (see Known
-gaps) and the streaming endpoint is broken independent of rate
-limiting. This was a deliberate, explicit deferral, not an oversight —
-fixing `/chat/stream` is separate, tracked work.
+**`/chat/stream` note**: the rate-limit dependency runs identically for
+both endpoints, so a request that would be blocked is blocked before
+either path starts. The post-dispatch `record()` step above is drawn
+against `ChatService.chat()`, but `stream_chat()` reaches usage
+recording too — both call the same shared
+`_persist_assistant_response()` helper (`application/services/chat.py`),
+which is what calls `UsageService.record()`. See that method's own
+docstring for why this parity is deliberate: it's what stops the two
+paths from silently drifting apart the way they once did, back when
+`AIOrchestrator.stream()` didn't exist yet.
 
 ## `agent_policies` and tool authorization
 
@@ -166,9 +169,12 @@ JSON list, `enabled` bool), resolved through
 `DatabaseAgentPolicyProvider` (`policy/agent_policy.py`) — a
 process-lifetime singleton that opens a fresh DB session per
 `get_policy()` call rather than holding one bound session across
-concurrent requests. Replaces a static `AGENT_POLICIES = {}` dict that
-used to make every real agent execution crash (not just "inert" — see
-`claude.md` → Known gaps for that correction).
+concurrent requests. Replaces a static `AGENT_POLICIES = {}` dict —
+worth stating plainly since it was once described as merely "inert":
+that empty dict actually made every real chat request crash in
+production (`AgentExecution.start()` -> `get_policy()` -> uncaught
+`AgentPolicyNotFoundError`), not just silently no-op. That's fixed by
+the real table described here.
 
 Seeded at startup (`main.py`'s `lifespan()` ->
 `wiring/factories/agent_policies.py::seed_default_agent_policies()`,
@@ -245,27 +251,56 @@ Everything routes through `InferencePolicy` deliberately: it's the one
 place a task's sampling intent is declared, instead of relying on
 whatever a provider or dataclass default happens to be.
 
+## `/chat/stream` implementation
+
+Implemented, not a gap: `AIOrchestrator.stream()`
+(`orchestration/orchestrator.py:911`) is called by
+`ChatService.stream_chat()` (`application/services/chat.py`) and
+exercised end-to-end — real FastAPI routing, real Postgres, the real
+LangGraph checkpointer, real guardrails — by
+`tests/e2e/test_chat_stream.py`. See that test's module docstring for
+the full "what's real vs. what's mocked" accounting and the
+`TEXT_A`/`TEXT_B` two-LLM-call nuance (the aggregated/guardrail-reviewed
+decision text and the separately-streamed answer chunks come from two
+different LLM calls in production, by design).
+
 ## Known gaps
 
-Cross-referencing `claude.md` → Known gaps (repo-wide) rather than
-duplicating it. Agentic-specific items:
+Agentic-specific items; cross-referenced from `docs/known-issues.md`
+where this package's gaps are also repo-wide-relevant, rather than
+duplicated there:
 
-- **`/chat/stream` is broken**: `ChatService.stream_chat()`
-  (`application/services/chat.py`) calls `self._orchestrator.stream(
-  ...)`, but `AIOrchestrator` (`orchestration/orchestrator.py`) has no
-  `stream()` method — only `handle()`. Any real request to
-  `POST /chat/stream` raises `AttributeError` server-side. Known,
-  explicitly deferred (not part of this session's rate-limiting work
-  — see the caveat above). Rate-limiting still applies to this
-  endpoint regardless, so it is not a quota bypass, just broken.
 - **`CollaborationBus`/`DELEGATE` is unverified** — see the module map
   entry above. Real code path, zero real exercise.
 - **Citation-quality thresholds are uncalibratable from this dataset**
   — see `src/rag/README.md` → Known gaps and
   `agentic/evaluation/answer.py`'s `AnswerQualityPolicy` docstring for
   the full, honest accounting.
-- **Tool-permission enforcement's remaining bypass** (`agents/base.py
-  ._retrieve_context()`, dead code, now higher-risk since real
-  enforcement exists elsewhere) and **the `Tool.execute() -> str`
-  boundary losing structured per-result data** — both fully described
-  in `claude.md` → Known gaps; not repeated here.
+- **Tool-permission enforcement's remaining bypass**: agents hold a
+  `RetrieverTool` instance directly (`agents/base.py._retrieve_context()`)
+  rather than resolving it via `registry/tool.py` at call time, with no
+  policy check at all — a structural bypass of the `TOOL_CALL`
+  permission gate in `agents/runtime/execution.py`. Still dead code
+  (nothing calls it) as of this writing, but higher-risk than it looks:
+  real enforcement now exists everywhere else (see `agent_policies`
+  section above), so if this path is ever wired into a live route it
+  becomes a real, immediate authorization hole with no second layer of
+  brokenness left to mask it. Owner: `agentic/agents/base.py`.
+- **Structured per-result data is lost at the `Tool.execute() -> str`
+  boundary — one root cause behind several symptoms.** Every `Tool`
+  (not just `RetrieverTool`) can only return a flattened string;
+  nothing structured (per-chunk score, title, document id) survives
+  past that boundary into `ToolResult`/`ToolEvidence` or anything built
+  from them downstream. Concretely, `ToolResultConverter
+  ._to_retrieved_content()` sets `source_name=result.tool_name`
+  unconditionally (always the tool's own name, e.g. `"retriever"`,
+  never a real document/title); citations built by
+  `AgentResponseMapper` inherit the same ceiling. Fixing this needs a
+  change to the `Tool.execute()` contract itself across every
+  implementation, not a patch to any one caller. Owner:
+  `agentic/tools/base.py` + `agentic/tools/retrieval.py` (and any other
+  concrete `Tool`).
+- **`AgentResponseDTO.usage` is never populated** — see
+  `docs/known-issues.md` for the full trace and production
+  consequence (the daily token quota has never actually been fed by a
+  real request).

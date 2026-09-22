@@ -367,7 +367,8 @@ The LLM should **not be responsible for reconstructing source metadata.**
 > now has real data to merge. Citation/source *quality* is still
 > capped by a separate, still-open issue — the `Tool.execute() -> str`
 > boundary loses structured per-result data (title, per-chunk score)
-> before it ever reaches this mapper — see `claude.md` → Known gaps.
+> before it ever reaches this mapper — see `src/agentic/README.md` →
+> Known gaps for the full trace.
 
 ## 6. Execution runtime
 
@@ -487,8 +488,8 @@ Component Owns Must NOT own
 > exception remains, now higher-risk precisely because enforcement
 > elsewhere actually works: `agents/base.py._retrieve_context()` still
 > holds a `RetrieverTool` directly with no policy check at all. It
-> remains dead code (unreached via `run()`/`stream()`) — see
-> `claude.md` → Known gaps for the full trace. The **Aggregator**'s
+> remains dead code — nothing calls it — see `src/agentic/README.md` →
+> Known gaps for the full trace. The **Aggregator**'s
 > "Merge outputs/provenance" row is correctly implemented and now has
 > real data to merge — see the section 5 status note.
 

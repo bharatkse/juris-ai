@@ -133,7 +133,10 @@ and `include`s `mk/{docker,db,quality,test,iac}.mk` via
 
 ## Known gaps
 
-Check [`claude.md`](../claude.md)'s Known gaps section before assuming
-a piece of the design already works as documented — it's the
-authoritative, continuously-updated list of confirmed gaps between
-the intended architecture and what's actually implemented.
+Check [`docs/known-issues.md`](../docs/known-issues.md) before
+assuming a piece of the design already works as documented — it's the
+committed, continuously-updated list of confirmed gaps between the
+intended architecture and what's actually implemented. (Module
+READMEs, e.g. `src/agentic/README.md` and `src/rag/README.md`, carry
+their own package-specific "Known gaps" sections too — check the
+relevant one first if the area you're touching has one.)
