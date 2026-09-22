@@ -7,14 +7,18 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from pathlib import Path
 
+from adapters.observability.logger import get_logger
 from agentic.agents.prompts.token_budget import (
     DEFAULT_RESERVED_OUTPUT_TOKENS,
     fit_to_budget,
 )
+from agentic.agents.prompts.user_memory import render_user_memory_block
 from core.dto.agent import AgentRequestDTO
 from core.dto.clients.llm import LLMMessageDTO, LLMRequestDTO
 from core.dto.tool import RetrievedContentDTO
 from core.enums import MessageRoleEnum
+
+logger = get_logger(__name__)
 
 
 class BasePromptBuilder(ABC):
@@ -79,15 +83,49 @@ class BasePromptBuilder(ABC):
         lowest-scored context) by
         agentic.agents.prompts.token_budget.fit_to_budget -- see there
         for the drop order and its rationale.
+
+        The user's saved memories (``request.conversation.user_memory``)
+        are rendered as their own SYSTEM message, never as history, and
+        their tokens are reserved by passing them to fit_to_budget
+        together with the system prompt: fit_to_budget never trims the
+        system side, so it trims history and context to make room for
+        the block instead of dropping the block. The one exception is a
+        window so small that the block alone leaves no room for any
+        history or context; then the block is dropped, with a warning,
+        rather than sacrificing the whole conversation for optional
+        context.
         """
 
-        kept_history, kept_context, _report = fit_to_budget(
-            system_prompt=system_prompt,
+        memory_block = render_user_memory_block(request.conversation.user_memory)
+
+        kept_history, kept_context, report = fit_to_budget(
+            system_prompt=self._reserve(system_prompt, memory_block),
             history=request.conversation.messages,
             context=context,
             model=model,
             reserved_output_tokens=reserved_output_tokens,
         )
+
+        if memory_block and report.available_tokens == 0:
+            # fit_to_budget reports available_tokens == 0 only when the
+            # system side alone overflows the window. Retry without the
+            # block; if that still overflows it is the pre-existing
+            # configuration error fit_to_budget already logs critically.
+            logger.warning(
+                "User memory block dropped: system prompt plus memory "
+                "leaves no room in the context window for model=%s.",
+                model,
+            )
+
+            memory_block = ""
+
+            kept_history, kept_context, _report = fit_to_budget(
+                system_prompt=system_prompt,
+                history=request.conversation.messages,
+                context=context,
+                model=model,
+                reserved_output_tokens=reserved_output_tokens,
+            )
 
         messages: list[LLMMessageDTO] = [
             LLMMessageDTO(
@@ -95,6 +133,14 @@ class BasePromptBuilder(ABC):
                 content=system_prompt,
             ),
         ]
+
+        if memory_block:
+            messages.append(
+                LLMMessageDTO(
+                    role=MessageRoleEnum.SYSTEM,
+                    content=memory_block,
+                ),
+            )
 
         if kept_context:
             messages.append(
@@ -115,6 +161,19 @@ class BasePromptBuilder(ABC):
         )
 
         return tuple(messages)
+
+    @staticmethod
+    def _reserve(
+        system_prompt: str,
+        memory_block: str,
+    ) -> str:
+        """
+        The text whose tokens fit_to_budget must treat as
+        untouchable: the system prompt plus the memory block that is
+        sent alongside it.
+        """
+
+        return f"{system_prompt}\n\n{memory_block}" if memory_block else system_prompt
 
     @staticmethod
     def build_context(

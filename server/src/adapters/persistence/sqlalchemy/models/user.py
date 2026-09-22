@@ -2,10 +2,10 @@
 User ORM model.
 """
 
-from datetime import date
+from datetime import date, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, Date, String
+from sqlalchemy import Boolean, Date, DateTime, String, false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from adapters.persistence.sqlalchemy.base import Base
@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from .agent_action import AgentAction
     from .approval import Approval
     from .conversation import Conversation
+    from .user_memory import UserMemory
 
 
 class User(PrimaryKeyMixin, TimestampMixin, Base):
@@ -37,9 +38,35 @@ class User(PrimaryKeyMixin, TimestampMixin, Base):
     phone_number: Mapped[str] = mapped_column(String(20), nullable=True)
     is_active: Mapped[Boolean] = mapped_column(Boolean, default=True)
 
+    # Opt-in consent to persisting durable facts across conversations
+    # (see UserMemory). Default OFF: nothing is extracted or injected
+    # until the user turns this on, and turning it off hard-deletes
+    # everything stored (UserMemoryService.set_consent).
+    memory_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=false(),
+    )
+
+    # When memory_enabled last changed either way, so consent given or
+    # withdrawn is demonstrable. NULL until the user first touches it.
+    memory_consent_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
     conversations: Mapped[list["Conversation"]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",
+    )
+
+    # The database enforces ON DELETE CASCADE; passive_deletes stops the
+    # ORM from trying to NULL a NOT NULL user_id first if a User is ever
+    # deleted through the session.
+    memories: Mapped[list["UserMemory"]] = relationship(
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
 
     agent_actions: Mapped[list["AgentAction"]] = relationship(

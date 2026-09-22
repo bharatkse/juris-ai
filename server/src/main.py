@@ -26,12 +26,18 @@ from core.enums import CacheBackendEnum
 from core.utils.file_system import ensure_dir
 from wiring.composition import create_ai_orchestrator
 from wiring.factories.agent_policies import seed_default_agent_policies
+from wiring.factories.clients import create_clients
+from wiring.factories.user_memory import create_memory_extraction_scheduler
 
 logger = get_logger(__name__)
 
 settings = get_settings()
 
 REDIS_CHECK_TIMEOUT_SECONDS = 5
+
+# How long shutdown waits for in-flight memory extraction runs before
+# cancelling them. Cancelling is safe (see MemoryExtractionScheduler).
+MEMORY_EXTRACTION_SHUTDOWN_TIMEOUT_SECONDS = 10.0
 
 
 def initialize_logging() -> None:
@@ -172,15 +178,39 @@ async def lifespan(
         ) as checkpointer:
             await checkpointer.setup()
 
+            # Built once and shared: the orchestrator and user memory
+            # must use the same process-lifetime embedding model, not
+            # two loaded copies (see wiring/factories/rag.py).
+            clients = create_clients(settings=settings)
+
+            app.state.embedding_provider = clients.embedding_provider
+
             app.state.ai_orchestrator = create_ai_orchestrator(
                 checkpointer=checkpointer,
+                clients=clients,
             )
 
             logger.info(
                 "AI orchestrator initialized.",
             )
 
-            yield
+            # Built once, here, and read from app.state by the chat and
+            # HITL-resume dependencies -- never per request (it owns the
+            # set of in-flight background runs).
+            memory_extraction_scheduler = create_memory_extraction_scheduler(
+                settings=settings,
+                clients=clients,
+            )
+
+            app.state.memory_extraction_scheduler = memory_extraction_scheduler
+
+            try:
+                yield
+
+            finally:
+                await memory_extraction_scheduler.shutdown(
+                    timeout_seconds=MEMORY_EXTRACTION_SHUTDOWN_TIMEOUT_SECONDS,
+                )
 
     finally:
         await shutdown()

@@ -7,6 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from core.dto.user_memory import UserMemoryContextItem
 from core.enums import AgentTypeEnum, ExecutionModeEnum, IntentEnum
 from core.models.conversation import ConversationMessageSchema
 
@@ -20,6 +21,8 @@ class PlanningRequestDTO:
     message: str
 
     history: tuple[ConversationMessageSchema, ...] = ()
+
+    user_memory: tuple[UserMemoryContextItem, ...] = ()
 
     metadata: dict[str, Any] = field(
         default_factory=dict,

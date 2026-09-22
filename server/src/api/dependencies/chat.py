@@ -20,6 +20,10 @@ from api.dependencies.action_workflow import get_action_workflow_service
 from api.dependencies.compliance_log import get_compliance_log_service
 from api.dependencies.llm import get_llm_client
 from api.dependencies.rate_limit import get_usage_service
+from api.dependencies.user_memory import (
+    get_memory_extraction_scheduler,
+    get_user_memory_service,
+)
 from application.services.action_workflow import ActionWorkflowService
 from application.services.chat import ChatService
 from application.services.compliance_log import ComplianceLogService
@@ -29,6 +33,8 @@ from application.services.conversation_summarization import (
     ConversationSummarizationService,
 )
 from application.services.usage import UsageService
+from application.services.user_memory import UserMemoryService
+from application.services.user_memory_extraction import MemoryExtractionScheduler
 
 # ============================================================================
 # Repositories
@@ -169,6 +175,12 @@ def get_chat_service(
     compliance_log_service: ComplianceLogService = Depends(
         get_compliance_log_service,
     ),
+    user_memory_service: UserMemoryService = Depends(
+        get_user_memory_service,
+    ),
+    memory_extraction_scheduler: MemoryExtractionScheduler = Depends(
+        get_memory_extraction_scheduler,
+    ),
 ) -> ChatService:
     """
     Create a ChatService.
@@ -183,4 +195,6 @@ def get_chat_service(
         usage_service=usage_service,
         conversation_summarization_service=conversation_summarization_service,
         compliance_log_service=compliance_log_service,
+        user_memory_service=user_memory_service,
+        memory_extraction_scheduler=memory_extraction_scheduler,
     )

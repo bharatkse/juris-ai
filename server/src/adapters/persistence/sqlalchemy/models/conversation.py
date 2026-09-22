@@ -5,7 +5,7 @@ Conversation ORM model.
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from adapters.persistence.sqlalchemy.base import Base
@@ -62,7 +62,9 @@ class Conversation(
         cascade="all, delete-orphan",
     )
 
-    # Cross-request memory: a compact summary of events created at or
+    # Within-conversation compression (not cross-conversation memory:
+    # this summary is only ever read back into this same conversation's
+    # own history): a compact summary of events created at or
     # before rolling_summary_through_created_at, folded in by
     # ConversationSummarizationService once the unsummarized tail grows
     # past UNSUMMARIZED_EVENT_LIMIT. NULL until a conversation is long
@@ -86,6 +88,26 @@ class Conversation(
     )
 
     rolling_summary_through_created_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    # Per-conversation "don't remember this" switch. When True, nothing
+    # from this conversation is ever extracted into UserMemory,
+    # regardless of the user's account-level consent. It stops future
+    # extraction only; it does not delete facts already stored.
+    memory_disabled: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=false(),
+    )
+
+    # Extraction watermark, same idiom as rolling_summary_through_created_at:
+    # a plain timestamp (not an FK to conversation_events) meaning "USER
+    # events created at or before this instant have already been considered
+    # for memory extraction". NULL until the first extraction pass.
+    memory_extracted_through_created_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
     )

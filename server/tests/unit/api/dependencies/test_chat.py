@@ -73,6 +73,8 @@ def test_get_chat_service(
     usage_service = MagicMock()
     conversation_summarization_service = MagicMock()
     compliance_log_service = MagicMock()
+    user_memory_service = MagicMock()
+    memory_extraction_scheduler = MagicMock()
 
     service = MagicMock()
 
@@ -87,6 +89,8 @@ def test_get_chat_service(
         usage_service=usage_service,
         conversation_summarization_service=conversation_summarization_service,
         compliance_log_service=compliance_log_service,
+        user_memory_service=user_memory_service,
+        memory_extraction_scheduler=memory_extraction_scheduler,
     )
 
     assert result is service
@@ -100,4 +104,6 @@ def test_get_chat_service(
         usage_service=usage_service,
         conversation_summarization_service=conversation_summarization_service,
         compliance_log_service=compliance_log_service,
+        user_memory_service=user_memory_service,
+        memory_extraction_scheduler=memory_extraction_scheduler,
     )

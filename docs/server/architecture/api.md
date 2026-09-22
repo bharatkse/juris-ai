@@ -39,11 +39,12 @@ user_f2b2d0f2e6ea4db39e23d8a24b61c74d
 
 ### Conversations
 
-|  Method  | Endpoint                           | Description               |
-| :------: | ---------------------------------- | ------------------------- |
-|  `POST`  | `/conversations`                   | Create a new conversation |
-|  `GET`   | `/conversations/{conversation_id}` | Retrieve a conversation   |
-| `DELETE` | `/conversations/{conversation_id}` | Archive a conversation    |
+|  Method  | Endpoint                                  | Description                                                  |
+| :------: | ------------------------------------------ | -------------------------------------------------------------- |
+|  `POST`  | `/conversations`                          | Create a new conversation                                      |
+|  `GET`   | `/conversations/{conversation_id}`        | Retrieve a conversation                                        |
+| `DELETE` | `/conversations/{conversation_id}`        | Archive a conversation                                          |
+|  `PUT`   | `/conversations/{conversation_id}/memory` | Turn "don't remember this" on or off for this conversation (see [Memory](#memory)) |
 
 #### Conversation ID Format
 
@@ -111,6 +112,33 @@ data: {"content":".","is_final":true,"metadata":{}}
 
 ---
 
+### Memory
+
+Durable, per-user facts (preferences, professional-profile details) that
+persist across conversations. Off by default; every route acts only on
+the authenticated caller's own memories. See
+[`docs/server/architecture/user-memory.md`](user-memory.md) for the
+full design, consent, and retention model.
+
+|  Method  | Endpoint               | Description                        |
+| :------: | ----------------------- | ----------------------------------- |
+|  `GET`   | `/memory/settings`      | Get the long-term memory setting   |
+|  `PUT`   | `/memory/settings`      | Turn long-term memory on or off    |
+|  `GET`   | `/memory/items`         | List saved memories (paginated)    |
+|  `GET`   | `/memory/items/{memory_id}` | Retrieve a saved memory        |
+| `DELETE` | `/memory/items/{memory_id}` | Delete a saved memory          |
+
+#### Memory ID Format
+
+```text
+umem_<32-character hexadecimal UUID>
+
+Example:
+umem_3a2c9e8f1b7d4a5c9e0f2b8d6a4c1e7d
+```
+
+---
+
 ## Request Models
 
 ### Create User
@@ -155,6 +183,30 @@ data: {"content":".","is_final":true,"metadata":{}}
 | --------------- | --------------- | :------: |
 | conversation_id | Conversation ID |    ✅    |
 | message         | string          |    ✅    |
+
+---
+
+### Update Memory Settings
+
+| Field   | Type    | Required |
+| ------- | ------- | :------: |
+| enabled | boolean |    ✅    |
+
+`true`: allow saving durable facts and using them in later
+conversations. `false`: stop, and permanently delete every memory
+saved so far — this cannot be undone.
+
+---
+
+### Update Conversation Memory
+
+| Field           | Type    | Required |
+| ---------------- | ------- | :------: |
+| memory_disabled | boolean |    ✅    |
+
+Forward-only. `true` stops anything said in this conversation from
+being saved to long-term memory from now on; it does **not** delete
+facts already saved from earlier messages in it.
 
 ---
 

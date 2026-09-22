@@ -62,6 +62,15 @@ class ConversationResponse(BaseModel):
 
     is_active: bool
 
+    memory_disabled: bool = Field(
+        default=False,
+        description=(
+            'True when "don\'t remember this" is on for this conversation: '
+            "nothing said from now on is saved to long-term memory. Forward-only "
+            "-- facts already saved are not removed by turning it on."
+        ),
+    )
+
     created_at: datetime
 
     updated_at: datetime
@@ -75,3 +84,23 @@ class ConversationListResponse(
     """
 
     pass
+
+
+class UpdateConversationMemoryRequest(BaseModel):
+    """
+    Request payload for the per-conversation "don't remember this" switch.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
+    memory_disabled: bool = Field(
+        description=(
+            "True: stop saving anything said in this conversation to long-term "
+            "memory from now on. False: allow it again (subject to the account-level "
+            "memory setting). This is forward-only -- it does NOT delete facts "
+            "already saved from earlier messages; delete those from the memory "
+            "list or turn memory off to delete everything."
+        ),
+    )

@@ -1,5 +1,10 @@
 """
-Cross-conversation memory.
+Within-conversation history compression.
+
+Scoped to a single conversation: the summary lives on that
+Conversation row and is never read by any other conversation. It is
+not cross-session memory; nothing here persists facts across
+conversations.
 
 Folds conversation events older than UNSUMMARIZED_EVENT_LIMIT into a
 compact rolling summary (Conversation.rolling_summary) instead of

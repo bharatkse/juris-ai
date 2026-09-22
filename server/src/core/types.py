@@ -81,3 +81,8 @@ KnowledgeEmbeddingId: TypeAlias = Annotated[
     str,
     prefixed_id_validator("kemb"),
 ]
+
+UserMemoryId: TypeAlias = Annotated[
+    str,
+    prefixed_id_validator("umem"),
+]

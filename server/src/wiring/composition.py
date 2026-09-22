@@ -4,6 +4,8 @@ AI orchestrator composition.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from langgraph.checkpoint.base import BaseCheckpointSaver
 
 from adapters.observability.langsmith import configure_langsmith
@@ -23,13 +25,22 @@ from wiring.factories.planner import create_planner
 from wiring.factories.registries import create_registries
 from wiring.factories.tools import register_tools
 
+if TYPE_CHECKING:
+    from wiring.containers import ClientContainer
+
 
 def create_ai_orchestrator(
     *,
     checkpointer: BaseCheckpointSaver,
+    clients: ClientContainer | None = None,
 ) -> AIOrchestrator:
     """
     Create the AI orchestrator with its runtime dependencies.
+
+    ``clients`` lets the caller build the ClientContainer once and share
+    it (main.py's lifespan exposes clients.embedding_provider on
+    app.state for user memory, which must reuse the same loaded model
+    rather than build a second one). Built here when omitted.
     """
 
     settings = get_settings()
@@ -37,7 +48,7 @@ def create_ai_orchestrator(
 
     authorization = create_authorization()
 
-    clients = create_clients(settings=settings)
+    clients = clients or create_clients(settings=settings)
     registries = create_registries()
 
     collaboration_bus = CollaborationBus()

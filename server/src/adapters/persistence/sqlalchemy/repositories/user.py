@@ -100,6 +100,35 @@ class UserRepository(
             ),
         )
 
+    async def lock_memory_consent(
+        self,
+        user_id: UserId,
+    ) -> bool:
+        """
+        Read the user's memory consent and hold a shared row lock on it
+        until the transaction ends.
+
+        Withdrawing consent UPDATEs this row, so a withdrawal that
+        arrives while a memory write is in flight waits for that write
+        to commit and then deletes what it wrote -- consent can never be
+        withdrawn "between" the check and the insert and leave data
+        behind.
+        """
+
+        result = await self._session.execute(
+            select(
+                self._model.memory_enabled,
+            )
+            .where(
+                self._model.id == user_id,
+            )
+            .with_for_update(
+                read=True,
+            ),
+        )
+
+        return bool(result.scalar_one_or_none())
+
     async def update(
         self,
         user: User,

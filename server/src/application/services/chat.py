@@ -40,7 +40,10 @@ if TYPE_CHECKING:
         ConversationSummarizationService,
     )
     from application.services.usage import UsageService
+    from application.services.user_memory import UserMemoryService
+    from application.services.user_memory_extraction import MemoryExtractionScheduler
     from core.dto.tool import ToolFileDTO
+    from core.dto.user_memory import UserMemoryContextItem
 
 logger = get_logger(__name__)
 
@@ -77,6 +80,8 @@ class ChatService(BaseService):
         usage_service: UsageService,
         conversation_summarization_service: ConversationSummarizationService,
         compliance_log_service: ComplianceLogService,
+        user_memory_service: UserMemoryService | None = None,
+        memory_extraction_scheduler: MemoryExtractionScheduler | None = None,
     ) -> None:
         super().__init__(session)
         self._conversation_service = conversation_service
@@ -86,6 +91,10 @@ class ChatService(BaseService):
         self._usage_service = usage_service
         self._conversation_summarization_service = conversation_summarization_service
         self._compliance_log_service = compliance_log_service
+        # Optional so ChatService still works with user memory not wired
+        # (both are provided by api.dependencies.chat.get_chat_service).
+        self._user_memory_service = user_memory_service
+        self._memory_extraction_scheduler = memory_extraction_scheduler
 
     async def chat(
         self,
@@ -419,7 +428,58 @@ class ChatService(BaseService):
 
         await self.commit()
 
+        self._schedule_memory_extraction(
+            user_id=user_id,
+            conversation=conversation,
+        )
+
         return assistant_event
+
+    def _schedule_memory_extraction(
+        self,
+        *,
+        user_id: UserId,
+        conversation: ConversationModel,
+    ) -> None:
+        """
+        Hand the conversation to the background memory extractor.
+
+        Only ever called after the turn's transaction has committed, so
+        the extractor sees the finished turn and can never delay or
+        fail the reply. Fire-and-forget: the extractor re-checks
+        consent, the conversation's "don't remember this" switch and
+        whether enough new messages have accumulated, and never raises.
+        """
+
+        if self._memory_extraction_scheduler is None or conversation.memory_disabled:
+            return
+
+        self._memory_extraction_scheduler.schedule(
+            user_id=user_id,
+            conversation_id=conversation.id,
+        )
+
+    async def _retrieve_user_memory(
+        self,
+        *,
+        conversation: ConversationModel,
+        message: str,
+    ) -> tuple[UserMemoryContextItem, ...]:
+        """
+        The user's saved memories relevant to this message, for the
+        prompt. Empty unless the user opted in and the conversation's
+        "don't remember this" switch is off (decided by the service,
+        against the database). Best-effort: never fails the request.
+        """
+
+        if self._user_memory_service is None:
+            return ()
+
+        return await self._user_memory_service.retrieve_for_prompt(
+            user_id=conversation.user_id,
+            conversation_id=conversation.id,
+            query=message,
+        )
 
     @staticmethod
     def _build_citations_payload(
@@ -504,4 +564,8 @@ class ChatService(BaseService):
             history=history,
             attachments=files,
             current_event_id=current_event_id,
+            user_memory=await self._retrieve_user_memory(
+                conversation=conversation,
+                message=message,
+            ),
         )
