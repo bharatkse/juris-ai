@@ -27,9 +27,12 @@ tooling (Poetry, Alembic, pytest, Ruff, SAM) inside `server/` for you.
 
 ## Create a virtual environment
 
+The virtualenv lives at the **repo root** (`.venv`). Poetry is configured
+in-project for `server/`, so `server/.venv` is a symlink to it:
+
 ```bash
-python -m venv server/.venv
-source server/.venv/bin/activate
+make venv
+source .venv/bin/activate
 ```
 
 ## Install system dependencies
