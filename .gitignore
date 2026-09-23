@@ -259,8 +259,10 @@ pytests.db
 
 # Claude .md files
 CLAUDE.md
-claude.md
 .claude/settings.local.json
+
+# Local-only review notes (not for the repo)
+/docs/architecture-review.md
 
 .logs/
 

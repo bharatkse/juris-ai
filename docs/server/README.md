@@ -4,15 +4,14 @@ The **Makefile is the primary entry point** for testing, code quality, database 
 
 **Installing, starting, stopping, reinstalling and removing the Docker stacks is done by [`setup.sh`](../../setup.sh) at the repo root, not by `make`.** Run it, like every `make` command in this guide, from the repo root — e.g. `./setup.sh --install --mode dev`; `./setup.sh --help` lists every option. The sections below say which commands are `make` and which are `setup.sh`.
 
-The `Makefile` lives at the repo root (next to `setup.sh`) and runs the Python tooling — Poetry, Alembic, pytest, Ruff, SAM, and the `server/scripts/` helpers — inside `server/` for you. `TARGET=` paths in the test targets are therefore relative to `server/` (for example `tests/unit/services/test_user.py`).
+The `Makefile` lives at the repo root (next to `setup.sh`) and runs the Python tooling — Poetry, Alembic, pytest, Ruff, SAM, and the `server/scripts/` helpers — inside `server/` for you. `TARGET=` paths in the test targets are therefore relative to `server/` (for example `tests/unit/application/services/test_user.py`).
 
 You generally should not need to run raw Docker, Poetry, Alembic, SAM, or AWS CLI commands for normal development.
 
 The Makefile also auto-detects the active environment from Floci health.
 
 > Floci is a drop-in, MIT-licensed local AWS emulator that replaced
-> LocalStack here (see `docs/known-issues.md` for the rough edges
-> found during that swap). It serves the same
+> LocalStack here. It serves the same
 > `/_localstack/health` endpoint for compatibility. Most internal
 > Makefile identifiers were renamed to match (`FLOCI_HEALTH_URL`,
 > `_FLOCI_UP`) — the `ls-*` target names, and `make env-info`'s/`make help`'s
@@ -27,16 +26,17 @@ This guide covers **workflow** (commands, environments, troubleshooting). For **
 
 | Document | Authoritative for |
 |---|---|
-| [`docs/architecture/overview.md`](architecture/overview.md) | Intended/target design, with inline "Current implementation status" callouts marking where reality has diverged (and been fixed back) |
-| [`docs/architecture/api.md`](architecture/api.md) | REST API surface reference |
-| [`docs/architecture/user-memory.md`](architecture/user-memory.md) | Cross-conversation user memory: consent/retention model, write/read path design, pre-ship checklist |
-| [`src/agentic/README.md`](../src/agentic/README.md) | Current, real behavior of planning/orchestration/execution/agents/tools — read this to debug a live agent request |
-| [`src/rag/README.md`](../src/rag/README.md) | Current, real behavior of ingestion/indexing/retrieval/evaluation — read this to debug a retrieval-quality issue |
-| [`docs/known-issues.md`](../known-issues.md) | Confirmed, repo-wide gaps between design and implementation that are recorded but not yet fixed — module READMEs cross-reference it for anything not specific to their own package |
+| [`docs/server/architecture/overview.md`](architecture/overview.md) | Intended/target design, with inline "Implementation note" callouts describing how the code realizes it |
+| [`docs/server/architecture/api.md`](architecture/api.md) | REST API surface reference |
+| [`docs/server/architecture/user-memory.md`](architecture/user-memory.md) | Cross-conversation user memory: consent/retention model, write/read path design, deliberate behaviours |
+| [`server/src/agentic/README.md`](../../server/src/agentic/README.md) | Current, real behavior of planning/orchestration/execution/agents/tools — read this to debug a live agent request |
+| [`server/src/rag/README.md`](../../server/src/rag/README.md) | Current, real behavior of ingestion/indexing/retrieval/evaluation — read this to debug a retrieval-quality issue |
 
 When `overview.md` and a module README disagree, the module README
 wins — it documents what the code does today, not what it was
 designed to do.
+
+Known architecture and security gaps are tracked privately by the maintainers.
 
 ---
 
@@ -479,12 +479,9 @@ make iac-destroy PROVIDER=aws
 
 > **Do not run `make iac-apply` a second time against an
 > already-applied Floci stack expecting a clean incremental update.**
-> A confirmed Floci defect on `aws_api_gateway_integration`'s
-> `timeout_milliseconds` makes any update attempt against an existing
-> Floci-created integration fail outright — see
-> `docs/known-issues.md`. Always `make iac-destroy` before re-applying
-> against Floci;
-> real AWS deploys are unaffected.
+> Against Floci, always `make iac-destroy` before re-applying: the
+> emulator doesn't support in-place updates of an existing API Gateway
+> integration. Real AWS deploys are unaffected.
 
 `PROVIDER` only accepts `aws` today — anything else fails fast with a
 clear message from the Terraform configuration's own variable

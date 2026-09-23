@@ -11,9 +11,9 @@ responses into one `OrchestratorResponse`. It does not create plans
 reasoning (`agents/`), or perform authorization/approval
 (`application/`, `agentic/policy/`).
 
-Read this after `agentic/planning/README.md` (the plan this package
-consumes) and alongside `agentic/agents/README.md` (what actually runs
-inside each graph node) — this file is the layer in between.
+Read this after `planning/README.md` (the plan this package consumes)
+and alongside `agents/runtime/README.md` (what actually runs inside each
+graph node) — this file is the layer in between.
 
 ## Entry points
 
@@ -24,8 +24,9 @@ inside each graph node) — this file is the layer in between.
 | `ExecutionGraphFactory` | `graph/factory.py` | `ExecutionSession`, to build+compile the LangGraph graph for this plan |
 | `ExecutionGraphBuilder` | `graph/builder.py` | `ExecutionGraphFactory` — stateless, translates `depends_on` into LangGraph edges |
 | `AgentExecutionNode` | `graph/nodes.py` | LangGraph itself, once per graph node (= once per plan step) |
-| `ResponseValidator` | `validation/response.py` | `ExecutionSession._finish()`, after all steps resolve |
-| `ResponseAggregator` | `aggregation/response.py` | `ExecutionSession._finish()`, after validation passes |
+| `ResponseValidator` | `validation/response.py` | `AIOrchestrator` (injected in `wiring/composition.py:93`), after `Executor` returns |
+| `ResponseAggregator` | `aggregation/response.py` | `AIOrchestrator` (injected in `wiring/composition.py:94`), after validation passes |
+| `ExecutionSession._finish()` / `_prepare_action()` | `session.py` | every run and resume: forwards a pending action through `ActionWorkflowService` (RBAC + approval creation), sets `WAITING_FOR_APPROVAL`, assembles state/memory |
 | `AgentResponseMapper` | `aggregation/mapper.py` | `AgentExecutionNode`, per FINAL/NEED_INPUT step, to build the per-step `AgentResponseDTO` |
 | `ExecutionStateAssembler` | `state/assembler.py` | `ExecutionSession`, to build/read `ExecutionGraphState` |
 
@@ -66,12 +67,13 @@ flowchart TD
     NODE -->|streaming session, FINAL step only| STREAMWRITER["get_stream_writer()<br/>chunks yielded to caller"]
     NODE -->|FINAL / NEED_INPUT| MAPPER["AgentResponseMapper.map()<br/>(aggregation/mapper.py)<br/>builds AgentResponseDTO incl. citations/sources"]
     MAPPER --> STATE["ExecutionGraphState<br/>memory_updates / execution_state_updates"]
-    GRAPH -->|all steps resolved: COMPLETED/FAILED/SKIPPED| FINISH["ExecutionSession._finish()"]
-    FINISH --> VALIDATOR["ResponseValidator.validate()<br/>(validation/response.py)<br/>non-empty, unique-per-agent, non-empty content"]
-    VALIDATOR --> AGG["ResponseAggregator.aggregate()<br/>(aggregation/response.py)<br/>merges content/citations/sources/metadata"]
-    AGG --> RESULT["ExecutionResultSchema"]
+    GRAPH -->|all steps resolved, or interrupt() for a gated tool| FINISH["ExecutionSession._finish()"]
+    FINISH --> PREP["_prepare_action()<br/>ActionWorkflowService: RBAC authorize_action,<br/>create Approval, status WAITING_FOR_APPROVAL"]
+    PREP --> RESULT["ExecutionResultSchema<br/>(state, artifacts, action, approval)"]
     RESULT --> EXEC
     EXEC --> ORCH
+    ORCH --> VALIDATOR["ResponseValidator.validate()<br/>(validation/response.py, called by AIOrchestrator)<br/>non-empty, unique-per-agent, non-empty content"]
+    VALIDATOR --> AGG["ResponseAggregator.aggregate()<br/>(aggregation/response.py, called by AIOrchestrator)<br/>merges content/citations/sources/metadata"]
 ```
 
 ## Concurrency: derived from `depends_on`, not `execution_mode`
@@ -100,7 +102,7 @@ this was exactly how `DuplicateAgentResponseError` reached
 `ResponseValidator._validate_unique_agents` in production: both steps'
 graph nodes ran concurrently, both agent calls succeeded individually,
 and only the post-execution uniqueness check caught the conflict —
-after two real LLM calls had already run. See `planning/README.md`
+after two real LLM calls had already run. See `planning/validator.py`
 for the fix; this package's own defenses (`ResponseValidator`) remain
 as a second, independent backstop, not the primary guard.
 
@@ -126,9 +128,10 @@ return the update dicts `graph/nodes.py` builds):
 
 ## Validation and aggregation
 
-`ResponseValidator` (`validation/response.py`) runs once, after every
-step has resolved, directly on the flat list of collected
-`AgentResponse`s:
+Both classes live in this package but are **called by `AIOrchestrator`**,
+not by `ExecutionSession`. `ResponseValidator` (`validation/response.py`) runs once,
+after `Executor` returns, on the flat list of `AgentResponse`s the
+orchestrator extracted from the result's artifacts:
 
 1. `EmptyResponseError` if the list is empty.
 2. `DuplicateAgentResponseError` if the same `agent_name` appears twice
@@ -147,18 +150,6 @@ through the agent's prompt builder into `AgentResponseDTO`, and from
 there into this aggregator's `sources`/`citations` output — never let
 an agent regenerate or paraphrase source metadata from the LLM output.
 
-## Known gaps
+---
 
-Cross-referencing `agentic/README.md` → Known gaps rather than
-duplicating it. Execution-specific items:
-
-- **`AgentResponseDTO.usage` is never populated** — `AgentResponseMapper.map()`
-  never sets `usage=`, so `ResponseAggregator`'s usage-summing always
-  operates on an empty list. Full trace in `docs/known-issues.md`.
-- Streaming (`execute_streaming()`) buffers every chunk from every
-  regenerate-loop attempt before the caller sees any of it — see
-  `AIOrchestrator.stream()`'s docstring (`orchestration/orchestrator.py`)
-  for why (a discarded/regenerated attempt must never have already
-  reached the client). This package's `execute_streaming()` itself is
-  a thin passthrough; the buffering/guardrail-replay decision is made
-  one layer up, in `orchestration/`, not here.
+Known architecture and security gaps are tracked privately by the maintainers.

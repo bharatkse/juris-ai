@@ -52,8 +52,8 @@ flowchart TD
   today (`parsers/file.py::_resolve_pdf_title()` — prefers embedded
   PDF metadata, falls back to filename). It survives through
   `ParsedBlock.title` -> chunking -> `ChunkMapper` into `Chunk`'s
-  metadata dict. No ingestion path populates `url` today (no
-  web-sourced ingestion exists yet — see Known gaps).
+  metadata dict. The `url` key is reserved for web-sourced documents;
+  the current ingestion path is file-based.
 - **Injection screening** happens immediately after parsing, before
   validation or chunking — `SecuritySanitizer.sanitize_and_scan()`
   drops the whole block on any detected threat at ingestion time. This
@@ -171,36 +171,6 @@ If using `"ragas"`, set `RAGAS_DO_NOT_TRACK=true` to opt out of the
 `ragas` package's own telemetry (a real env var read by `ragas`
 itself, not by this codebase — see `env.example`).
 
-## Known gaps
-
-RAG-specific items; see `src/agentic/README.md` → Known gaps for the
-citation-provenance chain this package feeds into, and
-`docs/known-issues.md` for repo-wide gaps not specific to `rag/`:
-
-- **Inline legislative amendment-marker brackets are an unhandled
-  text-matching artifact class** (e.g. `"1[electronic\nsignature]"`
-  mid-sentence in the IT Act corpus). See
-  `evaluation/metrics/text_matching.py`'s module docstring for the
-  full rationale and how one instance was fixed
-  (`legal_retrieval_gold_v1.json`, case `it-005`).
-- **Citation-quality thresholds (`min_citation_precision`/
-  `min_citation_coverage` in `agentic/evaluation/answer.py`) have no
-  empirical calibration, and — unlike groundedness/relevance/
-  correctness — none is possible from this dataset.**
-  `_evaluate_citations` is exact set-membership (0.0 or 1.0 per case,
-  no continuous distribution to sweep a threshold over). This is an
-  `agentic/` concern, not a `rag/` one, but it directly limits how much
-  confidence to place in citation quality derived from this package's
-  retrieval output. See `agentic/evaluation/answer.py`'s
-  `AnswerQualityPolicy` docstring for the honest accounting.
-- **`quality_gate.py` is not wired into CI** — the gate exists and
-  functions (used by `ragas_offline.py`), but nothing in
-  `.github/workflows/` calls it. Owner: `rag/evaluation/`.
-- **Ingestion never writes `url` into chunk metadata** — no
-  web-sourced ingestion path exists yet; title is populated
-  (PDF-only, see the ingestion pipeline diagram above), `url` has
-  nothing to populate it with today. Owner: `rag/ingestion/`.
-
 ## Error handling
 
 RAG components raise from the exception hierarchy in
@@ -209,3 +179,7 @@ trace and wrapped, preserving the original as `__cause__`. Never log
 document secrets, credentials, tokens, or sensitive document snippets
 — prefer operational metadata (`source_id`, chunk count, `top_k`,
 model name, candidate count).
+
+---
+
+Known architecture and security gaps are tracked privately by the maintainers.
