@@ -260,7 +260,7 @@ pytests.db
 # Claude .md files
 CLAUDE.md
 claude.md
-.claude/
+.claude/settings.local.json
 
 .logs/
 

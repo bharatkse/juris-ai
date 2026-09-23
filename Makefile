@@ -374,10 +374,21 @@ llm-ps: ## Show Ollama LLM infrastructure container
 # Poetry / Python
 # ============================================================================
 
-.PHONY: poetry-install poetry-update poetry-lock \
+.PHONY: venv poetry-install poetry-update poetry-lock \
         poetry-check poetry-show poetry-activate poetry-export
 
-poetry-install: ## Install Python dependencies via Poetry
+# The venv lives at the repo root; server/.venv is a symlink so Poetry
+# (in-project = true) installs into it. Created from server/ so pyenv's
+# server/.python-version picks the interpreter.
+venv: ## Create repo-root .venv and link server/.venv to it
+	@if [ -d $(SERVER_DIR)/.venv ] && [ ! -L $(SERVER_DIR)/.venv ]; then \
+		echo "server/.venv is a real directory; move it aside to use the root .venv"; \
+		exit 1; \
+	fi
+	@test -d $(PROJECT_ROOT)/.venv || $(IN_SERVER) python3 -m venv ../.venv
+	@ln -sfn ../.venv $(SERVER_DIR)/.venv
+
+poetry-install: venv ## Install Python dependencies via Poetry
 	@$(IN_SERVER) $(POETRY) install
 
 poetry-update: ## Update Python dependencies via Poetry
@@ -624,7 +635,7 @@ iac-destroy: ## Destroy Terraform-managed infrastructure [PROVIDER=aws]
 # Testing
 # ============================================================================
 
-.PHONY: test test-unit test-integration test-smoke test-e2e \
+.PHONY: test test-root test-unit test-integration test-smoke test-e2e \
         test-cov test-failed test-path test-watch
 
 PYTEST := $(POETRY) run pytest
@@ -634,6 +645,18 @@ TARGET ?=
 
 test: ## Run all tests [TARGET=<path>]
 	@$(IN_SERVER) $(PYTEST) $(TARGET) -v -s
+
+# Repo-level tests (e.g. Claude hooks) live in the root tests/ dir, outside
+# server/, so they run from the repo root with the root venv's pytest.
+test-root: ## Run repo-root tests/ [TARGET=<path>]
+	@target="$(TARGET)"; \
+	if [ -z "$$target" ]; then \
+		$(PROJECT_ROOT)/.venv/bin/pytest $(PROJECT_ROOT)/tests -v; \
+	elif [ -e "$${target%%::*}" ]; then \
+		$(PROJECT_ROOT)/.venv/bin/pytest "$(TARGET)" -v; \
+	else \
+		$(PROJECT_ROOT)/.venv/bin/pytest "$(PROJECT_ROOT)/tests/$(TARGET)" -v; \
+	fi
 
 test-unit: ## Run unit tests [TARGET=<path>]
 	@$(IN_SERVER) if [ -z "$(TARGET)" ]; then \

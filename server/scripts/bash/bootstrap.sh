@@ -219,12 +219,32 @@ install_poetry() {
 # ============================================================================
 # Python dependencies
 # ============================================================================
+# The virtualenv lives at the repo root (../.venv) so the IDE, Claude hooks and
+# tooling share one environment. Poetry (in-project = true) looks for
+# server/.venv, so that path is a symlink to the root venv.
+link_root_venv() {
+  local root_venv="../.venv"
+
+  if [[ -d .venv && ! -L .venv ]]; then
+    warn "server/.venv is a real directory; move it aside and re-run to use the root .venv"
+    exit 1
+  fi
+
+  if [[ ! -d "$root_venv" ]]; then
+    log "Creating virtualenv at repo root"
+    python3 -m venv "$root_venv"
+  fi
+
+  ln -sfn "$root_venv" .venv
+}
+
 install_dependencies() {
   if [[ ! -f pyproject.toml ]]; then
     warn "No pyproject.toml"
     return
   fi
 
+  link_root_venv
   log "Installing deps"
   poetry install --no-interaction
 }
