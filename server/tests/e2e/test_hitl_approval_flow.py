@@ -130,6 +130,7 @@ async def legal_agent_email_policy() -> AsyncIterator[None]:
 async def test_hitl_approve_flow_executes_gated_tool_exactly_once(
     e2e_client: AsyncClient,
     registered_user: dict,
+    second_registered_user: dict,
     conversation_id: str,
     legal_agent_email_policy: None,
 ) -> None:
@@ -239,7 +240,25 @@ async def test_hitl_approve_flow_executes_gated_tool_exactly_once(
         assert mcp_calls == []
 
         # --------------------------------------------------------
-        # 2. Approve the pending action.
+        # 2a. Another authenticated user must not be able to decide
+        #     this approval -- approve, reject or edit -- and the
+        #     tool must still not run.
+        # --------------------------------------------------------
+        for other_decision in (
+            {"decision": "approve"},
+            {"decision": "reject"},
+            {"decision": "edit", "edited_payload": {"query": "attacker"}},
+        ):
+            forbidden = await e2e_client.post(
+                f"/api/v1/approvals/{approval_id}",
+                json=other_decision,
+                headers=second_registered_user["headers"],
+            )
+            assert forbidden.status_code == 403, forbidden.text
+        assert mcp_calls == []
+
+        # --------------------------------------------------------
+        # 2. Approve the pending action (as its owner).
         # --------------------------------------------------------
         approve_response = await e2e_client.post(
             f"/api/v1/approvals/{approval_id}",

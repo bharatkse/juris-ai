@@ -900,3 +900,41 @@ async def test_stream_terminal_chunk_matches_handle_for_the_same_inputs() -> Non
     assert stream_response.usage == handle_response.usage
     assert stream_response.citations == handle_response.citations
     assert stream_response.sources == handle_response.sources
+
+
+@pytest.mark.asyncio
+async def test_handle_refuses_when_harmful_content_check_cannot_run() -> None:
+    """
+    With the real guardrail service and judge, a judge LLM call that
+    fails on every attempt must yield the fixed refusal -- never the
+    unchecked answer, and never an exception (500).
+    """
+
+    from agentic.guardrails.harmful_content import HarmfulContentJudge
+    from agentic.guardrails.service import OutputGuardrailService
+
+    async def failing_judge(prompt: str) -> str:
+        raise RuntimeError("judge provider unavailable")
+
+    orchestrator = _build_orchestrator_for_guardrail_tests(
+        execution_results=[
+            build_success_execution_result(content="Unchecked answer 1."),
+            build_success_execution_result(content="Unchecked answer 2."),
+        ],
+        guardrail_results=[],
+    )
+    orchestrator._guardrails = OutputGuardrailService(
+        pii_detector=MagicMock(),
+        harmful_content_judge=HarmfulContentJudge(judge=failing_judge),
+    )
+
+    response = await orchestrator.handle(
+        request=build_orchestrator_request(),
+        action_workflow_service=MagicMock(),
+    )
+
+    assert "not able to provide a response" in response.content
+    assert "Unchecked answer" not in response.content
+    assert response.guardrail is not None
+    assert response.guardrail.action == GuardrailActionEnum.BLOCKED
+    assert orchestrator._executor.execute.await_count == 2

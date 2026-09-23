@@ -18,6 +18,7 @@ from core.enums import ApprovalDecisionEnum, ApprovalStatusEnum
 from core.exceptions.approval import (
     ApprovalError,
     ApprovalExpiredError,
+    ApprovalForbiddenError,
     ApprovalNotActionableError,
     ApprovalNotFoundError,
     ApprovalValidationError,
@@ -38,13 +39,21 @@ def build_action() -> MagicMock:
     return action
 
 
+OWNER_ID = "approver-123"
+OTHER_USER_ID = "user-other-456"
+
+
 def build_approval_entity(
     *,
     status: ApprovalStatusEnum = ApprovalStatusEnum.WAITING,
     expired: bool = False,
+    requested_by: str = OWNER_ID,
 ) -> MagicMock:
     """
     Build a mocked Approval entity.
+
+    ``requested_by`` defaults to the user the decision tests act as:
+    only the requester may decide an approval.
     """
 
     entity = MagicMock(
@@ -53,6 +62,7 @@ def build_approval_entity(
 
     entity.id = "approval-123"
     entity.agent_action_id = "action-123"
+    entity.requested_by = requested_by
     entity.status = status
     entity.is_expired = expired
     entity.approved_by = None
@@ -549,14 +559,14 @@ async def test_process_routes_approve_decision(
     result = await service.process(
         approval_id="approval-123",
         request=request,
-        user_id="user-123",
+        user_id=OWNER_ID,
     )
 
     assert result is expected
 
     service.approve.assert_awaited_once_with(
         approval_id="approval-123",
-        user_id="user-123",
+        user_id=OWNER_ID,
         decision_reason="Looks good.",
     )
 
@@ -583,14 +593,14 @@ async def test_process_routes_reject_decision(
     result = await service.process(
         approval_id="approval-123",
         request=request,
-        user_id="user-123",
+        user_id=OWNER_ID,
     )
 
     assert result is expected
 
     service.reject.assert_awaited_once_with(
         approval_id="approval-123",
-        user_id="user-123",
+        user_id=OWNER_ID,
         decision_reason="Not permitted.",
     )
 
@@ -622,14 +632,14 @@ async def test_process_routes_edit_decision(
     result = await service.process(
         approval_id="approval-123",
         request=request,
-        user_id="user-123",
+        user_id=OWNER_ID,
     )
 
     assert result is expected
 
     service.edit.assert_awaited_once_with(
         approval_id="approval-123",
-        user_id="user-123",
+        user_id=OWNER_ID,
         edited_payload=payload,
         decision_reason="Change recipient.",
     )
@@ -660,7 +670,7 @@ async def test_approve_updates_waiting_approval(
 
     result = await service.approve(
         approval_id="approval-123",
-        user_id="approver-123",
+        user_id=OWNER_ID,
         decision_reason="Approved by reviewer.",
     )
 
@@ -697,12 +707,12 @@ async def test_approve_records_hitl_compliance_log_entry(
 
     await service.approve(
         approval_id="approval-123",
-        user_id="approver-123",
+        user_id=OWNER_ID,
         decision_reason="Approved by reviewer.",
     )
 
     compliance_log_service.record_hitl_approval_decision.assert_awaited_once_with(
-        user_id="approver-123",
+        user_id=OWNER_ID,
         tenant_id="approver-123",
         agent_action_id=entity.agent_action_id,
         approval_id=entity.id,
@@ -731,7 +741,7 @@ async def test_approve_rejects_non_waiting_approval(
     ):
         await service.approve(
             approval_id="approval-123",
-            user_id="approver-123",
+            user_id=OWNER_ID,
         )
 
     repository.save.assert_not_awaited()
@@ -759,7 +769,7 @@ async def test_approve_rejects_expired_approval(
     ):
         await service.approve(
             approval_id="approval-123",
-            user_id="approver-123",
+            user_id=OWNER_ID,
         )
 
     assert entity.status is ApprovalStatusEnum.EXPIRED
@@ -795,7 +805,7 @@ async def test_reject_updates_waiting_approval(
 
     result = await service.reject(
         approval_id="approval-123",
-        user_id="reviewer-123",
+        user_id=OWNER_ID,
         decision_reason="Action is not permitted.",
     )
 
@@ -803,7 +813,7 @@ async def test_reject_updates_waiting_approval(
 
     assert result is response
     assert entity.status is ApprovalStatusEnum.REJECTED
-    assert entity.approved_by == "reviewer-123"
+    assert entity.approved_by == OWNER_ID
     assert entity.decision_type is ApprovalDecisionEnum.REJECT
     assert entity.decision_reason == "Action is not permitted."
     assert before <= entity.decided_at <= after
@@ -833,7 +843,7 @@ async def test_reject_propagates_not_actionable_error(
     ):
         await service.reject(
             approval_id="approval-123",
-            user_id="reviewer-123",
+            user_id=OWNER_ID,
         )
 
     repository.save.assert_not_awaited()
@@ -870,7 +880,7 @@ async def test_edit_updates_waiting_approval(
 
     result = await service.edit(
         approval_id="approval-123",
-        user_id="reviewer-123",
+        user_id=OWNER_ID,
         edited_payload=payload,
         decision_reason="Changed the request.",
     )
@@ -879,7 +889,7 @@ async def test_edit_updates_waiting_approval(
 
     assert result is response
     assert entity.status is ApprovalStatusEnum.EDITED
-    assert entity.approved_by == "reviewer-123"
+    assert entity.approved_by == OWNER_ID
     assert entity.decision_type is ApprovalDecisionEnum.EDIT
     assert entity.decision_reason == "Changed the request."
     assert entity.edited_payload == payload
@@ -906,7 +916,7 @@ async def test_edit_allows_none_payload(
 
     await service.edit(
         approval_id="approval-123",
-        user_id="reviewer-123",
+        user_id=OWNER_ID,
         edited_payload=None,
     )
 
@@ -935,7 +945,7 @@ async def test_edit_rejects_non_waiting_approval(
     ):
         await service.edit(
             approval_id="approval-123",
-            user_id="reviewer-123",
+            user_id=OWNER_ID,
             edited_payload={
                 "changed": True,
             },
@@ -974,7 +984,7 @@ async def test_approve_wraps_unexpected_save_error(
     ) as exc_info:
         await service.approve(
             approval_id="approval-123",
-            user_id="user-123",
+            user_id=OWNER_ID,
         )
 
     assert exc_info.value.__cause__ is error
@@ -1005,7 +1015,7 @@ async def test_reject_wraps_unexpected_save_error(
     ) as exc_info:
         await service.reject(
             approval_id="approval-123",
-            user_id="user-123",
+            user_id=OWNER_ID,
         )
 
     assert exc_info.value.__cause__ is error
@@ -1036,10 +1046,132 @@ async def test_edit_wraps_unexpected_save_error(
     ) as exc_info:
         await service.edit(
             approval_id="approval-123",
-            user_id="user-123",
+            user_id=OWNER_ID,
             edited_payload={
                 "changed": True,
             },
         )
 
     assert exc_info.value.__cause__ is error
+
+
+# ---------------------------------------------------------------------------
+# ownership: only the requester may act on an approval
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["approve", "reject", "edit"])
+async def test_decision_by_non_owner_is_forbidden_and_changes_nothing(
+    service: ApprovalLifecycleService,
+    repository: MagicMock,
+    compliance_log_service: MagicMock,
+    method: str,
+) -> None:
+    """
+    Another authenticated user must not be able to decide someone else's
+    approval: the call raises and the approval is left untouched.
+    """
+
+    entity = build_approval_entity(requested_by=OWNER_ID)
+    repository.get.return_value = entity
+
+    kwargs = {"approval_id": "approval-123", "user_id": OTHER_USER_ID}
+    if method == "edit":
+        kwargs["edited_payload"] = {"to": "attacker@example.com"}
+
+    with pytest.raises(ApprovalForbiddenError):
+        await getattr(service, method)(**kwargs)
+
+    assert entity.status is ApprovalStatusEnum.WAITING
+    assert entity.approved_by is None
+    assert entity.edited_payload is None
+    repository.save.assert_not_awaited()
+    compliance_log_service.record_hitl_approval_decision.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "decision",
+    [ApprovalDecisionEnum.APPROVE, ApprovalDecisionEnum.REJECT, ApprovalDecisionEnum.EDIT],
+)
+async def test_process_by_non_owner_is_forbidden(
+    service: ApprovalLifecycleService,
+    repository: MagicMock,
+    decision: ApprovalDecisionEnum,
+) -> None:
+    """
+    process() is the endpoint's entry point; it must enforce ownership for
+    every decision type.
+    """
+
+    repository.get.return_value = build_approval_entity(requested_by=OWNER_ID)
+
+    with pytest.raises(ApprovalForbiddenError):
+        await service.process(
+            approval_id="approval-123",
+            request=ApprovalDecisionRequestDTO(
+                decision=decision,
+                edited_payload={"x": 1} if decision is ApprovalDecisionEnum.EDIT else None,
+            ),
+            user_id=OTHER_USER_ID,
+        )
+
+    repository.save.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_non_owner_cannot_trigger_expiry_or_learn_state(
+    service: ApprovalLifecycleService,
+    repository: MagicMock,
+) -> None:
+    """
+    Ownership is checked before expiry/status: a non-owner gets
+    ApprovalForbiddenError (not ApprovalExpiredError) and the expired
+    approval is not written.
+    """
+
+    repository.get.return_value = build_approval_entity(requested_by=OWNER_ID, expired=True)
+
+    with pytest.raises(ApprovalForbiddenError):
+        await service.approve(approval_id="approval-123", user_id=OTHER_USER_ID)
+
+    repository.save.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_non_owner_gets_forbidden_not_not_actionable(
+    service: ApprovalLifecycleService,
+    repository: MagicMock,
+) -> None:
+    repository.get.return_value = build_approval_entity(
+        requested_by=OWNER_ID, status=ApprovalStatusEnum.APPROVED
+    )
+
+    with pytest.raises(ApprovalForbiddenError):
+        await service.reject(approval_id="approval-123", user_id=OTHER_USER_ID)
+
+
+@pytest.mark.asyncio
+async def test_get_and_validate_enforce_ownership_when_user_given(
+    service: ApprovalLifecycleService,
+    repository: MagicMock,
+) -> None:
+    entity = build_approval_entity(requested_by=OWNER_ID, status=ApprovalStatusEnum.APPROVED)
+    entity.to_dto.return_value = MagicMock()
+    repository.get.return_value = entity
+
+    with pytest.raises(ApprovalForbiddenError):
+        await service.get("approval-123", user_id=OTHER_USER_ID)
+    with pytest.raises(ApprovalForbiddenError):
+        await service.validate("approval-123", user_id=OTHER_USER_ID)
+
+    assert await service.get("approval-123", user_id=OWNER_ID) is entity.to_dto.return_value
+    assert await service.validate("approval-123", user_id=OWNER_ID) is entity.to_dto.return_value
+
+
+def test_forbidden_error_maps_to_http_403() -> None:
+    error = ApprovalForbiddenError("nope")
+
+    assert error.status_code == 403
+    assert error.error_code == "FORBIDDEN"

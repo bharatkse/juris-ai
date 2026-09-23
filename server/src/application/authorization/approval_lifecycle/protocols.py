@@ -40,18 +40,26 @@ class ApprovalLifecycleServiceProtocol(Protocol):
     async def get(
         self,
         approval_id: str,
+        *,
+        user_id: str | None = None,
     ) -> ApprovalResponseDTO:
         """
         Retrieve an approval request.
+
+        When ``user_id`` is given, only the requester is permitted.
         """
         ...
 
     async def validate(
         self,
         approval_id: str,
+        *,
+        user_id: str | None = None,
     ) -> ApprovalResponseDTO:
         """
         Validate an approved request for execution.
+
+        When ``user_id`` is given, only the requester is permitted.
         """
         ...
 

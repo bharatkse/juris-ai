@@ -115,3 +115,29 @@ async def test_evidence_text_is_passed_through_to_the_pii_detector() -> None:
         text="content",
         evidence_text="some evidence",
     )
+
+
+@pytest.mark.asyncio
+async def test_failing_judge_call_blocks_the_response() -> None:
+    """
+    End-to-end through the real judge: a judge LLM call that raises must
+    produce BLOCKED, and PII review is skipped (nothing to redact in a
+    response that won't be shown).
+    """
+
+    from agentic.guardrails.harmful_content import HarmfulContentJudge
+
+    async def failing_judge(prompt: str) -> str:
+        raise TimeoutError("judge timed out")
+
+    pii_detector = MagicMock()
+    service = OutputGuardrailService(
+        pii_detector=pii_detector,
+        harmful_content_judge=HarmfulContentJudge(judge=failing_judge),
+    )
+
+    result = await service.review(content="An answer that was never checked.")
+
+    assert result.action is GuardrailActionEnum.BLOCKED
+    assert result.harmful is not None and result.harmful.harmful is True
+    pii_detector.review.assert_not_called()

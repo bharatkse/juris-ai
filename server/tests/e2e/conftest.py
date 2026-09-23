@@ -73,6 +73,20 @@ async def registered_user(e2e_client: AsyncClient) -> dict:
     merge into any authenticated request.
     """
 
+    return await _register_and_login(e2e_client)
+
+
+@pytest_asyncio.fixture
+async def second_registered_user(e2e_client: AsyncClient) -> dict:
+    """
+    A second, independent user, for cross-user authorization tests.
+    Same shape as ``registered_user``.
+    """
+
+    return await _register_and_login(e2e_client)
+
+
+async def _register_and_login(e2e_client: AsyncClient) -> dict:
     email = f"e2e-{uuid.uuid4().hex[:16]}@example.com"
     password = "Str0ng-E2E-Passw0rd!"
 

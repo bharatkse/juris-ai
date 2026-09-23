@@ -4,6 +4,7 @@ Approval-related exceptions.
 
 from __future__ import annotations
 
+from core.constants import ERROR_FORBIDDEN, HTTP_403_FORBIDDEN
 from core.exceptions.base import AIError
 
 
@@ -17,6 +18,17 @@ class ApprovalNotFoundError(ApprovalError):
     """
     Raised when an approval request cannot be found.
     """
+
+
+class ApprovalForbiddenError(ApprovalError):
+    """
+    Raised when an authenticated user acts on an approval they don't own.
+
+    Only the user who requested an approval may decide it.
+    """
+
+    status_code = HTTP_403_FORBIDDEN
+    error_code = ERROR_FORBIDDEN
 
 
 class ApprovalExpiredError(ApprovalError):

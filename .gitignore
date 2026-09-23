@@ -263,6 +263,7 @@ CLAUDE.md
 
 # Local-only review notes (not for the repo)
 /docs/architecture-review.md
+/docs/agentic-fix-plan.md
 
 .logs/
 
