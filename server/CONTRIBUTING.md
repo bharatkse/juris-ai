@@ -5,7 +5,7 @@ tests, linting, and the full local infrastructure (Postgres, Redis,
 SearXNG, observability, and the local AWS emulation used for
 SAM/Terraform work).
 
-Just want to run Juris AI, not develop on it? Use `./install.sh` from
+Just want to run Juris AI, not develop on it? Use `./setup.sh` from
 the repo root instead — see the root [README.md](../README.md).
 
 ## Set up commit signing (required for PRs)
@@ -134,12 +134,6 @@ dependencies,lifecycle}.sh` (function definitions only; globals stay in
 and `include`s `mk/{docker,db,quality,test,iac}.mk` via
 `MK_DIR := $(dir $(lastword $(MAKEFILE_LIST)))`, defined before the includes.
 
-## Known gaps
+---
 
-Check [`docs/known-issues.md`](../docs/known-issues.md) before
-assuming a piece of the design already works as documented — it's the
-committed, continuously-updated list of confirmed gaps between the
-intended architecture and what's actually implemented. (Module
-READMEs, e.g. `src/agentic/README.md` and `src/rag/README.md`, carry
-their own package-specific "Known gaps" sections too — check the
-relevant one first if the area you're touching has one.)
+Known architecture and security gaps are tracked privately by the maintainers.

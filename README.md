@@ -1,8 +1,8 @@
 # ⚖️ Juris AI
 
-**Legal research and contract review, grounded in real sources — not model guesswork.**
+**Legal research and contract review over real legal sources.**
 
-Ask a question about Indian law and get an answer backed by actual statutes and case law, with citations you can check. Hand over a contract and get its risks, ambiguities, and obligations flagged in plain language. Anything that reaches outside the system — sending an email, posting to Slack — waits for your explicit approval first. Self-hosted, so your matters and documents stay on your own infrastructure.
+Ask a question about Indian law and the system retrieves from a corpus of actual statutes to answer it, citing the retrieved sources. Share a contract's text and a contract-review agent analyzes its risks, ambiguities, and obligations. Outbound actions such as email or Slack are designed to require your explicit approval. Self-hosted, so your matters and documents stay on your own infrastructure.
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
 [![CI](https://github.com/bharatkse/juris-ai/actions/workflows/ci-server.yml/badge.svg)](https://github.com/bharatkse/juris-ai/actions/workflows/ci-server.yml)
@@ -11,13 +11,13 @@ Ask a question about Indian law and get an answer backed by actual statutes and 
 
 ## Capabilities
 
-- **Grounded legal research** — answers backed by real source documents with citations, not model guesswork (hybrid vector + keyword retrieval, reranked for relevance)
-- **Contract review** — risks, ambiguities, and obligations flagged in plain language, with the relevant clause quoted alongside each finding
-- **Human approval before anything leaves the system** — sending an email or posting to Slack pauses for your sign-off; it never happens automatically
-- **Privacy-aware by default** — personal information, including Indian ID numbers, is automatically redacted from generated answers before you see them
+- **Retrieval-backed legal research** — hybrid vector + keyword retrieval over the legal corpus, reranked for relevance, with an answer-quality gate that scores answers against the retrieved evidence
+- **Contract review** — a dedicated contract agent analyzes contract text for risks, ambiguities, and obligations
+- **Human-in-the-loop design for outbound actions** — calls to the email and Slack tools pause execution for a human approval decision (LangGraph interrupt/resume)
+- **PII redaction stage** — a Presidio-based output review with custom Indian ID recognizers (PAN, Aadhaar)
 - **Tamper-proof audit trail** — every request and decision is logged in a way that can't be edited or deleted afterward, independent of your chat history
-- **Usage controls built in** — per-user rate limits and daily quotas out of the box
-- **Live, streaming answers** — text appears as it's generated, without ever streaming content that a later safety check would redact or block
+- **Usage controls** — per-user request rate limiting and a daily token-quota check
+- **Streaming responses** — `POST /chat/stream` delivers answers over Server-Sent Events
 - **Ready for real cloud deployment** — Terraform and AWS SAM/CloudFormation paths, both tested against a local AWS emulator before you touch real infrastructure
 
 ## 🚀 Quick Start
@@ -36,13 +36,13 @@ First run builds the image locally (a few minutes) — this will switch to a fas
 | Tier | What | Best for |
 | --- | --- | --- |
 | **1 — `setup.sh`** (Quick Start above) | Auto-generates secrets, prompts only for `GROQ_API_KEY`, waits for a real health check | Just want it running |
-| **2 — Manual `docker compose`** | `cp env.example .env`, fill in every value yourself, then `docker compose up -d --build` | Full control over configuration, or scripting your own install |
+| **2 — Manual configuration** | `cp server/env.example server/.env`, fill in every value yourself, then start the stacks with `./setup.sh --install` (compose files live under `docker/`) | Full control over configuration, or scripting your own install |
 
 Developer setup (running from source, tests) or a cloud deploy (Terraform/AWS SAM)? See [`docs/server/`](docs/server/).
 
 ## Architecture
 
-Under the hood, a multi-agent system plans, researches, and reasons before answering, with every generated response passing through a privacy and safety review before it reaches you. Full technical breakdown: [`docs/server/architecture/overview.md`](docs/server/architecture/overview.md).
+Under the hood, a multi-agent system plans, researches, and reasons before answering, with a privacy and safety review stage (harmful-content check, PII redaction) on generated responses. Full technical breakdown: [`docs/server/architecture/overview.md`](docs/server/architecture/overview.md); per-component workflows live in `server/src/agentic/*/README.md` and `server/src/rag/README.md`.
 
 ## Repository Map
 
@@ -51,7 +51,10 @@ juris-ai/
 ├── server/            # FastAPI backend -- source, tests, Poetry project
 ├── clients/           # Reserved for future first-party client apps (none yet)
 ├── docker/
-│   ├── server/         # Backend Docker Compose stacks (dev, local AWS emulation, observability)
+│   ├── server/         # Backend app Docker Compose stack + Dockerfile
+│   ├── dependencies/   # Postgres, Redis, Floci (local AWS emulator) stacks
+│   ├── development/    # Ollama (local LLM), SearXNG, MCP stacks
+│   ├── observability/  # OTel collector, Prometheus, Tempo, Grafana
 │   └── clients/        # Reserved for future client Docker assets (none yet)
 ├── docs/
 │   ├── server/         # Backend architecture, setup guides, API reference
@@ -60,10 +63,11 @@ juris-ai/
 │   ├── terraform/      # Multi-cloud IaC (AWS built and parity-tested; GCP/Azure are stubs)
 │   └── cloud/          # AWS SAM/CloudFormation templates (original deploy path)
 ├── legal/              # Commercial licensing terms
-├── docker-compose.yml   # Release bundle: run Juris AI (builds from source until first GHCR publish)
-├── setup.sh           # Release-flow installer -- see Quick Start above
-├── Makefile           # Build, test, lint, migrate, deploy -- run `make help` from here
-└── env.example          # Release-flow configuration template
+├── sample_data/        # Sample legal acts (PDF)
+├── tests/              # Repo-level tests (Claude Code hooks) -- `make test-root`
+├── setup.sh           # Installer and stack lifecycle (install/reinstall/cleanup/uninstall)
+└── Makefile           # Build, test, lint, migrate, deploy -- run `make help` from here
+                       # Configuration template: server/env.example
 ```
 
 ## Data Processing & Privacy
@@ -73,24 +77,21 @@ Describes what the code actually does — not a legal privacy policy. If you dep
 | What | Detail |
 | --- | --- |
 | LLM inference | **Groq** (`GROQ_API_KEY`) — chat messages + retrieved context, always on |
-| Web search | **Brave Search** — only when the web-research tool runs |
+| Web search | **SearXNG** (self-hosted, `docker/development/`), which forwards queries to Google/Bing/Yahoo — only when the web-research tool runs. A Brave client exists but isn't wired in |
 | Tracing | **LangSmith** — off by default; can include conversation content if enabled |
 | PII redaction | Presidio-based, on generated output only; custom `IN_PAN`/`IN_AADHAAR` recognizers |
-| Local data | Legal corpus (`raw_datasets/`) is local public-domain text; local Ollama model runs on your own infra |
+| Local data | Legal corpus is local public-domain PDFs (`sample_data/acts/`; the test/eval copy is `server/tests/datasets/rag/raw_datasets/`); local Ollama model runs on your own infra |
 | Retention | No automatic deletion — conversations/events persist in Postgres until you remove them |
 | Cross-conversation memory | Off by default (opt-in). When a user turns it on, short preference/profile facts they state are saved and reused in later conversations, sent to the LLM provider on every request that injects them; turning it off deletes them immediately. Unlike conversation history, saved memories DO expire automatically (sliding retention window). See [`docs/server/architecture/user-memory.md`](docs/server/architecture/user-memory.md) |
 
-## Audit Status
+## Verification
 
 | Area | Status |
 | --- | --- |
 | Compliance logging | Real, DB-trigger-enforced immutability on `compliance_log` — verified by e2e tests against a real Postgres instance |
-| Security | `python-jose` transitive-dependency gap found and fixed; verified end-to-end (login, JWT validation, tampered-token rejection) |
-| Streaming | `POST /chat/stream` works — guardrail-aware (redacted/blocked content is never streamed) — verified by e2e tests |
-| Known production gaps | No real `ENVIRONMENT=production` path · `DB_SECRET_ARN` unused by the app · 6 documented Floci emulator defects + 1 CloudFormation template defect |
-| Test suite | 1,219 passing (unit/e2e/smoke) · 2 known gaps tracked, not hidden · coverage via Codecov in CI |
+| Streaming | `POST /chat/stream` is covered by end-to-end tests |
+| Test suite | 1,388 unit tests passing (2026-09-23) · coverage via Codecov in CI |
 
-Full detail and owners: [`docs/known-issues.md`](docs/known-issues.md).
 
 ## Contributing
 

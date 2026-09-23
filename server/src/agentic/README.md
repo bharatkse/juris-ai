@@ -6,19 +6,21 @@ now.
 
 ## Module map
 
-| Path | Responsibility |
-|---|---|
-| `planning/` | Intent analysis, `ExecutionPlan` generation (template-based or LLM-based) |
-| `orchestration/` | `AIOrchestrator` — coordinates the request lifecycle; never executes agents/tools itself |
-| `execution/` | `Executor`, LangGraph graph construction/compilation, execution state/memory, response aggregation |
-| `agents/` | Domain reasoning (`LegalAgent`, `ContractAgent`), prompt building, token budgeting, agent runtime (lifecycle, continuation) |
-| `evaluation/` | `AnswerEvaluator` + `AnswerQualityPolicy` — post-hoc answer quality gating (groundedness/relevance/correctness/citations) |
-| `guardrails/` | `OutputGuardrailService` — reviews the final aggregated response for harmful content and PII before it leaves the system; called once by `AIOrchestrator` (`handle()`/`resume()`) after aggregation, right before the response is built. See `docs/known-issues.md` for the PII detector's known recall gaps. |
-| `policy/` | `AgentPolicyProvider`/`AgentPolicyGuard`/`ToolPermissionGuard` — what tools an agent may call |
-| `registry/` | Agent and tool lookup by name |
-| `tools/` | External actions: retrieval, web search, case-law search, document parsing, messaging |
-| `collaboration/` | `CollaborationBus` — mediated agent-to-agent messaging (DELEGATE decisions). **Unverified/unexercised as of this writing**: no test or production path drives an actual end-to-end delegation; `DELEGATE` is only reachable if an agent's LLM emits that decision type, and nothing in the current prompt-driven flow does so routinely. Treat as present-but-unproven, not present-and-working. |
-| `decisions/` | `AgentDecision`/`AgentDecisionType` schemas + validator — the structured contract an agent's LLM call must return |
+Every component below has its own `README.md` (workflow diagram, verified 2026-09-23) and `CLAUDE.md` (rules, gotchas, scoped test command).
+
+| Path | Responsibility | Docs |
+|---|---|---|
+| `planning/` | Intent analysis, `ExecutionPlan` generation (template-based or LLM-based) | [README](planning/README.md) |
+| `orchestration/` | `AIOrchestrator` — coordinates the request lifecycle; never executes agents/tools itself | [README](orchestration/README.md) |
+| `execution/` | `Executor`, LangGraph graph construction/compilation, execution state/memory, response aggregation | [README](execution/README.md) |
+| `agents/` | Domain reasoning (`LegalAgent`, `ContractAgent`), prompt building, token budgeting, agent runtime (lifecycle, continuation) | [README](agents/README.md), [runtime/](agents/runtime/README.md) |
+| `evaluation/` | `AnswerEvaluator` + `AnswerQualityPolicy` — post-hoc answer quality gating (groundedness/relevance/correctness/citations) | [README](evaluation/README.md) |
+| `guardrails/` | `OutputGuardrailService` — reviews the final aggregated response for harmful content and PII; called once by `AIOrchestrator` (`handle()`/`resume()`) after aggregation, right before the response is built. | [README](guardrails/README.md) |
+| `policy/` | `AgentPolicyProvider`/`AgentPolicyGuard`/`ToolPermissionGuard` — what tools an agent may call | [README](policy/README.md) |
+| `registry/` | Agent and tool lookup by name | [README](registry/README.md) |
+| `tools/` | External actions: retrieval, web search, case-law search, document parsing, messaging | [README](tools/README.md) |
+| `collaboration/` | `CollaborationBus` — mediated agent-to-agent messaging (DELEGATE decisions). Delegation is disabled by default: `AgentPolicyGuard.check_delegation()` requires `allow_delegation`, which no agent policy grants. | [README](collaboration/README.md) |
+| `decisions/` | `AgentDecision`/`AgentDecisionType` schemas + validator — the structured contract an agent's LLM call must return | [README](decisions/README.md) |
 
 ## Request lifecycle (real, graph-based path)
 
@@ -40,20 +42,22 @@ flowchart TD
     SESSION --> GRAPH["Compiled LangGraph<br/>(execution/graph/builder.py)<br/>topology derived from step.depends_on"]
     GRAPH --> NODE["AgentExecutionNode<br/>(execution/graph/nodes.py)"]
     NODE --> AEXEC["AgentExecution.start()<br/>(agents/runtime/execution.py)<br/>resolves AgentPolicy via DatabaseAgentPolicyProvider"]
-    AEXEC --> AGENT["Agent.reason()<br/>(LegalAgent / ContractAgent)<br/>temperature=0.2 (FACTUAL_ANSWER)"]
+    AEXEC --> AGENT["BaseAgent._reason()<br/>(LegalAgent / ContractAgent)<br/>structured AgentDecision, STRUCTURED_DECISION<br/>(streamed FINAL text: stream_final_answer(), FACTUAL_ANSWER)"]
     AGENT --> DECISION{AgentDecision}
     DECISION -->|TOOL_CALL| GUARD["AgentPolicyGuard.check_tool()"]
     GUARD -->|allowed| TOOLREG["Tool Registry -> Tool.execute()"]
     GUARD -->|denied| FAILPOLICY[FAILED_POLICY termination]
     TOOLREG --> CONT["AgentContinuationService<br/>(agents/runtime/continuation.py)<br/>feeds result back, re-reasons"]
     CONT --> AGENT
-    DECISION -->|DELEGATE| BUS["CollaborationBus.send()<br/>(unverified path, see module map)"]
+    DECISION -->|DELEGATE| BUS["CollaborationBus.send()<br/>(only if policy allows delegation)"]
     BUS --> CONT
     DECISION -->|FINAL| GATE["_gate_final()<br/>AnswerQualityPolicy check<br/>(see sequence diagram below)"]
     GATE --> MAPPER["AgentResponseMapper.map()<br/>(execution/aggregation/mapper.py)<br/>builds citations/sources from reasoning_context"]
-    MAPPER --> VALIDATOR[ResponseValidator]
-    VALIDATOR --> AGG["ResponseAggregator<br/>(execution/aggregation/response.py)"]
-    AGG --> ORCH
+    MAPPER --> EXECUTOR
+    EXECUTOR -->|ExecutionResultSchema| VALIDATOR["ResponseValidator<br/>(called by AIOrchestrator)"]
+    VALIDATOR --> AGG["ResponseAggregator<br/>(execution/aggregation/response.py, called by AIOrchestrator)"]
+    AGG --> GR["OutputGuardrailService.review()"]
+    GR --> ORCH
     ORCH --> REQ
 ```
 
@@ -84,7 +88,7 @@ sequenceDiagram
     else groundedness or relevance failed
         Policy-->>Continuation: False
         Continuation->>Guard: check_tool(policy, "retriever")
-        Note over Guard: same check an LLM-proposed<br/>TOOL_CALL would get -- closed this<br/>session, previously bypassed
+        Note over Guard: same check an LLM-proposed<br/>TOOL_CALL gets
         alt allowed
             Guard-->>Continuation: allowed
             Continuation->>Tool: execute(query, top_k=8)
@@ -104,7 +108,7 @@ sequenceDiagram
 Corrective retrieval (`CORRECTIVE_RETRIEVAL_TOP_K = 8`, broader than a
 normal `retriever` call's default `top_k=5`) was added this session —
 it is not part of the original design and does not appear in
-`docs/architecture/overview.md`'s diagrams.
+`docs/server/architecture/overview.md`'s diagrams.
 
 ## Rate limiting and token quota
 
@@ -141,7 +145,7 @@ sequenceDiagram
             Dep-->>Endpoint: continue
             Endpoint->>Chat: chat(...)
             Chat->>Orch: handle(...)
-            Orch-->>Chat: result (result.usage = real provider-reported tokens)
+            Orch-->>Chat: result (incl. result.usage)
             Chat->>Usage: record(user_id, input_tokens, output_tokens)
             Note over Usage: best-effort -- swallows its own<br/>errors, never fails an otherwise-<br/>successful response
             Usage->>DB: increment_tokens(day window)
@@ -224,13 +228,10 @@ keeps `AgentContinuationService` unit-testable in isolation (constructed
 directly and called without a compiled graph), the pattern this
 module's own test suite relies on.
 
-Deliberately not extended to `_delegate()`'s real send the same way:
-`DELEGATE` is confirmed unreachable in production today (`AgentPolicyGuard
-.check_delegation()` always denies — `allow_delegation` defaults `False`
-and `agent_policies` has no column for it), so there's no live replay
-hazard to fix yet, and `CollaborationBus.send()` returns a bare `object`
-with no established serialization contract to checkpoint safely. Revisit
-alongside adding real `allow_delegation` support.
+`_delegate()` is not wrapped in the same `@task` pattern: delegation is
+disabled by default (no agent policy grants `allow_delegation`), and
+`CollaborationBus.send()` returns a bare `object` with no serialization
+contract to checkpoint. Wrap it the same way if delegation is enabled.
 
 ## Temperature / determinism conventions
 
@@ -253,54 +254,17 @@ whatever a provider or dataclass default happens to be.
 
 ## `/chat/stream` implementation
 
-Implemented, not a gap: `AIOrchestrator.stream()`
+`AIOrchestrator.stream()`
 (`orchestration/orchestrator.py:911`) is called by
 `ChatService.stream_chat()` (`application/services/chat.py`) and
 exercised end-to-end — real FastAPI routing, real Postgres, the real
 LangGraph checkpointer, real guardrails — by
 `tests/e2e/test_chat_stream.py`. See that test's module docstring for
-the full "what's real vs. what's mocked" accounting and the
-`TEXT_A`/`TEXT_B` two-LLM-call nuance (the aggregated/guardrail-reviewed
-decision text and the separately-streamed answer chunks come from two
-different LLM calls in production, by design).
+the full "what's real vs. what's mocked" accounting. The streamed answer
+text is produced by a separate LLM call (`BaseAgent.stream_final_answer()`)
+from the structured decision (`BaseAgent._reason()`), by design; see
+`agents/README.md`.
 
-## Known gaps
+---
 
-Agentic-specific items; cross-referenced from `docs/known-issues.md`
-where this package's gaps are also repo-wide-relevant, rather than
-duplicated there:
-
-- **`CollaborationBus`/`DELEGATE` is unverified** — see the module map
-  entry above. Real code path, zero real exercise.
-- **Citation-quality thresholds are uncalibratable from this dataset**
-  — see `src/rag/README.md` → Known gaps and
-  `agentic/evaluation/answer.py`'s `AnswerQualityPolicy` docstring for
-  the full, honest accounting.
-- **Tool-permission enforcement's remaining bypass**: agents hold a
-  `RetrieverTool` instance directly (`agents/base.py._retrieve_context()`)
-  rather than resolving it via `registry/tool.py` at call time, with no
-  policy check at all — a structural bypass of the `TOOL_CALL`
-  permission gate in `agents/runtime/execution.py`. Still dead code
-  (nothing calls it) as of this writing, but higher-risk than it looks:
-  real enforcement now exists everywhere else (see `agent_policies`
-  section above), so if this path is ever wired into a live route it
-  becomes a real, immediate authorization hole with no second layer of
-  brokenness left to mask it. Owner: `agentic/agents/base.py`.
-- **Structured per-result data is lost at the `Tool.execute() -> str`
-  boundary — one root cause behind several symptoms.** Every `Tool`
-  (not just `RetrieverTool`) can only return a flattened string;
-  nothing structured (per-chunk score, title, document id) survives
-  past that boundary into `ToolResult`/`ToolEvidence` or anything built
-  from them downstream. Concretely, `ToolResultConverter
-  ._to_retrieved_content()` sets `source_name=result.tool_name`
-  unconditionally (always the tool's own name, e.g. `"retriever"`,
-  never a real document/title); citations built by
-  `AgentResponseMapper` inherit the same ceiling. Fixing this needs a
-  change to the `Tool.execute()` contract itself across every
-  implementation, not a patch to any one caller. Owner:
-  `agentic/tools/base.py` + `agentic/tools/retrieval.py` (and any other
-  concrete `Tool`).
-- **`AgentResponseDTO.usage` is never populated** — see
-  `docs/known-issues.md` for the full trace and production
-  consequence (the daily token quota has never actually been fed by a
-  real request).
+Known architecture and security gaps are tracked privately by the maintainers.

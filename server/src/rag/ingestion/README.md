@@ -40,10 +40,10 @@ rag/
 | `exceptions.py` | Ingestion-specific exception hierarchy |
 | `sanitizer.py` | Unicode cleanup and security/threat detection |
 | `validator.py` | Content validation before chunking |
-| `text_chunker.py` | Streaming sentence-aware chunk generation |
+| `chunker.py` (+ `chunking_profile.py`) | Streaming sentence-aware chunk generation, per profile |
 | `parsers/protocol.py` | Generic parser contract |
-| `parsers/file_parser.py` | File-type detection and document extraction |
-| `parsers/text_parser.py` | Parser for already-available text |
+| `parsers/file.py` | File-type detection and document extraction |
+| `parsers/text.py` | Parser for already-available text |
 | `readers/file_reader.py` | Bounded binary/text file reading |
 
 ## Ingestion Flow

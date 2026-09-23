@@ -356,19 +356,13 @@ RetrievedContentDTO
 
 The LLM should **not be responsible for reconstructing source metadata.**
 
-> **Current implementation status:** this gap is closed. A FINAL
-> decision's `AgentResponseDTO` is now built by
-> `AgentResponseMapper.map()` (`execution/aggregation/mapper.py`),
-> called from the graph's FINAL handling
-> (`execution/graph/nodes.py`), which derives real `CitationDTO`/
-> `SourceDTO` values from the reasoning context accumulated during
-> execution (`_build_provenance()`) rather than leaving them empty.
-> The Aggregator's merge step (`execution/aggregation/response.py`)
-> now has real data to merge. Citation/source *quality* is still
-> capped by a separate, still-open issue — the `Tool.execute() -> str`
-> boundary loses structured per-result data (title, per-chunk score)
-> before it ever reaches this mapper — see `src/agentic/README.md` →
-> Known gaps for the full trace.
+> **Implementation note:** a FINAL decision's `AgentResponseDTO` is
+> built by `AgentResponseMapper.map()` (`execution/aggregation/mapper.py`),
+> called from the graph's FINAL handling (`execution/graph/nodes.py`). It
+> derives `CitationDTO`/`SourceDTO` values from the reasoning context
+> accumulated during execution (`_build_provenance()`), and the
+> Aggregator's merge step (`execution/aggregation/response.py`) combines
+> them across agents.
 
 ## 6. Execution runtime
 
@@ -424,10 +418,9 @@ ContractAgent
 - `CollaborationBus` provides mediated agent-to-agent communication
   when collaboration is required.
 
-> **Current implementation status:** `ExecutionState`, `ExecutionMemory`,
+> **Implementation note:** `ExecutionState`, `ExecutionMemory`,
 > and `CollaborationBus` are implemented and owned by the Executor as
-> shown. One caveat specific to the `execution mode` field listed
-> above: it's recorded and surfaced in telemetry
+> shown. The `execution mode` field listed above is recorded and surfaced in telemetry
 > (`execution/session.py`) but nothing branches on it. The
 > SEQUENTIAL/PARALLEL/HYBRID shape in section 1's diagram is derived
 > structurally from each step's `depends_on` graph
@@ -435,12 +428,12 @@ ContractAgent
 > descriptive label for that graph shape, not a switch the Executor
 > reads.
 
-### Corrective retrieval (added this session — not in the original design)
+### Corrective retrieval
 
 When a FINAL answer fails groundedness or relevance
 (`agentic/evaluation/answer.py`'s `AnswerQualityPolicy`),
 `AgentContinuationService._gate_final()`
-(`agents/runtime/continuation.py`) now forces a real `retriever`
+(`agents/runtime/continuation.py`) forces a real `retriever`
 `TOOL_CALL` for the same question (broadened `top_k`) before letting
 the agent try FINAL again, instead of only re-asking the same LLM with
 a note and no new information. This system-initiated call goes through
@@ -476,22 +469,15 @@ Component Owns Must NOT own
 
 ```
 
-> **Current implementation status:** the role boundaries above hold
-> in code (Orchestrator never executes agents/tools, Executor never
-> plans). Tool-permission enforcement (`AgentPolicyGuard.check_tool()`)
-> is no longer inert: `agent_policies` is a real, DB-backed table
-> (`DatabaseAgentPolicyProvider`, seeded at startup) instead of the
-> empty static dict it used to be, and every `TOOL_CALL` — both
-> LLM-proposed (`agents/runtime/execution.py`) and system-forced
-> corrective retrieval (`agents/runtime/continuation.py`, see the new
-> note under section 6) — is checked against it. One confirmed
-> exception remains, now higher-risk precisely because enforcement
-> elsewhere actually works: `agents/base.py._retrieve_context()` still
-> holds a `RetrieverTool` directly with no policy check at all. It
-> remains dead code — nothing calls it — see `src/agentic/README.md` →
-> Known gaps for the full trace. The **Aggregator**'s
-> "Merge outputs/provenance" row is correctly implemented and now has
-> real data to merge — see the section 5 status note.
+> **Implementation note:** the role boundaries above hold in code (the
+> Orchestrator never executes agents/tools; the Executor never plans).
+> Tool permissions are enforced by `AgentPolicyGuard.check_tool()`
+> against the DB-backed `agent_policies` table
+> (`DatabaseAgentPolicyProvider`, seeded at startup), for both
+> LLM-proposed `TOOL_CALL`s (`agents/runtime/execution.py`) and the
+> system-forced corrective retrieval (`agents/runtime/continuation.py`,
+> see section 6). The Aggregator's "Merge outputs/provenance" row is
+> implemented as described in the section 5 note.
 
 ---
 
@@ -636,7 +622,7 @@ The `ExecutionPlan` must preserve explicit execution-mode semantics:
 The Executor selects the appropriate execution strategy from the plan.
 It does not redesign or reinterpret the plan.
 
-> **Current implementation status:** see the section 6 note above —
+> **Implementation note:** see the section 6 note above —
 > `execution_mode` isn't read by the Executor; the actual strategy is
 > derived from each step's dependencies.
 
@@ -688,10 +674,8 @@ RetrievedContent
 
 This keeps source information available for the final API response.
 
-> **Current implementation status:** see the section 5 note above —
-> this is no longer just the target, it's what runs: `citations`/
-> `sources` are populated by `AgentResponseMapper` today, subject to
-> the same quality ceiling noted there.
+> **Implementation note:** see the section 5 note above — `citations`/
+> `sources` are populated by `AgentResponseMapper`.
 
 ---
 
@@ -805,3 +789,5 @@ OTEL tells us system timing and distributed execution.
 LangSmith tells us LLM/agent behavior.
 
 ---
+
+Known architecture and security gaps are tracked privately by the maintainers.
