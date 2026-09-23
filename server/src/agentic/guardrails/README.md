@@ -12,7 +12,7 @@ and once in `resume()`.
 | File | Class | Role |
 |---|---|---|
 | `service.py` | `OutputGuardrailService` | Orchestrates the two checks, returns `GuardrailReviewResult` |
-| `harmful_content.py` | `HarmfulContentJudge` | LLM judge (cached, temperature 0.0, `JUDGE_MODEL`); unparsable verdict → harmful (fail closed) |
+| `harmful_content.py` | `HarmfulContentJudge` | LLM judge (cached, temperature 0.0, `JUDGE_MODEL`). The reviewed text is placed inside `<response_under_review>` tags (any such tag inside the text is escaped) and the judge is told to treat it only as data. Fails closed: if the judge call raises (provider error, timeout, connection error) or its verdict can't be parsed, the result is harmful with category `judge_unavailable` |
 | `pii.py` | `PresidioPIIDetector` | Presidio + spaCy (`GUARDRAIL_SPACY_MODEL`, default `en_core_web_sm`) with custom `IN_PAN`/`IN_AADHAAR` recognizers; structured IDs always REDACTED; contact/named-entity PII FLAGGED when it appears verbatim in the evidence, else REDACTED |
 | `schemas.py` | `GuardrailActionEnum` (NONE/FLAGGED/REDACTED/BLOCKED), `PIIDetection`, `HarmfulContentResult`, `GuardrailReviewResult` | |
 
@@ -23,8 +23,9 @@ i.e. two attempts in total). Wiring: `wiring/factories/guardrails.py`.
 
 ```mermaid
 flowchart TD
-    IN["review(content, evidence_text)<br/>content = aggregated response text"] --> H["HarmfulContentJudge.evaluate()<br/>LLM judge"]
-    H -->|harmful| B["BLOCKED<br/>(orchestrator regenerates, then fixed refusal)"]
+    IN["review(content, evidence_text)<br/>content = aggregated response text"] --> H["HarmfulContentJudge.evaluate()<br/>LLM judge on escaped, delimited text"]
+    H -->|harmful| B["BLOCKED<br/>(orchestrator regenerates once, then fixed refusal)"]
+    H -->|"judge call fails or times out,<br/>or verdict unparsable"| B
     H -->|not harmful| P["PresidioPIIDetector.review()<br/>in a worker thread"]
     P --> M{"detection category"}
     M -->|none| N[NONE]

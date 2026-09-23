@@ -18,7 +18,7 @@ themselves; they propose a `TOOL_CALL` and the runtime executes it.
 | `base.py` | `BaseAgent` | `_reason()` (structured decision), `stream_final_answer()` (plain-text regeneration), `handle_message()` (collaboration bus) |
 | `legal.py` | `LegalAgent` | name `legal`; `LegalPromptBuilder`; `inference_task = FACTUAL_ANSWER` |
 | `contract.py` | `ContractAgent` | name `contract`; `ContractPromptBuilder`; `inference_task = FACTUAL_ANSWER` |
-| `prompts/base.py` | `BasePromptBuilder` | Loads the template, budgets tokens, assembles messages, wraps evidence in `<retrieved_context>` |
+| `prompts/base.py` | `BasePromptBuilder` | Loads the template, budgets tokens, assembles messages, wraps evidence in `<retrieved_context>` after escaping any `<retrieved_context>`/`</retrieved_context>` tag inside the content (`core/utils/prompt_safety.escape_delimiter`), so evidence can't close the wrapper early |
 | `prompts/token_budget.py` | `fit_to_budget()` | tiktoken-based trimming: system prompt never truncated; oldest history, then lowest-scored context dropped first |
 | `prompts/user_memory.py` | `render_user_memory_block()` | `<user_memory>` block (or "") |
 | `prompts/templates/{legal,contract}.md` | — | System prompts: decision rules and the untrusted-content warning |
@@ -36,6 +36,7 @@ sequenceDiagram
     RT->>A: _reason(request, context)
     A->>PB: build(request, context, model, reserved_output_tokens)
     PB->>PB: fit_to_budget(system+memory, history, context)
+    PB->>PB: build_context(): escape delimiter tags inside each evidence item, then wrap all items in one <retrieved_context>
     PB-->>A: messages = [SYSTEM prompt, SYSTEM <user_memory>?, SYSTEM <retrieved_context>?, ...history]
     A->>LLM: generate_structured(response_model=AgentDecision)<br/>LLMTask.STRUCTURED_DECISION, low temperature
     LLM-->>A: AgentDecision
