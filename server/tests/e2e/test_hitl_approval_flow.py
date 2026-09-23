@@ -269,6 +269,7 @@ async def test_hitl_approve_flow_executes_gated_tool_exactly_once(
         approve_body = approve_response.json()["data"]
         assert approve_body["status"] == ApprovalStatusEnum.APPROVED.value
         assert approve_body["approval_id"] == approval_id
+        assert approve_body["resume_status"] == "completed"
 
     # --------------------------------------------------------
     # 3. The gated tool actually executed -- exactly once, not zero,

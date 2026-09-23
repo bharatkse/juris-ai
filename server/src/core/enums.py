@@ -338,6 +338,19 @@ class ApprovalDecisionEnum(StrEnum):
     EDIT = "edit"
 
 
+class HitlResumeStatusEnum(StrEnum):
+    """
+    Outcome of resuming a paused execution after an approval decision.
+
+    Reported alongside the decision, which is committed before resume
+    runs and stands whatever this outcome is.
+    """
+
+    COMPLETED = "completed"
+    FAILED = "failed"
+    NOT_RESUMED = "not_resumed"
+
+
 # ============================================================================
 # Actors
 # ============================================================================

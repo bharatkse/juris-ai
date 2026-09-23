@@ -628,7 +628,8 @@ class ApprovalLifecycleService(BaseService, ApprovalLifecycleServiceProtocol):
         user_id: str,
     ) -> ApprovalResponseDTO:
         """
-        Persist an approval decision.
+        Persist and commit an approval decision and its compliance
+        record.
         """
 
         try:
@@ -650,18 +651,10 @@ class ApprovalLifecycleService(BaseService, ApprovalLifecycleServiceProtocol):
 
             # Compliance log: a thin pointer into this HITL decision --
             # see ComplianceLogService.record_hitl_approval_decision's
-            # docstring for why request_id is not supplied here.
-            # Best-effort in the sense that a write failure must not
-            # undo a real, already-persisted human decision
-            # (StandaloneComplianceLogWriter's own except-and-log
-            # stance doesn't apply here since this uses the
-            # request-scoped ComplianceLogService instead -- a real
-            # failure here would propagate through the outer
-            # ApprovalError handling below like any other write in
-            # this method, which is correct: this call shares the
-            # same transaction/commit boundary as the approval
-            # decision itself, same as ChatService's compliance
-            # writes).
+            # docstring for why request_id is not supplied here. It
+            # shares the decision's transaction, same as ChatService's
+            # compliance writes: a failure here fails the decision
+            # rather than leaving one without the other.
             await self._compliance_log_service.record_hitl_approval_decision(
                 user_id=user_id,
                 tenant_id=user_id,
@@ -671,6 +664,10 @@ class ApprovalLifecycleService(BaseService, ApprovalLifecycleServiceProtocol):
                     persisted.decision_type.value if persisted.decision_type else "unknown"
                 ),
             )
+
+            # Committed here, before anything acts on the decision, so a
+            # later failure (e.g. HitlResumeService) can't roll it back.
+            await self.commit()
 
             return persisted.to_dto()
 
@@ -702,7 +699,7 @@ class ApprovalLifecycleService(BaseService, ApprovalLifecycleServiceProtocol):
         entity: Approval,
     ) -> ApprovalResponseDTO:
         """
-        Persist the expired state.
+        Persist and commit the expired state.
         """
 
         try:
@@ -711,6 +708,10 @@ class ApprovalLifecycleService(BaseService, ApprovalLifecycleServiceProtocol):
             persisted = await self._repository.save(
                 entity=entity,
             )
+
+            # Committed before the caller raises ApprovalExpiredError,
+            # whose request-level rollback would otherwise discard it.
+            await self.commit()
 
             logger.info(
                 "Approval request expired.",

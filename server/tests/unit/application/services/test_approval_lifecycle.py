@@ -97,7 +97,10 @@ def session() -> MagicMock:
     Provide a mocked database session.
     """
 
-    return MagicMock()
+    session = MagicMock()
+    session.commit = AsyncMock()
+    session.rollback = AsyncMock()
+    return session
 
 
 @pytest.fixture
@@ -1175,3 +1178,100 @@ def test_forbidden_error_maps_to_http_403() -> None:
 
     assert error.status_code == 403
     assert error.error_code == "FORBIDDEN"
+
+
+# ---------------------------------------------------------------------------
+# commit boundary: a decision or expiry is committed by the service itself
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["approve", "reject", "edit"])
+async def test_decision_is_committed_after_save_and_compliance_record(
+    service: ApprovalLifecycleService,
+    repository: MagicMock,
+    compliance_log_service: MagicMock,
+    session: MagicMock,
+    method: str,
+) -> None:
+    """
+    The decision and its compliance record are committed together,
+    before the method returns, so nothing the caller does afterwards
+    (e.g. resuming the execution) can roll them back.
+    """
+
+    entity = build_approval_entity(requested_by=OWNER_ID)
+    repository.get.return_value = entity
+    repository.save.return_value = entity
+
+    calls: list[str] = []
+    repository.save.side_effect = lambda *, entity: calls.append("save") or entity
+    compliance_log_service.record_hitl_approval_decision.side_effect = lambda **_: calls.append(
+        "compliance"
+    )
+    session.commit.side_effect = lambda: calls.append("commit")
+
+    await getattr(service, method)(approval_id="approval-123", user_id=OWNER_ID)
+
+    assert calls == ["save", "compliance", "commit"]
+
+
+@pytest.mark.asyncio
+async def test_decision_is_not_committed_when_compliance_record_fails(
+    service: ApprovalLifecycleService,
+    repository: MagicMock,
+    compliance_log_service: MagicMock,
+    session: MagicMock,
+) -> None:
+    entity = build_approval_entity(requested_by=OWNER_ID)
+    repository.get.return_value = entity
+    repository.save.return_value = entity
+    compliance_log_service.record_hitl_approval_decision.side_effect = RuntimeError("down")
+
+    with pytest.raises(ApprovalError):
+        await service.approve(approval_id="approval-123", user_id=OWNER_ID)
+
+    session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["approve", "validate"])
+async def test_expiry_is_committed_before_expired_error_is_raised(
+    service: ApprovalLifecycleService,
+    repository: MagicMock,
+    session: MagicMock,
+    method: str,
+) -> None:
+    """
+    The request-level rollback that follows ApprovalExpiredError must
+    not discard the EXPIRED status.
+    """
+
+    entity = build_approval_entity(requested_by=OWNER_ID, expired=True)
+    repository.get.return_value = entity
+    repository.save.return_value = entity
+
+    with pytest.raises(ApprovalExpiredError):
+        if method == "approve":
+            await service.approve(approval_id="approval-123", user_id=OWNER_ID)
+        else:
+            await service.validate("approval-123")
+
+    assert entity.status is ApprovalStatusEnum.EXPIRED
+    session.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_rejected_decision_attempts_are_not_committed(
+    service: ApprovalLifecycleService,
+    repository: MagicMock,
+    session: MagicMock,
+) -> None:
+    repository.get.return_value = build_approval_entity(
+        requested_by=OWNER_ID, status=ApprovalStatusEnum.APPROVED
+    )
+
+    with pytest.raises(ApprovalNotActionableError):
+        await service.approve(approval_id="approval-123", user_id=OWNER_ID)
+
+    session.commit.assert_not_awaited()

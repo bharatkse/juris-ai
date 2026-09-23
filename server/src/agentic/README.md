@@ -255,16 +255,23 @@ sequenceDiagram
     API->>ALSO: process(approval_id, request, user_id)
     ALSO->>ALSO: load Approval; requested_by == user_id?
     alt not the requester
-        ALS-->>API: ApprovalForbiddenError
+        ALSO-->>API: ApprovalForbiddenError
         API-->>C: 403
     else requester
-        ALSO->>ALSO: expired? still WAITING? then record the decision (+ compliance log)
-        ALS-->>API: ApprovalResponseDTO
+        ALSO->>ALSO: expired? (commit EXPIRED, 410) still WAITING? (else 409)<br/>then save the decision + compliance log and commit
+        ALSO-->>API: ApprovalResponseDTO
         API->>HR: resume_after_decision(approval_id, agent_action_id, decision_type)
         HR->>X: on approve or reject, resume the paused graph<br/>(the tool runs once on approve); an edit does not resume
-        API-->>C: 200 + decision
+        HR-->>API: resume_status (completed / failed / not_resumed)
+        API-->>C: 200 + decision + resume_status
     end
 ```
+
+The decision is committed before `HitlResumeService` runs, so nothing
+that happens during resume can undo it. A resume failure rolls back
+only the resume's own writes, marks the `AgentAction` `FAILED` (with
+the error type in `result`) in a separate commit, and is reported as
+`resume_status: failed`; nothing retries it automatically.
 
 `get()` and `validate()` apply the same ownership check when called with
 a `user_id`.
