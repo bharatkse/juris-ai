@@ -339,6 +339,42 @@ exclude_lines = [
 
 
 # -------------------------------------------------
+# Release Versioning (python-semantic-release)
+# Next version from Conventional Commits since the last v* tag. Used only
+# by the release job in .github/workflows/ci-server.yml, which runs it
+# with --no-commit/--no-tag/--no-push: main needs signed commits, so the
+# workflow creates the tag + GitHub Release itself and syncs the version
+# and CHANGELOG.md back to develop via a PR. See docs/release-process.md.
+# -------------------------------------------------
+[tool.semantic_release]
+version_toml = ["pyproject.toml:project.version"]
+tag_format = "v{version}"
+commit_parser = "conventional"
+# Stay on 0.x until a deliberate 1.0: breaking changes bump the minor.
+allow_zero_version = true
+major_on_zero = false
+build_command = ""
+
+[tool.semantic_release.branches.main]
+match = "main"
+prerelease = false
+
+# Every develop build gets a release candidate: vX.Y.Z-rc.N.
+[tool.semantic_release.branches.develop]
+match = "develop"
+prerelease = true
+prerelease_token = "rc"
+
+[tool.semantic_release.changelog]
+# Regenerate the whole file from tags each release (deterministic; the
+# sync PR carries it to develop).
+mode = "init"
+
+[tool.semantic_release.changelog.default_templates]
+changelog_file = "../CHANGELOG.md"
+
+
+# -------------------------------------------------
 # Build System
 # Backend used to build and manage the project.
 # -------------------------------------------------
