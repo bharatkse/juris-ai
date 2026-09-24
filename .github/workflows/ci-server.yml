@@ -362,29 +362,16 @@ jobs:
       DIGEST: ${{ needs.publish-image.outputs.digest }}
 
     steps:
-      # Annotated tag on this develop commit, recording the exact digest the
-      # rc was published under. Promotion reads the digest from here and
-      # checks the registry still agrees, instead of trusting a mutable tag.
-      # Safe to re-run: an existing tag on this commit is kept.
-      - name: Create annotated rc tag
-        run: |
-          existing=$(gh api "repos/${REPO}/git/ref/tags/v${RC}" --jq .object.sha 2> /dev/null || true)
-          if [ -n "$existing" ]; then
-            # Annotated tag: the ref points at the tag object; peel to its commit.
-            tagged=$(gh api "repos/${REPO}/git/tags/${existing}" --jq .object.sha 2> /dev/null || echo "$existing")
-            if [ "$tagged" != "$GITHUB_SHA" ]; then
-              echo "::error::v${RC} already exists on ${tagged}, not on ${GITHUB_SHA}."
-              exit 1
-            fi
-            echo "v${RC} already exists on ${GITHUB_SHA} (earlier attempt); keeping it." | tee -a "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
+      # Only for the tag script; the tag is created through the API.
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
-          message=$(printf 'Release candidate %s\n\nimage: %s:%s\ndigest: %s\n' "$RC" "$IMAGE" "$RC" "$DIGEST")
-          tag_object=$(gh api "repos/${REPO}/git/tags" \
-            -f "tag=v${RC}" -f "message=${message}" -f "object=${GITHUB_SHA}" -f type=commit --jq .sha)
-          gh api "repos/${REPO}/git/refs" -f "ref=refs/tags/v${RC}" -f "sha=${tag_object}" > /dev/null
-          echo "Tagged ${GITHUB_SHA} as v${RC} (${IMAGE}@${DIGEST})" | tee -a "$GITHUB_STEP_SUMMARY"
+      # Annotated tag on this develop commit, recording the exact digest the
+      # rc was published under. Safe to re-run; see the script.
+      - name: Create annotated rc tag
+        run: .github/scripts/rc-tag.sh
 
       # A pre-release GitHub Release for the rc, so candidates are visible on
       # the Releases page. Deliberately light: no changelog, never "Latest"

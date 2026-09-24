@@ -38,9 +38,20 @@ fi
 develop_sha=$(gh api "repos/${repo}/git/ref/heads/develop" --jq .object.sha)
 gh api "repos/${repo}/contents/server/pyproject.toml?ref=${develop_sha}" --jq .content |
   base64 -d > "${work}/develop-pyproject.toml"
-if ! gh api "repos/${repo}/contents/CHANGELOG.md?ref=${develop_sha}" --jq .content 2> /dev/null |
-  base64 -d > "${work}/develop-changelog.md"; then
+# develop may not have a CHANGELOG.md yet: a 404 compares as an empty file.
+# Any other API failure (auth, rate limit, 5xx) fails the step instead of
+# passing for "no changelog". Only gh's stderr, "gh: Not Found (HTTP 404)",
+# identifies a missing file: on any failure gh exits 1 and writes the raw
+# error JSON to stdout (--jq only applies to a successful response).
+if changelog_b64=$(gh api "repos/${repo}/contents/CHANGELOG.md?ref=${develop_sha}" \
+  --jq .content 2> "${work}/changelog.err"); then
+  printf '%s' "$changelog_b64" | base64 -d > "${work}/develop-changelog.md"
+elif grep -q '(HTTP 404)' "${work}/changelog.err"; then
   : > "${work}/develop-changelog.md"
+else
+  echo "::error::Could not read CHANGELOG.md on develop:" >&2
+  cat "${work}/changelog.err" >&2
+  exit 1
 fi
 
 develop_version=$(python3 -c 'import sys, tomllib; print(tomllib.load(open(sys.argv[1], "rb"))["project"]["version"])' \
