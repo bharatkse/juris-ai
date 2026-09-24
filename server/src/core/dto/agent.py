@@ -59,13 +59,10 @@ class AgentRequestDTO:
 
     conversation: ConversationDTO
     instruction: str
+    context: AgentContextDTO
 
     arguments: dict[str, Any] = field(
         default_factory=dict,
-    )
-
-    context: AgentContextDTO = field(
-        default_factory=AgentContextDTO,
     )
 
 

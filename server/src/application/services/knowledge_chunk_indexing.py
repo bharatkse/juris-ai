@@ -137,6 +137,11 @@ class KnowledgeIndexingService:
                 "source.location must not be empty.",
             )
 
+        if not source.id:
+            raise ValueError(
+                "source.id must not be empty.",
+            )
+
         logger.info(
             "Starting document indexing.",
             extra={

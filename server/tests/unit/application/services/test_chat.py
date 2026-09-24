@@ -23,6 +23,7 @@ from application.services.chat import ChatService
 from application.services.conversation_summarization import UNSUMMARIZED_EVENT_LIMIT
 from application.services.internal_dto.chat import ChatResultDTO
 from application.services.internal_dto.stream import ChatStreamChunkDTO
+from core.dto.tool import ToolFileDTO
 from core.enums import ApprovalStatusEnum, MessageRoleEnum
 from core.exceptions.httpx import ConversationInactiveError, NotFoundError
 from tests.builders.agentic.orchestrator import build_orchestrator_response
@@ -143,7 +144,7 @@ async def test_chat_returns_chat_result(
     assert orchestration_request.user_id == conversation.user_id
     assert orchestration_request.message == "Hello"
     assert orchestration_request.history == []
-    assert orchestration_request.attachments == []
+    assert orchestration_request.attachments == ()
 
     mock_conversation_event_service.create.assert_any_await(
         conversation_id=conversation.id,
@@ -159,6 +160,60 @@ async def test_chat_returns_chat_result(
 
     chat_service.commit.assert_awaited_once_with()
     chat_service.rollback.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_chat_passes_uploaded_files_to_orchestrator(
+    chat_service: ChatService,
+    mock_conversation_service: MagicMock,
+    mock_conversation_event_service: MagicMock,
+    mock_orchestrator: MagicMock,
+) -> None:
+    """
+    Uploaded files should reach the orchestrator request unchanged.
+
+    Regression: OrchestratorRequest.attachments was typed
+    list[Attachment], so any chat with a file failed validation.
+    """
+
+    conversation = ConversationFactory.build()
+    request_id = uuid4()
+    upload = ToolFileDTO(filename="contract.txt", content=b"terms", content_type="text/plain")
+
+    user_event = ConversationEventFactory.build(
+        conversation_id=conversation.id,
+        request_id=request_id,
+        role=MessageRoleEnum.USER,
+        content="Hello",
+    )
+    response = build_orchestrator_response(conversation_id=conversation.id, content="Hi")
+    assistant_event = ConversationEventFactory.build(
+        conversation_id=conversation.id,
+        request_id=request_id,
+        parent_event_id=user_event.id,
+        role=MessageRoleEnum.ASSISTANT,
+        content=response.content,
+        event_metadata=response.metadata.model_dump(mode="json"),
+    )
+
+    mock_conversation_service.get_or_raise = AsyncMock(return_value=conversation)
+    mock_conversation_event_service.create = AsyncMock(side_effect=[user_event, assistant_event])
+    mock_conversation_event_service.list = AsyncMock(return_value=[])
+    mock_orchestrator.handle = AsyncMock(return_value=response)
+    chat_service.commit = AsyncMock()
+    chat_service.rollback = AsyncMock()
+
+    await chat_service.chat(
+        user_id=conversation.user_id,
+        conversation_id=conversation.id,
+        message="Hello",
+        request_id=request_id,
+        files=(upload,),
+    )
+
+    orchestration_request = mock_orchestrator.handle.await_args.kwargs["request"]
+
+    assert orchestration_request.attachments == (upload,)
 
 
 @pytest.mark.asyncio

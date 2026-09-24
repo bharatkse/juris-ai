@@ -17,6 +17,7 @@ from agentic.orchestration.schemas.response import (
     Source,
     Usage,
 )
+from core.dto.tool import ToolFileDTO
 from core.enums import AttachmentTypeEnum, MessageRoleEnum, RequestSourceEnum
 from core.models.conversation import ConversationMessageSchema
 from core.types import ConversationEventId, ConversationId, UserId
@@ -206,7 +207,7 @@ def build_orchestrator_request(
     user_id: UserId | None = None,
     message: str = "Hello",
     history: list[ConversationMessageSchema] | None = None,
-    attachments: list[Attachment] | None = None,
+    attachments: tuple[ToolFileDTO, ...] = (),
     metadata: RequestMetadata | None = None,
 ) -> OrchestratorRequest:
     """
@@ -224,6 +225,6 @@ def build_orchestrator_request(
         user_id=(user_id or unknown_user_id()),
         message=message,
         history=history or [],
-        attachments=attachments or [],
+        attachments=attachments,
         metadata=metadata or build_request_metadata(),
     )

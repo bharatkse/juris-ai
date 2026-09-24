@@ -28,7 +28,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from agentic.registry.tool import ToolRegistry
+from agentic.registry.protocols import ToolRegistryProtocol
 from agentic.tools.result import ToolEvidence, ToolResult
 
 
@@ -66,7 +66,7 @@ class ToolExecutionService:
     def __init__(
         self,
         *,
-        tool_registry: ToolRegistry,
+        tool_registry: ToolRegistryProtocol,
     ) -> None:
         self._tool_registry = tool_registry
 

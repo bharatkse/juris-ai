@@ -7,8 +7,8 @@ existing Groq/local LLM client without ragas needing its own provider
 integration for it -- see rag.evaluation.evaluator.Judge for the
 callable this wraps.
 
-BaseRagasLLM declares two abstract methods, generate_text (sync) and
-agenerate_text (async). Every ragas metric we use calls the async path
+BaseRagasLLM declares three abstract methods: generate_text (sync),
+agenerate_text (async) and, as of ragas 0.4, is_finished. Every ragas metric we use calls the async path
 only (PydanticPrompt.generate() -> BaseRagasLLM.generate() ->
 agenerate_text -- confirmed by reading ragas' source directly), so
 generate_text is implemented only to satisfy the ABC and raises if
@@ -33,6 +33,8 @@ from functools import lru_cache
 from langchain_core.outputs import Generation, LLMResult
 
 if t.TYPE_CHECKING:
+    from collections.abc import Callable
+
     from langchain_core.callbacks import Callbacks
     from langchain_core.prompt_values import PromptValue
     from ragas.llms.base import BaseRagasLLM
@@ -41,7 +43,7 @@ if t.TYPE_CHECKING:
 
 
 @lru_cache(maxsize=1)
-def _judge_ragas_llm_class() -> type[BaseRagasLLM]:
+def _judge_ragas_llm_class() -> Callable[..., BaseRagasLLM]:
     """
     Build the JudgeRagasLLM class the first time it's needed.
 
@@ -104,6 +106,19 @@ def _judge_ragas_llm_class() -> type[BaseRagasLLM]:
             return LLMResult(
                 generations=[[Generation(text=response) for _ in range(max(n, 1))]],
             )
+
+        def is_finished(self, response: LLMResult) -> bool:
+            """
+            Always True: our Judge returns only final text, with no
+            finish_reason metadata to inspect -- the same answer ragas'
+            own LangchainLLMWrapper gives when generation_info is
+            absent. Abstract on BaseRagasLLM as of ragas 0.4 (not in
+            0.2.15, which this adapter was first written against).
+            Returning False would make ragas raise
+            LLMDidNotFinishException.
+            """
+
+            return True
 
     return JudgeRagasLLM
 

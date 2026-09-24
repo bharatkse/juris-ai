@@ -4,6 +4,8 @@ Library service.
 
 from __future__ import annotations
 
+import builtins
+
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,7 +21,7 @@ from core.dto.clients.storage import (
     StoredObjectDTO,
     UploadRequestDTO,
 )
-from core.enums import LibraryStatusEnum
+from core.enums import LibrarySourceEnum, LibraryStatusEnum
 from core.exceptions.client import ClientProviderError, ClientResponseError
 
 log = get_logger(__name__)
@@ -77,7 +79,7 @@ class LibraryService(BaseService):
         )
 
         uploaded_objects: list[StoredObjectDTO] = []
-        library: list[Library] = []
+        libraries: list[Library] = []
 
         try:
             async with self._session.begin():
@@ -92,7 +94,9 @@ class LibraryService(BaseService):
 
                     library = Library(
                         conversation_id=conversation_id,
-                        source_type=request.source_type,
+                        # Everything this service stores is a user file
+                        # upload; UploadRequestDTO carries no source type.
+                        source_type=LibrarySourceEnum.FILE,
                         original_filename=request.filename,
                         filename=stored.filename,
                         mime_type=stored.content_type,
@@ -107,15 +111,15 @@ class LibraryService(BaseService):
                         library=library,
                     )
 
-                    library.append(library)
+                    libraries.append(library)
 
             log.info(
                 "Uploaded %d file(s) for conversation '%s'.",
-                len(library),
+                len(libraries),
                 conversation_id,
             )
 
-            return library
+            return libraries
 
         except (
             ClientProviderError,
@@ -168,7 +172,7 @@ class LibraryService(BaseService):
         Delete an uploaded file from storage and persistence.
         """
 
-        if library.storage_path:
+        if library.storage_path and library.filename:
             await self._storage.delete(
                 request=DeleteRequestDTO(
                     object_id=library.id,
@@ -183,7 +187,7 @@ class LibraryService(BaseService):
     async def _cleanup_uploads(
         self,
         *,
-        uploaded_objects: list[StoredObjectDTO],
+        uploaded_objects: builtins.list[StoredObjectDTO],
     ) -> None:
         """
         Remove uploaded files from storage after a failed transaction.

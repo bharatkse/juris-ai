@@ -5,10 +5,10 @@ from typing import Protocol, TypeVar
 
 from rag.ingestion.models import ParsedBlock
 
-SourceT = TypeVar("SourceT")
+SourceT_contra = TypeVar("SourceT_contra", contravariant=True)
 
 
-class ParserProtocol(Protocol[SourceT]):
+class ParserProtocol(Protocol[SourceT_contra]):
     """
     Contract for incrementally converting a source into parsed blocks.
 
@@ -19,7 +19,7 @@ class ParserProtocol(Protocol[SourceT]):
     def parse(
         self,
         *,
-        source: SourceT,
+        source: SourceT_contra,
     ) -> Iterator[ParsedBlock]:
         """
         Incrementally extract logical content blocks from a source.

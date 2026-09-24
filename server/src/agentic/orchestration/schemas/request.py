@@ -8,6 +8,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from core.dto.tool import ToolFileDTO
 from core.dto.user_memory import UserMemoryContextItem
 from core.enums import AttachmentTypeEnum, RequestSourceEnum
 from core.models.conversation import ConversationMessageSchema
@@ -71,9 +72,11 @@ class OrchestratorRequest(BaseModel):
         default_factory=list,
     )
 
-    attachments: list[Attachment] = Field(
-        default_factory=list,
-    )
+    # The chat request's uploaded files, exactly as ChatService passes
+    # them and as the orchestrator hands them on (uploaded_files on the
+    # tool context). Was typed list[Attachment], which rejected every
+    # real upload with a ValidationError.
+    attachments: tuple[ToolFileDTO, ...] = ()
 
     # The user's saved memories selected for this turn (empty unless the
     # user opted in and this conversation's "don't remember this" switch

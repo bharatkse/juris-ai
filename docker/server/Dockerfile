@@ -3,16 +3,29 @@
 # ==============================================================================
 FROM python:3.11-slim AS builder
 
+# Pinned so rebuilds (and the image vulnerability scan) are
+# reproducible. >=2.3.3 for CVE-2026-34591; 2.5 also allows dulwich 1.x
+# (0.25.x carries three HIGH CVEs).
+ARG POETRY_VERSION=2.5.1
+
 # Set WORKDIR to /juris_ai_server so virtualenv paths match the runtime container
 WORKDIR /juris_ai_server
 
-ENV POETRY_VIRTUALENVS_IN_PROJECT=true
+# No pip in the project venv: Poetry installs without it, nothing at
+# runtime uses it, and pip's vendored msgpack/pkg_resources are flagged
+# by the image scan with no fixed pip release yet.
+ENV POETRY_VIRTUALENVS_IN_PROJECT=true \
+    POETRY_VIRTUALENVS_OPTIONS_NO_PIP=true
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir poetry
+# Upgrade the base image's own pip/setuptools/wheel first: the copies
+# python:3.11-slim ships (setuptools 70.x, vendoring jaraco.context 5.3
+# and wheel 0.45) carry fixable HIGH CVEs that the image scan flags.
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel \
+    && pip install --no-cache-dir "poetry==${POETRY_VERSION}"
 
 COPY pyproject.toml poetry.lock* ./
 
@@ -27,6 +40,8 @@ RUN poetry install --no-interaction --no-ansi --no-root
 # ==============================================================================
 FROM python:3.11-slim AS runtime
 
+ARG POETRY_VERSION=2.5.1
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/juris_ai_server/src \
@@ -40,7 +55,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir poetry
+# Upgrade the base image's own pip/setuptools/wheel first: the copies
+# python:3.11-slim ships (setuptools 70.x, vendoring jaraco.context 5.3
+# and wheel 0.45) carry fixable HIGH CVEs that the image scan flags.
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel \
+    && pip install --no-cache-dir "poetry==${POETRY_VERSION}" \
+    && python -m pip uninstall --yes pip
 
 # Create non-root user and runtime directories
 RUN useradd -m -u 1000 appuser \

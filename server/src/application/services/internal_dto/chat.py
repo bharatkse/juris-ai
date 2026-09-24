@@ -8,8 +8,7 @@ from dataclasses import dataclass
 
 from adapters.persistence.sqlalchemy.models.conversation import Conversation
 from adapters.persistence.sqlalchemy.models.conversation_event import ConversationEvent
-from agentic.orchestration.schemas.response import OrchestratorResponse
-from core.dto.approval import ApprovalRequestDTO
+from agentic.orchestration.schemas.response import ApprovalResponse, OrchestratorResponse
 
 
 @dataclass(
@@ -25,8 +24,8 @@ class ChatResultDTO:
 
     user_event: ConversationEvent
 
+    response: OrchestratorResponse
+
     assistant_event: ConversationEvent | None = None
 
-    response: OrchestratorResponse | None = None
-
-    approval: ApprovalRequestDTO | None = None
+    approval: ApprovalResponse | None = None

@@ -96,7 +96,7 @@ class UsageRecordRepository(BaseRepository[UsageRecord]):
         if row is None:
             return 0
 
-        return row.input_tokens + row.output_tokens
+        return int(row.input_tokens) + int(row.output_tokens)
 
     async def _increment(
         self,
@@ -122,7 +122,7 @@ class UsageRecordRepository(BaseRepository[UsageRecord]):
             updated_at=now,
         )
 
-        statement = statement.on_conflict_do_update(
+        upsert = statement.on_conflict_do_update(
             index_elements=["user_id", "period", "window_start"],
             set_={
                 "request_count": UsageRecord.request_count + request_count_delta,
@@ -132,6 +132,6 @@ class UsageRecordRepository(BaseRepository[UsageRecord]):
             },
         ).returning(UsageRecord.request_count)
 
-        result = await self._session.execute(statement)
+        result = await self._session.execute(upsert)
 
-        return result.scalar_one()
+        return int(result.scalar_one())

@@ -15,6 +15,7 @@ from agentic.execution.aggregation.schemas import (
 )
 from agentic.orchestration.schemas.response import Usage
 from core.dto.agent import AgentResponseDTO
+from core.dto.response import CitationDTO, SourceDTO
 from core.exceptions.aggregation import EmptyAggregationError
 
 logger = get_logger(__name__)
@@ -74,7 +75,7 @@ class ResponseAggregator(BaseAggregator):
         Aggregate response citations.
         """
 
-        citations = []
+        citations: list[CitationDTO] = []
 
         for response in responses:
             citations.extend(
@@ -91,7 +92,7 @@ class ResponseAggregator(BaseAggregator):
         Aggregate response sources.
         """
 
-        sources = []
+        sources: list[SourceDTO] = []
 
         for response in responses:
             sources.extend(

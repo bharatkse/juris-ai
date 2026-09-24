@@ -7,11 +7,11 @@ from __future__ import annotations
 import hashlib
 import json
 
-from core.dto.agent_action import AgentActionResponseDTO
+from core.dto.agent_action import AgentActionRequestDTO
 
 
 def create_action_fingerprint(
-    action: AgentActionResponseDTO,
+    action: AgentActionRequestDTO,
 ) -> str:
     """
     Create a deterministic fingerprint for the exact action version.

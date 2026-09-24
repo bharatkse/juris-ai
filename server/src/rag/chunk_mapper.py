@@ -77,6 +77,11 @@ class ChunkMapper:
                 "chunk.text must not be empty.",
             )
 
+        if not source.id:
+            raise ValueError(
+                "source.id must not be empty.",
+            )
+
         chunk_id = self._build_chunk_id(
             source_id=source.id,
             sequence=chunk.sequence,

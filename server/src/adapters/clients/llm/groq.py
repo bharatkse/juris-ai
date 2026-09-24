@@ -45,7 +45,7 @@ class GroqClient(LLMClient):
     def __init__(
         self,
         *,
-        api_key: str,
+        api_key: str | None,
         model: str,
     ) -> None:
         self._client = AsyncGroq(

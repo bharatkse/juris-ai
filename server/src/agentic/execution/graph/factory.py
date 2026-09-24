@@ -20,7 +20,7 @@ from agentic.execution.graph.builder import ExecutionGraphBuilder
 from agentic.execution.graph.nodes import AgentExecutionNode
 from agentic.policy.agent_policy import AgentPolicyProvider
 from agentic.policy.guard import AgentPolicyGuard
-from agentic.registry.agent import AgentRegistry
+from agentic.registry.protocols import AgentRegistryProtocol
 from agentic.tools.runtime.invocation import ToolExecutionService
 from core.dto.planning import ExecutionPlanDTO
 
@@ -46,7 +46,7 @@ class ExecutionGraphFactory:
         self,
         *,
         builder: ExecutionGraphBuilder,
-        agent_registry: AgentRegistry,
+        agent_registry: AgentRegistryProtocol,
         agent_policy_provider: AgentPolicyProvider,
         agent_policy_guard: AgentPolicyGuard,
         retry_policy: ExecutionRetryPolicy,

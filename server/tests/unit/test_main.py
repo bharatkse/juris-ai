@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.routing import iter_route_contexts
 from redis.exceptions import ConnectionError as RedisConnectionError
 
 import main
@@ -49,7 +50,7 @@ def test_create_app_registers_api_router() -> None:
 
     app = main.create_app()
 
-    paths = {route.path for route in app.routes}
+    paths = {route.path for route in iter_route_contexts(app.routes)}
 
     assert "/" in paths
     assert "/api/v1/health" in paths
@@ -87,7 +88,7 @@ async def test_root_endpoint() -> None:
 
     app = main.create_app()
 
-    root = next(route.endpoint for route in app.routes if route.path == "/")
+    root = next(route.endpoint for route in iter_route_contexts(app.routes) if route.path == "/")
 
     response = await root()
 

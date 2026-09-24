@@ -80,7 +80,7 @@ def build_llm_judge(*, settings: Settings, cache: AbstractCache) -> Judge:
 
         cached = await cache.get(cache_key)
 
-        if cached is not None:
+        if isinstance(cached, str):
             metrics.record_cache_request(result="hit", cache="judge")
             return cached
 

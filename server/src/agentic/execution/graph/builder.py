@@ -4,8 +4,8 @@ LangGraph execution graph builder.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
-from typing import Any
+from collections.abc import Awaitable
+from typing import Any, Protocol
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
@@ -18,6 +18,16 @@ from agentic.execution.graph.state import (
 from agentic.execution.protocols import StepNode
 from core.dto.planning import ExecutionPlanDTO, ExecutionStepDTO
 from core.enums import ExecutionStatusEnum
+
+
+class _GraphStepNode(Protocol):
+    """
+    A graph node. Declared as a Protocol, not Callable[[...], ...]:
+    LangGraph's node protocol takes a parameter *named* ``state``,
+    which a positional-only Callable type cannot satisfy.
+    """
+
+    def __call__(self, state: ExecutionGraphState) -> Awaitable[dict[str, Any]]: ...
 
 
 class ExecutionGraphBuilder:
@@ -92,10 +102,7 @@ class ExecutionGraphBuilder:
         *,
         step: ExecutionStepDTO,
         step_node: StepNode,
-    ) -> Callable[
-        [ExecutionGraphState],
-        Awaitable[dict[str, Any]],
-    ]:
+    ) -> _GraphStepNode:
         """
         Bind an execution step to the runtime callback.
 

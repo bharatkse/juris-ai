@@ -21,8 +21,10 @@ operations. It does not own textual chunk lifecycle.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import Any, cast
 
 from sqlalchemy import delete, select
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from adapters.persistence.sqlalchemy.models.knowledge_chunk import (
@@ -222,7 +224,7 @@ class KnowledgeEmbeddingRepository:
 
         await self._session.flush()
 
-        return result.rowcount or 0
+        return cast(CursorResult[Any], result).rowcount or 0
 
     async def delete_by_model(
         self,
@@ -241,7 +243,7 @@ class KnowledgeEmbeddingRepository:
 
         await self._session.flush()
 
-        return result.rowcount or 0
+        return cast(CursorResult[Any], result).rowcount or 0
 
     async def vector_search(
         self,

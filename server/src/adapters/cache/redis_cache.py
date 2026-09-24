@@ -62,4 +62,4 @@ class RedisCache(AbstractCache):
         await self._client.flushdb()
 
     async def size(self) -> int:
-        return await self._client.dbsize()
+        return int(await self._client.dbsize())

@@ -142,7 +142,9 @@ def get_ai_orchestrator(
     the configured LangGraph PostgreSQL checkpointer.
     """
 
-    return request.app.state.ai_orchestrator
+    orchestrator: AIOrchestrator = request.app.state.ai_orchestrator
+
+    return orchestrator
 
 
 # ============================================================================

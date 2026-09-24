@@ -4,7 +4,8 @@ Conversation event repository.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+import builtins
+from typing import TYPE_CHECKING
 
 from adapters.persistence.sqlalchemy.models.conversation_event import ConversationEvent
 from adapters.persistence.sqlalchemy.repositories.base import BaseRepository
@@ -81,10 +82,7 @@ class ConversationEventRepository(
             statement,
         )
 
-        return cast(
-            ConversationEvent | None,
-            result.scalar_one_or_none(),
-        )
+        return result.scalar_one_or_none()
 
     async def list(
         self,
@@ -134,7 +132,7 @@ class ConversationEventRepository(
         role: MessageRoleEnum,
         after: datetime | None,
         limit: int,
-    ) -> list[ConversationEvent]:
+    ) -> builtins.list[ConversationEvent]:
         """
         Events of one role created strictly after ``after`` (all of them
         when None), oldest first, at most ``limit``.

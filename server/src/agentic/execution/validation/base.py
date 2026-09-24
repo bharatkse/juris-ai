@@ -7,7 +7,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 
-from agentic.orchestration.schemas.response import AgentResponse
+from core.dto.agent import AgentResponseDTO
 
 
 class BaseValidator(ABC):
@@ -19,7 +19,7 @@ class BaseValidator(ABC):
     async def validate(
         self,
         *,
-        responses: Sequence[AgentResponse],
+        responses: Sequence[AgentResponseDTO],
     ) -> None:
         """
         Validate one or more agent responses.

@@ -131,14 +131,18 @@ class ResourceContextManager:
         except BaseException:
             # Registration failed, so the manager does not own the
             # resource. Clean it up immediately.
-            cleanup = close or getattr(
+            if close is not None:
+                close(resource)
+                raise
+
+            close_method = getattr(
                 resource,
                 "close",
                 None,
             )
 
-            if not callable(cleanup):
+            if not callable(close_method):
                 raise
 
-            cleanup(resource) if close else cleanup()
+            close_method()
             raise

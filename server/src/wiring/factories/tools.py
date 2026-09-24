@@ -27,14 +27,12 @@ from __future__ import annotations
 from adapters.persistence.sqlalchemy.session import session_factory
 from agentic.tools.library.file_lookup import LibraryLookupTool
 from agentic.tools.library.parser import ParserTool
+from agentic.tools.messaging.base import ApprovalTokenVerifier
 from agentic.tools.messaging.email import EmailTool
 from agentic.tools.messaging.slack import SlackTool
 from agentic.tools.retrieval import RetrieverTool
 from agentic.tools.search_engine.case_law_search import CaseLawSearchTool
 from agentic.tools.search_engine.web_research import WebResearchTool
-from application.authorization.approval_lifecycle.protocols import (
-    ApprovalLifecycleServiceProtocol,
-)
 from wiring.containers import ClientContainer, RegistryContainer
 
 
@@ -42,7 +40,7 @@ def register_tools(
     *,
     clients: ClientContainer,
     registries: RegistryContainer,
-    approval_service: ApprovalLifecycleServiceProtocol,
+    approval_service: ApprovalTokenVerifier,
 ) -> None:
     library_lookup = LibraryLookupTool(session_factory=session_factory)
     parser = ParserTool()

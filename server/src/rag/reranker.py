@@ -101,7 +101,7 @@ class CrossEncoderReranker(RerankerProtocol):
         self._model_lock = threading.Lock()
 
         logger.info(
-            "Configured ONNX reranker model.",
+            "Configured reranker model.",
             extra={
                 "model": model_name,
                 "raw_output_is_logit": raw_output_is_logit,
@@ -111,7 +111,14 @@ class CrossEncoderReranker(RerankerProtocol):
 
     def _load(self) -> Any:
         """
-        Lazily load the cross-encoder using the ONNX backend.
+        Lazily load the cross-encoder (sentence-transformers' default
+        torch backend).
+
+        Not backend="onnx": that backend needs optimum-onnx, whose
+        latest release (0.1.0) caps transformers <4.58, and
+        transformers <5.10 carries unfixed HIGH CVEs (CVE-2026-4372,
+        CVE-2026-9856). Same model weights, so scores match the ONNX
+        backend to float tolerance.
 
         Model loading is protected so concurrent worker threads do not
         initialize multiple model instances -- same double-checked
@@ -133,29 +140,26 @@ class CrossEncoderReranker(RerankerProtocol):
                 from sentence_transformers import CrossEncoder
 
                 logger.info(
-                    "Loading ONNX reranker model.",
+                    "Loading reranker model.",
                     extra={
                         "model": self._model_name,
                     },
                 )
 
-                self._model = CrossEncoder(
-                    self._model_name,
-                    backend="onnx",
-                )
+                self._model = CrossEncoder(self._model_name)
 
                 return self._model
 
             except Exception as exc:
                 logger.exception(
-                    "Failed to load ONNX reranker model.",
+                    "Failed to load reranker model.",
                     extra={
                         "model": self._model_name,
                     },
                 )
 
                 raise RerankError(
-                    message=("Failed to load ONNX reranker model " f"'{self._model_name}'."),
+                    message=("Failed to load reranker model " f"'{self._model_name}'."),
                 ) from exc
 
     def _normalize_score(

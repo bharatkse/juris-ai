@@ -9,6 +9,8 @@ from typing import Generic, TypeVar
 from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from adapters.persistence.sqlalchemy.mixins import SoftDeleteMixin
+
 ModelT = TypeVar("ModelT")
 
 
@@ -74,7 +76,15 @@ class BaseRepository(
     ) -> Select:
         """
         Apply the soft-delete filter.
+
+        Only meaningful for models with SoftDeleteMixin; anything else
+        has no deleted_at column to filter on.
         """
+
+        if not issubclass(self._model, SoftDeleteMixin):
+            raise TypeError(
+                f"{self._model.__name__} is not soft-deletable.",
+            )
 
         return statement.where(
             self._model.deleted_at.is_(None),

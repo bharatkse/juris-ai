@@ -36,7 +36,7 @@ async def login(
     service: AuthenticationService = Depends(
         get_authentication_service,
     ),
-) -> ApiResponse[LoginResponse]:
+) -> LoginResponse:
     """
     Authenticate a user and return an access token.
     """
@@ -111,7 +111,7 @@ async def login(
 )
 async def logout(
     current_user: User = Depends(get_current_user),
-) -> ApiResponse[LogoutResponse]:
+) -> ApiResponse:
     """
     Log out the current client.
 
@@ -143,7 +143,7 @@ async def access_token(
     service: AuthenticationService = Depends(
         get_authentication_service,
     ),
-) -> ApiResponse[LoginResponse]:
+) -> ApiResponse:
     """
     Exchange a refresh token for a new access token.
     """

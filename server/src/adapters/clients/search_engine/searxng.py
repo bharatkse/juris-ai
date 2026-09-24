@@ -68,7 +68,7 @@ class SearxngClient:
                 title=r.get("title", ""),
                 url=r.get("url", ""),
                 snippet=r.get("content", ""),
-                engine=r.get("engine", "unknown"),
+                metadata={"engine": r.get("engine", "unknown")},
             )
             for r in raw_results
             if r.get("url")
