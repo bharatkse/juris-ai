@@ -26,6 +26,7 @@ from core.enums import ApprovalDecisionEnum, ApprovalStatusEnum
 from core.exceptions.approval import (
     ApprovalError,
     ApprovalExpiredError,
+    ApprovalForbiddenError,
     ApprovalNotActionableError,
     ApprovalNotFoundError,
     ApprovalValidationError,
@@ -144,9 +145,13 @@ class ApprovalLifecycleService(BaseService, ApprovalLifecycleServiceProtocol):
     async def get(
         self,
         approval_id: str,
+        *,
+        user_id: str | None = None,
     ) -> ApprovalResponseDTO:
         """
         Retrieve an approval request.
+
+        When ``user_id`` is given, only the requester may retrieve it.
         """
 
         try:
@@ -154,11 +159,14 @@ class ApprovalLifecycleService(BaseService, ApprovalLifecycleServiceProtocol):
                 approval_id,
             )
 
+            if user_id is not None:
+                self._ensure_owner(entity, user_id)
+
             return entity.to_dto()
 
-        except ApprovalNotFoundError:
+        except (ApprovalNotFoundError, ApprovalForbiddenError):
             logger.warning(
-                "Approval request not found.",
+                "Approval request not found or not permitted.",
                 extra={
                     "approval_id": approval_id,
                 },
@@ -189,15 +197,22 @@ class ApprovalLifecycleService(BaseService, ApprovalLifecycleServiceProtocol):
     async def validate(
         self,
         approval_id: str,
+        *,
+        user_id: str | None = None,
     ) -> ApprovalResponseDTO:
         """
         Validate that an approval is currently executable.
+
+        When ``user_id`` is given, only the requester may validate it.
         """
 
         try:
             entity = await self._get_entity(
                 approval_id,
             )
+
+            if user_id is not None:
+                self._ensure_owner(entity, user_id)
 
             if entity.is_expired:
                 await self._expire(
@@ -225,6 +240,7 @@ class ApprovalLifecycleService(BaseService, ApprovalLifecycleServiceProtocol):
 
         except (
             ApprovalNotFoundError,
+            ApprovalForbiddenError,
             ApprovalExpiredError,
             ApprovalValidationError,
         ):
@@ -337,6 +353,7 @@ class ApprovalLifecycleService(BaseService, ApprovalLifecycleServiceProtocol):
         try:
             entity = await self._get_waiting_entity(
                 approval_id,
+                user_id=user_id,
             )
 
             entity.status = ApprovalStatusEnum.APPROVED
@@ -387,6 +404,7 @@ class ApprovalLifecycleService(BaseService, ApprovalLifecycleServiceProtocol):
         try:
             entity = await self._get_waiting_entity(
                 approval_id,
+                user_id=user_id,
             )
 
             entity.status = ApprovalStatusEnum.REJECTED
@@ -441,6 +459,7 @@ class ApprovalLifecycleService(BaseService, ApprovalLifecycleServiceProtocol):
         try:
             entity = await self._get_waiting_entity(
                 approval_id,
+                user_id=user_id,
             )
 
             entity.status = ApprovalStatusEnum.EDITED
@@ -516,18 +535,46 @@ class ApprovalLifecycleService(BaseService, ApprovalLifecycleServiceProtocol):
                 "Failed to retrieve approval request.",
             ) from exc
 
+    @staticmethod
+    def _ensure_owner(
+        entity: Approval,
+        user_id: str,
+    ) -> None:
+        """
+        Only the user who requested an approval may act on it.
+        """
+
+        if entity.requested_by != user_id:
+            logger.warning(
+                "Approval access denied: user is not the requester.",
+                extra={
+                    "approval_id": entity.id,
+                    "user_id": user_id,
+                },
+            )
+            raise ApprovalForbiddenError(
+                "Not permitted to act on this approval request.",
+            )
+
     async def _get_waiting_entity(
         self,
         approval_id: str,
+        *,
+        user_id: str,
     ) -> Approval:
         """
-        Retrieve an approval that is still actionable.
+        Retrieve an approval that is still actionable by ``user_id``.
+
+        Ownership is checked before expiry/status so a non-owner learns
+        nothing about the approval's state and can't trigger its expiry.
         """
 
         try:
             entity = await self._get_entity(
                 approval_id,
             )
+
+            self._ensure_owner(entity, user_id)
 
             if entity.is_expired:
                 await self._expire(
@@ -547,6 +594,7 @@ class ApprovalLifecycleService(BaseService, ApprovalLifecycleServiceProtocol):
 
         except (
             ApprovalNotFoundError,
+            ApprovalForbiddenError,
             ApprovalExpiredError,
             ApprovalNotActionableError,
         ):
@@ -580,7 +628,8 @@ class ApprovalLifecycleService(BaseService, ApprovalLifecycleServiceProtocol):
         user_id: str,
     ) -> ApprovalResponseDTO:
         """
-        Persist an approval decision.
+        Persist and commit an approval decision and its compliance
+        record.
         """
 
         try:
@@ -602,18 +651,10 @@ class ApprovalLifecycleService(BaseService, ApprovalLifecycleServiceProtocol):
 
             # Compliance log: a thin pointer into this HITL decision --
             # see ComplianceLogService.record_hitl_approval_decision's
-            # docstring for why request_id is not supplied here.
-            # Best-effort in the sense that a write failure must not
-            # undo a real, already-persisted human decision
-            # (StandaloneComplianceLogWriter's own except-and-log
-            # stance doesn't apply here since this uses the
-            # request-scoped ComplianceLogService instead -- a real
-            # failure here would propagate through the outer
-            # ApprovalError handling below like any other write in
-            # this method, which is correct: this call shares the
-            # same transaction/commit boundary as the approval
-            # decision itself, same as ChatService's compliance
-            # writes).
+            # docstring for why request_id is not supplied here. It
+            # shares the decision's transaction, same as ChatService's
+            # compliance writes: a failure here fails the decision
+            # rather than leaving one without the other.
             await self._compliance_log_service.record_hitl_approval_decision(
                 user_id=user_id,
                 tenant_id=user_id,
@@ -623,6 +664,10 @@ class ApprovalLifecycleService(BaseService, ApprovalLifecycleServiceProtocol):
                     persisted.decision_type.value if persisted.decision_type else "unknown"
                 ),
             )
+
+            # Committed here, before anything acts on the decision, so a
+            # later failure (e.g. HitlResumeService) can't roll it back.
+            await self.commit()
 
             return persisted.to_dto()
 
@@ -654,7 +699,7 @@ class ApprovalLifecycleService(BaseService, ApprovalLifecycleServiceProtocol):
         entity: Approval,
     ) -> ApprovalResponseDTO:
         """
-        Persist the expired state.
+        Persist and commit the expired state.
         """
 
         try:
@@ -663,6 +708,10 @@ class ApprovalLifecycleService(BaseService, ApprovalLifecycleServiceProtocol):
             persisted = await self._repository.save(
                 entity=entity,
             )
+
+            # Committed before the caller raises ApprovalExpiredError,
+            # whose request-level rollback would otherwise discard it.
+            await self.commit()
 
             logger.info(
                 "Approval request expired.",

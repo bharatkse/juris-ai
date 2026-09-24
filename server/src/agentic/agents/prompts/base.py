@@ -17,8 +17,11 @@ from core.dto.agent import AgentRequestDTO
 from core.dto.clients.llm import LLMMessageDTO, LLMRequestDTO
 from core.dto.tool import RetrievedContentDTO
 from core.enums import MessageRoleEnum
+from core.utils.prompt_safety import escape_delimiter
 
 logger = get_logger(__name__)
+
+RETRIEVED_CONTEXT_TAG = "retrieved_context"
 
 
 class BasePromptBuilder(ABC):
@@ -192,9 +195,14 @@ class BasePromptBuilder(ABC):
         section of the agent's template, which tells the model how to
         treat text inside these tags. Content sources (RAG retrieval,
         web search, tool output) are not author-controlled and may
-        contain adversarial instructions.
+        contain adversarial instructions, including a fake closing tag,
+        so any delimiter inside the content is escaped first.
         """
 
-        body = "\n\n".join(item.content for item in context if item.content.strip())
+        body = "\n\n".join(
+            escape_delimiter(item.content, RETRIEVED_CONTEXT_TAG)
+            for item in context
+            if item.content.strip()
+        )
 
-        return f"<retrieved_context>\n{body}\n</retrieved_context>"
+        return f"<{RETRIEVED_CONTEXT_TAG}>\n{body}\n</{RETRIEVED_CONTEXT_TAG}>"

@@ -5,8 +5,9 @@ Unit tests for approval API routes.
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -15,7 +16,7 @@ from api.v1.endpoints.approval import process_approval
 from application.services.approval_lifecycle import ApprovalLifecycleService
 from application.services.hitl_resume import HitlResumeService
 from core.dto.approval import ApprovalDecisionRequestDTO
-from core.enums import ApprovalDecisionEnum
+from core.enums import ApprovalDecisionEnum, ApprovalStatusEnum, HitlResumeStatusEnum
 from core.exceptions.authorization import AuthorizationError
 
 
@@ -38,7 +39,11 @@ def build_approval_result() -> SimpleNamespace:
         id="approval-123",
         approval_id="approval-123",
         agent_action_id="action-123",
+        requested_by="user-123",
+        status=ApprovalStatusEnum.APPROVED,
         decision_type=ApprovalDecisionEnum.APPROVE,
+        created_at=datetime(2026, 1, 1, tzinfo=UTC),
+        expires_at=datetime(2026, 1, 1, 0, 15, tzinfo=UTC),
     )
 
 
@@ -48,7 +53,7 @@ def build_hitl_resume_service() -> MagicMock:
     """
 
     service = MagicMock(spec=HitlResumeService)
-    service.resume_after_decision = AsyncMock()
+    service.resume_after_decision = AsyncMock(return_value=HitlResumeStatusEnum.COMPLETED)
     return service
 
 
@@ -73,26 +78,24 @@ async def test_process_approval_returns_success_response() -> None:
         decision_reason="Approved by reviewer.",
     )
 
-    with patch(
-        "api.schemas.approval.ApprovalResponse.model_validate",
-        return_value={"id": "approval-123"},
-    ):
-        hitl_resume_service = build_hitl_resume_service()
+    hitl_resume_service = build_hitl_resume_service()
 
-        result = await process_approval(
-            approval_id="approval-123",
-            request=request,
-            current_user=current_user,
-            service=service,
-            hitl_resume_service=hitl_resume_service,
-        )
+    result = await process_approval(
+        approval_id="approval-123",
+        request=request,
+        current_user=current_user,
+        service=service,
+        hitl_resume_service=hitl_resume_service,
+    )
 
     assert result.status_code == 200
 
     result = json.loads(result.body)
 
     assert result["success"] is True
-    assert result["data"] == {"id": "approval-123"}
+    assert result["data"]["approval_id"] == "approval-123"
+    assert result["data"]["status"] == "approved"
+    assert result["data"]["resume_status"] == "completed"
 
     service.process.assert_awaited_once()
 
@@ -145,17 +148,13 @@ async def test_process_approval_passes_edited_payload() -> None:
         decision_reason="Updated before approval.",
     )
 
-    with patch(
-        "api.schemas.approval.ApprovalResponse.model_validate",
-        return_value={"id": "approval-123"},
-    ):
-        await process_approval(
-            approval_id="approval-123",
-            request=request,
-            current_user=current_user,
-            service=service,
-            hitl_resume_service=build_hitl_resume_service(),
-        )
+    await process_approval(
+        approval_id="approval-123",
+        request=request,
+        current_user=current_user,
+        service=service,
+        hitl_resume_service=build_hitl_resume_service(),
+    )
 
     decision_request = service.process.await_args.kwargs["request"]
 

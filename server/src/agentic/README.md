@@ -15,7 +15,7 @@ Every component below has its own `README.md` (workflow diagram, verified 2026-0
 | `execution/` | `Executor`, LangGraph graph construction/compilation, execution state/memory, response aggregation | [README](execution/README.md) |
 | `agents/` | Domain reasoning (`LegalAgent`, `ContractAgent`), prompt building, token budgeting, agent runtime (lifecycle, continuation) | [README](agents/README.md), [runtime/](agents/runtime/README.md) |
 | `evaluation/` | `AnswerEvaluator` + `AnswerQualityPolicy` — post-hoc answer quality gating (groundedness/relevance/correctness/citations) | [README](evaluation/README.md) |
-| `guardrails/` | `OutputGuardrailService` — reviews the final aggregated response for harmful content and PII; called once by `AIOrchestrator` (`handle()`/`resume()`) after aggregation, right before the response is built. | [README](guardrails/README.md) |
+| `guardrails/` | `OutputGuardrailService` — reviews the final aggregated response for harmful content and PII, and treats a harmful-content check that can't complete as harmful; called once by `AIOrchestrator` (`handle()`/`resume()`) after aggregation, right before the response is built. | [README](guardrails/README.md) |
 | `policy/` | `AgentPolicyProvider`/`AgentPolicyGuard`/`ToolPermissionGuard` — what tools an agent may call | [README](policy/README.md) |
 | `registry/` | Agent and tool lookup by name | [README](registry/README.md) |
 | `tools/` | External actions: retrieval, web search, case-law search, document parsing, messaging | [README](tools/README.md) |
@@ -232,6 +232,49 @@ module's own test suite relies on.
 disabled by default (no agent policy grants `allow_delegation`), and
 `CollaborationBus.send()` returns a bare `object` with no serialization
 contract to checkpoint. Wrap it the same way if delegation is enabled.
+
+### Approval decisions
+
+A paused gated call becomes an `Approval` owned by the user whose request
+produced it (`Approval.requested_by`, set by `ActionWorkflowService` via
+`ApprovalLifecycleService.create()`). Only that user can decide it:
+`ApprovalLifecycleService` checks ownership before looking at the
+approval's expiry or status, and any other authenticated user receives
+HTTP 403 (`ApprovalForbiddenError`) with the approval left unchanged.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Client (authenticated user)
+    participant API as POST /api/v1/approvals/:approval_id
+    participant ALSO as ApprovalLifecycleService
+    participant HR as HitlResumeService
+    participant X as Executor.resume()
+
+    C->>API: decision (approve / reject / edit)
+    API->>ALSO: process(approval_id, request, user_id)
+    ALSO->>ALSO: load Approval; requested_by == user_id?
+    alt not the requester
+        ALSO-->>API: ApprovalForbiddenError
+        API-->>C: 403
+    else requester
+        ALSO->>ALSO: expired? (commit EXPIRED, 410) still WAITING? (else 409)<br/>then save the decision + compliance log and commit
+        ALSO-->>API: ApprovalResponseDTO
+        API->>HR: resume_after_decision(approval_id, agent_action_id, decision_type)
+        HR->>X: on approve or reject, resume the paused graph<br/>(the tool runs once on approve); an edit does not resume
+        HR-->>API: resume_status (completed / failed / not_resumed)
+        API-->>C: 200 + decision + resume_status
+    end
+```
+
+The decision is committed before `HitlResumeService` runs, so nothing
+that happens during resume can undo it. A resume failure rolls back
+only the resume's own writes, marks the `AgentAction` `FAILED` (with
+the error type in `result`) in a separate commit, and is reported as
+`resume_status: failed`; nothing retries it automatically.
+
+`get()` and `validate()` apply the same ownership check when called with
+a `user_id`.
 
 ## Temperature / determinism conventions
 

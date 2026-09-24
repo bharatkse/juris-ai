@@ -32,6 +32,9 @@ ever drops below 3.10.
 from __future__ import annotations
 
 import asyncio
+import ipaddress
+import socket
+from urllib.parse import urljoin, urlsplit
 
 import httpx
 import trafilatura
@@ -48,6 +51,58 @@ DEFAULT_MAX_CHARS = 4000  # per-page cap fed to the LLM
 
 WITHHELD_CONTENT_MESSAGE = "[content withheld: prompt-injection pattern detected in fetched page]"
 
+MAX_REDIRECTS = 3
+ALLOWED_SCHEMES = frozenset({"http", "https"})
+BLOCKED_DESTINATION_MESSAGE = "Blocked: destination is not allowed."
+
+
+class UnsafeURLError(ValueError):
+    """A URL whose scheme or resolved address must not be fetched."""
+
+
+async def _resolve_host(host: str, port: int) -> list[str]:
+    """Resolve ``host`` to every IP address it maps to."""
+
+    infos = await asyncio.get_running_loop().getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    return [info[4][0] for info in infos]
+
+
+def _is_public_address(address: str) -> bool:
+    ip = ipaddress.ip_address(address.split("%", 1)[0])
+    if ip.version == 6 and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
+    # is_global excludes private, loopback, link-local (incl. cloud
+    # metadata 169.254.169.254), reserved, unspecified and shared
+    # (100.64/10) ranges; multicast is rejected separately.
+    return ip.is_global and not ip.is_multicast
+
+
+async def _ensure_fetchable(url: str) -> None:
+    """
+    Reject non-http(s) URLs and any host that resolves to a non-public
+    address. Every resolved address must be public, so a name with one
+    public and one internal record is still refused.
+    """
+
+    parts = urlsplit(url)
+    if parts.scheme.lower() not in ALLOWED_SCHEMES:
+        raise UnsafeURLError(f"scheme not allowed: {parts.scheme!r}")
+    host = parts.hostname
+    if not host:
+        raise UnsafeURLError("URL has no host")
+    port = parts.port or (443 if parts.scheme.lower() == "https" else 80)
+
+    try:
+        addresses = [str(ipaddress.ip_address(host))]
+    except ValueError:
+        try:
+            addresses = await _resolve_host(host, port)
+        except OSError as exc:
+            raise UnsafeURLError(f"cannot resolve host {host!r}") from exc
+
+    if not addresses or not all(_is_public_address(a) for a in addresses):
+        raise UnsafeURLError(f"host {host!r} resolves to a non-public address")
+
 
 class ContentFetcher:
     """
@@ -63,9 +118,11 @@ class ContentFetcher:
     ) -> None:
         self._semaphore = asyncio.Semaphore(max_concurrency)
         self._max_chars = max_chars
+        # Redirects are followed manually in _get() so every hop's
+        # destination is validated before it is requested.
         self._client = httpx.AsyncClient(
             timeout=timeout_seconds,
-            follow_redirects=True,
+            follow_redirects=False,
             headers={"User-Agent": "juris-ai-research-bot/1.0"},
         )
         # Fetched pages are arbitrary, untrusted third-party content --
@@ -76,11 +133,44 @@ class ContentFetcher:
     async def close(self) -> None:
         await self._client.aclose()
 
+    async def _get(self, url: str) -> httpx.Response:
+        """
+        GET ``url``, following at most MAX_REDIRECTS redirects and
+        validating the destination of every hop before requesting it.
+        Search results are third-party URLs, so a public page could
+        otherwise redirect the server into internal addresses.
+        """
+
+        for _ in range(MAX_REDIRECTS + 1):
+            await _ensure_fetchable(url)
+            response = await self._client.get(url)
+            if not response.is_redirect:
+                return response
+            location = response.headers.get("location")
+            if not location:
+                return response
+            url = urljoin(str(response.url), location)
+
+        raise httpx.TooManyRedirects(
+            f"Exceeded {MAX_REDIRECTS} redirects.",
+            request=response.request,
+        )
+
     async def fetch_one(self, *, result: SearchEngineResultDTO) -> WebPageContent:
         async with self._semaphore:
             try:
-                response = await self._client.get(result.url)
+                response = await self._get(result.url)
                 response.raise_for_status()
+
+            except UnsafeURLError as exc:
+                log.warning("Fetch blocked for %s: %s.", result.url, exc)
+                return WebPageContent(
+                    url=result.url,
+                    title=result.title,
+                    text="",
+                    fetch_succeeded=False,
+                    error=BLOCKED_DESTINATION_MESSAGE,
+                )
 
             except httpx.HTTPError as exc:
                 log.warning("Fetch failed for %s: %s.", result.url, exc)

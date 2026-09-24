@@ -9,7 +9,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from core.enums import ApprovalDecisionEnum, ApprovalStatusEnum
+from core.enums import ApprovalDecisionEnum, ApprovalStatusEnum, HitlResumeStatusEnum
 
 
 class ApprovalDecisionRequest(BaseModel):
@@ -63,3 +63,7 @@ class ApprovalResponse(BaseModel):
     created_at: datetime
 
     expires_at: datetime
+
+    # Not on ApprovalResponseDTO: the endpoint sets it from
+    # HitlResumeService's result after the decision is committed.
+    resume_status: HitlResumeStatusEnum | None = None

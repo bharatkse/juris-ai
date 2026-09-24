@@ -13,7 +13,7 @@ Ask a question about Indian law and the system retrieves from a corpus of actual
 
 - **Retrieval-backed legal research** — hybrid vector + keyword retrieval over the legal corpus, reranked for relevance, with an answer-quality gate that scores answers against the retrieved evidence
 - **Contract review** — a dedicated contract agent analyzes contract text for risks, ambiguities, and obligations
-- **Human-in-the-loop design for outbound actions** — calls to the email and Slack tools pause execution for a human approval decision (LangGraph interrupt/resume)
+- **Human-in-the-loop design for outbound actions** — calls to the email and Slack tools pause execution for a human approval decision (LangGraph interrupt/resume); only the user who made the request can approve, reject or edit it
 - **PII redaction stage** — a Presidio-based output review with custom Indian ID recognizers (PAN, Aadhaar)
 - **Tamper-proof audit trail** — every request and decision is logged in a way that can't be edited or deleted afterward, independent of your chat history
 - **Usage controls** — per-user request rate limiting and a daily token-quota check
@@ -42,7 +42,7 @@ Developer setup (running from source, tests) or a cloud deploy (Terraform/AWS SA
 
 ## Architecture
 
-Under the hood, a multi-agent system plans, researches, and reasons before answering, with a privacy and safety review stage (harmful-content check, PII redaction) on generated responses. Full technical breakdown: [`docs/server/architecture/overview.md`](docs/server/architecture/overview.md); per-component workflows live in `server/src/agentic/*/README.md` and `server/src/rag/README.md`.
+Under the hood, a multi-agent system plans, researches, and reasons before answering, with a privacy and safety review stage (harmful-content check, PII redaction) on generated responses; a response the review can't clear, including when the safety check itself can't complete, is regenerated once and otherwise replaced with a fixed refusal. Full technical breakdown: [`docs/server/architecture/overview.md`](docs/server/architecture/overview.md); per-component workflows live in `server/src/agentic/*/README.md` and `server/src/rag/README.md`.
 
 ## Repository Map
 

@@ -56,7 +56,7 @@ sequenceDiagram
     RT->>PG: check_tool(agent policy)
     alt tool_name in GATED_TOOLS (email, slack)
         RT->>CS: action_type = SEND
-        CS->>CS: interrupt() -> approval; on approve, Executor.resume() runs the tool
+        CS->>CS: interrupt() -> approval (decided only by the requesting user);<br/>on approve, Executor.resume() runs the tool
     else any other tool
         CS->>TES: execute(tool_name, parameters) inside a LangGraph @task (replay-safe)
         TES->>T: registry.resolve(tool_name).execute(**parameters)
@@ -71,16 +71,37 @@ The runtime makes **one TOOL_CALL decision per reasoning iteration**,
 bounded by `AgentExecutionBudget` (`max_tool_calls=20`, `max_iterations=10`,
 repeated-action and no-progress limits). Tool output re-enters the next
 prompt through `BasePromptBuilder.build_context()`, wrapped in
-`<retrieved_context>` delimiters as untrusted content.
+`<retrieved_context>` delimiters as untrusted content; any delimiter tag
+inside the tool output is escaped first, so it stays inside the wrapper.
 
 ## Untrusted content
 
 `ContentFetcher`, `ParserTool` and `WebResearchTool` screen fetched pages,
 uploaded files and page titles with `rag.ingestion.sanitizer.SecuritySanitizer`
 prompt-injection patterns, and replace a match with a "content withheld"
-marker. `ContentFetcher` uses a shared `httpx.AsyncClient` (8 s timeout,
-redirects followed, up to 5 concurrent fetches, 4,000 characters per
-page).
+marker.
+
+`ContentFetcher` uses a shared `httpx.AsyncClient` (8 s timeout, up to 5
+concurrent fetches, 4,000 characters per page) that does not follow
+redirects itself. `ContentFetcher._get()` follows at most 3 redirects and
+validates every destination before requesting it (`_ensure_fetchable()`):
+the scheme must be `http`/`https`, and every address the host resolves to
+must be globally routable (loopback, private, link-local, reserved,
+shared, unspecified and multicast addresses are refused; IPv4-mapped IPv6
+is checked as IPv4). A refused destination yields a failed
+`WebPageContent` with a generic error and no request to that address.
+
+```mermaid
+flowchart TD
+    R["search result URL"] --> V{"_ensure_fetchable(url)<br/>http(s)? all resolved IPs public?"}
+    V -->|no| B["WebPageContent(fetch_succeeded=False,<br/>error='Blocked: destination is not allowed.')"]
+    V -->|yes| G["client.get(url)<br/>(follow_redirects=False)"]
+    G --> RD{"redirect with Location?"}
+    RD -->|"yes (≤ 3 hops)"| N["url = urljoin(current, Location)"]
+    N --> V
+    RD -->|"more than 3 hops"| F["TooManyRedirects → failed WebPageContent"]
+    RD -->|no| X["raise_for_status → trafilatura.extract<br/>→ SecuritySanitizer scan → truncate to 4,000 chars"]
+```
 
 ---
 

@@ -55,7 +55,7 @@ sequenceDiagram
         opt action != NONE
             O->>CL: record_guardrail_fired(...)
         end
-        alt BLOCKED and attempts remain
+        alt BLOCKED (incl. a harmful-content check that couldn't complete) and attempts remain
             Note over O: regenerate with thread_id ":guardrail-retry-N"
         else NONE / FLAGGED / REDACTED / out of attempts
             Note over O: exit loop
@@ -65,7 +65,10 @@ sequenceDiagram
 ```
 
 A final `BLOCKED` verdict returns a fixed refusal instead of the
-generated content.
+generated content. The harmful-content check fails closed: if its own LLM
+call fails or times out, the verdict is `BLOCKED`, so the response is
+regenerated once (`GUARDRAIL_MAX_REGENERATE_ATTEMPTS=1`) and otherwise
+replaced with the refusal; the request itself doesn't fail.
 
 ## `stream()` differences
 

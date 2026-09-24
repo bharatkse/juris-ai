@@ -25,6 +25,7 @@ from core.dto.planning import deserialize_plan
 from core.enums import (
     AgentActionStatusEnum,
     ApprovalDecisionEnum,
+    HitlResumeStatusEnum,
     MessageRoleEnum,
 )
 from core.exceptions.agent_action import AgentActionError
@@ -51,12 +52,14 @@ class HitlResumeService(BaseService):
     - reconstruct the paused execution's plan,
     - resume it via AIOrchestrator.resume(),
     - persist the resulting answer as a new ASSISTANT event,
-    - record the outcome on the AgentAction row.
+    - record the outcome on the AgentAction row, including a failed
+      resume (status FAILED).
 
     It does not:
     - evaluate approval policy,
     - process the human decision itself (ApprovalLifecycleService
-      owns that; this runs AFTER a decision is already recorded).
+      owns that; this runs AFTER the decision is committed),
+    - retry a failed resume.
     """
 
     def __init__(
@@ -84,66 +87,64 @@ class HitlResumeService(BaseService):
         approval_id: str,
         agent_action_id: str,
         decision_type: ApprovalDecisionEnum | None,
-    ) -> None:
+    ) -> HitlResumeStatusEnum:
         """
         Resume the execution paused by agent_action_id's gated tool
-        call, using the decision already recorded by
-        ApprovalLifecycleService (this runs strictly after that, using
-        its result -- see api/v1/endpoints/approval.py).
+        call, using the decision ApprovalLifecycleService has already
+        committed (this runs strictly after that -- see
+        api/v1/endpoints/approval.py).
 
-        Best-effort by design, same posture as UsageService.record():
-        the human's approve/reject decision has already been durably
-        recorded by ApprovalLifecycleService by the time this runs, so
-        a failure here must not make that decision appear to have
-        failed. It's logged, not swallowed silently, and surfaces as a
-        stuck (still-waiting) execution rather than a lost decision --
-        recoverable by retrying resume, unlike losing the decision
-        itself would be.
+        Never raises: the decision is already committed, so a failure
+        here must not make it appear to have failed. Any failure rolls
+        back only this method's own writes, is logged, is recorded on
+        the AgentAction (status FAILED, result {"error": <type>,
+        "approval_id": ...}) in a separate transaction, and is reported
+        to the caller as FAILED. Nothing retries it automatically.
 
         decision_type other than APPROVE/REJECT (e.g. an EDIT, or None
-        for a still-pending approval) is not resumable -- EDIT changes
+        for a still-pending approval) is not resumed -- EDIT changes
         the proposed payload and needs its own review pass before
-        anything executes, which isn't implemented; the approval stays
-        WAITING until a real APPROVE/REJECT is recorded on it.
+        anything executes, which isn't implemented. Returns
+        NOT_RESUMED without touching the session.
         """
 
         if decision_type not in (
             ApprovalDecisionEnum.APPROVE,
             ApprovalDecisionEnum.REJECT,
         ):
-            return
-
-        agent_action = await self._agent_action_repository.get(
-            agent_action_id,
-        )
-
-        if agent_action is None:
-            logger.error(
-                "Cannot resume: AgentAction not found for approval.",
-                extra={
-                    "operation": "resume_after_decision",
-                    "approval_id": approval_id,
-                    "agent_action_id": agent_action_id,
-                },
-            )
-            return
-
-        if agent_action.plan_snapshot is None:
-            logger.error(
-                "Cannot resume: AgentAction has no plan_snapshot -- "
-                "it wasn't created from a paused (interrupted) "
-                "execution.",
-                extra={
-                    "operation": "resume_after_decision",
-                    "approval_id": approval_id,
-                    "agent_action_id": agent_action.id,
-                },
-            )
-            return
+            return HitlResumeStatusEnum.NOT_RESUMED
 
         approved = decision_type == ApprovalDecisionEnum.APPROVE
 
         try:
+            agent_action = await self._agent_action_repository.get(
+                agent_action_id,
+            )
+
+            if agent_action is None:
+                logger.error(
+                    "Cannot resume: AgentAction not found for approval.",
+                    extra={
+                        "operation": "resume_after_decision",
+                        "approval_id": approval_id,
+                        "agent_action_id": agent_action_id,
+                    },
+                )
+                return HitlResumeStatusEnum.FAILED
+
+            if agent_action.plan_snapshot is None:
+                logger.error(
+                    "Cannot resume: AgentAction has no plan_snapshot -- "
+                    "it wasn't created from a paused (interrupted) "
+                    "execution.",
+                    extra={
+                        "operation": "resume_after_decision",
+                        "approval_id": approval_id,
+                        "agent_action_id": agent_action_id,
+                    },
+                )
+                return HitlResumeStatusEnum.FAILED
+
             plan = deserialize_plan(agent_action.plan_snapshot)
 
             conversation_event = await self._conversation_event_service.get_by_id(
@@ -201,8 +202,39 @@ class HitlResumeService(BaseService):
             agent_action.result = {"content": response.content}
             agent_action.executed_at = datetime.now(UTC)
 
+            user_id = agent_action.user_id
+            conversation_id = conversation_event.conversation_id
+
             await self.commit()
 
+        except Exception as exc:
+            # The rollback expires every ORM instance loaded on this
+            # session, including agent_action; reading its attributes
+            # afterwards would lazy-load outside the async context
+            # (MissingGreenlet). Only the method's own arguments are
+            # used from here on, and the action is re-fetched.
+            await self.rollback()
+
+            logger.exception(
+                "Failed to resume execution after HITL decision -- the "
+                "decision is committed, but the conversation was not "
+                "updated.",
+                extra={
+                    "operation": "resume_after_decision",
+                    "approval_id": approval_id,
+                    "agent_action_id": agent_action_id,
+                },
+            )
+
+            await self._record_failure(
+                approval_id=approval_id,
+                agent_action_id=agent_action_id,
+                error=type(exc).__name__,
+            )
+
+            return HitlResumeStatusEnum.FAILED
+
+        else:
             # After the commit, like ChatService: the extractor only ever
             # sees a finished turn. A resume adds no new USER message, so
             # this usually finds nothing new and does nothing; it matters
@@ -212,8 +244,8 @@ class HitlResumeService(BaseService):
             # switch itself and never raises.
             if self._memory_extraction_scheduler is not None:
                 self._memory_extraction_scheduler.schedule(
-                    user_id=agent_action.user_id,
-                    conversation_id=conversation_event.conversation_id,
+                    user_id=user_id,
+                    conversation_id=conversation_id,
                 )
 
             logger.info(
@@ -221,21 +253,49 @@ class HitlResumeService(BaseService):
                 extra={
                     "operation": "resume_after_decision",
                     "approval_id": approval_id,
-                    "agent_action_id": agent_action.id,
+                    "agent_action_id": agent_action_id,
                     "approved": approved,
                 },
             )
+
+            return HitlResumeStatusEnum.COMPLETED
+
+    async def _record_failure(
+        self,
+        *,
+        approval_id: str,
+        agent_action_id: str,
+        error: str,
+    ) -> None:
+        """
+        Mark the AgentAction FAILED in its own transaction, so a failed
+        resume is visible in the database and not only in the logs.
+
+        Best-effort: if this write fails too, it's logged and dropped;
+        the decision itself is unaffected either way.
+        """
+
+        try:
+            agent_action = await self._agent_action_repository.get(
+                agent_action_id,
+            )
+
+            if agent_action is None:
+                return
+
+            agent_action.status = AgentActionStatusEnum.FAILED
+            agent_action.result = {"error": error, "approval_id": approval_id}
+
+            await self.commit()
 
         except Exception:
             await self.rollback()
 
             logger.exception(
-                "Failed to resume execution after HITL decision -- the "
-                "human decision is still durably recorded, but the "
-                "conversation was not updated. Safe to retry.",
+                "Failed to record resume failure on the AgentAction.",
                 extra={
                     "operation": "resume_after_decision",
                     "approval_id": approval_id,
-                    "agent_action_id": agent_action.id,
+                    "agent_action_id": agent_action_id,
                 },
             )

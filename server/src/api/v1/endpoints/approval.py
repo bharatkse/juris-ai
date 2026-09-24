@@ -45,11 +45,11 @@ async def process_approval(
     """
     Process a human decision for an approval request.
 
-    An APPROVE/REJECT decision resumes the paused execution
-    (HitlResumeService) after the decision itself is durably recorded
-    -- a resume failure never rolls back or hides the decision that
-    was just made; see HitlResumeService.resume_after_decision()'s
-    docstring for that tradeoff.
+    The decision is committed first (ApprovalLifecycleService). An
+    APPROVE/REJECT decision then resumes the paused execution
+    (HitlResumeService); a resume failure never rolls back or hides the
+    committed decision. The response reports the resume outcome in
+    ``resume_status`` alongside it.
     """
 
     logger.info(
@@ -73,7 +73,7 @@ async def process_approval(
             user_id=current_user.id,
         )
 
-        await hitl_resume_service.resume_after_decision(
+        resume_status = await hitl_resume_service.resume_after_decision(
             approval_id=result.approval_id,
             agent_action_id=result.agent_action_id,
             decision_type=result.decision_type,
@@ -85,6 +85,8 @@ async def process_approval(
             data=ApprovalResponse.model_validate(
                 result,
                 from_attributes=True,
+            ).model_copy(
+                update={"resume_status": resume_status},
             ),
         )
 
