@@ -195,6 +195,33 @@ def statute_evidence(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     return queries
 
 
+@pytest.fixture
+def empty_corpus(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """
+    Make the retriever find nothing, whatever is in the database.
+
+    For tests that depend on there being no evidence. The dev and CI
+    databases are normally empty, but not always: the RAG smoke tests'
+    session-scoped fixture keeps its ingested corpus in the database until
+    the pytest session ends, so an e2e test run in the same session sees
+    it. Like statute_evidence, this patches only HybridRetriever.retrieve
+    (the Postgres/pgvector boundary); RetrieverTool, evidence seeding and
+    the answer gate run for real.
+
+    Returns the list of queries the retriever received.
+    """
+
+    queries: list[str] = []
+
+    async def retrieve(self, *, query: str, top_k: int = 5, **_kwargs):
+        queries.append(query)
+        return []
+
+    monkeypatch.setattr(HybridRetriever, "retrieve", retrieve)
+
+    return queries
+
+
 @pytest_asyncio.fixture
 async def e2e_client() -> AsyncIterator[AsyncClient]:
     """
