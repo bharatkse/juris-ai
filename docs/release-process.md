@@ -17,22 +17,24 @@ Everything runs in GitHub Actions; nobody pushes images or tags by hand.
 
 | Event | What happens | Image tags |
 |---|---|---|
-| Merge to `develop` | CI gates → build → scan → push → sign → SBOM attestation → rc git tag | `X.Y.Z-rc.N` (if a release is pending), `develop`, `sha-<7>` |
+| Merge to `develop` | CI gates + smoke/e2e tests → build → scan → push → sign → SBOM attestation → rc git tag | `X.Y.Z-rc.N` (if a release is pending), `develop`, `sha-<7>` |
 | Validate | You pull `:develop` or `:X.Y.Z-rc.N` and test it. No pipeline step. | |
 | Merge `develop` → `main` | CI gates → verify and **re-scan** the candidate → **retag** it → git tag + GitHub Release → sync PR to `develop`. **No build.** | `X.Y.Z`, `X.Y`, `X` (from 1.0), `latest` added to the candidate's digest |
-| PR into `develop` | CI gates on every push; build + scan dry run once the PR is ready for review (not on drafts) | none |
-| PR from `develop` into `main` | CI gates, then (unless it's a draft) the promotion checks as a dry run: which rc and digest would ship, that its signature verifies, and that it still passes the image scan | none |
+| PR into `develop` | CI gates on every push. Build + scan dry run only with the `run-image-scan` label | none |
+| PR from `develop` into `main` | CI gates on every push. With the `run-image-scan` label, the promotion checks as a dry run: which rc and digest would ship, that its signature verifies, and that it still passes the image scan | none |
 
 Nothing is published unless **all** CI gates pass: actionlint, code quality
 (pre-commit + ruff), type check (mypy), backend unit tests, and coverage
-config validation. The image scan is an additional gate on the build.
+config validation. On a merge to `develop`, the smoke and e2e suites (real
+Postgres and Redis) must pass too. The image scan is an additional gate on
+the build.
 
 ## 1. Develop: build once, as a release candidate
 
 ```
 merge PR -> develop
      |
-  CI gates
+  CI gates  +  smoke/e2e tests (real Postgres + Redis)
      |
   rc-version:   next-rc.sh -> X.Y.Z-rc.N (or none: nothing releasable yet)
      |
@@ -49,6 +51,24 @@ image and tagging it, and rc numbers stay in order. If several merges land
 while one build runs, GitHub keeps only the newest waiting run: the commits
 in between aren't built on their own, and the newest one becomes the next
 rc.
+
+### Smoke and e2e tests on develop
+
+Merges to `develop` also run `server/tests/smoke` and `server/tests/e2e`
+([`integration-tests.yaml`](../.github/workflows/integration-tests.yaml))
+against service containers matching the local stack: `pgvector/pgvector:pg16`
+with the restricted app role created by the same SQL as
+`docker/dependencies/init/postgres`, and `redis:7-alpine`. LLM and outbound
+MCP calls are mocked by the tests. They start alongside the other gates and
+take roughly 10–15 minutes.
+
+They are **not** run on PRs (too slow for every push). So a PR can pass
+its own checks and still break them after merging. When that happens the
+develop run fails (a red "Smoke + E2E Tests" job on the `develop` commit,
+with the failing tests in its summary; GitHub emails whoever merged), **no
+release candidate is built** for that commit, and so the commit can't be
+released (promotion needs an rc). Fix forward on `develop`; the next green
+merge produces the next rc.
 
 ### Release candidate numbers
 
@@ -83,7 +103,10 @@ of `develop`, the one that gets released, would never have been a
 candidate.)
 
 Squash-merge titles are what count, so PR titles must follow
-`type(scope): summary`. Moving to 1.0 is a deliberate decision, not
+`type(scope): summary`, with one of the types above. The **PR Title** check
+([`pr-title.yaml`](../.github/workflows/pr-title.yaml)) enforces this on
+every PR into `develop`, including title edits, so a title semantic-release
+can't read is caught before merge. Moving to 1.0 is a deliberate decision, not
 something a commit triggers. The first release is `v0.1.0`, the version
 already in `pyproject.toml`.
 
@@ -277,31 +300,36 @@ promotion, so it is exactly the SBOM that was signed.
 
 ## Testing without publishing
 
-The fast CI gates (actionlint, code quality, type check, unit tests,
-coverage config) run on **every** push to every PR. The image dry run
-(about 20 minutes for a build) is scoped to when it's useful:
+PRs get the fast CI gates (actionlint, code quality, type check, unit
+tests, coverage config) on every push, and **no image work by default**.
+The image dry run (about 20 minutes for a build) runs only when you ask for
+it with the **`run-image-scan`** label:
 
-| PR state | Image dry run? |
+| PR | Image dry run? |
 |---|---|
-| Draft, any push | no |
-| Marked **Ready for review**, or opened as ready | yes |
-| Ready, every later push | yes |
-| Ready, title/body edited, or an unrelated label added | no |
-| Draft with the **`run-image-scan`** label (on demand) | yes, on adding the label and every push while it's on |
-| PR into any branch other than `develop` / `main` | no |
+| Any PR without the label (draft or ready, any push) | no, only the fast gates |
+| `run-image-scan` label added | yes |
+| Every push while the label is on | yes |
+| Label on, but only the title/body edited or another label added | no |
+| Label removed | no, from the next push on |
+| PR into any branch other than `develop` / `main` | no, even with the label |
 
-So the usual flow (open as a draft, push while working, mark ready, merge)
-builds and scans once, when you mark it ready, and again only if you push
-after that. The image that gets published is always built and scanned in
-full by the merge to `develop` itself, whatever happened on the PR.
+What the dry run does, by target:
 
-- **A ready PR into `develop`** builds and scans the image (dry run).
-- **A ready PR from `develop` into `main`** runs the promotion checks as a
-  dry run: it names the rc, version and digest that merging would release,
-  verifies the candidate's signature and re-scans it, without tagging
-  anything. This is the pre-release check to read before merging.
-- **On demand on a draft:** add the `run-image-scan` label (create it once
-  under Issues → Labels). Remove it to stop.
+- **PR into `develop`:** builds and scans the image exactly as the merge
+  will, pushing nothing.
+- **PR from `develop` into `main`:** runs the promotion checks. It names the
+  rc, version and digest that merging would release, verifies the
+  candidate's signature and re-scans it, without tagging anything. Worth
+  running before a release merge.
+
+None of this is what protects a release. **Every merge to `develop` builds
+and scans the image in full** before anything is published, and **every
+merge to `main` runs the promotion checks** (including the re-scan) before
+anything is tagged, label or not. The PR dry run only tells you earlier.
+
+Create the label once under Issues → Labels.
+
 - **Manual run:** Actions → CI → Run workflow, pick a branch, leave
   **dry_run** ticked. On `develop` (or any branch) it builds and scans; on
   `main` it re-checks the latest release merge. Unticking `dry_run` only

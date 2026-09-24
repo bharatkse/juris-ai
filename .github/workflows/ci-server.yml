@@ -18,15 +18,14 @@ on:
       - develop
 
   # Run CI on key pull request lifecycle events
-  # ready_for_review and labeled only matter to the image dry run (see
-  # publish-plan); the fast gates run on every one of these events.
+  # labeled only matters to the on-demand image dry run (see publish-plan);
+  # the fast gates run on every one of these events.
   pull_request:
     types:
       - opened
       - reopened
       - synchronize
       - edited
-      - ready_for_review
       - labeled
 
   # Manual run of the full pipeline for the selected branch. dry_run=true
@@ -147,6 +146,26 @@ jobs:
     uses: ./.github/workflows/codecov-validation.yaml
 
   # ===========================================================================
+  # Smoke + E2E (real Postgres/Redis) -- merges to develop only
+  # ===========================================================================
+
+  # Too slow for every PR push, so it runs after the merge, on the commit
+  # that will become the release candidate. Starts alongside the fast gates.
+  integration-tests:
+    name: Smoke + E2E Tests
+    needs:
+      - ci-setup
+      - publish-plan
+    if: >-
+      needs.publish-plan.outputs.mode == 'build' &&
+      needs.publish-plan.outputs.push == 'true'
+    uses: ./.github/workflows/integration-tests.yaml
+    with:
+      python-version: ${{ needs.ci-setup.outputs.python-version }}
+      working-directory: server
+    secrets: inherit
+
+  # ===========================================================================
   # Image publishing and releases: build once on develop, promote on main.
   # docs/release-process.md
   # ===========================================================================
@@ -164,10 +183,8 @@ jobs:
       # mode: none | build | promote. push: whether anything is published.
       #   push to develop              -> build, push
       #   push to main                 -> promote, push (retag only, never builds)
-      #   pull_request into develop    -> build, dry run    } only once the PR is
-      #   pull_request into main       -> promote, dry run  } ready for review (or
-      #                                                       has the run-image-scan
-      #                                                       label); never on drafts
+      #   pull_request into develop    -> build, dry run    } only with the
+      #   pull_request into main       -> promote, dry run  } run-image-scan label
       #   pull_request into any other branch -> none
       #   workflow_dispatch            -> build (develop/other) or promote (main);
       #                                   publishes only for dry_run=false on
@@ -179,7 +196,6 @@ jobs:
           REF: ${{ github.ref }}
           BASE_REF: ${{ github.base_ref }}
           PR_ACTION: ${{ github.event.action }}
-          PR_DRAFT: ${{ github.event.pull_request.draft }}
           PR_SCAN_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'run-image-scan') }}
           ADDED_LABEL: ${{ github.event.label.name }}
           DRY_RUN: ${{ inputs.dry_run }}
@@ -195,13 +211,11 @@ jobs:
               esac
               ;;
             pull_request)
-              # The image dry run (~20 min for a build) runs only when it
-              # can tell you something before merging: on a PR into develop
-              # or main that is ready for review. PRs here start as drafts
-              # and are marked ready when done, so drafts skip it and every
-              # push after "ready" gets it. The run-image-scan label runs it
-              # on a draft on demand. The fast gates always run; the real
-              # build + scan on merge to develop is unaffected.
+              # The image dry run (~20 min for a build) is on demand only:
+              # a PR into develop or main with the run-image-scan label.
+              # Without it PRs get just the fast gates. The real build +
+              # scan on merge to develop (and the promotion checks on merge
+              # to main) run regardless.
               case "$BASE_REF" in
                 develop) wanted=build ;;
                 main) wanted=promote ;;
@@ -214,8 +228,8 @@ jobs:
                 reason="Title/body edit: image dry run not repeated."
               elif [ "$PR_ACTION" = labeled ] && [ "$ADDED_LABEL" != run-image-scan ]; then
                 reason="Label '${ADDED_LABEL}' added: image dry run not repeated."
-              elif [ "$PR_DRAFT" = true ] && [ "$PR_SCAN_LABEL" != true ]; then
-                reason="Draft PR: image dry run skipped until it's ready for review (or add the run-image-scan label)."
+              elif [ "$PR_SCAN_LABEL" != true ]; then
+                reason="No image dry run (add the run-image-scan label to run one). The image is built and scanned in full on merge to develop."
               else
                 mode=$wanted
               fi
@@ -292,7 +306,11 @@ jobs:
       - type-check
       - backend-tests
       - codecov-validation
-    # Every CI gate must have passed.
+      - integration-tests
+    # Every CI gate must have passed. A publishing run (merge to develop)
+    # also waits for smoke + e2e: an rc can be promoted to a release as-is,
+    # so a commit whose integration tests fail must not get one. Dry runs
+    # (PRs) don't run integration tests and don't wait for them.
     if: >-
       always() &&
       needs.publish-plan.outputs.mode == 'build' &&
@@ -301,7 +319,9 @@ jobs:
       needs.code-quality.result == 'success' &&
       needs.type-check.result == 'success' &&
       needs.backend-tests.result == 'success' &&
-      needs.codecov-validation.result == 'success'
+      needs.codecov-validation.result == 'success' &&
+      (needs.publish-plan.outputs.push != 'true' ||
+       needs.integration-tests.result == 'success')
     uses: ./.github/workflows/publish-image.yaml
     with:
       version: ${{ needs.rc-version.outputs.rc }}
