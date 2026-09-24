@@ -121,12 +121,26 @@ jobs:
           restore-keys: |
             hf-models-
 
-      - name: Run smoke and e2e tests
+      # Two pytest sessions, not one: a session-scoped fixture's state
+      # (e.g. the RAG smoke tests' ingested corpus, removed only when its
+      # session ends) must not leak into the e2e tests. The e2e step runs
+      # even when smoke fails, so one run reports both.
+      - name: Run smoke tests
         working-directory: ${{ inputs.working-directory }}
         run: |
-          poetry run pytest tests/smoke tests/e2e \
+          poetry run pytest tests/smoke \
             -p no:cacheprovider \
-            --junitxml=integration-results.xml \
+            --junitxml=smoke-results.xml \
+            --durations=15 \
+            -q
+
+      - name: Run e2e tests
+        if: ${{ !cancelled() }}
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          poetry run pytest tests/e2e \
+            -p no:cacheprovider \
+            --junitxml=e2e-results.xml \
             --durations=15 \
             -q
 
@@ -138,23 +152,25 @@ jobs:
           import xml.etree.ElementTree as ET
           from pathlib import Path
 
-          path = Path("integration-results.xml")
-          if not path.exists():
-              print("## Smoke + E2E\nNo results (the run failed before pytest finished).")
-              raise SystemExit
-          suite = ET.parse(path).getroot()
-          suite = suite if suite.tag == "testsuite" else suite.find("testsuite")
-          failed = [
-              f"{case.get('classname')}::{case.get('name')}"
-              for case in suite.iter("testcase")
-              if case.find("failure") is not None or case.find("error") is not None
-          ]
-          print("## Smoke + E2E")
-          print(f"{suite.get('tests')} tests, {suite.get('failures')} failed, "
-                f"{suite.get('errors')} errors, {suite.get('skipped')} skipped "
-                f"in {float(suite.get('time')):.0f}s")
-          for name in failed[:30]:
-              print(f"- `{name}`")
+          for title, name in (("Smoke", "smoke-results.xml"), ("E2E", "e2e-results.xml")):
+              path = Path(name)
+              print(f"## {title}")
+              if not path.exists():
+                  print("No results (the run failed before pytest finished).\n")
+                  continue
+              suite = ET.parse(path).getroot()
+              suite = suite if suite.tag == "testsuite" else suite.find("testsuite")
+              failed = [
+                  f"{case.get('classname')}::{case.get('name')}"
+                  for case in suite.iter("testcase")
+                  if case.find("failure") is not None or case.find("error") is not None
+              ]
+              print(f"{suite.get('tests')} tests, {suite.get('failures')} failed, "
+                    f"{suite.get('errors')} errors, {suite.get('skipped')} skipped "
+                    f"in {float(suite.get('time')):.0f}s")
+              for failure in failed[:30]:
+                  print(f"- `{failure}`")
+              print()
           EOF
 
       - name: Upload test results
@@ -162,5 +178,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: integration-test-results
-          path: ${{ inputs.working-directory }}/integration-results.xml
+          path: |
+            ${{ inputs.working-directory }}/smoke-results.xml
+            ${{ inputs.working-directory }}/e2e-results.xml
           if-no-files-found: ignore

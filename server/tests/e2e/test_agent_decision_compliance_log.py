@@ -174,13 +174,14 @@ async def test_answer_without_sources_is_replaced_and_logged_unverified(
     registered_user: dict,
     conversation_id: str,
     hermetic_llm,
+    empty_corpus: list[str],
 ) -> None:
     """
-    A1 over real HTTP and Postgres: the corpus is empty, so seeding and
-    the gate's one corrective retrieval (both real, against the real,
-    empty knowledge tables) find nothing. The model's answer from its own
-    knowledge is replaced with the fixed "no sources" answer and logged
-    as unverified -- the model is not asked again.
+    Over real HTTP and Postgres: retrieval finds nothing (empty_corpus),
+    so the evidence seeding and the gate's one corrective retrieval both
+    come back empty. The model's answer from its own knowledge is
+    replaced with the fixed "no sources" answer and logged as unverified
+    -- the model is not asked again.
     """
 
     from agentic.agents.runtime.continuation import NO_SOURCES_ANSWER_MESSAGE
@@ -219,6 +220,8 @@ async def test_answer_without_sources_is_replaced_and_logged_unverified(
 
     assert reason_calls == 1
     assert hermetic_llm.groundedness_calls == 0
+    # The seed retrieval and the one corrective retrieval both ran.
+    assert empty_corpus == [CHAT_MESSAGE, CHAT_MESSAGE]
 
     payloads = await _agent_decision_payloads(
         user_id=registered_user["user_id"],
