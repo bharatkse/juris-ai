@@ -8,7 +8,6 @@ from core.dto.agent import (
     AgentMetadataDTO,
     AgentRequestDTO,
     AgentResponseDTO,
-    AgentStreamChunkDTO,
 )
 from core.dto.conversation import ConversationDTO
 from core.dto.message import MessageDTO
@@ -163,41 +162,6 @@ def test_agent_response_accepts_citations_and_sources() -> None:
     assert response.citations == ()
     assert response.sources == ()
     assert response.usage is None
-
-
-def test_agent_stream_chunk_defaults() -> None:
-    """
-    It should use the default streaming values.
-    """
-
-    chunk = AgentStreamChunkDTO()
-
-    assert chunk.content == ""
-    assert chunk.is_final is False
-    assert chunk.finish_reason is None
-    assert chunk.metadata == {}
-
-
-def test_agent_stream_chunk_accepts_values() -> None:
-    """
-    It should accept streaming values.
-    """
-
-    chunk = AgentStreamChunkDTO(
-        content="Hello",
-        is_final=True,
-        finish_reason="stop",
-        metadata={
-            "provider": "groq",
-        },
-    )
-
-    assert chunk.content == "Hello"
-    assert chunk.is_final is True
-    assert chunk.finish_reason == "stop"
-    assert chunk.metadata == {
-        "provider": "groq",
-    }
 
 
 def test_agent_metadata_accepts_values() -> None:

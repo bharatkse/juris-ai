@@ -26,7 +26,10 @@ from agentic.agents.runtime.execution import (
     AgentExecutionHandle,
     AgentExecutionResult,
 )
-from agentic.agents.runtime.lifecycle.termination import TerminationReason
+from agentic.agents.runtime.lifecycle.termination import (
+    AgentExecutionStatus,
+    TerminationReason,
+)
 from agentic.collaboration.bus import CollaborationBus
 from agentic.decisions.decision import AgentDecisionType
 from agentic.evaluation.answer import (
@@ -37,6 +40,7 @@ from agentic.evaluation.answer import (
 )
 from agentic.policy.guard import AgentPolicyGuard
 from agentic.tools.result import ToolResult
+from agentic.tools.retrieval import NON_EVIDENCE_CONTENT
 from agentic.tools.runtime.invocation import ToolExecutionService
 from agentic.tools.runtime.result_converter import ToolResultConverter
 from core.dto.agent_action import AgentActionRequestDTO
@@ -93,6 +97,33 @@ async def _call_replay_safe(task_fn, /, **kwargs):
 # tuned; a reasonable, easily-adjusted starting point.
 CORRECTIVE_RETRIEVAL_TOP_K = 8
 
+# Returned in place of a FINAL answer that failed the answer-quality gate
+# when nothing is left to improve it (S5). Fixed text, never the rejected
+# answer: for legal output an unverified answer must not reach the user.
+UNVERIFIED_ANSWER_MESSAGE = (
+    "I couldn't verify an answer to this question against the available "
+    "sources, so I'm not giving one. Try rephrasing the question or naming "
+    "the specific act or section you're asking about."
+)
+
+# Returned in place of a FINAL answer when evidence is required (A1) but
+# retrieval found none to ground it in.
+NO_SOURCES_ANSWER_MESSAGE = (
+    "I couldn't find any sources in the available legal documents that "
+    "address this question, so I can't give a grounded answer. Try "
+    "rephrasing the question or naming the specific act or section."
+)
+
+# RetrieverTool's own default; the seed is a normal first retrieval, not
+# a broadened corrective one (CORRECTIVE_RETRIEVAL_TOP_K).
+SEED_RETRIEVAL_TOP_K = 5
+
+# Notes the gate adds to reasoning_context for the next attempt. They
+# steer the model but are not evidence an answer can be grounded in.
+_FEEDBACK_SOURCE_TYPES = frozenset(
+    {"evaluation_feedback", "corrective_retrieval_feedback"},
+)
+
 
 @dataclass(slots=True, frozen=True)
 class AgentContinuationResult:
@@ -103,8 +134,8 @@ class AgentContinuationResult:
     result: AgentExecutionResult
     action: AgentActionRequestDTO | None = None
     tool_results: tuple[ToolResult, ...] = ()
-    # Populated only for a FINAL decision _gate_final actually
-    # accepted (is_sufficient() returned True on that call) -- see
+    # Populated for a FINAL decision _gate_final accepted
+    # (verified=True) or rejected and replaced (verified=False) -- see
     # AnswerEvaluationSummary's docstring.
     evaluation_summary: AnswerEvaluationSummary | None = None
 
@@ -312,6 +343,14 @@ class AgentContinuationService:
                     result=result,
                 )
                 if gated is not None:
+                    if evaluation_summary is not None:
+                        # The gate gave up and replaced the answer: stop
+                        # here, never re-gate it (S5).
+                        return AgentContinuationResult(
+                            result=gated,
+                            tool_results=tuple(tool_results),
+                            evaluation_summary=evaluation_summary,
+                        )
                     result = gated
                     continue
                 return AgentContinuationResult(
@@ -627,16 +666,21 @@ class AgentContinuationService:
         """
         Evaluate a proposed FINAL answer against accumulated evidence.
 
-        Returns (a new result to continue on, None) when insufficient
-        and budget allows a retry, or (None, evaluation_summary) to
-        accept the FINAL result as-is -- evaluation_summary is the
-        groundedness/relevance pair from the evaluation that was just
-        accepted (see AnswerEvaluationSummary's docstring), None on
-        every other return path since none of them has an accepted
-        evaluation to report. Purely additive: every branch below
-        still returns the exact same first element it always did: the
-        second is only ever read by callers that want the compliance-
-        log summary, never by the gating decision itself.
+        Returns one of:
+
+        - (None, summary with verified=True): accept the FINAL result
+          as-is.
+        - (a new result, None): insufficient, and a retry produced a
+          new result to continue on.
+        - (a terminal result, summary with verified=False): insufficient
+          and nothing left to improve it -- the step budget is
+          exhausted, or the retry ended the execution before a new
+          decision was handled -- or the execution had already ended
+          when this FINAL arrived, so it was never accepted. The answer is replaced with
+          UNVERIFIED_ANSWER_MESSAGE and the execution ends with
+          QUALITY_GATE_EXHAUSTED (S5). The caller must return this
+          result, not gate it again: its decision is still the rejected
+          FINAL, so re-gating it would loop.
 
         A groundedness or relevance failure specifically triggers a
         structural corrective-retrieval retry (_force_corrective_retrieval):
@@ -657,7 +701,17 @@ class AgentContinuationService:
         if not answer:
             return None, None
 
-        evidence = tuple(item.content for item in handle.reasoning_context)
+        if handle.lifecycle.state.status is not AgentExecutionStatus.RUNNING:
+            # The runtime ended the execution (a budget ran out) after the
+            # model proposed this FINAL but before accepting it, so its
+            # text never became the response. It can't be accepted or
+            # retried; the handle is closed.
+            return self._reject_unverified(
+                handle=handle,
+                evaluation=None,
+            )
+
+        evidence = tuple(item.content for item in self._evidence_items(handle))
 
         evaluation = await self._answer_evaluator.evaluate(
             question=self._request_question(handle.request),
@@ -673,10 +727,95 @@ class AgentContinuationService:
 
         step_budget = handle.lifecycle.begin_step()
         if not step_budget.allowed:
-            # An insufficient FINAL must never be accepted merely because the
-            # continuation step budget is exhausted. Preserve the proposed
-            # answer, but return the lifecycle's non-completed terminal result.
-            return handle.terminal_result(), None
+            return self._reject_unverified(
+                handle=handle,
+                evaluation=evaluation,
+            )
+
+        rejected_response = handle.lifecycle.state.partial_response
+
+        missing_evidence = (
+            self._answer_quality_policy.require_evidence
+            and not evaluation.groundedness_detail.applicable
+        )
+
+        if missing_evidence:
+            # A1: one corrective retrieval. If it can't run or finds
+            # nothing, no answer can be grounded -- don't re-ask the
+            # model to answer from its own knowledge.
+            retried = await self._force_corrective_retrieval(
+                handle=handle,
+                evaluation=evaluation,
+            )
+
+            if retried is None:
+                return self._reject_unverified(
+                    handle=handle,
+                    evaluation=evaluation,
+                )
+
+            next_result = retried
+        else:
+            next_result = await self._retry_insufficient(
+                handle=handle,
+                evaluation=evaluation,
+            )
+
+        if (
+            handle.lifecycle.state.status is not AgentExecutionStatus.RUNNING
+            and handle.lifecycle.state.partial_response == rejected_response
+        ):
+            # The retry ended the execution (a budget ran out, or the
+            # reasoning call failed) before any new decision was handled:
+            # the response is still the answer just rejected.
+            return self._reject_unverified(
+                handle=handle,
+                evaluation=evaluation,
+            )
+
+        return next_result, None
+
+    def _reject_unverified(
+        self,
+        *,
+        handle: AgentExecutionHandle,
+        evaluation: AnswerEvaluationResult | None,
+    ) -> tuple[AgentExecutionResult, AnswerEvaluationSummary]:
+        """
+        End the execution with a fixed message in place of a FINAL
+        answer that failed the quality gate: NO_SOURCES_ANSWER_MESSAGE
+        (NO_EVIDENCE) when there is no evidence at all (A1), otherwise
+        UNVERIFIED_ANSWER_MESSAGE (QUALITY_GATE_EXHAUSTED, S5).
+        evaluation is None when the answer was never evaluated.
+        """
+
+        if self._evidence_items(handle):
+            reason = TerminationReason.QUALITY_GATE_EXHAUSTED
+            message = UNVERIFIED_ANSWER_MESSAGE
+        else:
+            reason = TerminationReason.NO_EVIDENCE
+            message = NO_SOURCES_ANSWER_MESSAGE
+
+        handle.lifecycle.partial(reason)
+        handle.lifecycle.set_partial_response(message)
+
+        return handle.terminal_result(), AnswerEvaluationSummary(
+            groundedness=evaluation.groundedness if evaluation else None,
+            relevance=evaluation.relevance if evaluation else None,
+            verified=False,
+        )
+
+    async def _retry_insufficient(
+        self,
+        *,
+        handle: AgentExecutionHandle,
+        evaluation: AnswerEvaluationResult,
+    ) -> AgentExecutionResult:
+        """
+        One retry after an insufficient FINAL: corrective retrieval when
+        groundedness or relevance failed, otherwise (or when retrieval
+        couldn't run) a re-ask with the evaluation as feedback.
+        """
 
         groundedness_failed = (
             evaluation.groundedness_detail.applicable
@@ -691,7 +830,7 @@ class AgentContinuationService:
             )
 
             if retried is not None:
-                return retried, None
+                return retried
 
             # Corrective retrieval itself couldn't run (budget exhausted
             # or the tool call failed) -- fall through to the weak
@@ -715,7 +854,7 @@ class AgentContinuationService:
             ),
         )
 
-        return await handle.reason(), None
+        return await handle.reason()
 
     async def _force_corrective_retrieval(
         self,
@@ -733,52 +872,21 @@ class AgentContinuationService:
 
         Returns the next reasoning result on success, or None if the
         retrieval itself couldn't be attempted/failed (budget exhausted,
-        policy denial, tool error) -- callers fall back to the weak
-        retry in that case rather than losing the turn entirely.
-
-        Goes through AgentPolicyGuard.check_tool() like any other tool
-        call (agents/runtime/execution.py checks the same way for an
-        LLM-proposed TOOL_CALL) -- this is a system-initiated call, not
-        a user's or the LLM's, but it still uses a real tool and must
-        respect the same policy an agent would otherwise be bound by.
+        policy denial, tool error) or found no evidence -- callers fall
+        back to the weak retry in that case, or, when evidence is
+        required and there is none, to the "no sources" answer.
+        Policy and budget checks: see _retrieve_evidence.
         """
 
-        permission = self._agent_policy_guard.check_tool(
-            policy=handle.policy,
-            tool_name="retriever",
+        context = await self._retrieve_evidence(
+            handle=handle,
+            top_k=CORRECTIVE_RETRIEVAL_TOP_K,
         )
 
-        if not permission.allowed:
+        if not context:
+            # Retrieval couldn't run or found nothing new to ground an
+            # answer in.
             return None
-
-        tool_budget = handle.lifecycle.begin_tool_call()
-
-        if not tool_budget.allowed:
-            return None
-
-        query = self._request_question(handle.request)
-
-        try:
-            tool_result = await self._tool_execution_service.execute(
-                tool_name="retriever",
-                parameters={
-                    "query": query,
-                    "top_k": CORRECTIVE_RETRIEVAL_TOP_K,
-                },
-            )
-
-        except ToolNotFoundError:
-            # No "retriever" tool registered for this deployment/agent --
-            # degrade to the weak retry rather than crashing the
-            # continuation over a system-initiated corrective attempt.
-            return None
-
-        if not tool_result.success:
-            return None
-
-        context = ToolResultConverter.to_reasoning_context(
-            result=tool_result,
-        )
 
         if not self._record_reasoning_context(
             handle=handle,
@@ -813,6 +921,103 @@ class AgentContinuationService:
         )
 
         return await handle.reason()
+
+    async def seed_evidence(
+        self,
+        *,
+        handle: AgentExecutionHandle,
+    ) -> None:
+        """
+        Retrieve evidence for the latest user question into the
+        handle's reasoning_context before its first reasoning call (A1),
+        so the agent starts from sources instead of its own knowledge.
+
+        Policy-checked and budgeted like any retriever call; does
+        nothing when the agent may not use the retriever, the budget is
+        spent, or nothing is found. Called by AgentExecutionNode.
+        """
+
+        context = await self._retrieve_evidence(
+            handle=handle,
+            top_k=SEED_RETRIEVAL_TOP_K,
+        )
+
+        if context:
+            self._record_reasoning_context(
+                handle=handle,
+                context=context,
+            )
+
+    async def _retrieve_evidence(
+        self,
+        *,
+        handle: AgentExecutionHandle,
+        top_k: int,
+    ) -> tuple[RetrievedContentDTO, ...] | None:
+        """
+        One system-initiated "retriever" call for the latest user
+        question, checked against the agent's policy and tool-call
+        budget. Returns the evidence found (possibly empty), or None when
+        the call couldn't run or failed.
+
+        Goes through AgentPolicyGuard.check_tool() like any other tool
+        call (agents/runtime/execution.py checks the same way for an
+        LLM-proposed TOOL_CALL) -- this is a system-initiated call, not
+        the LLM's, but it still uses a real tool and must respect the
+        same policy the agent is bound by.
+        """
+
+        permission = self._agent_policy_guard.check_tool(
+            policy=handle.policy,
+            tool_name="retriever",
+        )
+
+        if not permission.allowed:
+            return None
+
+        tool_budget = handle.lifecycle.begin_tool_call()
+
+        if not tool_budget.allowed:
+            return None
+
+        try:
+            tool_result = await self._tool_execution_service.execute(
+                tool_name="retriever",
+                parameters={
+                    "query": self._request_question(handle.request),
+                    "top_k": top_k,
+                },
+            )
+
+        except ToolNotFoundError:
+            # No "retriever" tool registered for this deployment/agent.
+            return None
+
+        if not tool_result.success:
+            return None
+
+        return tuple(
+            item
+            for item in ToolResultConverter.to_reasoning_context(result=tool_result)
+            if item.content not in NON_EVIDENCE_CONTENT
+        )
+
+    @staticmethod
+    def _evidence_items(
+        handle: AgentExecutionHandle,
+    ) -> tuple[RetrievedContentDTO, ...]:
+        """
+        The reasoning_context items an answer can be grounded in: all of
+        them except the gate's own feedback notes and the retriever's
+        "nothing found" results.
+        """
+
+        return tuple(
+            item
+            for item in handle.reasoning_context
+            if item.metadata.get("source_type") not in _FEEDBACK_SOURCE_TYPES
+            and item.content not in NON_EVIDENCE_CONTENT
+        )
 
     @staticmethod
     def _record_progress(

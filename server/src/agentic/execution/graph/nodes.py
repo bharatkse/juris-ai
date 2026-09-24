@@ -10,19 +10,19 @@ AgentExecutionNode only:
     1. reads graph state
     2. builds AgentRequestDTO
     3. starts AgentExecution
-    4. invokes the request-scoped execution handle
-    5. invokes AgentContinuationService for internal tool continuation
-    6. converts the final AgentExecutionResult into graph updates
-    7. for a streaming session's FINAL step only, also emits the
-       streamed answer via LangGraph's custom stream channel -- pure
-       side channel, never alters point 6's return value
+    4. seeds retrieved evidence via AgentContinuationService (A1)
+    5. invokes the request-scoped execution handle
+    6. invokes AgentContinuationService for internal tool continuation
+    7. converts the final AgentExecutionResult into graph updates
+
+No step streams its answer: /chat/stream sends the guardrail-reviewed
+text that AIOrchestrator.stream() already holds, so there is no second
+generation here to diverge from what was reviewed.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
-
-from langgraph.config import get_stream_writer
 
 from agentic.agents.runtime.continuation import AgentContinuationService
 from agentic.decisions.decision import AgentDecisionType
@@ -98,21 +98,15 @@ class AgentExecutionNode:
             ),
         )
 
+        # Start from retrieved sources, not the model's own knowledge (A1).
+        await self._continuation_service.seed_evidence(handle=handle)
+
         initial_result = await handle.reason()
 
         continuation_result = await self._continuation_service.execute(
             handle=handle,
             initial_result=initial_result,
         )
-
-        if state.get(
-            "streaming",
-            False,
-        ):
-            await self._stream_final_answer_if_reached(
-                handle=handle,
-                result=continuation_result.result,
-            )
 
         return self._to_graph_update(
             handle=handle,
@@ -121,46 +115,6 @@ class AgentExecutionNode:
             evaluation_summary=continuation_result.evaluation_summary,
             step=step,
         )
-
-    @staticmethod
-    async def _stream_final_answer_if_reached(
-        *,
-        handle: AgentExecutionHandle,
-        result: AgentExecutionResult,
-    ) -> None:
-        """
-        Emit the FINAL step's answer text via LangGraph's custom
-        stream channel (get_stream_writer()) -- purely additive: the
-        caller's graph-state return value (_to_graph_update(), built
-        from the same `result` either way) is completely unaffected by
-        whether this runs.
-
-        Only fires for a FINAL decision -- a step that resolves to
-        TOOL_CALL/DELEGATE/NEED_INPUT/FAIL never streams, whether or
-        not this is a streaming session. In a multi-step plan this
-        means at most one step ever streams: the one that reaches
-        FINAL.
-
-        NEED_INPUT is deliberately excluded even though _to_graph_update()
-        below now maps it to a memory artifact like FINAL -- its question
-        text is already complete (set via set_partial_response() in
-        execution.py), so there is nothing to regenerate. Streaming it
-        here would mean calling handle.stream_final_answer(), which
-        performs a second, real LLM generation call -- not a replay of
-        already-produced text.
-
-        Callers must already have confirmed this is a streaming
-        session (state["streaming"]) before calling this -- checked
-        once, by __call__ above, not repeated here.
-        """
-
-        if result.decision is None or result.decision.decision_type is not AgentDecisionType.FINAL:
-            return
-
-        writer = get_stream_writer()
-
-        async for chunk in handle.stream_final_answer():
-            writer(chunk)
 
     @staticmethod
     def _build_agent_request(
@@ -232,12 +186,7 @@ class AgentExecutionNode:
                 # TOOL_CALL/DELEGATE) -- AgentResponseMapper.map() only
                 # reads state.partial_response/termination_reason and
                 # accumulated reasoning_context, both already set by
-                # execution.py's NEED_INPUT branch. No second LLM call:
-                # contrast with _stream_final_answer_if_reached below,
-                # which stays FINAL-only because streaming re-generates
-                # the answer text via a real second generation call --
-                # the NEED_INPUT question is already fully formed text,
-                # nothing to stream-regenerate.
+                # execution.py's NEED_INPUT branch.
                 mapper = AgentResponseMapper(agent_name=handle.agent_id)
 
                 response = mapper.map(

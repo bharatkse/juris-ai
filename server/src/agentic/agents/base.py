@@ -8,7 +8,6 @@ translation.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
 from dataclasses import replace
 from typing import ClassVar
 
@@ -19,7 +18,6 @@ from agentic.decisions.schemas import AgentDecision
 from core.dto.agent import (
     AgentMetadataDTO,
     AgentRequestDTO,
-    AgentStreamChunkDTO,
 )
 from core.dto.clients.llm import LLMRequestDTO
 from core.dto.inference import InferencePolicy, LLMTask
@@ -99,68 +97,6 @@ class BaseAgent:
             request=llm_request,
             response_model=AgentDecision,
         )
-
-    async def stream_final_answer(
-        self,
-        *,
-        request: AgentRequestDTO,
-        context: tuple[
-            RetrievedContentDTO,
-            ...,
-        ] = (),
-    ) -> AsyncIterator[AgentStreamChunkDTO]:
-        """
-        Stream the freeform final-answer text for a request the graph
-        has already resolved to a FINAL decision
-        (agentic.decisions.decision.AgentDecisionType.FINAL, checked
-        in agentic/agents/runtime/continuation.py).
-
-        This is a second, separate LLM call from the structured
-        AgentDecision _reason() produces above -- a JSON-schema
-        -constrained structured response cannot be meaningfully
-        streamed token-by-token (a client receiving
-        '{"decision_type": "FINAL", "final_r' mid-stream has nothing
-        usable). Once the graph already knows the decision is FINAL,
-        this method re-generates just the answer text as a plain
-        completion instead.
-
-        context is the caller's responsibility to supply -- normally
-        AgentExecutionHandle.reasoning_context, the same accumulated
-        retrieval/tool-call evidence _reason() already used to reach
-        the FINAL decision. Passing it explicitly (default: empty) is
-        what makes this method actually grounded rather than a bare,
-        contextless completion -- the previous stream() on this class
-        hardcoded no context and had zero callers; this replaces it.
-        """
-        llm_request = self._prompt_builder.build(
-            request=request,
-            context=context,
-            model=self._llm.model,
-            reserved_output_tokens=self._reserved_output_tokens(),
-        )
-
-        llm_request = self._apply_inference(
-            request=llm_request,
-            task=self.inference_task,
-            structured_output=False,
-        )
-
-        async for chunk in self._llm.stream(
-            request=llm_request,
-        ):
-            yield AgentStreamChunkDTO(
-                content=chunk.content,
-                is_final=chunk.is_final,
-                finish_reason=chunk.finish_reason,
-                # LLMStreamChunkDTO.metadata is a read-only Mapping
-                # (MappingProxyType default); AgentStreamChunkDTO.metadata
-                # is a plain, mutable dict -- pre-existing type gap
-                # between the two DTOs, only now visible to mypy since
-                # fixing LLMClient.stream()'s signature above let it
-                # analyze this far. Copying is cheap and correct
-                # either way.
-                metadata=dict(chunk.metadata),
-            )
 
     def _reserved_output_tokens(self) -> int:
         """

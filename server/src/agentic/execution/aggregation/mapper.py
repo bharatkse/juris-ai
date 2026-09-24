@@ -48,10 +48,11 @@ class AgentResponseMapper:
                 run()-only method and does not feed this path.
             evaluation_summary:
                 Groundedness/relevance from AgentContinuationService.
-                _gate_final's accepted evaluation, when one ran (see
-                AnswerEvaluationSummary's docstring) -- surfaced here
-                so the compliance log (AIOrchestrator's AGENT_DECISION
-                write) can read real scores instead of always None.
+                _gate_final's evaluation, when it accepted or rejected
+                the answer (see AnswerEvaluationSummary's docstring) --
+                surfaced here, with ``answer_verified``, so the
+                compliance log (AIOrchestrator's AGENT_DECISION write)
+                can read real scores instead of always None.
         """
         metadata: dict[str, Any] = {
             "execution_id": execution_id,
@@ -64,6 +65,7 @@ class AgentResponseMapper:
         if evaluation_summary is not None:
             metadata["groundedness"] = evaluation_summary.groundedness
             metadata["relevance"] = evaluation_summary.relevance
+            metadata["answer_verified"] = evaluation_summary.verified
 
         # Full, untruncated retrieved-evidence text -- the same
         # evidence _gate_final actually evaluated the answer against

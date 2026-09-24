@@ -8,7 +8,6 @@ mutable graph runtime state and checkpoint persistence.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, cast
 from uuid import UUID
@@ -20,7 +19,7 @@ from agentic.decisions.decision import AgentDecisionType
 from agentic.execution.graph.state import ExecutionGraphState
 from agentic.execution.schemas.result import ExecutionResultSchema
 from core.dto.action_workflow import ActionWorkflowResultDTO
-from core.dto.agent import AgentContextDTO, AgentStreamChunkDTO
+from core.dto.agent import AgentContextDTO
 from core.dto.agent_action import AgentActionRequestDTO
 from core.dto.conversation import ConversationDTO
 from core.dto.planning import ExecutionPlanDTO, serialize_plan
@@ -145,141 +144,6 @@ class ExecutionSession:
                 "Execution session failed.",
                 extra={
                     "operation": "execute_session",
-                    "request_id": str(self._request_id),
-                    "execution_id": self._context.execution_id,
-                    "execution_mode": self._plan.mode.value,
-                },
-            )
-
-            raise
-
-    async def execute_streaming(
-        self,
-    ) -> AsyncIterator[AgentStreamChunkDTO | ExecutionResultSchema]:
-        """
-        Execute the request through the compiled LangGraph workflow,
-        streaming the FINAL step's answer text as it is produced.
-
-        Additive alongside execute()/resume() above -- both remain
-        entirely ainvoke()-based and are untouched by this method's
-        existence. The only difference in what this builds: the
-        initial state's "streaming" key is set True, which is what
-        AgentExecutionNode (graph/nodes.py) checks to decide whether
-        to also emit the FINAL step's answer via LangGraph's custom
-        stream channel. Every other step type in the same plan
-        (TOOL_CALL, DELEGATE, ...) executes exactly as it does under
-        execute(), streaming session or not -- see
-        AgentExecutionNode._stream_final_answer_if_reached().
-
-        Yields AgentStreamChunkDTO instances as they arrive, then
-        exactly one ExecutionResultSchema as the final item -- built
-        via the same _finish() execute()/resume() already use above,
-        from the graph's actual final state (requested via LangGraph's
-        "values" stream mode alongside "custom", not a second,
-        parallel reconstruction of what execute() already does).
-        Mirrors the established AgentStreamChunkDTO/ChatStreamChunkDTO
-        pattern already used elsewhere in this feature (a stream of
-        chunks, the last item carrying the full result) rather than
-        inventing a new shape.
-        """
-
-        logger.info(
-            "Starting streaming execution session.",
-            extra={
-                "operation": "execute_streaming_session",
-                "request_id": str(self._request_id),
-                "execution_id": self._context.execution_id,
-                "thread_id": self._context.thread_id,
-                "execution_mode": self._plan.mode.value,
-                "step_count": len(self._plan.steps),
-            },
-        )
-
-        try:
-            graph = self._graph_factory.create(
-                plan=self._plan,
-            )
-
-            initial_state = self._build_initial_state()
-            initial_state["streaming"] = True
-
-            final_graph_state: ExecutionGraphState | None = None
-
-            async with asyncio.timeout(
-                self._timeout_policy.timeout_seconds,
-            ):
-                # Two stream modes at once, not two separate calls:
-                # LangGraph interleaves both kinds of event, in
-                # execution order, as (mode, payload) tuples -- "values"
-                # yields the graph state after every node completes
-                # (its own first event, before any node has even run,
-                # is the initial state; its last is exactly what
-                # ainvoke() would have returned). Verified empirically
-                # against this project's own graph/checkpointer setup
-                # before writing this, not assumed from documentation
-                # alone.
-                async for mode, event in graph.astream(
-                    initial_state,
-                    config={
-                        "configurable": {
-                            "thread_id": self._context.thread_id,
-                        },
-                    },
-                    stream_mode=["custom", "values"],
-                ):
-                    if mode == "custom":
-                        # graph.astream()'s declared return type is the
-                        # generic AsyncIterator[dict[str, Any] | Any] --
-                        # LangGraph's custom stream mode has no way to
-                        # type the payload a node's writer actually
-                        # sends. The real, guaranteed type is
-                        # AgentStreamChunkDTO:
-                        # AgentExecutionNode._stream_final_answer_if_reached()
-                        # is this graph's only writer() caller, and it
-                        # only ever writes that type.
-                        yield cast(AgentStreamChunkDTO, event)
-                    else:
-                        final_graph_state = cast(ExecutionGraphState, event)
-
-            if final_graph_state is None:
-                # Defensive, not expected to be reachable: "values"
-                # mode's own first event is always the initial state,
-                # emitted before any node runs -- see the comment
-                # above. Same shape as stream_chat()'s equivalent
-                # guard (application/services/chat.py) for a stream
-                # that ends without ever producing what it promises.
-                raise ExecutionError(
-                    message="Streaming execution completed without a final graph state.",
-                )
-
-            yield await self._finish(
-                graph_state=final_graph_state,
-                user_id=self._context.user_id,
-            )
-
-        except TimeoutError as exc:
-            logger.error(
-                "Streaming execution session timed out.",
-                extra={
-                    "operation": "execute_streaming_session_timeout",
-                    "request_id": str(self._request_id),
-                    "execution_id": self._context.execution_id,
-                    "execution_mode": self._plan.mode.value,
-                    "timeout_seconds": self._timeout_policy.timeout_seconds,
-                },
-            )
-
-            raise ExecutionError(
-                message=(
-                    "Execution timed out after " f"{self._timeout_policy.timeout_seconds} seconds."
-                ),
-            ) from exc
-
-        except Exception:
-            logger.exception(
-                "Streaming execution session failed.",
-                extra={
-                    "operation": "execute_streaming_session",
                     "request_id": str(self._request_id),
                     "execution_id": self._context.execution_id,
                     "execution_mode": self._plan.mode.value,

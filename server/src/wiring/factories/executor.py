@@ -78,7 +78,10 @@ def create_executor(
             cache=clients.cache,
         ),
     )
-    answer_quality_policy = AnswerQualityPolicy()
+    # Both agents (legal, contract) answer legal questions, which must be
+    # grounded in retrieved sources (A1). enforce_citations stays False
+    # until the citation thresholds can be calibrated (K14).
+    answer_quality_policy = AnswerQualityPolicy(require_evidence=True)
 
     graph_factory = ExecutionGraphFactory(
         builder=graph_builder,

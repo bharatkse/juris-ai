@@ -248,7 +248,14 @@ class ComplianceLogService(BaseService):
         groundedness: float | None = None,
         relevance: float | None = None,
         completeness: float | None = None,
+        answer_verified: bool | None = None,
     ) -> ComplianceLog:
+        """
+        answer_verified is False when the answer-quality gate rejected
+        the agent's answer and replaced it (S5), True when it accepted
+        it, None when no gate evaluation ran.
+        """
+
         return await self._record(
             request_id=request_id,
             user_id=user_id,
@@ -262,6 +269,7 @@ class ComplianceLogService(BaseService):
                 "groundedness": groundedness,
                 "relevance": relevance,
                 "completeness": completeness,
+                "answer_verified": answer_verified,
             },
         )
 

@@ -8,7 +8,7 @@ maps the resulting AgentExecutionResult into graph-state updates.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -62,11 +62,13 @@ def _build_node(
 
     AgentExecutionNode:
         start() -> handle
+        continuation_service.seed_evidence(handle) -> None
         handle.reason() -> initial result
         continuation_service.execute() -> continuation result
     """
     agent_execution = MagicMock()
     continuation_service = MagicMock()
+    continuation_service.seed_evidence = AsyncMock(return_value=None)
     handle = MagicMock()
 
     handle.reason = AsyncMock(return_value=result)
@@ -535,18 +537,13 @@ async def test_execute_step_does_not_write_memory_update_for_non_final_decision(
 
 
 # ---------------------------------------------------------------------------
-# Streaming gate (state["streaming"] + FINAL decision) -- Phase 3 of the
-# /chat/stream plan. get_stream_writer() itself requires a real LangGraph
-# runtime context (confirmed empirically: it raises RuntimeError called
-# outside one) -- these tests patch it, since node(graph_state, step=step)
-# called directly here has no such context. The real, end-to-end proof
-# that emitted custom-stream events actually reach a caller through a
-# genuine compiled graph lives in test_session.py's astream() test.
+# S2: a FINAL step never makes a second generation for streaming. The text
+# /chat/stream sends is the reviewed text AIOrchestrator.stream() holds.
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_execute_step_streams_the_final_answer_when_streaming_and_final() -> None:
+async def test_final_step_makes_no_second_generation() -> None:
     step = build_step("step-a")
 
     decision = AgentDecision(
@@ -574,181 +571,43 @@ async def test_execute_step_streams_the_final_answer_when_streaming_and_final() 
     handle.request = MagicMock()
     handle.request.context = build_agent_context(execution_id="exec-789")
 
-    stream_chunks = [
-        MagicMock(name="chunk-1"),
-        MagicMock(name="chunk-2"),
-    ]
-
-    async def fake_stream_final_answer():
-        for chunk in stream_chunks:
-            yield chunk
-
-    handle.stream_final_answer = MagicMock(side_effect=fake_stream_final_answer)
-
     graph_state = _build_graph_state(
         plan=build_plan(steps=(step,)),
     )
-    graph_state["streaming"] = True
 
-    writer = MagicMock()
+    result = await node(graph_state, step=step)
 
-    with patch(
-        "agentic.execution.graph.nodes.get_stream_writer",
-        return_value=writer,
-    ) as get_stream_writer:
-        result = await node(graph_state, step=step)
-
-    get_stream_writer.assert_called_once_with()
-    handle.stream_final_answer.assert_called_once_with()
-    assert writer.call_args_list == [call(chunk) for chunk in stream_chunks]
-
-    # The existing graph-state return value (_to_graph_update()'s
-    # output) is completely unaffected by streaming -- same assertion
-    # test_execute_step_writes_memory_update_on_final_decision_with_citations
-    # already makes for the non-streaming case.
+    handle.reason.assert_awaited_once_with()
+    assert [name for name, *_ in handle.method_calls if "stream" in name] == []
     assert result["memory_updates"][0]["value"].content == decision.final_response
 
 
 @pytest.mark.asyncio
-async def test_execute_step_does_not_stream_when_not_a_streaming_session() -> None:
+async def test_evidence_is_seeded_before_the_first_reasoning_call() -> None:
     """
-    state["streaming"] absent (the default for every existing caller,
-    execute()/resume()) must never touch get_stream_writer() at all --
-    calling it outside a real LangGraph runtime context raises, and a
-    plain ainvoke() run is not one.
+    A1: the node seeds retrieved evidence into the handle before the
+    agent reasons for the first time.
     """
 
     step = build_step("step-a")
 
-    decision = AgentDecision(
-        decision_type=AgentDecisionType.FINAL,
-        final_response="Answer.",
-    )
-
     execution_result = _build_result(
         status=ExecutionStatusEnum.COMPLETED,
-        decision=decision,
+        decision=None,
     )
 
     node, agent_execution, continuation_service, handle = _build_node(
         result=execution_result,
     )
 
-    handle.agent_id = "legal"
-    handle.lifecycle.state = AgentState(
-        budget=AgentExecutionBudget(),
-        started_at=datetime.now(UTC),
-        status=AgentExecutionStatus.COMPLETED,
-        partial_response=decision.final_response,
-    )
-    handle.reasoning_context = ()
-    handle.request = MagicMock()
-    handle.request.context = build_agent_context(execution_id="exec-000")
-    handle.stream_final_answer = MagicMock()
+    calls: list[str] = []
+    continuation_service.seed_evidence.side_effect = lambda **_: calls.append("seed")
+    handle.reason.side_effect = lambda: calls.append("reason") or execution_result
 
-    graph_state = _build_graph_state(
-        plan=build_plan(steps=(step,)),
-    )
-    # Deliberately not setting graph_state["streaming"] -- this is the
-    # state every existing caller builds today.
-
-    with patch("agentic.execution.graph.nodes.get_stream_writer") as get_stream_writer:
-        await node(graph_state, step=step)
-
-    get_stream_writer.assert_not_called()
-    handle.stream_final_answer.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_execute_step_does_not_stream_a_non_final_decision() -> None:
-    """
-    Only the step that reaches FINAL streams -- a streaming session's
-    TOOL_CALL/DELEGATE step must not touch get_stream_writer() either.
-    """
-
-    step = build_step("step-a")
-
-    decision = MagicMock(name="agent_decision")
-    decision.decision_type = AgentDecisionType.TOOL_CALL
-
-    execution_result = _build_result(
-        status=ExecutionStatusEnum.COMPLETED,
-        decision=decision,
+    await node(
+        _build_graph_state(plan=build_plan(steps=(step,))),
+        step=step,
     )
 
-    node, agent_execution, continuation_service, handle = _build_node(
-        result=execution_result,
-    )
-
-    handle.stream_final_answer = MagicMock()
-
-    graph_state = _build_graph_state(
-        plan=build_plan(steps=(step,)),
-    )
-    graph_state["streaming"] = True
-
-    with patch("agentic.execution.graph.nodes.get_stream_writer") as get_stream_writer:
-        await node(graph_state, step=step)
-
-    get_stream_writer.assert_not_called()
-    handle.stream_final_answer.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_execute_step_maps_need_input_but_never_streams_it() -> None:
-    """
-    NEED_INPUT is now mapped to a memory artifact like FINAL (see
-    test_execute_step_writes_memory_update_on_need_input_decision),
-    but it must still never stream -- unlike FINAL, its answer text
-    is already complete (set via set_partial_response(), not
-    generated by a second LLM call), so there is nothing for
-    stream_final_answer() to regenerate. Both facts are asserted in
-    one test so a future change can't satisfy one while breaking the
-    other.
-    """
-
-    step = build_step("step-a")
-
-    decision = AgentDecision(
-        decision_type=AgentDecisionType.NEED_INPUT,
-        reason="missing information",
-        user_input=AgentUserInputRequest(
-            question="Which jurisdiction applies to this contract?",
-        ),
-    )
-
-    execution_result = _build_result(
-        status=ExecutionStatusEnum.COMPLETED,
-        decision=decision,
-        termination_reason=TerminationReason.USER_INPUT_REQUIRED.value,
-    )
-
-    node, agent_execution, continuation_service, handle = _build_node(
-        result=execution_result,
-    )
-
-    handle.agent_id = "legal"
-    handle.lifecycle.state = AgentState(
-        budget=AgentExecutionBudget(),
-        started_at=datetime.now(UTC),
-        status=AgentExecutionStatus.PARTIAL,
-        termination_reason=TerminationReason.USER_INPUT_REQUIRED,
-        partial_response=decision.user_input.question,
-    )
-    handle.reasoning_context = ()
-    handle.request = MagicMock()
-    handle.request.context = build_agent_context(execution_id="exec-need-input-stream")
-    handle.stream_final_answer = MagicMock()
-
-    graph_state = _build_graph_state(
-        plan=build_plan(steps=(step,)),
-    )
-    graph_state["streaming"] = True
-
-    with patch("agentic.execution.graph.nodes.get_stream_writer") as get_stream_writer:
-        result = await node(graph_state, step=step)
-
-    get_stream_writer.assert_not_called()
-    handle.stream_final_answer.assert_not_called()
-
-    assert result["memory_updates"][0]["value"].content == decision.user_input.question
+    continuation_service.seed_evidence.assert_awaited_once_with(handle=handle)
+    assert calls == ["seed", "reason"]

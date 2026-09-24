@@ -152,14 +152,19 @@ class AnswerQualityPolicy:
     min_citation_precision: float = 0.80
     min_citation_coverage: float = 0.80
     enforce_citations: bool = False
+    # When True, an answer with no evidence to check it against is
+    # insufficient (A1): a legal answer must be grounded in retrieved
+    # sources, not the model's own knowledge. Wired True in
+    # wiring/factories/executor.py.
+    require_evidence: bool = False
 
     def is_sufficient(self, result: AnswerEvaluationResult) -> bool:
         """Return whether the evaluated answer satisfies the quality policy.
 
-        Groundedness is skipped, not failed, when no evidence was available
-        to check the answer against (result.groundedness_detail.applicable
-        is False) -- absence of evidence must not, by itself, force another
-        reasoning turn.
+        When no evidence was available to check the answer against
+        (result.groundedness_detail.applicable is False), the answer is
+        insufficient if require_evidence is set; otherwise groundedness is
+        skipped, not failed.
 
         Groundedness and relevance are hard requirements: an ungrounded
         (hallucinated) or irrelevant (off-topic) answer must never pass,
@@ -186,6 +191,9 @@ class AnswerQualityPolicy:
         supplied (result.correctness is not None); it plays no role in
         sufficiency otherwise.
         """
+
+        if not result.groundedness_detail.applicable and self.require_evidence:
+            return False
 
         groundedness_ok = (
             not result.groundedness_detail.applicable
@@ -256,15 +264,19 @@ class AnswerEvaluationSummary:
     -> AgentResponseDTO.metadata.
 
     Deliberately narrow: not a general "expose all evaluation
-    internals" carrier, just groundedness/relevance, and only ever
-    populated at the one point _gate_final actually accepts a FINAL
-    answer (is_sufficient() returned True) -- every other _gate_final
-    return path (no answer, budget exhausted, insufficient + retrying)
-    has no accepted evaluation to report and carries None instead.
+    internals" carrier, just groundedness/relevance and whether the
+    answer was verified. Populated where _gate_final accepts a FINAL
+    answer (verified=True) or gives up on one and replaces it
+    (verified=False); every other _gate_final return path (no answer,
+    insufficient + retrying) carries None instead.
     """
 
     groundedness: float | None
     relevance: float | None
+    # False when _gate_final rejected the answer and replaced it because
+    # no budget was left to improve it (the scores are the rejected
+    # answer's); True for an accepted answer.
+    verified: bool = True
 
 
 class AnswerEvaluator:

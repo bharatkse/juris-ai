@@ -10,13 +10,14 @@ from uuid import uuid4
 import pytest
 
 from agentic.execution.aggregation.response import ResponseAggregator
+from agentic.execution.executor import Executor
 from agentic.execution.schemas.result import ExecutionResultSchema
 from agentic.execution.schemas.state import ExecutionStateSchema, StepExecutionStateSchema
 from agentic.execution.validation.response import ResponseValidator
 from agentic.guardrails.schemas import GuardrailActionEnum, GuardrailReviewResult
-from agentic.orchestration.orchestrator import AIOrchestrator
+from agentic.orchestration.orchestrator import AIOrchestrator, _stream_slices
 from agentic.orchestration.schemas.response import OrchestratorResponse
-from core.dto.agent import AgentResponseDTO, AgentStreamChunkDTO
+from core.dto.agent import AgentResponseDTO
 from core.dto.planning import ExecutionPlanDTO
 from core.dto.response import CitationDTO, SourceDTO, UsageDTO
 from core.enums import ExecutionModeEnum, ExecutionStatusEnum, IntentEnum
@@ -513,6 +514,55 @@ async def test_handle_records_compliance_log_entries() -> None:
 
 
 @pytest.mark.asyncio
+async def test_handle_records_an_unverified_answer_in_the_compliance_log() -> None:
+    """
+    S5: when the answer-quality gate replaced an agent's answer, the
+    AGENT_DECISION compliance record carries answer_verified=False and
+    the rejected answer's scores.
+    """
+
+    execution_result = ExecutionResultSchema(
+        state=ExecutionStateSchema(
+            request_id=uuid4(),
+            status=ExecutionStatusEnum.COMPLETED,
+        ),
+        artifacts={
+            "legal": AgentResponseDTO(
+                content="I couldn't verify an answer.",
+                agent_name="legal",
+                metadata={
+                    "groundedness": 0.1,
+                    "relevance": 0.2,
+                    "answer_verified": False,
+                },
+            ),
+        },
+        action=None,
+        approval=None,
+    )
+
+    orchestrator = _build_orchestrator_for_guardrail_tests(
+        execution_results=[execution_result],
+        guardrail_results=[
+            GuardrailReviewResult(
+                content="I couldn't verify an answer.",
+                action=GuardrailActionEnum.NONE,
+            ),
+        ],
+    )
+
+    await orchestrator.handle(
+        request=build_orchestrator_request(),
+        action_workflow_service=MagicMock(),
+    )
+
+    decision_call = orchestrator._compliance_log.record_agent_decision.await_args.kwargs
+    assert decision_call["answer_verified"] is False
+    assert decision_call["groundedness"] == 0.1
+    assert decision_call["relevance"] == 0.2
+
+
+@pytest.mark.asyncio
 async def test_handle_records_guardrail_fired_when_redacted() -> None:
     orchestrator = _build_orchestrator_for_guardrail_tests(
         execution_results=[build_success_execution_result(content="My PAN is X.")],
@@ -603,98 +653,35 @@ async def test_guardrail_review_falls_back_to_citations_when_no_evidence_text() 
 
 
 # ---------------------------------------------------------------------------
-# Phase 4 of the /chat/stream plan: AIOrchestrator.stream().
+# AIOrchestrator.stream(): streams the guardrail-reviewed text (S2).
 # ---------------------------------------------------------------------------
-
-
-async def _stream_attempt(
-    chunks: list[AgentStreamChunkDTO],
-    execution_result: ExecutionResultSchema,
-):
-    """
-    One regenerate-loop attempt's worth of Executor.execute_streaming()
-    output -- chunks, then the ExecutionResultSchema, matching
-    ExecutionSession.execute_streaming()'s real shape.
-    """
-
-    for chunk in chunks:
-        yield chunk
-
-    yield execution_result
 
 
 def _build_streaming_orchestrator_for_guardrail_tests(
     *,
-    attempts: list[tuple[list[AgentStreamChunkDTO], ExecutionResultSchema]],
+    execution_results: list[ExecutionResultSchema],
     guardrail_results: list[GuardrailReviewResult],
-    guardrail_max_regenerate_attempts: int = 1,
 ) -> AIOrchestrator:
     """
-    Streaming counterpart to _build_orchestrator_for_guardrail_tests()
-    above: a mocked executor.execute_streaming returning one fresh
-    async generator per regenerate-loop attempt (in order), everything
-    else identical.
+    Same as _build_orchestrator_for_guardrail_tests() above, but the
+    executor is spec'd to the real Executor, so stream() can only use
+    what exists there (execute(), no second streaming path).
     """
 
-    planner = MagicMock()
-    planner.create_plan = AsyncMock(
-        return_value=ExecutionPlanDTO(
-            intent=IntentEnum.GENERAL,
-            mode=ExecutionModeEnum.SEQUENTIAL,
-            steps=(),
-        )
+    orchestrator = _build_orchestrator_for_guardrail_tests(
+        execution_results=execution_results,
+        guardrail_results=guardrail_results,
     )
 
-    executor = MagicMock()
-    executor.execute_streaming = MagicMock(
-        side_effect=[
-            _stream_attempt(chunks, execution_result) for chunks, execution_result in attempts
-        ],
-    )
+    executor = MagicMock(spec=Executor)
+    executor.execute = AsyncMock(side_effect=execution_results)
+    orchestrator._executor = executor
 
-    authorization = MagicMock()
-    authorization.authorize_request = MagicMock()
-
-    guardrails = MagicMock()
-    guardrails.review = AsyncMock(side_effect=guardrail_results)
-
-    return AIOrchestrator(
-        planner=planner,
-        executor=executor,
-        validator=ResponseValidator(),
-        aggregator=ResponseAggregator(),
-        authorization=authorization,
-        guardrails=guardrails,
-        compliance_log=_mock_compliance_log(),
-        guardrail_max_regenerate_attempts=guardrail_max_regenerate_attempts,
-    )
+    return orchestrator
 
 
-@pytest.mark.asyncio
-async def test_stream_replays_buffered_chunks_then_emits_final_response_when_guardrail_clears() -> (
-    None
-):
-    """
-    (a) Normal stream-through-to-final: a NONE verdict replays the
-    buffered chunks verbatim, then one empty terminal chunk carries
-    the full OrchestratorResponse.
-    """
-
-    chunks = [
-        AgentStreamChunkDTO(content="Sec", is_final=False),
-        AgentStreamChunkDTO(content="tion 43.", is_final=True, finish_reason="stop"),
-    ]
-
-    orchestrator = _build_streaming_orchestrator_for_guardrail_tests(
-        attempts=[
-            (chunks, build_success_execution_result(content="Section 43.")),
-        ],
-        guardrail_results=[
-            GuardrailReviewResult(content="Section 43.", action=GuardrailActionEnum.NONE),
-        ],
-    )
-
-    received = [
+async def _collect_stream(orchestrator: AIOrchestrator) -> list:
+    return [
         item
         async for item in orchestrator.stream(
             request=build_orchestrator_request(),
@@ -702,53 +689,82 @@ async def test_stream_replays_buffered_chunks_then_emits_final_response_when_gua
         )
     ]
 
-    assert len(received) == 3
 
-    assert [item.content for item in received[:2]] == ["Sec", "tion 43."]
-    assert all(not item.is_final for item in received[:2])
-    assert all(item.response is None for item in received[:2])
+def test_stream_slices_rejoin_to_the_exact_text_and_never_split_words() -> None:
+    text = "  Section 43 of the IT Act 2000 imposes penalty and compensation\nfor damage to computer systems.  "
 
-    terminal = received[-1]
+    slices = list(_stream_slices(text))
+
+    assert "".join(slices) == text
+    assert len(slices) > 1
+    words = text.split()
+    for text_slice in slices:
+        for word in text_slice.split():
+            assert word in words
+
+
+def test_stream_slices_of_empty_text_is_empty() -> None:
+    assert list(_stream_slices("")) == []
+
+
+@pytest.mark.asyncio
+async def test_stream_sends_exactly_the_reviewed_text_when_guardrail_clears() -> None:
+    """
+    S2 regression: the streamed text is the text the guardrails
+    reviewed (and ChatService persists), sliced; one empty terminal
+    chunk carries the full OrchestratorResponse. Before the fix the
+    stream replayed a separate second generation.
+    """
+
+    reviewed = (
+        "Section 43 of the IT Act 2000 imposes penalty and compensation "
+        "for damage to a computer, computer system or network."
+    )
+
+    orchestrator = _build_streaming_orchestrator_for_guardrail_tests(
+        execution_results=[build_success_execution_result(content=reviewed)],
+        guardrail_results=[
+            GuardrailReviewResult(content=reviewed, action=GuardrailActionEnum.NONE),
+        ],
+    )
+
+    received = await _collect_stream(orchestrator)
+
+    body, terminal = received[:-1], received[-1]
+
+    assert len(body) > 1
+    assert "".join(item.content for item in body) == reviewed
+    assert all(not item.is_final and item.response is None for item in body)
+
     assert terminal.is_final is True
     assert terminal.content == ""
     assert terminal.response is not None
-    assert terminal.response.content == "Section 43."
+    assert terminal.response.content == reviewed
     assert terminal.response.guardrail is None
 
-    orchestrator._executor.execute_streaming.assert_called_once()
+    orchestrator._executor.execute.assert_awaited_once()
+    orchestrator._guardrails.review.assert_awaited_once()
+    assert orchestrator._guardrails.review.await_args.kwargs["content"] == reviewed
 
 
 @pytest.mark.asyncio
 async def test_stream_emits_only_the_fallback_chunk_when_guardrail_blocks_every_attempt() -> None:
     """
-    (b) Guardrail-blocked, every attempt: only the fixed refusal
-    reaches the caller, as a single terminal chunk -- zero partial
-    content from either blocked draft leaked anywhere in the stream.
+    Guardrail-blocked, every attempt: only the fixed refusal reaches
+    the caller, as a single terminal chunk.
     """
 
     blocked = GuardrailReviewResult(content="Harmful.", action=GuardrailActionEnum.BLOCKED)
 
     orchestrator = _build_streaming_orchestrator_for_guardrail_tests(
-        attempts=[
-            (
-                [AgentStreamChunkDTO(content="Harmful draft 1.", is_final=True)],
-                build_success_execution_result(content="Harmful draft 1."),
-            ),
-            (
-                [AgentStreamChunkDTO(content="Harmful draft 2.", is_final=True)],
-                build_success_execution_result(content="Harmful draft 2."),
-            ),
+        execution_results=[
+            build_success_execution_result(content="Harmful draft 1."),
+            build_success_execution_result(content="Harmful draft 2."),
         ],
         guardrail_results=[blocked, blocked],
     )
 
-    received = [
-        item
-        async for item in orchestrator.stream(
-            request=build_orchestrator_request(),
-            action_workflow_service=MagicMock(),
-        )
-    ]
+    received = await _collect_stream(orchestrator)
 
     assert len(received) == 1
 
@@ -763,31 +779,18 @@ async def test_stream_emits_only_the_fallback_chunk_when_guardrail_blocks_every_
     assert "Harmful draft 1." not in all_content
     assert "Harmful draft 2." not in all_content
 
-    assert orchestrator._executor.execute_streaming.call_count == 2
+    assert orchestrator._executor.execute.await_count == 2
 
 
 @pytest.mark.asyncio
-async def test_stream_emits_only_the_redacted_chunk_never_the_raw_pii_chunks() -> None:
+async def test_stream_sends_only_the_redacted_text_never_the_raw_pii() -> None:
     """
-    (c) Guardrail-redacted -- the specific bug this investigation
-    found: REDACTED content differs from what was actually streamed
-    during generation. The raw, pre-redaction chunks must never reach
-    the caller -- only the redacted content, as a single terminal
-    chunk. Not covered incidentally by the BLOCKED test above: BLOCKED
-    discards content entirely, but REDACTED's whole point is that
-    content DOES reach the caller, just not the version that was
-    buffered.
+    REDACTED: the stream carries the redacted text, never the
+    pre-redaction answer.
     """
-
-    raw_chunks = [
-        AgentStreamChunkDTO(content="My PAN is ", is_final=False),
-        AgentStreamChunkDTO(content="ABCDE1234F.", is_final=True),
-    ]
 
     orchestrator = _build_streaming_orchestrator_for_guardrail_tests(
-        attempts=[
-            (raw_chunks, build_success_execution_result(content="My PAN is ABCDE1234F.")),
-        ],
+        execution_results=[build_success_execution_result(content="My PAN is ABCDE1234F.")],
         guardrail_results=[
             GuardrailReviewResult(
                 content="My PAN is [REDACTED:IN_PAN].",
@@ -796,26 +799,18 @@ async def test_stream_emits_only_the_redacted_chunk_never_the_raw_pii_chunks() -
         ],
     )
 
-    received = [
-        item
-        async for item in orchestrator.stream(
-            request=build_orchestrator_request(),
-            action_workflow_service=MagicMock(),
-        )
-    ]
+    received = await _collect_stream(orchestrator)
 
-    assert len(received) == 1
+    terminal = received[-1]
+    assert terminal.is_final is True
+    assert terminal.content == ""
+    assert terminal.response is not None
+    assert terminal.response.content == "My PAN is [REDACTED:IN_PAN]."
+    assert terminal.response.guardrail is not None
+    assert terminal.response.guardrail.action == GuardrailActionEnum.REDACTED
 
-    only_chunk = received[0]
-    assert only_chunk.is_final is True
-    assert only_chunk.content == "My PAN is [REDACTED:IN_PAN]."
-    assert only_chunk.response is not None
-    assert only_chunk.response.content == "My PAN is [REDACTED:IN_PAN]."
-    assert only_chunk.response.guardrail is not None
-    assert only_chunk.response.guardrail.action == GuardrailActionEnum.REDACTED
-
-    all_content = " ".join(item.content for item in received)
-    assert "ABCDE1234F" not in all_content
+    assert "".join(item.content for item in received) == "My PAN is [REDACTED:IN_PAN]."
+    assert all("ABCDE1234F" not in item.content for item in received)
 
 
 @pytest.mark.asyncio
@@ -871,17 +866,7 @@ async def test_stream_terminal_chunk_matches_handle_for_the_same_inputs() -> Non
     )
 
     stream_orchestrator = _build_streaming_orchestrator_for_guardrail_tests(
-        attempts=[
-            (
-                [
-                    AgentStreamChunkDTO(
-                        content="Section 43 imposes penalty and compensation for damage.",
-                        is_final=True,
-                    ),
-                ],
-                _execution_result(),
-            ),
-        ],
+        execution_results=[_execution_result()],
         guardrail_results=[clean],
     )
 

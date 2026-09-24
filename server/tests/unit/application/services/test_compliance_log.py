@@ -169,6 +169,30 @@ async def test_record_guardrail_fired_never_stores_matched_pii_substring(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("answer_verified", [True, False, None])
+async def test_record_agent_decision_stores_answer_verified(
+    service: ComplianceLogService,
+    answer_verified: bool | None,
+) -> None:
+    entry = await service.record_agent_decision(
+        request_id=uuid4(),
+        user_id="user_1",
+        tenant_id="user_1",
+        conversation_id="conv_1",
+        agent_id="legal",
+        decision_type="final",
+        groundedness=0.2,
+        relevance=0.3,
+        answer_verified=answer_verified,
+    )
+
+    assert entry.event_type is ComplianceEventTypeEnum.AGENT_DECISION
+    assert entry.payload["answer_verified"] is answer_verified
+    assert entry.payload["groundedness"] == 0.2
+    assert entry.payload["relevance"] == 0.3
+
+
+@pytest.mark.asyncio
 async def test_record_hitl_approval_decision_allows_missing_request_id(
     service: ComplianceLogService,
 ) -> None:

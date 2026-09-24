@@ -5,34 +5,19 @@ for the whole 5-phase /chat/stream feature.
 
 What's real: FastAPI routing/middleware/DI, JWT auth, Postgres (users,
 conversations, conversation_events, compliance_log), the real Postgres
--backed LangGraph checkpointer, the real execution graph including
-AgentExecutionNode's streaming branch (get_stream_writer(),
-ExecutionSession.execute_streaming()'s "custom"+"values" stream
-modes), AIOrchestrator.stream()'s full-buffer-per-attempt guardrail
-sequencing, and the real OutputGuardrailService (real, local, no-
-network Presidio PII detection -- see agentic/guardrails/pii.py).
+-backed LangGraph checkpointer, the real execution graph,
+AIOrchestrator.stream()'s guardrail sequencing, and the real
+OutputGuardrailService (real, local, no-network Presidio PII detection --
+see agentic/guardrails/pii.py).
 
-What's mocked, and why -- same external/non-deterministic/costly LLM
-boundary every other e2e test in this suite mocks, nothing more:
-  - LLMPlanGenerator.generate() / BaseAgent._reason(): scripted to
-    produce a FINAL decision directly, no tool call (same pattern as
-    test_agent_decision_compliance_log.py).
-  - BaseAgent.stream_final_answer(): NEW for this test -- the Phase 2
-    freeform-completion call streaming actually depends on. Scripted
-    to yield a few real AgentStreamChunkDTO chunks instead of making a
-    real LLM streaming call.
-
-One real architectural note, not a bug: _reason()'s decision.final_response
-(TEXT_A, what gets aggregated/guardrail-reviewed/persisted) and
-stream_final_answer()'s chunks (TEXT_B, what gets streamed to the
-client) come from two genuinely separate LLM calls in production --
-confirmed and accepted back when Phase 2 was scoped (a structured
-decision can't be meaningfully token-streamed). The two fakes below
-are scripted to agree so this test's assertions are meaningful; a real
-LLM's two calls are not guaranteed to produce byte-identical text
-either, which is exactly why AIOrchestrator.stream() guardrail-reviews
-the buffered STREAMED chunks' own aggregated content, not a separately
--generated string -- see orchestrator.py's stream() docstring.
+What's mocked: LLMPlanGenerator.generate() and BaseAgent._reason(),
+scripted to produce a FINAL decision directly -- the same LLM boundary
+every other e2e test mocks -- and the retriever's corpus (the
+statute_evidence fixture: the dev/CI corpus is empty, and evidence is
+required, A1). There is no second, streaming generation to mock (S2):
+the streamed text is the reviewed text, and the suite's hermetic_llm
+fixture would fail the test if any unmocked LLM call (such as a
+separate streaming generation) were made.
 
 Requires the real Postgres/Redis docker compose services running
 (`./setup.sh --install --dependency postgres
@@ -64,7 +49,6 @@ from agentic.decisions.decision import AgentDecisionType
 from agentic.decisions.schemas import AgentDecision
 from agentic.planning.llm_planner import LLMPlanGenerator
 from application.services.compliance_log import _hash
-from core.dto.agent import AgentStreamChunkDTO
 from core.dto.planning import ExecutionPlanDTO, ExecutionStepDTO
 from core.enums import (
     AgentTypeEnum,
@@ -80,13 +64,6 @@ FINAL_ANSWER = (
     "Section 2(1)(ta) of the IT Act 2000 defines 'electronic signature' "
     "as authentication of an electronic record by a subscriber using an "
     "electronic technique."
-)
-
-# Split the same text across two chunks -- proves multi-chunk ordering,
-# not just a single-shot stream.
-FINAL_ANSWER_CHUNKS = (
-    "Section 2(1)(ta) of the IT Act 2000 defines 'electronic signature' ",
-    "as authentication of an electronic record by a subscriber using an " "electronic technique.",
 )
 
 PII_MESSAGE = "What format does an Indian PAN number follow?"
@@ -144,6 +121,8 @@ async def test_stream_chat_completes_end_to_end_with_real_db_rows(
     e2e_client: AsyncClient,
     registered_user: dict,
     conversation_id: str,
+    statute_evidence: list[str],
+    hermetic_llm,
 ) -> None:
     """
     Normal stream-through-to-final: real HTTP, real streaming, then
@@ -165,22 +144,11 @@ async def test_stream_chat_completes_end_to_end_with_real_db_rows(
     async def fake_plan_generate(self, *, request):
         return _plan(message=CHAT_MESSAGE)
 
-    async def fake_stream_final_answer(self, *, request, context=()):
-        yield AgentStreamChunkDTO(content=FINAL_ANSWER_CHUNKS[0], is_final=False)
-        yield AgentStreamChunkDTO(
-            content=FINAL_ANSWER_CHUNKS[1],
-            is_final=True,
-            finish_reason="stop",
-        )
-
     request_start = datetime.now(UTC)
 
     async with AsyncExitStack() as patches:
         patches.enter_context(patch.object(LLMPlanGenerator, "generate", fake_plan_generate))
         patches.enter_context(patch.object(BaseAgent, "_reason", fake_reason))
-        patches.enter_context(
-            patch.object(BaseAgent, "stream_final_answer", fake_stream_final_answer)
-        )
 
         async with e2e_client.stream(
             "POST",
@@ -197,7 +165,7 @@ async def test_stream_chat_completes_end_to_end_with_real_db_rows(
     # SSE shape: events arrive in order, is_final only on the last one.
     # --------------------------------------------------------------
 
-    assert len(events) == 3, events
+    assert len(events) > 2, events
 
     for event_name, data in events[:-1]:
         assert event_name == "message"
@@ -207,11 +175,17 @@ async def test_stream_chat_completes_end_to_end_with_real_db_rows(
     assert final_event_name == "complete"
     assert final_data["is_final"] is True
 
-    assert [data["content"] for _, data in events[:2]] == list(FINAL_ANSWER_CHUNKS)
-    # Terminal chunk content is deliberately empty -- the full text
-    # already reached the client via the two chunks above (see
-    # AIOrchestrator.stream()'s docstring on why).
+    # S2: the streamed text is exactly the reviewed text, which is also
+    # what gets persisted below. Terminal chunk content is empty -- the
+    # full text already reached the client through the slices.
+    streamed_text = "".join(data["content"] for _, data in events[:-1])
+    assert streamed_text == FINAL_ANSWER
     assert final_data["content"] == ""
+
+    # A1: evidence was seeded by a real retriever call for the question,
+    # and the answer was judged grounded against it before streaming.
+    assert statute_evidence == [CHAT_MESSAGE]
+    assert hermetic_llm.groundedness_calls == 1
 
     # --------------------------------------------------------------
     # Real DB rows, matching chat()'s non-streaming shape exactly.
@@ -224,7 +198,7 @@ async def test_stream_chat_completes_end_to_end_with_real_db_rows(
 
     assistant_events = [e for e in conversation_events if e.role == MessageRoleEnum.ASSISTANT]
     assert len(assistant_events) == 1, conversation_events
-    assert assistant_events[0].content == FINAL_ANSWER
+    assert assistant_events[0].content == streamed_text
 
     async with session_factory() as session:
         compliance_rows = await ComplianceLogRepository(session=session).list_for_user(
@@ -267,6 +241,7 @@ async def test_stream_chat_redacts_pii_with_zero_raw_pii_reaching_the_client(
     e2e_client: AsyncClient,
     registered_user: dict,
     conversation_id: str,
+    statute_evidence: list[str],
 ) -> None:
     """
     The specific bug Phase 4's investigation found, now verified at
@@ -290,17 +265,9 @@ async def test_stream_chat_redacts_pii_with_zero_raw_pii_reaching_the_client(
     async def fake_plan_generate(self, *, request):
         return _plan(message=PII_MESSAGE)
 
-    async def fake_stream_final_answer(self, *, request, context=()):
-        # Same raw PII text the structured decision produced -- a
-        # realistic scenario where both generations surface it.
-        yield AgentStreamChunkDTO(content=RAW_PII_ANSWER, is_final=True, finish_reason="stop")
-
     async with AsyncExitStack() as patches:
         patches.enter_context(patch.object(LLMPlanGenerator, "generate", fake_plan_generate))
         patches.enter_context(patch.object(BaseAgent, "_reason", fake_reason))
-        patches.enter_context(
-            patch.object(BaseAgent, "stream_final_answer", fake_stream_final_answer)
-        )
 
         async with e2e_client.stream(
             "POST",
@@ -313,16 +280,15 @@ async def test_stream_chat_redacts_pii_with_zero_raw_pii_reaching_the_client(
 
     events = _sse_events(raw_body)
 
-    # REDACTED collapses to exactly one non-streamed terminal chunk --
-    # see AIOrchestrator.stream()'s docstring for why the buffered raw
-    # chunk must never be replayed here.
-    assert len(events) == 1, events
-
-    event_name, data = events[0]
+    # The redacted text is what streams; the terminal chunk is empty.
+    event_name, data = events[-1]
     assert event_name == "complete"
     assert data["is_final"] is True
-    assert "ABCDE1234F" not in data["content"]
-    assert "[REDACTED" in data["content"]
+    assert data["content"] == ""
+
+    streamed_text = "".join(data["content"] for _, data in events[:-1])
+    assert "ABCDE1234F" not in streamed_text
+    assert "[REDACTED" in streamed_text
 
     # Also check the raw response body directly, not just the parsed
     # event -- proves the PAN never appeared anywhere on the wire,
@@ -336,5 +302,4 @@ async def test_stream_chat_redacts_pii_with_zero_raw_pii_reaching_the_client(
 
     assistant_events = [e for e in conversation_events if e.role == MessageRoleEnum.ASSISTANT]
     assert len(assistant_events) == 1
-    assert "ABCDE1234F" not in assistant_events[0].content
-    assert "[REDACTED" in assistant_events[0].content
+    assert assistant_events[0].content == streamed_text

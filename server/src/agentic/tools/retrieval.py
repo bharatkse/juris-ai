@@ -22,6 +22,14 @@ from rag.hybrid_retriever import HybridRetriever
 
 log = get_logger(__name__)
 
+NO_RESULTS_CONTENT = "No relevant content found."
+RETRIEVAL_FAILED_CONTENT = "Retrieval failed — please try again."
+
+# Content execute() returns when it found nothing. It reaches the model as
+# a normal tool result, but it is not evidence an answer can be grounded
+# in (see AgentContinuationService's evidence seeding, A1).
+NON_EVIDENCE_CONTENT = frozenset({NO_RESULTS_CONTENT, RETRIEVAL_FAILED_CONTENT})
+
 
 class RetrieverTool(Tool):
     """
@@ -50,10 +58,10 @@ class RetrieverTool(Tool):
 
         except Exception:
             log.exception("Retrieval failed.")
-            return "Retrieval failed — please try again."
+            return RETRIEVAL_FAILED_CONTENT
 
         if not results:
-            return "No relevant content found."
+            return NO_RESULTS_CONTENT
 
         # title is only present on chunks ingested after bug #6's fix;
         # anything indexed before that falls back to source here --

@@ -30,15 +30,13 @@ graph node) — this file is the layer in between.
 | `AgentResponseMapper` | `aggregation/mapper.py` | `AgentExecutionNode`, per FINAL/NEED_INPUT step, to build the per-step `AgentResponseDTO` |
 | `ExecutionStateAssembler` | `state/assembler.py` | `ExecutionSession`, to build/read `ExecutionGraphState` |
 
-`Executor` exposes three methods, all delegating to a fresh
+`Executor` exposes two methods, both delegating to a fresh
 `ExecutionSession`:
 
-- `execute()` — normal, non-streaming run; returns one `ExecutionResultSchema`.
-- `execute_streaming()` — same graph, but yields `AgentStreamChunkDTO`
-  items as they're produced, then exactly one `ExecutionResultSchema`
-  as the final item. Only the plan's `FINAL` step ever streams (see
-  `graph/nodes.py::_stream_final_answer_if_reached`) — a multi-step
-  plan streams at most once, for whichever step reaches `FINAL`.
+- `execute()` — runs the plan; returns one `ExecutionResultSchema`.
+  Used by both `AIOrchestrator.handle()` and `stream()` (streaming
+  slices the reviewed answer in the orchestrator; nothing streams from
+  the graph).
 - `resume()` — resumes a LangGraph run paused mid-graph by a gated
   tool call (`email`/`slack`, via `interrupt()`). One exception to
   "Executor doesn't decide business rules": actually invoking the
@@ -54,17 +52,16 @@ graph node) — this file is the layer in between.
 
 ```mermaid
 flowchart TD
-    ORCH[AIOrchestrator] --> EXEC["Executor.execute() /<br/>execute_streaming() / resume()"]
+    ORCH[AIOrchestrator] --> EXEC["Executor.execute() /<br/>resume()"]
     EXEC --> SESSION["ExecutionSession<br/>(session.py, request-scoped)"]
     SESSION --> ASSEMBLE["ExecutionStateAssembler<br/>builds initial ExecutionGraphState"]
     SESSION --> FACTORY["ExecutionGraphFactory.create()<br/>(graph/factory.py)"]
     FACTORY --> BUILDER["ExecutionGraphBuilder.build()+compile()<br/>(graph/builder.py)<br/>topology = plan.steps[*].depends_on"]
     BUILDER --> GRAPH["Compiled LangGraph<br/>(Postgres checkpointer attached)"]
     GRAPH -->|per step, once dependencies COMPLETED| NODE["AgentExecutionNode.__call__()<br/>(graph/nodes.py)"]
-    NODE --> AEXEC["AgentExecution.start() -> .reason()<br/>(agents/runtime/execution.py)"]
+    NODE --> AEXEC["AgentExecution.start()<br/>-> AgentContinuationService.seed_evidence()<br/>-> handle.reason()<br/>(agents/runtime/execution.py)"]
     AEXEC --> CONT["AgentContinuationService.execute()<br/>(agents/runtime/continuation.py)<br/>handles TOOL_CALL loop + _gate_final"]
     CONT --> NODE
-    NODE -->|streaming session, FINAL step only| STREAMWRITER["get_stream_writer()<br/>chunks yielded to caller"]
     NODE -->|FINAL / NEED_INPUT| MAPPER["AgentResponseMapper.map()<br/>(aggregation/mapper.py)<br/>builds AgentResponseDTO incl. citations/sources"]
     MAPPER --> STATE["ExecutionGraphState<br/>memory_updates / execution_state_updates"]
     GRAPH -->|all steps resolved, or interrupt() for a gated tool| FINISH["ExecutionSession._finish()"]
@@ -117,7 +114,7 @@ return the update dicts `graph/nodes.py` builds):
   history — see `ExecutionGraphBuilder._latest_step_statuses()`,
   which resolves "latest" by walking this list in reverse rather than
   overwriting in place), `agent_decision_updates`, `memory_updates`,
-  `reasoning_context`, `conversation`, `context`, `streaming`.
+  `reasoning_context`, `conversation`, `context`.
 - **`ExecutionMemory`** (`schemas/memory.py`) — step results, retrieved
   content, entities, and other intermediate artifacts a later step's
   agent may read via `reasoning_context`.

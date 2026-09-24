@@ -16,7 +16,7 @@ LangGraph graph whose nodes drive `agents/runtime/`.
 | Method | Called by | What differs |
 |---|---|---|
 | `handle(request, action_workflow_service)` | `ChatService.chat()` | Non-streaming; returns one `OrchestratorResponse` |
-| `stream(request, action_workflow_service)` | `ChatService.stream_chat()` | Same lifecycle; `Executor.execute_streaming()`; all chunks buffered until the guardrail verdict, then replayed or replaced |
+| `stream(request, action_workflow_service)` | `ChatService.stream_chat()` | Same lifecycle and `Executor.execute()`; nothing is sent until the guardrail verdict, then the reviewed text is streamed in slices |
 | `resume(...)` | `HitlResumeService` after an approval decision | `Executor.resume()`; single guardrail pass, no regenerate loop |
 
 Schemas: `schemas/request.py` (`OrchestratorRequest`, `Attachment`),
@@ -72,12 +72,13 @@ replaced with the refusal; the request itself doesn't fail.
 
 ## `stream()` differences
 
-- Each attempt's `AgentStreamChunkDTO`s are **buffered**, never forwarded,
-  until the loop resolves, so a discarded attempt never reaches the client.
-- NONE/FLAGGED: buffered chunks are replayed, then one empty
-  `is_final=True` chunk carries the `OrchestratorResponse`.
-- REDACTED/BLOCKED: chunks are dropped and one `is_final=True` chunk
-  carries the redacted text or the refusal.
+- Nothing is sent until the regenerate loop resolves, so a discarded
+  attempt never reaches the client.
+- NONE/FLAGGED/REDACTED: the guardrail-reviewed text (redacted, for
+  REDACTED) is sent as whitespace-bounded slices, then one empty
+  `is_final=True` chunk carries the `OrchestratorResponse`. The streamed
+  text is exactly what was reviewed and what `ChatService` persists.
+- BLOCKED: one `is_final=True` chunk carries the refusal.
 
 ## Notes
 
