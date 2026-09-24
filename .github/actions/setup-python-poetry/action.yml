@@ -43,9 +43,11 @@ runs:
         path: |
           ${{ inputs.working-directory }}/.venv
           ~/.cache/pypoetry
-        key: venv-${{ runner.os }}-${{ inputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
+        # Groups are part of the key: jobs install different group sets
+        # (--only=dev vs --with=dev,eval) and must not share one venv.
+        key: venv-${{ runner.os }}-${{ inputs.python-version }}-${{ inputs.poetry-groups }}-${{ hashFiles('**/poetry.lock') }}
         restore-keys: |
-          venv-${{ runner.os }}-${{ inputs.python-version }}-
+          venv-${{ runner.os }}-${{ inputs.python-version }}-${{ inputs.poetry-groups }}-
 
     - name: Install dependencies
       shell: bash
@@ -54,5 +56,9 @@ runs:
         POETRY_VIRTUALENVS_CREATE: true
         POETRY_VIRTUALENVS_IN_PROJECT: true
       run: |
-        echo "Installing dependencies for poetry groups: ${{ inputs.poetry-groups }}"
-        poetry install ${{ inputs.poetry-groups }} --no-interaction
+        echo "Syncing dependencies for poetry groups: ${{ inputs.poetry-groups }}"
+        # sync, not install: the restore-keys fallback can restore a venv
+        # built from an older poetry.lock, and install never removes
+        # packages the lock has since dropped (stale types-redis stubs
+        # broke mypy this way). sync makes the venv match the lock exactly.
+        poetry sync ${{ inputs.poetry-groups }} --no-interaction
