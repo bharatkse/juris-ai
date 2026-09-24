@@ -638,7 +638,16 @@ iac-destroy: ## Destroy Terraform-managed infrastructure [PROVIDER=aws]
 .PHONY: test test-root test-unit test-integration test-smoke test-e2e \
         test-cov test-failed test-path test-watch
 
-PYTEST := $(POETRY) run pytest
+# Tests run on the host, but server/.env names Postgres and Redis by their
+# compose hostnames (DB_HOST=postgres, REDIS_HOST=redis), which only resolve
+# inside the compose network -- so smoke/e2e tests failed on the host with
+# "Temporary failure in name resolution". Both services publish their
+# ports to the host (docker/dependencies/docker-compose-{postgres,redis}.yml),
+# so tests reach them via TEST_SERVICES_HOST instead. Env vars override
+# .env; unit tests use SQLite and are unaffected. Override if your
+# services are elsewhere: make test-e2e TEST_SERVICES_HOST=<host>
+TEST_SERVICES_HOST ?= localhost
+PYTEST := DB_HOST=$(TEST_SERVICES_HOST) REDIS_HOST=$(TEST_SERVICES_HOST) $(POETRY) run pytest
 
 # Optional path/module selector
 TARGET ?=

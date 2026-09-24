@@ -8,7 +8,10 @@ genuinely external, non-deterministic, or costly boundaries a test
 would otherwise have no control over: live LLM "thinking" calls and
 an outbound MCP (Gmail/Slack) network call -- never the application's
 own routing, persistence, authorization, or HITL logic. See each
-test module's own docstring for what it mocks and why.
+test module's own docstring for what it mocks and why. No test reaches a
+real LLM provider: the autouse hermetic_llm fixture below stubs the
+output guardrail's judge and fails any test that makes another,
+unmocked LLM call.
 
 Run via `make test-e2e` (needs the real docker compose Postgres/Redis
 services up -- `./setup.sh --install --dependency postgres
@@ -18,13 +21,88 @@ services up -- `./setup.sh --install --dependency postgres
 from __future__ import annotations
 
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
+from dataclasses import dataclass, field
 
+import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
+from adapters.clients.llm.base import LLMClient
 from adapters.persistence.sqlalchemy.session import dispose_engine
+from agentic.guardrails.harmful_content import RESPONSE_TAG
+from core.dto.clients.llm import LLMRequestDTO, LLMResponseDTO
 from main import app as fastapi_app
+
+# The stubbed harmful-content judge's verdict: "not harmful", so a test's
+# (scripted) answer reaches the client exactly as the agent produced it.
+_NOT_HARMFUL_VERDICT = '{"harmful": false, "category": null, "reason": "e2e stub"}'
+
+
+@dataclass
+class LLMStub:
+    """
+    Handle to the hermetic_llm fixture. Set ``judge_error`` BEFORE the
+    app starts (i.e. request this fixture ahead of e2e_client) to make
+    every harmful-content judge call raise it instead.
+    """
+
+    judge_error: Exception | None = None
+    judge_calls: int = 0
+    unexpected_calls: list[str] = field(default_factory=list)
+
+
+@pytest.fixture(autouse=True)
+def hermetic_llm(monkeypatch: pytest.MonkeyPatch) -> Iterator[LLMStub]:
+    """
+    No e2e test reaches a real LLM provider.
+
+    Each test mocks the agent's own LLM calls (planning, reasoning, the
+    streamed answer). The one LLM call every chat response still made
+    was the output guardrail's harmful-content judge, which went to Groq
+    for real: these tests depended on a working provider and API key,
+    and when that call failed (bad key, rate limit, outage) the judge
+    correctly failed closed and turned every answer into the fixed
+    refusal -- a network problem reported as a broken product.
+
+    - The harmful-content judge the guardrail factory builds is replaced
+      by a stub returning "not harmful". It replaces the whole cached
+      judge callable, not just the provider call beneath it, so no stub
+      verdict is ever written to Redis (a shared dev Redis included).
+      HarmfulContentJudge's real prompt building, escaping and verdict
+      parsing still run on it.
+    - Any other LLMClient.generate() call (generate_structured() goes
+      through it too) is recorded and fails the test at teardown, so a
+      new unmocked LLM dependency shows up as exactly that instead of as
+      a refusal or a flaky network error.
+    """
+
+    stub = LLMStub()
+
+    def stub_build_llm_judge(**_kwargs):
+        async def judge(prompt: str) -> str:
+            stub.judge_calls += 1
+            assert f"<{RESPONSE_TAG}>" in prompt, "not a harmful-content judge prompt"
+            if stub.judge_error is not None:
+                raise stub.judge_error
+            return _NOT_HARMFUL_VERDICT
+
+        return judge
+
+    async def unexpected_generate(self: LLMClient, *, request: LLMRequestDTO) -> LLMResponseDTO:
+        prompt = request.messages[-1].content if request.messages else ""
+        stub.unexpected_calls.append(prompt[:200])
+        return LLMResponseDTO(content="", provider="e2e-stub", model="e2e-stub")
+
+    monkeypatch.setattr("wiring.factories.guardrails.build_llm_judge", stub_build_llm_judge)
+    monkeypatch.setattr(LLMClient, "generate", unexpected_generate)
+
+    yield stub
+
+    assert not stub.unexpected_calls, (
+        "Unmocked LLM call(s) in an e2e test (mock them in the test, like the "
+        f"planner/agent calls): {stub.unexpected_calls}"
+    )
 
 
 @pytest_asyncio.fixture
