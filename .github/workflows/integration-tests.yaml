@@ -1,0 +1,166 @@
+name: Integration Tests
+
+# Smoke + e2e suites (server/tests/smoke, server/tests/e2e) against real
+# Postgres (pgvector) and Redis, same shape as the local docker stack:
+# admin role owns the schema and runs migrations, a restricted app role
+# (created by the same SQL as docker/dependencies/init/postgres) is what the
+# app connects as. LLM and outbound MCP calls are mocked by the tests
+# themselves; the RAG smoke tests download the embedding/reranker models.
+#
+# Called from ci-server.yml on merges to develop only (too slow for every
+# PR push).
+
+on:
+  workflow_call:
+    inputs:
+      python-version:
+        required: true
+        type: string
+      working-directory:
+        required: false
+        type: string
+        default: server
+    secrets:
+      SECRET_KEY:
+        required: true
+      JWT_SECRET_KEY:
+        required: true
+      GROQ_API_KEY:
+        required: true
+
+defaults:
+  run:
+    shell: bash -eo pipefail {0}
+
+jobs:
+  integration-tests:
+    name: Smoke + E2E Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    permissions:
+      contents: read
+
+    services:
+      # Throwaway, job-scoped database; credentials never leave this runner.
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: juris_ai_user
+          POSTGRES_PASSWORD: juris_ai_password
+          POSTGRES_DB: juris_ai_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U juris_ai_user -d juris_ai_db"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    env:
+      ENVIRONMENT: development
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_USER: juris_ai_user
+      DB_PASSWORD: juris_ai_password
+      DB_NAME: juris_ai_db
+      APP_DB_USER: juris_ai_app
+      APP_DB_PASSWORD: juris_ai_app_password
+      REDIS_HOST: localhost
+      REDIS_PORT: 6379
+      SECRET_KEY: ${{ secrets.SECRET_KEY }}
+      JWT_SECRET_KEY: ${{ secrets.JWT_SECRET_KEY }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      SEARXNG_BASE_URL: "http://localhost"
+      RAGAS_DO_NOT_TRACK: "true"
+      # Same as the Makefile's `export PYTHONPATH`: migrations/env.py imports
+      # the app's packages from server/src.
+      PYTHONPATH: src
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Setup Python and Poetry
+        uses: ./.github/actions/setup-python-poetry
+        with:
+          python-version: ${{ inputs.python-version }}
+          working-directory: ${{ inputs.working-directory }}
+
+      # Same SQL as the local stack's first-boot hook (and `make
+      # db-setup-role`). Must run before migrations: it sets the default
+      # privileges that give the app role access to tables they create.
+      - name: Create restricted app role
+        env:
+          PGPASSWORD: ${{ env.DB_PASSWORD }}
+        run: |
+          # shellcheck source=/dev/null
+          source docker/dependencies/init/postgres/_create_app_role.lib
+          ADMIN_ROLE=$DB_USER create_app_role_sql |
+            psql -v ON_ERROR_STOP=1 -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME"
+
+      - name: Run database migrations
+        working-directory: ${{ inputs.working-directory }}
+        run: poetry run alembic upgrade head
+
+      - name: Cache Hugging Face models
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-models-${{ hashFiles('server/src/rag/embeddings.py', 'server/src/rag/reranker.py') }}
+          restore-keys: |
+            hf-models-
+
+      - name: Run smoke and e2e tests
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          poetry run pytest tests/smoke tests/e2e \
+            -p no:cacheprovider \
+            --junitxml=integration-results.xml \
+            --durations=15 \
+            -q
+
+      - name: Test summary
+        if: always()
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          python3 - <<'EOF' >> "$GITHUB_STEP_SUMMARY"
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          path = Path("integration-results.xml")
+          if not path.exists():
+              print("## Smoke + E2E\nNo results (the run failed before pytest finished).")
+              raise SystemExit
+          suite = ET.parse(path).getroot()
+          suite = suite if suite.tag == "testsuite" else suite.find("testsuite")
+          failed = [
+              f"{case.get('classname')}::{case.get('name')}"
+              for case in suite.iter("testcase")
+              if case.find("failure") is not None or case.find("error") is not None
+          ]
+          print("## Smoke + E2E")
+          print(f"{suite.get('tests')} tests, {suite.get('failures')} failed, "
+                f"{suite.get('errors')} errors, {suite.get('skipped')} skipped "
+                f"in {float(suite.get('time')):.0f}s")
+          for name in failed[:30]:
+              print(f"- `{name}`")
+          EOF
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-results
+          path: ${{ inputs.working-directory }}/integration-results.xml
+          if-no-files-found: ignore

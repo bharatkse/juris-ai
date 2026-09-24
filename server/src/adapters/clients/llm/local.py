@@ -1,0 +1,338 @@
+"""
+Local LLM client.
+
+Provides an LLMClient implementation for local LLM inference
+through Ollama.
+"""
+
+from __future__ import annotations
+
+from collections.abc import AsyncIterator
+from typing import Any
+
+from ollama import AsyncClient, ResponseError
+
+from adapters.clients.helper import map_exception
+from adapters.clients.llm.base import LLMClient
+from adapters.observability.logger import get_logger
+from core.dto.clients.llm import (
+    LLMMessageDTO,
+    LLMRequestDTO,
+    LLMResponseDTO,
+    LLMStreamChunkDTO,
+    LLMTokenUsageDTO,
+)
+from core.exceptions.client import (
+    ClientConnectionError,
+    ClientProviderError,
+    ClientTimeoutError,
+)
+
+log = get_logger(__name__)
+
+# Qwen3's native context window (per its published model config), used
+# for both models this client serves (qwen3:4b, qwen3:8b). Ollama's own
+# default num_ctx is 2048 regardless of what a model natively supports
+# -- explicitly requesting Qwen3's real window here is what makes that
+# window actually usable, rather than silently capping every request at
+# 2048. agentic/agents/prompts/token_budget.py's MODEL_CONTEXT_WINDOWS
+# imports this same constant so the two can never drift apart.
+QWEN3_NUM_CTX = 32_768
+
+
+class LocalLLMClient(LLMClient):
+    """
+    Local LLM implementation using Ollama.
+    """
+
+    def __init__(
+        self,
+        *,
+        base_url: str | None,
+        model: str,
+    ) -> None:
+        self._client = AsyncClient(
+            host=base_url,
+        )
+        self._model = model
+        self._think = False
+
+        log.info(
+            "Initialized local LLM client with Ollama. " "Base URL: '%s', model: '%s'.",
+            base_url,
+            model,
+        )
+
+    @property
+    def provider(
+        self,
+    ) -> str:
+        return "local"
+
+    @property
+    def model(
+        self,
+    ) -> str:
+        return self._model
+
+    async def _generate(
+        self,
+        *,
+        request: LLMRequestDTO,
+    ) -> LLMResponseDTO:
+        """
+        Generate a completion using the local LLM. Called by
+        LLMClient.generate(), which wraps this with call-duration/
+        token metrics -- see that method's docstring.
+        """
+
+        log.info(
+            "Generating completion using provider '%s', model '%s'.",
+            self.provider,
+            self.model,
+        )
+
+        inference = request.inference
+        model = inference.model or self._model
+
+        request_kwargs: dict[str, Any] = {
+            "model": model,
+            "messages": self._to_messages(
+                request.messages,
+            ),
+            "think": self._think,
+        }
+
+        options: dict[str, Any] = {
+            "temperature": inference.temperature,
+            "num_ctx": QWEN3_NUM_CTX,
+        }
+
+        if inference.top_p is not None:
+            options["top_p"] = inference.top_p
+
+        if inference.max_output_tokens is not None:
+            options["num_predict"] = inference.max_output_tokens
+
+        if options:
+            request_kwargs["options"] = options
+
+        if request.response_format is not None:
+            request_kwargs["format"] = self._to_response_format(
+                request.response_format,
+            )
+
+            log.debug(
+                "Using structured response format for provider '%s'.",
+                self.provider,
+            )
+
+        log.info(
+            "LLM request details.",
+            extra={
+                "response_format": request.response_format,
+                "message_count": len(request.messages),
+            },
+        )
+
+        try:
+            response = await self._client.chat(
+                **request_kwargs,
+            )
+
+        except Exception as exc:
+            log.exception(
+                "Failed to generate completion using provider '%s', model '%s'.",
+                self.provider,
+                self.model,
+            )
+
+            raise map_exception(
+                exc=exc,
+                mappings={
+                    ResponseError: lambda e: ClientProviderError(
+                        message=str(e),
+                    ),
+                    TimeoutError: lambda _: ClientTimeoutError(),
+                    ConnectionError: lambda _: ClientConnectionError(),
+                },
+                default=lambda e: ClientProviderError(
+                    message=str(e),
+                ),
+            ) from exc
+
+        content = response.message.content
+
+        if not content or not content.strip():
+            log.error(
+                "Provider '%s' returned an empty completion.",
+                self.provider,
+                extra={
+                    "model": self.model,
+                },
+            )
+
+            raise ClientProviderError(
+                message=(f"Provider '{self.provider}' " "returned an empty completion."),
+            )
+
+        log.info(
+            "Generated completion using provider '%s'.",
+            self.provider,
+        )
+
+        return LLMResponseDTO(
+            content=content,
+            provider=self.provider,
+            model=model,
+            finish_reason=None,
+            usage=(
+                LLMTokenUsageDTO(
+                    prompt_tokens=response.prompt_eval_count or 0,
+                    completion_tokens=response.eval_count or 0,
+                    total_tokens=((response.prompt_eval_count or 0) + (response.eval_count or 0)),
+                )
+                if (response.prompt_eval_count is not None or response.eval_count is not None)
+                else None
+            ),
+            metadata={
+                "done_reason": response.done_reason,
+            },
+        )
+
+    async def stream(
+        self,
+        *,
+        request: LLMRequestDTO,
+    ) -> AsyncIterator[LLMStreamChunkDTO]:
+        """
+        Stream a completion using the local LLM.
+        """
+
+        log.info(
+            "Starting streamed completion using provider '%s', model '%s'.",
+            self.provider,
+            self.model,
+        )
+
+        inference = request.inference
+        model = inference.model or self._model
+
+        request_kwargs: dict[str, Any] = {
+            "model": model,
+            "messages": self._to_messages(
+                request.messages,
+            ),
+            "stream": True,
+            "think": self._think,
+        }
+
+        options: dict[str, Any] = {
+            "temperature": inference.temperature,
+            "num_ctx": QWEN3_NUM_CTX,
+        }
+
+        if inference.top_p is not None:
+            options["top_p"] = inference.top_p
+
+        if inference.max_output_tokens is not None:
+            options["num_predict"] = inference.max_output_tokens
+
+        if options:
+            request_kwargs["options"] = options
+
+        if request.response_format is not None:
+            request_kwargs["format"] = self._to_response_format(
+                request.response_format,
+            )
+
+        try:
+            stream = await self._client.chat(
+                **request_kwargs,
+            )
+
+            async for chunk in stream:
+                content = chunk.message.content or ""
+
+                done = bool(chunk.done)
+
+                if done:
+                    log.info(
+                        "Completed streamed response using provider '%s'.",
+                        self.provider,
+                    )
+
+                yield LLMStreamChunkDTO(
+                    content=content,
+                    is_final=done,
+                    finish_reason=chunk.done_reason if done else None,
+                )
+
+        except Exception as exc:
+            log.exception(
+                "Failed to stream completion using provider '%s', model '%s'.",
+                self.provider,
+                self.model,
+            )
+
+            raise map_exception(
+                exc=exc,
+                mappings={
+                    ResponseError: lambda e: ClientProviderError(
+                        message=str(e),
+                    ),
+                    TimeoutError: lambda _: ClientTimeoutError(),
+                    ConnectionError: lambda _: ClientConnectionError(),
+                },
+                default=lambda e: ClientProviderError(
+                    message=str(e),
+                ),
+            ) from exc
+
+    @staticmethod
+    def _to_messages(
+        messages: tuple[
+            LLMMessageDTO,
+            ...,
+        ],
+    ) -> list[dict[str, str]]:
+        """
+        Convert provider-independent messages into
+        the Ollama message format.
+        """
+
+        return [
+            {
+                "role": message.role.value,
+                "content": message.content,
+            }
+            for message in messages
+        ]
+
+    @staticmethod
+    def _to_response_format(
+        response_format: dict[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Convert the provider-independent response format into
+        Ollama's expected format.
+
+        Ollama accepts a JSON schema directly for structured output,
+        whereas the generic LLM request uses the OpenAI-style
+        json_schema wrapper.
+        """
+
+        if response_format.get("type") != "json_schema":
+            return response_format
+
+        json_schema = response_format.get("json_schema")
+
+        if not isinstance(json_schema, dict):
+            return response_format
+
+        schema = json_schema.get("schema")
+
+        if not isinstance(schema, dict):
+            return response_format
+
+        return schema

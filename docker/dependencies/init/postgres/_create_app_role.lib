@@ -1,0 +1,114 @@
+# Shared by:
+#   - deploy/docker/init/postgres/01-create-app-role.sh
+#     (docker-entrypoint-initdb.d hook -- fresh volumes only)
+#   - scripts/bash/setup_app_role.sh
+#     (developer-run, idempotent -- existing volumes/containers)
+#
+# Single source of truth for the actual role-creation SQL, so those
+# two invocation paths cannot drift into two different versions of
+# the same logic. Deliberately NOT named *.sh: Postgres's own
+# docker-entrypoint.sh runs every *.sh/*.sql* file it finds in
+# /docker-entrypoint-initdb.d/ as its own top-level init step and
+# silently ignores anything else -- this file must be sourced, never
+# picked up and executed standalone by that loop.
+#
+# Idempotent: safe to run against a database that already has the
+# role and/or already has tables -- see create_app_role_sql()'s own
+# comments for why each statement is safe to repeat.
+
+create_app_role_sql() {
+    # Emits SQL to stdout. Expects ADMIN_ROLE, DB_NAME, APP_DB_USER,
+    # APP_DB_PASSWORD as already-set shell variables in the caller's
+    # environment; substitutes them via plain bash heredoc expansion
+    # (NOT psql's :'var' substitution -- confirmed empirically that
+    # psql does not interpolate :'var' inside a dollar-quoted DO $$
+    # ... $$ block, so bash substitution, done once before any SQL
+    # syntax is even parsed, is what actually works here for the
+    # CREATE ROLE branch below).
+    #
+    # Caveat, stated rather than hidden: a value containing a single
+    # quote breaks the string literals built this way (the same
+    # trade-off scripts/python/verify_compliance_log_privileges.py's
+    # scratch password generation already accepts) -- fine for an
+    # operator-chosen local dev password, not something this function
+    # tries to escape for.
+    cat <<-EOSQL
+DO
+\$\$
+BEGIN
+    IF NOT EXISTS (
+        SELECT FROM pg_catalog.pg_roles WHERE rolname = '${APP_DB_USER}'
+    ) THEN
+        CREATE ROLE "${APP_DB_USER}"
+            LOGIN
+            NOSUPERUSER
+            NOCREATEDB
+            NOCREATEROLE
+            PASSWORD '${APP_DB_PASSWORD}';
+    ELSE
+        -- Role already exists (the exact gap this script exists to
+        -- close: an existing volume/container never runs the
+        -- docker-entrypoint-initdb.d hook). Sync the password to
+        -- whatever .env currently says rather than silently no-op --
+        -- an idempotent re-run should converge state, not just avoid
+        -- erroring.
+        ALTER ROLE "${APP_DB_USER}" WITH PASSWORD '${APP_DB_PASSWORD}';
+    END IF;
+END
+\$\$;
+
+GRANT CONNECT ON DATABASE "${DB_NAME}" TO "${APP_DB_USER}";
+GRANT USAGE ON SCHEMA public TO "${APP_DB_USER}";
+
+-- Retroactive grant for tables that already exist. ALTER DEFAULT
+-- PRIVILEGES below only ever applies to tables created AFTER it
+-- runs -- on an existing volume/database (tables already created by
+-- earlier migrations, before APP_DB_USER existed at all), that alone
+-- would leave every existing table inaccessible. A plain GRANT is
+-- naturally idempotent -- re-running it changes nothing if the
+-- privilege is already held.
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO "${APP_DB_USER}";
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO "${APP_DB_USER}";
+
+-- Standing convention -- see "Migration conventions" in claude.md:
+-- every future CREATE TABLE run by the admin role in schema public
+-- automatically grants APP_DB_USER the same baseline DML access, no
+-- explicit GRANT needed per migration. Re-running ALTER DEFAULT
+-- PRIVILEGES with the same arguments is itself idempotent (it
+-- replaces the prior default-privilege entry for this role/schema,
+-- not additive).
+ALTER DEFAULT PRIVILEGES FOR ROLE "${ADMIN_ROLE}" IN SCHEMA public
+    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO "${APP_DB_USER}";
+ALTER DEFAULT PRIVILEGES FOR ROLE "${ADMIN_ROLE}" IN SCHEMA public
+    GRANT USAGE, SELECT ON SEQUENCES TO "${APP_DB_USER}";
+
+-- Re-assert table-specific restrictions that a real migration applies
+-- on top of the baseline above (currently just compliance_log's
+-- REVOKE UPDATE, DELETE -- see
+-- dd110a14caf1_restrict_compliance_log_to_insert_.py). Found the hard
+-- way while building this idempotent script: the blanket "GRANT ...
+-- ON ALL TABLES" above is necessarily broad (it has to catch up every
+-- existing table on an old volume), and re-running it on a database
+-- that already has compliance_log silently re-grants UPDATE/DELETE
+-- there, undoing that migration's REVOKE every time this script runs.
+-- IF EXISTS-guarded: compliance_log doesn't exist yet the first time
+-- this runs via the docker-entrypoint-initdb.d hook (fresh volume,
+-- no migrations applied yet), so this must not error in that case.
+-- If a future migration adds another such per-table restriction on
+-- top of the baseline, add it here too, or the same regression will
+-- silently reappear for that table too.
+DO
+\$\$
+BEGIN
+    IF EXISTS (
+        SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'compliance_log'
+    ) THEN
+        EXECUTE format(
+            'REVOKE UPDATE, DELETE ON compliance_log FROM %I',
+            '${APP_DB_USER}'
+        );
+    END IF;
+END
+\$\$;
+EOSQL
+}

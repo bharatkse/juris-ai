@@ -1,0 +1,44 @@
+use_default_settings: true
+
+general:
+  instance_name: "juris-ai-search"
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  default_lang: "en"
+  # JSON output must be explicitly enabled — disabled by default
+  formats:
+    - html
+    - json
+
+server:
+  secret_key: "CHANGE_ME_IN_ENV_OR_SECRETS_MANAGER"
+  limiter: false   # internal-only instance behind your own network; if
+                   # ever exposed beyond the juris_ai_network, turn this
+                   # back on and add rate limiting.
+
+# Disable every engine by default, then explicitly enable only the
+# three requested. Keeps the result set predictable and avoids
+# surprise engines (some require API keys / break silently).
+engines:
+  - name: google
+    engine: google
+    disabled: false
+
+  - name: bing
+    engine: bing
+    disabled: false
+
+  - name: yahoo
+    engine: yahoo
+    disabled: false
+
+  # Everything else SearXNG ships with by default is implicitly
+  # disabled via use_default_settings + the explicit list above only
+  # if you also set `disabled: true` on defaults you don't want.
+  # SearXNG's actual behavior: engines not listed here still inherit
+  # their default enabled state. To be strict, add explicit
+  # `disabled: true` entries for any default-enabled engine you don't
+  # want (duckduckgo, brave, etc.) — verify against the shipped
+  # settings.yml for your SearXNG version and add as needed.

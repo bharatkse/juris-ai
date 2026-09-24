@@ -1,0 +1,59 @@
+"""
+Runtime dependency containers.
+
+Defines immutable containers used by the runtime composition root to
+group shared dependencies during application startup.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from adapters.cache.base import AbstractCache
+    from adapters.clients.mcp.registry import MCPServerRegistry
+    from adapters.clients.resolver import LLMResolver
+    from adapters.clients.search_engine.searxng import SearxngClient
+    from agentic.execution.executor import Executor
+    from agentic.execution.validation.response import ResponseValidator
+    from agentic.planning.planner import ExecutionPlanner
+    from agentic.registry.protocols import AgentRegistryProtocol, ToolRegistryProtocol
+    from agentic.tools.search_engine.content_fetch import ContentFetcher
+    from application.authorization.service import AuthorizationService
+    from rag.hybrid_retriever import HybridRetriever
+    from rag.protocols.embedding_provider import EmbeddingProviderProtocol
+
+
+@dataclass(frozen=True, slots=True)
+class ClientContainer:
+    llm_resolver: LLMResolver
+    mcp_registry: MCPServerRegistry
+    searxng_client: SearxngClient
+    content_fetcher: ContentFetcher
+    # Built once at startup (factories/rag.py) — holds the loaded
+    # embedding + reranker models. Never reconstruct this per-request.
+    hybrid_retriever: HybridRetriever
+    # Same underlying instance as hybrid_retriever's — exposed directly
+    # for consumers (e.g. the agentic answer evaluator) that need raw
+    # text similarity rather than retrieval.
+    embedding_provider: EmbeddingProviderProtocol
+    # Shared LLM-judge/embedding memoization cache (wiring/factories/
+    # cache.py) — one instance for the whole process, threaded into
+    # build_rag_pipeline() (already applied to embedding_provider
+    # above) and build_faithfulness_backend() (factories/executor.py).
+    cache: AbstractCache
+
+
+@dataclass(frozen=True, slots=True)
+class RegistryContainer:
+    agent_registry: AgentRegistryProtocol
+    tool_registry: ToolRegistryProtocol
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeContainer:
+    planner: ExecutionPlanner
+    executor: Executor
+    validator: ResponseValidator
+    authorization: AuthorizationService

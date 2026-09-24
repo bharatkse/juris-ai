@@ -1,0 +1,292 @@
+"""
+RAG index persistence application service.
+
+Coordinates persistence of RAG chunks and their embedding
+representations.
+
+Flow:
+
+    RAG Chunk + Embedding
+        ↓
+    RAGIndexPersistenceService
+        ↓
+    ┌──────────────────────────────┬──────────────────────────────┐
+    ↓                              ↓
+KnowledgeChunkRepository    KnowledgeEmbeddingRepository
+    ↓                              ↓
+KnowledgeChunk              KnowledgeEmbedding
+
+This service owns the application-level persistence orchestration
+and transaction boundary.
+
+It does NOT:
+    - parse documents
+    - ingest documents
+    - sanitize content
+    - chunk text
+    - generate embeddings
+    - perform retrieval
+    - perform reranking
+    - call an LLM
+    - contain SQL queries
+    - construct SQLAlchemy queries
+"""
+
+from __future__ import annotations
+
+import hashlib
+from pathlib import PurePosixPath
+
+from adapters.observability.logger import get_logger
+from adapters.persistence.sqlalchemy.models.knowledge_sources import KnowledgeSource
+from adapters.persistence.sqlalchemy.repositories.knowledge_chunk import (
+    KnowledgeChunkRepository,
+)
+from adapters.persistence.sqlalchemy.repositories.knowledge_embedding import (
+    KnowledgeEmbeddingRepository,
+)
+from adapters.persistence.sqlalchemy.repositories.knowledge_sources import (
+    KnowledgeSourceRepository,
+)
+from adapters.persistence.sqlalchemy.session import session_factory
+from core.enums import KnowledgeSourceEnum, KnowledgeStatusEnum
+from core.exceptions.rag import RAGError
+from rag.models import Chunk
+from rag.protocols.index_persistence import RAGIndexPersistenceProtocol
+
+logger = get_logger(__name__)
+
+
+class RAGIndexPersistenceService(RAGIndexPersistenceProtocol):
+    """
+    Application service coordinating persistence of RAG index data.
+
+    Textual chunks and their embeddings are persisted within the same
+    database transaction.
+
+    The service does not contain SQLAlchemy queries. Persistence
+    details remain inside repository implementations.
+    """
+
+    def __init__(self) -> None:
+        """Initialize the RAG index persistence service."""
+
+        self._session_factory = session_factory
+
+    async def persist(
+        self,
+        *,
+        chunks: list[Chunk],
+        vectors: list[list[float]],
+        embedding_model: str,
+        embedding_dimension: int,
+    ) -> None:
+        """
+        Persist a bounded batch of RAG chunks and embeddings.
+
+        The vectors must correspond to the chunks in the same order.
+
+        Both chunks and embeddings are persisted within one transaction.
+
+        Args:
+            chunks:
+                RAG-domain chunks to persist.
+
+            vectors:
+                Embedding vectors corresponding to ``chunks``.
+
+            embedding_model:
+                Model used to generate the vectors.
+
+            embedding_dimension:
+                Expected dimension of every vector.
+
+        Raises:
+            RAGError:
+                If validation or persistence fails.
+        """
+
+        if not chunks:
+            return
+
+        self._validate_input(
+            chunks=chunks,
+            vectors=vectors,
+            embedding_model=embedding_model,
+            embedding_dimension=embedding_dimension,
+        )
+
+        try:
+            async with self._session_factory() as session:
+                chunk_repository = KnowledgeChunkRepository(
+                    session=session,
+                )
+
+                embedding_repository = KnowledgeEmbeddingRepository(
+                    session=session,
+                )
+
+                source_repository = KnowledgeSourceRepository(
+                    session=session,
+                )
+
+                knowledge_source_id = self._knowledge_source_id(
+                    chunks[0].metadata.get("knowledge_source_id"),
+                )
+
+                if knowledge_source_id is None:
+                    raise RAGError(
+                        message="Knowledge source identity must not be empty.",
+                    )
+
+                knowledge_source = await source_repository.get_by_id(
+                    knowledge_source_id=knowledge_source_id,
+                )
+
+                if knowledge_source is None:
+                    # chunk.source (a human-readable label, e.g. a bare
+                    # filename) is not guaranteed to be a full path any
+                    # more -- it "can be anything" by design. Falling
+                    # back to the ksrc_ identity keeps storage_path
+                    # non-empty even when source is absent.
+                    source_location = chunks[0].source or knowledge_source_id
+                    filename = PurePosixPath(source_location).name[:255]
+                    knowledge_source = await source_repository.create(
+                        KnowledgeSource(
+                            id=knowledge_source_id,
+                            source_type=KnowledgeSourceEnum.FILE,
+                            original_filename=filename or None,
+                            filename=filename or None,
+                            mime_type=chunks[0].metadata.get("mime_type"),
+                            storage_path=source_location,
+                            status=KnowledgeStatusEnum.READY,
+                        ),
+                    )
+
+                for chunk, vector in zip(
+                    chunks,
+                    vectors,
+                    strict=True,
+                ):
+                    persisted_chunk = await chunk_repository.get_by_id(
+                        chunk_id=chunk.id,
+                    )
+
+                    chunk_metadata = {
+                        **chunk.metadata,
+                        "knowledge_source_id": knowledge_source_id,
+                    }
+
+                    if persisted_chunk is None:
+                        await chunk_repository.create(
+                            chunk_id=chunk.id,
+                            knowledge_source_id=knowledge_source_id,
+                            text=chunk.text,
+                            chunk_metadata=chunk_metadata,
+                        )
+                    else:
+                        persisted_chunk.knowledge_source_id = knowledge_source_id
+
+                        await chunk_repository.update(
+                            chunk=persisted_chunk,
+                            text=chunk.text,
+                            chunk_metadata=chunk_metadata,
+                        )
+
+                    await embedding_repository.upsert(
+                        chunk_id=chunk.id,
+                        embedding_model=embedding_model,
+                        vector=vector,
+                    )
+
+                await session.commit()
+
+        except RAGError:
+            logger.exception(
+                "RAG index persistence failed.",
+                extra={
+                    "chunk_count": len(chunks),
+                    "embedding_model": embedding_model,
+                    "embedding_dimension": embedding_dimension,
+                },
+            )
+            raise
+
+        except Exception as exc:
+            logger.exception(
+                "Unexpected RAG index persistence failure.",
+                extra={
+                    "chunk_count": len(chunks),
+                    "embedding_model": embedding_model,
+                    "embedding_dimension": embedding_dimension,
+                },
+            )
+
+            raise RAGError(
+                message="Failed to persist RAG index representations.",
+            ) from exc
+
+        logger.debug(
+            "RAG index persistence completed.",
+            extra={
+                "chunk_count": len(chunks),
+                "embedding_model": embedding_model,
+                "embedding_dimension": embedding_dimension,
+            },
+        )
+
+    @staticmethod
+    def _validate_input(
+        *,
+        chunks: list[Chunk],
+        vectors: list[list[float]],
+        embedding_model: str,
+        embedding_dimension: int,
+    ) -> None:
+        """Validate persistence input before opening a database transaction."""
+
+        if len(chunks) != len(vectors):
+            raise RAGError(
+                message=(
+                    "Vector count does not match chunk count: "
+                    f"chunks={len(chunks)}, vectors={len(vectors)}."
+                ),
+            )
+
+        if not embedding_model.strip():
+            raise RAGError(
+                message="Embedding model must not be empty.",
+            )
+
+        if embedding_dimension <= 0:
+            raise RAGError(
+                message="Embedding dimension must be greater than zero.",
+            )
+
+        for index, vector in enumerate(vectors):
+            if len(vector) != embedding_dimension:
+                raise RAGError(
+                    message=(
+                        "Embedding dimension mismatch at index "
+                        f"{index}: expected {embedding_dimension}, "
+                        f"received {len(vector)}."
+                    ),
+                )
+
+    @staticmethod
+    def _knowledge_source_id(source_id: str | None) -> str | None:
+        """
+        Return a deterministic KnowledgeSource ID for a source identity.
+        """
+
+        if not source_id:
+            return None
+
+        if source_id.startswith("ksrc_") and len(source_id) <= 64:
+            return source_id
+
+        digest = hashlib.sha256(
+            source_id.encode("utf-8"),
+        ).hexdigest()
+
+        return f"ksrc_{digest[:59]}"

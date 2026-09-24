@@ -11,7 +11,7 @@ repos:
       - id: check-json
       - id: check-toml
       - id: check-yaml
-        exclude: ^infrastructure/cf_templates/
+        exclude: ^iac/cloud/
       - id: detect-private-key
 
 
@@ -24,7 +24,7 @@ repos:
       # Lint only (CI / pre-push friendly)
       - id: ruff
         name: Ruff Lint
-        exclude: ^(\.aws-sam|localstack-data)/
+        exclude: ^server/\.aws-sam/
 
       # Strict lint on push / CI
       - id: ruff
@@ -37,19 +37,19 @@ repos:
         name: Ruff Lint (Fix)
         args: [--fix]
         stages: [pre-commit]
-        exclude: ^(\.aws-sam|localstack-data)/
+        exclude: ^server/\.aws-sam/
 
       # Format check
       - id: ruff-format
         name: Ruff Format
         args: [--check]
-        exclude: ^(\.aws-sam|localstack-data)/
+        exclude: ^server/\.aws-sam/
 
       # Format autofix (commit only)
       - id: ruff-format
         name: Ruff Format (Fix)
         stages: [pre-commit]
-        exclude: ^(\.aws-sam|localstack-data)/
+        exclude: ^server/\.aws-sam/
 
   # ----------------------------------------
   # mypy: static typing
@@ -59,7 +59,7 @@ repos:
     hooks:
       - id: mypy
         stages: [pre-push]
-        exclude: ^(\.aws-sam|localstack-data)/
+        exclude: ^server/\.aws-sam/
         additional_dependencies:
           - types-requests
           - types-redis
@@ -75,7 +75,7 @@ repos:
           - --write-changes
           - --check-filenames
           - --check-hidden
-          - --skip=*.lock,*.svg,*.png,*.jpg,*.jpeg,node_modules,.venv,dist,build,.aws-sam,localstack-data
+          - --skip=*.lock,*.svg,*.png,*.jpg,*.jpeg,node_modules,.venv,dist,build,.aws-sam
 
   # ----------------------------------------
   # CloudFormation / SAM linting
@@ -85,7 +85,7 @@ repos:
     rev: v1.43.3
     hooks:
       - id: cfn-lint
-        files: ^infrastructure/cf_templates/.*\.ya?ml$
+        files: ^iac/cloud/.*\.ya?ml$
 
   # ----------------------------------------
   # OpenAPI / YAML linting

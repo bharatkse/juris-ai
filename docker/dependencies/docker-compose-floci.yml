@@ -1,0 +1,96 @@
+# Compose project name lives here so setup.sh, the Makefile and a bare
+# `docker compose up` all resolve to the same project.
+name: juris-ai-floci
+
+services:
+
+  # -----------------------------------------------------
+  # Floci — simulates AWS services (no RDS)
+  # RDS removed from SERVICES; DB handled by postgres above
+  #
+  # Known rough edge: an in-place `sam deploy` param update (e.g.
+  # changing LocalFastApiUrl) can hit UPDATE_ROLLBACK_FAILED on
+  # unrelated resources due to a Floci/CloudFormation same-name
+  # conflict. If a deploy update fails this way, run
+  # `sam delete --stack-name <name>` and redeploy fresh rather than
+  # retrying the update. See claude.md's Known gaps for detail.
+  # -----------------------------------------------------
+  floci:
+    image: floci/floci:latest
+    container_name: juris_ai_floci
+    restart: unless-stopped
+
+    env_file:
+      - ../../server/.env
+
+    ports:
+      - "4566:4566"
+      - "4510-4559:4510-4559"
+
+    environment:
+      PERSISTENCE: "1"
+      # LOCALSTACK_VOLUME_DIR has no Floci equivalent. Do NOT set
+      # FLOCI_STORAGE_PERSISTENT_PATH to redirect this -- Floci's
+      # entrypoint (docker-entrypoint.sh) auto-chowns its default
+      # path, /app/data, to the non-root `floci` user (uid 1001) on
+      # every start, self-healing a root-owned host bind-mount.
+      # That self-heal is hardcoded to /app/data only; overriding the
+      # persistent path to somewhere else (e.g. /var/lib/localstack)
+      # skips it and the container refuses to start if the host
+      # directory isn't already writable by uid 1001. Mounting the
+      # volume straight at /app/data below keeps the self-heal intact.
+
+      # --------------------
+      # AWS SDK visibility
+      # Visible to Lambda containers
+      # --------------------
+      AWS_ENDPOINT_URL: http://floci:4566
+      AWS_REGION: us-east-1
+      AWS_DEFAULT_REGION: us-east-1
+
+      # --------------------
+      # Seed DB connection string (consumed by nothing today -- init/localstack/ is empty)
+      # --------------------
+      DB_USER: ${DB_USER:-juris}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
+      DB_NAME: ${DB_NAME:-jurisai}
+      DB_HOST: postgres
+      DB_PORT: 5432
+
+    volumes:
+      - ./.volumes/floci:/app/data
+      # Initialization scripts — source controlled
+      - ./init/localstack:/etc/localstack/init/ready.d:ro
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-f",
+          "http://localhost:4566/_localstack/health"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+    networks:
+      - juris_ai_network
+
+    deploy:
+      resources:
+        limits:
+          cpus: "2.5"
+          memory: 2.5G
+        reservations:
+          cpus: "1.5"
+          memory: 1.5G
+
+
+# ============================================================================
+# External Network
+# ============================================================================
+networks:
+  juris_ai_network:
+    external: true

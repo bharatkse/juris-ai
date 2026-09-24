@@ -1,17 +1,28 @@
 # ============================================================================
 # Juris AI - Local Development Makefile
 #
+# Lives at the repo root, next to ./setup.sh, because it drives paths outside
+# server/ (docker/, iac/). Run `make` from the repo root. Python-side tooling
+# (poetry, alembic, pytest, ruff, sam, server/scripts) runs inside server/ via
+# the IN_SERVER prefix below.
+#
 # Purpose:
-#   - Manage local development using LocalStack, Docker, SAM, and Poetry
+#   - Manage local development using Floci, Docker, SAM, and Poetry
 #   - Provide developer-friendly commands for setup, testing, deployment
 #   - Keep workflows CI-friendly and reproducible
 #
 # Philosophy:
-#   - Makefile is the single entry point
+#   - Makefile is the entry point for build/test/quality/migrations/IaC
+#   - Stack lifecycle (install/start/stop/reinstall/cleanup/uninstall of the
+#     server, dependencies, observability and development stacks) is owned by
+#     ./setup.sh -- this Makefile only builds, tests, migrates, deploys and
+#     inspects the running stack
+#   - Size/split policy: see CONTRIBUTING.md ("Splitting large scripts")
 #   - Intent-based commands instead of raw CLI usage
 #   - Safe defaults with override-friendly variables
-#   - Auto-detects dev vs snd based on LocalStack health
-#   - Application and observability use the same Docker Compose project
+#   - Auto-detects dev vs snd based on Floci health
+#   - Every Docker stack is its own Compose project; the project name is the
+#     top-level `name:` in each docker/**/docker-compose*.yml
 # ============================================================================
 
 SHELL := /bin/bash
@@ -28,22 +39,48 @@ RED    := $(shell tput -Txterm setaf 1)
 BOLD   := $(shell tput bold)
 RESET  := $(shell tput -Txterm sgr0)
 
+# -------------------------------------------------
+# Project
+# -------------------------------------------------
+
+PROJECT_ROOT := $(CURDIR)
+SERVER_DIR   := $(PROJECT_ROOT)/server
+
+# Prefix for every recipe line that must run with server/ as its working
+# directory (poetry, alembic, pytest, ruff, mypy, sam, server/scripts).
+IN_SERVER := cd $(SERVER_DIR) &&
+
+PYTHONPATH := $(SERVER_DIR)/src
+
+export PYTHONPATH
+
+# ragas (imported transitively wherever rag.evaluation.faithfulness_backend
+# is, regardless of which backend is selected) starts a background
+# analytics thread + atexit network flush unless told not to -- this is
+# ragas' own sanctioned opt-out (see ragas/_analytics.py). conftest.py
+# sets this too (for non-Make pytest invocations); this covers every
+# other target here (scripts/, etc.) that isn't routed through pytest.
+RAGAS_DO_NOT_TRACK := true
+
+export RAGAS_DO_NOT_TRACK
+
+
 # ============================================================================
 # Environment Detection
 #
-# LocalStack running  -> MODE=dev
-# LocalStack not found -> MODE=snd
+# Floci running  -> MODE=dev
+# Floci not found -> MODE=snd
 #
 # Override:
 #   make <target> MODE=dev
 #   make <target> MODE=snd
 # ============================================================================
-LOCALSTACK_HEALTH_URL := http://localhost:4566/_localstack/health
+FLOCI_HEALTH_URL := http://localhost:4566/_localstack/health
 
-_LOCALSTACK_UP := $(shell curl -sf --max-time 2 $(LOCALSTACK_HEALTH_URL) > /dev/null 2>&1 && echo "yes" || echo "no")
+_FLOCI_UP := $(shell curl -sf --max-time 2 $(FLOCI_HEALTH_URL) > /dev/null 2>&1 && echo "yes" || echo "no")
 
 ifndef MODE
-  ifeq ($(_LOCALSTACK_UP),yes)
+  ifeq ($(_FLOCI_UP),yes)
     MODE := dev
   else
     MODE := snd
@@ -51,22 +88,22 @@ ifndef MODE
 endif
 
 # ============================================================================
-# Compose File Selection
+# Terraform / IaC provider selection
 #
-# dev:
-#   FILES=main  -> application only
-#   FILES=both  -> application + LocalStack
-#   FILES=local -> LocalStack only
-#
-# snd:
-#   main application compose
+# Only PROVIDER=aws has a real implementation today -- see
+# iac/terraform/modules/*/gcp|azure/README.md for the not-yet-built
+# contracts. Passing PROVIDER=gcp fails fast with a clear message via
+# the provider_name variable's own validation block, not a Makefile
+# guard, so the error is the same whether Terraform is invoked
+# through make or directly.
 # ============================================================================
-ifndef FILES
-  ifeq ($(MODE),dev)
-    FILES := both
-  else
-    FILES := main
-  endif
+PROVIDER ?= aws
+TF_DIR   := iac/terraform
+
+ifeq ($(MODE),dev)
+  TFVARS := dev.floci.tfvars
+else
+  TFVARS := prod.$(PROVIDER).tfvars
 endif
 
 # ============================================================================
@@ -80,8 +117,9 @@ API_NAME := juris-ai-api-snd
 AWS_REGION := us-east-1
 ENDPOINT   := http://localhost:4566
 
-MAIN_TEMPLATE  := infrastructure/cf_templates/template.yaml
-ECS_TEMPLATE   := infrastructure/cf_templates/ecs-template.yaml
+MAIN_TEMPLATE  := iac/cloud/template.yaml
+ECS_TEMPLATE   := iac/cloud/ecs-template.yaml
+# Relative to server/, where `sam build` / `sam deploy` run (see IN_SERVER).
 BUILD_TEMPLATE := .aws-sam/build/template.yaml
 
 POETRY  := poetry
@@ -95,54 +133,19 @@ STACK_DEPLOY := main
 # ============================================================================
 # Docker Configuration
 # ============================================================================
-DOCKER_PROJECT_NAME := juris-ai
+# Project names come from `name:` in each compose file (single source of truth,
+# shared with ./setup.sh); do not pass --project-name here.
+DOCKER_COMPOSE := docker compose --env-file server/.env
 
-DOCKER_COMPOSE := docker compose \
-	--env-file .env \
-	-p $(DOCKER_PROJECT_NAME)
+SERVER_COMPOSE        := $(DOCKER_COMPOSE) -f docker/server/docker-compose.yml
+OBSERVABILITY_COMPOSE := $(DOCKER_COMPOSE) -f docker/observability/docker-compose.yml
+OLLAMA_COMPOSE        := $(DOCKER_COMPOSE) -f docker/development/docker-compose-llm.yml
 
-DOCKER_COMPOSE_MAIN_FILE       := docker/docker-compose.yml
-DOCKER_COMPOSE_LOCALSTACK_FILE := docker/docker-compose-localstack.yml
-DOCKER_COMPOSE_INFRA_FILE      := docker/docker-compose-infra.yml
-
-# Complete local Compose definition.
-#
-# Used when commands need awareness of every service in the same
-# Compose project, especially observability commands, to avoid
-# orphan-container warnings.
-DOCKER_COMPOSE_ALL_FILES := \
-	-f $(DOCKER_COMPOSE_MAIN_FILE) \
-	-f $(DOCKER_COMPOSE_LOCALSTACK_FILE) \
-	-f $(DOCKER_COMPOSE_INFRA_FILE)
-
-LOCALSTACK_APP_CONTAINER := localstack
-API_APP_CONTAINER        := api
-
-# Default values (safe fallback)
-COMPOSE_FILES  :=
-APP_CONTAINERS :=
+# Compose service name (not container name) of the API.
+API_SERVICE := api
 
 TEST      ?=
 S3_BUCKET ?= juris-ai-document-snd
-
-# ============================================================================
-# Mode + Files -> Application Compose Selection
-# ============================================================================
-ifeq ($(MODE),dev)
-  ifeq ($(FILES),main)
-    COMPOSE_FILES  := -f $(DOCKER_COMPOSE_MAIN_FILE)
-    APP_CONTAINERS := $(API_APP_CONTAINER)
-  else ifeq ($(FILES),both)
-    COMPOSE_FILES  := -f $(DOCKER_COMPOSE_LOCALSTACK_FILE) -f $(DOCKER_COMPOSE_MAIN_FILE)
-    APP_CONTAINERS := $(API_APP_CONTAINER)
-  else
-	COMPOSE_FILES  := -f $(DOCKER_COMPOSE_LOCALSTACK_FILE)
-	APP_CONTAINERS := $(LOCALSTACK_APP_CONTAINER)
-  endif
-else ifeq ($(MODE),snd)
-  COMPOSE_FILES  := -f $(DOCKER_COMPOSE_MAIN_FILE)
-  APP_CONTAINERS := $(API_APP_CONTAINER)
-endif
 
 # ============================================================================
 # CloudFormation Template Selection
@@ -163,7 +166,7 @@ endif
 # AWS Environment
 #
 # dev:
-#   LocalStack endpoint + dummy credentials
+#   Floci endpoint + dummy credentials
 #
 # snd:
 #   Real AWS region
@@ -192,8 +195,18 @@ _require-dev:
 	  echo "$(RED) This target requires MODE=dev$(RESET)"; \
 	  exit 1; \
 	fi; \
-	if [ "$(_LOCALSTACK_UP)" != "yes" ]; then \
-	  echo "$(YELLOW)⚠ LocalStack is not running, but MODE=dev is forced$(RESET)"; \
+	if [ "$(_FLOCI_UP)" != "yes" ]; then \
+	  echo "$(YELLOW)⚠ Floci is not running, but MODE=dev is forced$(RESET)"; \
+	fi
+
+.PHONY: _require-floci
+
+# cf-deploy / iac-apply need Floci (not the API) when MODE=dev. This only
+# checks -- Floci is started by ./setup.sh, never by this Makefile.
+_require-floci:
+	@if [ "$(MODE)" = "dev" ] && [ "$(_FLOCI_UP)" != "yes" ]; then \
+	  echo "$(RED)Floci is not running. Start it with: ./setup.sh --install --dependency floci$(RESET)"; \
+	  exit 1; \
 	fi
 
 .PHONY: _confirm-snd
@@ -251,27 +264,26 @@ env-info: ## Show active environment and resolved configuration
 	@echo ''
 
 	@if [ "$(MODE)" = "dev" ]; then \
-	  echo "  $(GREEN)ENV$(RESET)             dev  $(CYAN)(LocalStack — local)$(RESET)"; \
+	  echo "  $(GREEN)ENV$(RESET)             dev  $(CYAN)(Floci — local)$(RESET)"; \
 	else \
 	  echo "  $(YELLOW)ENV$(RESET)             snd  $(RED)(real AWS — be careful)$(RESET)"; \
 	fi
 
 	@echo "  $(GREEN)MODE$(RESET)            $(MODE)"
-	@echo "  $(GREEN)FILES$(RESET)           $(FILES)"
+	@echo "  $(GREEN)PROVIDER$(RESET)        $(PROVIDER)"
 	@echo "  $(GREEN)REGION$(RESET)          $(AWS_REGION)"
 	@echo "  $(GREEN)STACK$(RESET)           $(STACK_NAME)"
 	@echo "  $(GREEN)TEMPLATE$(RESET)        $(TEMPLATE)"
-	@echo "  $(GREEN)COMPOSE_FILES$(RESET)   $(COMPOSE_FILES)"
-	@echo "  $(GREEN)APP_CONTAINERS$(RESET)  $(APP_CONTAINERS)"
+	@echo "  $(GREEN)API_SERVICE$(RESET)     $(API_SERVICE)"
 	@echo "  $(GREEN)S3_BUCKET$(RESET)       $(S3_BUCKET)"
 
 	@if [ "$(MODE)" = "dev" ]; then \
 	  echo "  $(GREEN)ENDPOINT$(RESET)        $(ENDPOINT)"; \
 	fi
 
-	@echo "  $(GREEN)LocalStack$(RESET)      $(_LOCALSTACK_UP)"
+	@echo "  $(GREEN)Floci$(RESET)      $(_FLOCI_UP)"
 	@echo ''
-	@echo "  Override with: $(YELLOW)make <target> MODE=dev|snd FILES=main|both|local$(RESET)"
+	@echo "  Override with: $(YELLOW)make <target> MODE=dev|snd$(RESET)"
 	@echo ''
 
 # ============================================================================
@@ -281,48 +293,29 @@ env-info: ## Show active environment and resolved configuration
 .PHONY: bootstrap
 
 bootstrap:
-	@chmod +x scripts/bootstrap.sh
-	@./scripts/bootstrap.sh
+	@chmod +x $(SERVER_DIR)/scripts/bash/bootstrap.sh
+	@$(IN_SERVER) ./scripts/bash/bootstrap.sh
 
 # ============================================================================
 # Docker - Application
 # ============================================================================
 
-.PHONY: docker-networks docker-build docker-up docker-down \
-        docker-restart docker-app-logs docker-ps docker-exec-app docker-clean
-
-docker-networks: ## Create shared Docker network
-	@docker network inspect juris_ai_network >/dev/null 2>&1 \
-	  || docker network create juris_ai_network
+# Install/start/stop/reinstall of the API (and every other stack) is done by
+# ./setup.sh, e.g. `./setup.sh --reinstall --bundle server`. The targets
+# below only build, inspect, and attach to an already-running stack.
+.PHONY: docker-build docker-app-logs docker-ps docker-exec-app
 
 docker-build: ## Build application Docker images
-	@$(DOCKER_COMPOSE) $(COMPOSE_FILES) build
-
-docker-up: docker-networks ## Start application Docker services
-	@$(DOCKER_COMPOSE) $(COMPOSE_FILES) up -d
-
-docker-down: ## Stop application Docker services
-	@$(DOCKER_COMPOSE) $(COMPOSE_FILES) down
-
-docker-restart: ## Rebuild and restart application services
-	@$(DOCKER_COMPOSE) $(COMPOSE_FILES) down
-	@$(DOCKER_COMPOSE) $(COMPOSE_FILES) up -d --build
+	@$(SERVER_COMPOSE) build --no-cache
 
 docker-app-logs: ## Follow application container logs
-	@$(DOCKER_COMPOSE) $(COMPOSE_FILES) logs -f $(APP_CONTAINERS)
+	@$(SERVER_COMPOSE) logs -f $(API_SERVICE)
 
 docker-ps: ## Show application containers
-	@$(DOCKER_COMPOSE) $(COMPOSE_FILES) ps
+	@$(SERVER_COMPOSE) ps
 
 docker-exec-app: ## Open shell in application container
-	@$(DOCKER_COMPOSE) $(COMPOSE_FILES) exec $(APP_CONTAINERS) bash
-
-docker-clean: ## Remove all local Compose services, volumes, and images
-	@$(DOCKER_COMPOSE) $(DOCKER_COMPOSE_ALL_FILES) down \
-	  --rmi local \
-	  --volumes \
-	  --remove-orphans
-	@docker volume prune -f
+	@$(SERVER_COMPOSE) exec $(API_SERVICE) bash
 
 # ============================================================================
 # Docker - Observability Infrastructure
@@ -333,82 +326,90 @@ docker-clean: ## Remove all local Compose services, volumes, and images
 #   - Grafana
 #
 # These services belong to the same Compose project but have
-# an independent lifecycle.
+# an independent lifecycle, owned by ./setup.sh.
 # ============================================================================
 
-.PHONY: infra-build infra-up infra-down infra-restart infra-logs infra-ps
-
-infra-build: docker-networks ## Pull observability infrastructure images
-	@$(DOCKER_COMPOSE) $(DOCKER_COMPOSE_ALL_FILES) \
-	  pull \
-	  otel-collector \
-	  prometheus \
-	  grafana
-
-infra-up: docker-networks ## Start OpenTelemetry, Prometheus, and Grafana
-	@$(DOCKER_COMPOSE) $(DOCKER_COMPOSE_ALL_FILES) \
-	  up -d \
-	  otel-collector \
-	  prometheus \
-	  grafana
-
-infra-down: ## Stop OpenTelemetry, Prometheus, and Grafana
-	@$(DOCKER_COMPOSE) $(DOCKER_COMPOSE_ALL_FILES) \
-	  stop \
-	  otel-collector \
-	  prometheus \
-	  grafana
-
-infra-restart: ## Restart OpenTelemetry, Prometheus, and Grafana
-	@$(DOCKER_COMPOSE) $(DOCKER_COMPOSE_ALL_FILES) \
-	  restart \
-	  otel-collector \
-	  prometheus \
-	  grafana
+# Install/reinstall/cleanup/uninstall: ./setup.sh --install|--reinstall|--cleanup|--uninstall --bundle observability
+.PHONY: infra-logs infra-ps
 
 infra-logs: ## Follow observability infrastructure logs
-	@$(DOCKER_COMPOSE) $(DOCKER_COMPOSE_ALL_FILES) \
-	  logs -f \
-	  otel-collector \
-	  prometheus \
-	  grafana
+	@$(OBSERVABILITY_COMPOSE) logs -f
+
 
 infra-ps: ## Show observability infrastructure containers
-	@$(DOCKER_COMPOSE) $(DOCKER_COMPOSE_ALL_FILES) \
-	  ps \
-	  otel-collector \
-	  prometheus \
-	  grafana
+	@$(OBSERVABILITY_COMPOSE) ps
+
+
+
+# ============================================================================
+# Docker - LLM Infrastructure
+#
+# Services:
+#   - Ollama
+#
+# Ollama provides local LLM inference for Juris-AI.
+# The LLM infrastructure has an independent lifecycle from the application,
+# owned by ./setup.sh.
+# ============================================================================
+
+# Start/stop/reinstall: ./setup.sh --install|--reinstall --bundle development
+# (starts Ollama and SearXNG). setup.sh does NOT pull the model -- run
+# `make llm-pull` after it (also part of `make dev` / `make restart-hard`).
+.PHONY: llm-pull llm-logs llm-ps
+
+llm-pull: ## Pull the configured local LLM model into Ollama (idempotent, skips if already present)
+	@$(IN_SERVER) scripts/bash/pull_ollama_models.sh
+
+
+llm-logs: ## Follow Ollama LLM infrastructure logs
+	@$(OLLAMA_COMPOSE) logs -f
+
+
+llm-ps: ## Show Ollama LLM infrastructure container
+	@$(OLLAMA_COMPOSE) ps
+
+
 
 # ============================================================================
 # Poetry / Python
 # ============================================================================
 
-.PHONY: poetry-install poetry-update poetry-lock \
+.PHONY: venv poetry-install poetry-update poetry-lock \
         poetry-check poetry-show poetry-activate poetry-export
 
-poetry-install: ## Install Python dependencies via Poetry
-	@$(POETRY) install
+# The venv lives at the repo root; server/.venv is a symlink so Poetry
+# (in-project = true) installs into it. Created from server/ so pyenv's
+# server/.python-version picks the interpreter.
+venv: ## Create repo-root .venv and link server/.venv to it
+	@if [ -d $(SERVER_DIR)/.venv ] && [ ! -L $(SERVER_DIR)/.venv ]; then \
+		echo "server/.venv is a real directory; move it aside to use the root .venv"; \
+		exit 1; \
+	fi
+	@test -d $(PROJECT_ROOT)/.venv || $(IN_SERVER) python3 -m venv ../.venv
+	@ln -sfn ../.venv $(SERVER_DIR)/.venv
+
+poetry-install: venv ## Install Python dependencies via Poetry
+	@$(IN_SERVER) $(POETRY) install
 
 poetry-update: ## Update Python dependencies via Poetry
-	@$(POETRY) update
+	@$(IN_SERVER) $(POETRY) update
 
 poetry-lock: ## Regenerate poetry.lock
-	@$(POETRY) lock
+	@$(IN_SERVER) $(POETRY) lock
 
 poetry-check: ## Validate pyproject.toml
-	@$(POETRY) check
+	@$(IN_SERVER) $(POETRY) check
 
 poetry-show: ## Show dependency tree
-	@$(POETRY) show --tree
+	@$(IN_SERVER) $(POETRY) show --tree
 
 poetry-activate: ## Activate Poetry virtual environment
-	@VENV="$$(poetry env info --path)"; \
+	@$(IN_SERVER) VENV="$$(poetry env info --path)"; \
 	echo "Activating $$VENV"; \
 	exec bash --rcfile <(echo "source $$VENV/bin/activate")
 
 poetry-export: ## Export main dependencies to requirements.txt
-	@$(POETRY) export \
+	@$(IN_SERVER) $(POETRY) export \
 	  --only main \
 	  -f requirements.txt \
 	  -o src/requirements.txt
@@ -421,19 +422,19 @@ poetry-export: ## Export main dependencies to requirements.txt
 
 lint: ## Run Ruff linter
 	@echo '$(CYAN)Running linter...$(RESET)'
-	@$(POETRY) run ruff check .
+	@$(IN_SERVER) $(POETRY) run ruff check .
 	@echo '$(GREEN)Linting passed$(RESET)'
 
 format: ## Format code and run pre-commit hooks
 	@echo '$(CYAN)Running auto-formatters...$(RESET)'
-	@$(POETRY) run ruff check . --fix
-	@$(POETRY) run ruff format .
-	@$(POETRY) run pre-commit run --all-files
+	@$(IN_SERVER) $(POETRY) run ruff check . --fix
+	@$(IN_SERVER) $(POETRY) run ruff format .
+	@$(IN_SERVER) $(POETRY) run pre-commit run -c $(PROJECT_ROOT)/.pre-commit-config.yaml --all-files
 	@echo '$(GREEN)Auto-formatting complete$(RESET)'
 
 type-check: ## Run mypy type checker
 	@echo '$(CYAN)Running type checks...$(RESET)'
-	@$(POETRY) run mypy src/
+	@$(IN_SERVER) $(POETRY) run mypy src/
 	@echo '$(GREEN)Type checking passed$(RESET)'
 
 ci: ## Run lint, type-check, and tests
@@ -445,60 +446,91 @@ ci: ## Run lint, type-check, and tests
 
 pre-commit: ## Run pre-commit hooks
 	@echo '$(CYAN)Running pre-commit hooks...$(RESET)'
-	@$(POETRY) run pre-commit run --all-files
+	@$(IN_SERVER) $(POETRY) run pre-commit run -c $(PROJECT_ROOT)/.pre-commit-config.yaml --all-files
 	@echo '$(GREEN)Pre-commit hooks passed$(RESET)'
 
 install-hooks: ## Install pre-commit git hooks
-	@$(POETRY) run pre-commit install
+	@$(IN_SERVER) $(POETRY) run pre-commit install -c $(PROJECT_ROOT)/.pre-commit-config.yaml
 
 # ============================================================================
 # Alembic / Database Migrations
+#
+# Run INSIDE the already-running api container via `docker compose exec`,
+# not on the host: server/.env's DB_HOST=postgres is a compose-internal
+# hostname that only resolves on the compose network, so a host-run
+# `poetry run alembic` fails with "failed to resolve host 'postgres'".
+# This mirrors setup.sh's own run_server_migrations() exactly (`compose
+# "$SERVER_COMPOSE" exec -T api alembic upgrade head`) -- one source of
+# truth for how the DB gets reached, not a second, host-side resolution
+# path that silently breaks outside a container.
+#
+# alembic-revision's generated migration file still lands on the host:
+# src/ is a live bind mount (docker/server/docker-compose.yml), not
+# baked into the image, so autogenerate's import of the current model
+# definitions and the new file it writes both go through the same
+# source tree you're editing.
+#
+# Requires the server stack running (./setup.sh --install --bundle
+# server, or make dev) -- these targets attach to it, they don't start
+# it. db-setup-role below is unaffected by any of this: it already
+# reaches Postgres via `docker exec` into the postgres container
+# itself, never through DB_HOST.
 # ============================================================================
 
 .PHONY: alembic-upgrade alembic-downgrade alembic-current \
         alembic-history alembic-heads alembic-stamp alembic-revision
 
 alembic-upgrade: ## Apply all pending Alembic migrations
-	@$(POETRY) run $(ALEMBIC) upgrade head
+	@$(SERVER_COMPOSE) exec -T $(API_SERVICE) $(ALEMBIC) upgrade head
 
 alembic-downgrade: ## Rollback last Alembic migration (prompts for confirmation)
 	@read -p "$(YELLOW)⚠  Downgrade database? [y/N] $(RESET)" and; \
 	[ "$$and" = "y" ] || exit 1
-	@$(POETRY) run $(ALEMBIC) downgrade -1
+	@$(SERVER_COMPOSE) exec -T $(API_SERVICE) $(ALEMBIC) downgrade -1
 
 alembic-current: ## Show current Alembic revision
-	@$(POETRY) run $(ALEMBIC) current
+	@$(SERVER_COMPOSE) exec -T $(API_SERVICE) $(ALEMBIC) current
 
 alembic-history: ## Show Alembic migration history
-	@$(POETRY) run $(ALEMBIC) history
+	@$(SERVER_COMPOSE) exec -T $(API_SERVICE) $(ALEMBIC) history
 
 alembic-heads: ## Show current Alembic heads
-	@$(POETRY) run $(ALEMBIC) heads
+	@$(SERVER_COMPOSE) exec -T $(API_SERVICE) $(ALEMBIC) heads
 
 alembic-stamp: ## Stamp database to a revision [rev=<rev|head>]
 ifndef rev
 	$(error Usage: make alembic-stamp rev=head)
 endif
-	@$(POETRY) run $(ALEMBIC) stamp $(rev)
+	@$(SERVER_COMPOSE) exec -T $(API_SERVICE) $(ALEMBIC) stamp $(rev)
 
 alembic-revision: ## Create autogenerated Alembic revision [msg="..."]
 ifndef msg
 	$(error Usage: make alembic-revision msg="add stations table")
 endif
-	@$(POETRY) run $(ALEMBIC) revision \
+	@$(SERVER_COMPOSE) exec -T $(API_SERVICE) $(ALEMBIC) revision \
 	  --autogenerate \
 	  -m "$(msg)"
 
 # ============================================================================
-# LocalStack Resource Inspection
+# Local dev DB role separation
+# ============================================================================
+
+.PHONY: db-setup-role
+
+db-setup-role: ## Create/sync the restricted local-dev runtime role (APP_DB_USER) -- safe to re-run, needed once per Postgres volume
+	@chmod +x $(SERVER_DIR)/scripts/bash/setup_app_role.sh
+	@$(IN_SERVER) ./scripts/bash/setup_app_role.sh
+
+# ============================================================================
+# Floci Resource Inspection
 # ============================================================================
 
 .PHONY: ls-s3 ls-api-id ls-api-key ls-api ls-resources ls-s3-objects
 
-ls-s3: _require-dev ## List LocalStack S3 buckets
+ls-s3: _require-dev ## List Floci S3 buckets
 	@$(AWS_ENV) aws s3 ls
 
-ls-api-id: _require-dev ## List LocalStack API Gateway REST APIs
+ls-api-id: _require-dev ## List Floci API Gateway REST APIs
 	@$(AWS_ENV) aws apigateway get-rest-apis \
 	  --query 'items[*].[name,id]' \
 	  --output table
@@ -531,7 +563,7 @@ ls-api-key: _require-dev ## Show API key for configured API
 
 ls-api: ls-api-id ls-api-key ## List API IDs and keys
 
-ls-resources: ls-s3 ls-api-id ## List LocalStack resources
+ls-resources: ls-s3 ls-api-id ## List Floci resources
 
 ls-s3-objects: _require-dev ## List objects in S3_BUCKET [S3_BUCKET=<name>]
 	@echo "$(CYAN)Listing objects in: $(S3_BUCKET)$(RESET)"
@@ -544,11 +576,11 @@ ls-s3-objects: _require-dev ## List objects in S3_BUCKET [S3_BUCKET=<name>]
 .PHONY: cf-build cf-deploy cf-status cf-logs cf-delete
 
 cf-build: poetry-export ## Build SAM application
-	@$(POETRY) run sam build \
-	  --template-file $(TEMPLATE)
+	@$(IN_SERVER) $(POETRY) run sam build \
+	  --template-file $(PROJECT_ROOT)/$(TEMPLATE)
 
-cf-deploy: docker-up cf-build ## Build and deploy SAM stack
-	@$(AWS_ENV) $(POETRY) run sam deploy \
+cf-deploy: _require-floci cf-build ## Build and deploy SAM stack
+	@$(IN_SERVER) $(AWS_ENV) $(POETRY) run sam deploy \
 	  --template-file $(BUILD_TEMPLATE) \
 	  --stack-name $(STACK_NAME) \
 	  --resolve-s3 \
@@ -566,28 +598,77 @@ cf-logs: ## Show CloudFormation stack events
 	  --stack-name $(STACK_NAME) \
 	  --output table
 
-cf-delete: ## Clean local Docker/SAM resources
-	@echo "$(RED)Cleaning local resources for stack: $(STACK_NAME)$(RESET)"
-	@$(MAKE) docker-clean || true
+cf-delete: ## Clean local SAM artifacts (does not delete the deployed stack)
+	@echo "$(RED)Cleaning local SAM artifacts for stack: $(STACK_NAME)$(RESET)"
 	@$(MAKE) clean-local || true
+
+# ============================================================================
+# Terraform / IaC (multi-cloud Phase 1 -- AWS only today)
+# ============================================================================
+
+.PHONY: iac-init iac-plan iac-apply iac-output iac-destroy
+
+iac-init: ## Initialize the Terraform working directory
+	@cd $(TF_DIR) && terraform init
+
+iac-plan: iac-init ## Show the Terraform execution plan [PROVIDER=aws]
+	@cd $(TF_DIR) && $(AWS_ENV) terraform plan \
+	  -var-file=$(TFVARS) \
+	  -var="provider_name=$(PROVIDER)"
+
+iac-apply: _require-floci iac-init ## Apply the Terraform configuration [PROVIDER=aws]
+	@cd $(TF_DIR) && $(AWS_ENV) terraform apply \
+	  -var-file=$(TFVARS) \
+	  -var="provider_name=$(PROVIDER)" \
+	  -auto-approve
+
+iac-output: ## Show Terraform outputs
+	@cd $(TF_DIR) && terraform output
+
+iac-destroy: ## Destroy Terraform-managed infrastructure [PROVIDER=aws]
+	@cd $(TF_DIR) && $(AWS_ENV) terraform destroy \
+	  -var-file=$(TFVARS) \
+	  -var="provider_name=$(PROVIDER)" \
+	  -auto-approve
 
 # ============================================================================
 # Testing
 # ============================================================================
 
-.PHONY: test test-unit test-integration test-e2e \
+.PHONY: test test-root test-unit test-integration test-smoke test-e2e \
         test-cov test-failed test-path test-watch
 
-PYTEST := $(POETRY) run pytest
+# Tests run on the host, but server/.env names Postgres and Redis by their
+# compose hostnames (DB_HOST=postgres, REDIS_HOST=redis), which only resolve
+# inside the compose network -- so smoke/e2e tests failed on the host with
+# "Temporary failure in name resolution". Both services publish their
+# ports to the host (docker/dependencies/docker-compose-{postgres,redis}.yml),
+# so tests reach them via TEST_SERVICES_HOST instead. Env vars override
+# .env; unit tests use SQLite and are unaffected. Override if your
+# services are elsewhere: make test-e2e TEST_SERVICES_HOST=<host>
+TEST_SERVICES_HOST ?= localhost
+PYTEST := DB_HOST=$(TEST_SERVICES_HOST) REDIS_HOST=$(TEST_SERVICES_HOST) $(POETRY) run pytest
 
 # Optional path/module selector
 TARGET ?=
 
 test: ## Run all tests [TARGET=<path>]
-	@$(PYTEST) $(TARGET) -v -s
+	@$(IN_SERVER) $(PYTEST) $(TARGET) -v -s
+
+# Repo-level tests (e.g. Claude hooks) live in the root tests/ dir, outside
+# server/, so they run from the repo root with the root venv's pytest.
+test-root: ## Run repo-root tests/ [TARGET=<path>]
+	@target="$(TARGET)"; \
+	if [ -z "$$target" ]; then \
+		$(PROJECT_ROOT)/.venv/bin/pytest $(PROJECT_ROOT)/tests -v; \
+	elif [ -e "$${target%%::*}" ]; then \
+		$(PROJECT_ROOT)/.venv/bin/pytest "$(TARGET)" -v; \
+	else \
+		$(PROJECT_ROOT)/.venv/bin/pytest "$(PROJECT_ROOT)/tests/$(TARGET)" -v; \
+	fi
 
 test-unit: ## Run unit tests [TARGET=<path>]
-	@if [ -z "$(TARGET)" ]; then \
+	@$(IN_SERVER) if [ -z "$(TARGET)" ]; then \
 		$(PYTEST) tests/unit -v -s; \
 	elif [ -e "$(TARGET)" ]; then \
 		$(PYTEST) "$(TARGET)" -v -s; \
@@ -596,7 +677,7 @@ test-unit: ## Run unit tests [TARGET=<path>]
 	fi
 
 test-integration: ## Run integration tests [TARGET=<path>]
-	@if [ -z "$(TARGET)" ]; then \
+	@$(IN_SERVER) if [ -z "$(TARGET)" ]; then \
 		$(PYTEST) tests/integration -v; \
 	elif [ -e "$(TARGET)" ]; then \
 		$(PYTEST) "$(TARGET)" -v; \
@@ -605,7 +686,7 @@ test-integration: ## Run integration tests [TARGET=<path>]
 	fi
 
 test-e2e: ## Run e2e tests [TARGET=<path>]
-	@if [ -z "$(TARGET)" ]; then \
+	@$(IN_SERVER) if [ -z "$(TARGET)" ]; then \
 		$(PYTEST) tests/e2e -v; \
 	elif [ -e "$(TARGET)" ]; then \
 		$(PYTEST) "$(TARGET)" -v; \
@@ -613,8 +694,17 @@ test-e2e: ## Run e2e tests [TARGET=<path>]
 		$(PYTEST) "tests/e2e/$(TARGET)" -v; \
 	fi
 
+test-smoke: ## Run smoke tests [TARGET=<path>]
+	@$(IN_SERVER) if [ -z "$(TARGET)" ]; then \
+		$(PYTEST) tests/smoke -v -s; \
+	elif [ -e "$(TARGET)" ]; then \
+		$(PYTEST) "$(TARGET)" -v -s; \
+	else \
+		$(PYTEST) "tests/smoke/$(TARGET)" -v -s; \
+	fi
+
 test-cov: ## Run unit tests with coverage [TARGET=<path>]
-	@$(PYTEST) tests/unit$(if $(TARGET),/$(TARGET),) \
+	@$(IN_SERVER) $(PYTEST) tests/unit$(if $(TARGET),/$(TARGET),) \
 	  -v \
 	  --cov=src \
 	  --cov-report=term-missing \
@@ -622,16 +712,16 @@ test-cov: ## Run unit tests with coverage [TARGET=<path>]
 	  --cov-report=xml
 
 test-failed: ## Re-run previously failed tests
-	@$(PYTEST) --lf -v
+	@$(IN_SERVER) $(PYTEST) --lf -v
 
 test-path: ## Run any test path [TARGET=<path>]
 ifndef TARGET
 	$(error Usage: make test-path TARGET=<path>)
 endif
-	@$(PYTEST) "$(TARGET)" -v
+	@$(IN_SERVER) $(PYTEST) "$(TARGET)" -v
 
 test-watch: ## Watch unit tests [TARGET=<path>]
-	@$(POETRY) run ptw \
+	@$(IN_SERVER) $(POETRY) run ptw \
 	  $(if $(TARGET),$(TARGET),tests/unit)
 
 # ============================================================================
@@ -640,40 +730,34 @@ test-watch: ## Watch unit tests [TARGET=<path>]
 
 .PHONY: clean-local restart-hard
 
-clean-local: ## Remove SAM artifacts and LocalStack persistent data
-	@echo "$(CYAN)Cleaning SAM artifacts and LocalStack data...$(RESET)"
-	@rm -rf .aws-sam
-	@docker run --rm \
-	  -v "$$(pwd)/localstack-data:/var/lib/localstack" \
-	  alpine \
-	  sh -c "rm -rf /var/lib/localstack/*"
+clean-local: ## Remove local SAM build artifacts
+	@echo "$(CYAN)Cleaning SAM artifacts...$(RESET)"
+	@rm -rf $(SERVER_DIR)/.aws-sam
 
-restart-hard: ## Wipe local environment and redeploy
-	@echo "$(YELLOW)HARD RESET — wiping local environment$(RESET)"
+restart-hard: ## Reset SAM artifacts and redo post-install steps (run setup.sh --reinstall --mode dev first)
+	@echo "$(YELLOW)HARD RESET — SAM artifacts and post-install steps$(RESET)"
+	@echo "   (stacks are ./setup.sh's job: run ./setup.sh --reinstall --mode dev first)"
 	@echo ''
-	@echo "1) Stopping Docker services..."
-	@$(MAKE) docker-clean || true
-	@echo "2) Cleaning LocalStack persistent data..."
+	@echo "1) Cleaning SAM artifacts..."
 	@$(MAKE) clean-local || true
-	@echo "3) Starting application services..."
-	@$(MAKE) docker-up MODE=dev
-	@echo "4) Waiting for LocalStack..."
-	@sleep 10
-	@echo "5) Starting observability..."
-	@$(MAKE) infra-up MODE=dev
-	@echo "6) Applying database migrations..."
+	@echo "2) Setting up local dev DB role separation..."
+	@$(MAKE) db-setup-role
+	@echo "3) Pulling the Ollama model..."
+	@$(MAKE) llm-pull
+	@echo "4) Applying database migrations..."
 	@$(MAKE) alembic-upgrade
-	@echo "7) Deploying SAM stack..."
+	@echo "5) Deploying SAM stack..."
 	@$(MAKE) cf-deploy MODE=dev
 
 # ============================================================================
 # Development Mode
+#
+# Stack lifecycle is owned by ./setup.sh. Run
+#   ./setup.sh --install --mode dev
+# first; the targets below are the Makefile-native steps that follow it.
 # ============================================================================
 
-.PHONY: dev-start dev-build dev-deploy dev
-
-dev-start: ## Start development Docker services
-	@$(MAKE) docker-up MODE=dev
+.PHONY: dev-build dev-deploy dev
 
 dev-build: ## Build development SAM application
 	@$(MAKE) cf-build MODE=dev
@@ -681,11 +765,19 @@ dev-build: ## Build development SAM application
 dev-deploy: ## Deploy development SAM stack
 	@$(MAKE) cf-deploy MODE=dev
 
-dev: ## Start complete local development environment
-	@$(MAKE) dev-start
-	@$(MAKE) infra-up MODE=dev
+dev: ## Post-install dev steps (DB role, model pull, migrations, deploy) after setup.sh --install --mode dev
+	@$(MAKE) db-setup-role
+	@$(MAKE) llm-pull
 	@$(MAKE) alembic-upgrade
 	@$(MAKE) dev-deploy
+
+# ===
+# Utilities
+# ===
+.PHONY: project-tree
+
+project-tree: ## Show current project directory
+	$(IN_SERVER) tree -a -I '__pycache__|*.pyc|.git|.pytest_cache|.volumes|.venv|.vscode|.aws-sam|floci*|node_modules|htmlcov|*.egg-info|dist|build|.ruff_cache|.mypy_cache'
 
 # ============================================================================
 # Help
@@ -698,16 +790,16 @@ help: ## Show available Make targets
 	@echo '$(CYAN)$(BOLD)Juris AI — Make Targets$(RESET)'
 	@echo ''
 
-	@if [ "$(_LOCALSTACK_UP)" = "yes" ]; then \
-	  echo "  $(GREEN)Active env:$(RESET) $(BOLD)dev$(RESET)  (LocalStack detected)"; \
+	@if [ "$(_FLOCI_UP)" = "yes" ]; then \
+	  echo "  $(GREEN)Active env:$(RESET) $(BOLD)dev$(RESET)  (Floci detected)"; \
 	else \
-	  echo "  $(YELLOW)Active env:$(RESET) $(BOLD)snd$(RESET)  (LocalStack not detected)"; \
+	  echo "  $(YELLOW)Active env:$(RESET) $(BOLD)snd$(RESET)  (Floci not detected)"; \
 	fi
 
-	@echo "  Override: $(YELLOW)make <target> MODE=dev|snd FILES=main|both|local$(RESET)"
+	@echo "  Override: $(YELLOW)make <target> MODE=dev|snd$(RESET)"
 	@echo ''
 	@echo '$(YELLOW)Usage:$(RESET)'
-	@echo '  $(GREEN)make <target>$(RESET) [MODE=dev|snd] [FILES=main|both|local]'
+	@echo '  $(GREEN)make <target>$(RESET) [MODE=dev|snd]'
 	@echo ''
 
 	@awk 'BEGIN {FS = ":.*?## "} \
@@ -718,6 +810,15 @@ help: ## Show available Make targets
 	    printf "  $(YELLOW)%-22s$(RESET) %s\n", $$1, $$2 \
 	  }' $(MAKEFILE_LIST)
 
+	@echo ''
+	@echo '$(YELLOW)Stack lifecycle is not a make target - use ./setup.sh:$(RESET)'
+	@echo '  ./setup.sh --install   --dependency postgres|redis|floci'
+	@echo '  ./setup.sh --install   --bundle server|observability|development'
+	@echo '  ./setup.sh --reinstall --bundle <bundle>   (recreate; server = rebuild + restart)'
+	@echo '  ./setup.sh --cleanup   --bundle <bundle>   (stop, keep data)'
+	@echo '  ./setup.sh --uninstall --bundle <bundle>   (also removes data; destructive, asks to confirm)'
+	@echo '  ./setup.sh --help'
+	@echo '  Then: make db-setup-role, make llm-pull, make alembic-upgrade (or make dev)'
 	@echo ''
 	@echo "  Run $(GREEN)make env-info$(RESET) to see resolved configuration."
 	@echo ''

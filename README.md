@@ -1,452 +1,110 @@
 # ⚖️ Juris AI
 
-Juris-AI is an AI-powered legal assistant designed around explicit agent execution strategies and provider-independent AI infrastructure.
+**Legal research and contract review over real legal sources.**
 
-The architecture separates **planning, execution, reasoning, external actions, persistence, and API concerns**, allowing the system to evolve from a small multi-agent application into a multi-agent, multi-provider, multi-source legal AI platform.
+Ask a question about Indian law and the system retrieves from a corpus of actual statutes to answer it, citing the retrieved sources. Share a contract's text and a contract-review agent analyzes its risks, ambiguities, and obligations. Outbound actions such as email or Slack are designed to require your explicit approval. Self-hosted, so your matters and documents stay on your own infrastructure.
 
-## Architecture Principles
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
+[![CI](https://github.com/bharatkse/juris-ai/actions/workflows/ci-server.yml/badge.svg)](https://github.com/bharatkse/juris-ai/actions/workflows/ci-server.yml)
+![Python](https://img.shields.io/badge/python-3.11%2B-blue)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
 
-The core architectural boundaries are:
+## Capabilities
 
-- **FastAPI** — HTTP, authentication, request validation, and streaming.
-- **ChatService** — conversation lifecycle and database transaction coordination.
-- **AIOrchestrator** — coordinates the AI lifecycle; it does not perform planning or agent execution.
-- **Planner** — converts a user request into an explicit `ExecutionPlan`.
-- **Executor** — executes the plan; it never creates the plan.
-- **Agents** — perform domain-specific reasoning.
-- **Tools** — perform external actions such as document parsing, retrieval, and web search.
-- **Registries** — resolve agents and tools.
-- **LLM Clients / Gateway** — hide provider-specific SDK details.
-- **Validator** — validates generated execution results.
-- **Aggregator** — combines agent outputs and preserves provenance.
-- **Execution Runtime / Memory** — holds transient execution artifacts.
-- **ConversationEventService** — persists conversation events and remains independent from AI execution.
+- **Retrieval-backed legal research** — hybrid vector + keyword retrieval over the legal corpus, reranked for relevance, with an answer-quality gate that scores answers against the retrieved evidence
+- **Contract review** — a dedicated contract agent analyzes contract text for risks, ambiguities, and obligations
+- **Human-in-the-loop design for outbound actions** — calls to the email and Slack tools pause execution for a human approval decision (LangGraph interrupt/resume); only the user who made the request can approve, reject or edit it
+- **PII redaction stage** — a Presidio-based output review with custom Indian ID recognizers (PAN, Aadhaar)
+- **Tamper-proof audit trail** — every request and decision is logged in a way that can't be edited or deleted afterward, independent of your chat history
+- **Usage controls** — per-user request rate limiting and a daily token-quota check
+- **Streaming responses** — `POST /chat/stream` delivers answers over Server-Sent Events
+- **Ready for real cloud deployment** — Terraform and AWS SAM/CloudFormation paths, both tested against a local AWS emulator before you touch real infrastructure
 
-The architecture intentionally keeps **planning and execution separate**:
-
-```text
-User Request
-     │
-     ▼
-ChatService
-     │
-     ▼
-AIOrchestrator
-     │
-     ▼
-Planner ───────────► LLM #1
-     │
-     ▼
-ExecutionPlan
-     │
-     ▼
-Executor
-     │
-     ├───────────────┐
-     ▼               ▼
- Sequential       Parallel
-     │               │
-     └───────┬───────┘
-             ▼
-          Agents
-             │
-             ├── Tools
-             │
-             └── LLM #2+
-             │
-             ▼
-      Execution Results
-             │
-             ▼
-         Validator
-             │
-             ▼
-        Aggregator
-             │
-             ▼
-    OrchestratorResponse
-             │
-             ▼
-        ChatService
-             │
-             ├── USER event
-             ├── ASSISTANT event
-             └── COMMIT
-```
-
-## Execution Strategies
-
-Juris-AI supports three explicit execution strategies:
-
-### Sequential
-
-Steps execute one after another.
-
-```text
-Step A
-  │
-  ▼
-Step B
-  │
-  ▼
-Step C
-```
-
-### Parallel
-
-Independent steps execute concurrently.
-
-```text
-          ExecutionPlan
-               │
-        ┌──────┼──────┐
-        ▼      ▼      ▼
-      Agent A Agent B Agent C
-        │      │      │
-        └──────┼──────┘
-               ▼
-           Aggregator
-```
-
-### Hybrid
-
-The plan combines sequential dependencies with parallel branches.
-
-```text
-Step A
-  │
-  ▼
-Step B
-  │
-  ├──────────────┐
-  ▼              ▼
-Step C          Step D
-  │              │
-  └───────┬──────┘
-          ▼
-        Step E
-```
-
-This execution model is intentionally preserved in the architecture rather than reducing execution to a single linear call.
-
----
-
-# ✨ Features
-
-- AI-powered legal assistant
-- Multiple domain-specific agents
-- Explicit sequential, parallel, and hybrid execution
-- LLM-based execution planning
-- Provider-independent LLM abstraction
-- Document retrieval and parsing
-- Web search integration
-- Conversation and event persistence
-- User registration and authentication
-- FastAPI REST APIs with OpenAPI documentation
-- Secure password hashing using Argon2 (`pwdlib`)
-- PostgreSQL with SQLAlchemy 2.x
-- Alembic database migrations
-- Environment-based configuration using Pydantic Settings
-- Redis or in-memory caching
-- Docker and Docker Compose support
-- Automated testing, linting, formatting, and CI/CD
-
----
-
-# 🚀 Quick Start
-
-## Clone the repository
+## 🚀 Quick Start
 
 ```bash
-git clone <repository-url>
-cd juris-ai
+git clone https://github.com/bharatkse/juris-ai.git && cd juris-ai
+./setup.sh
 ```
 
-## Create a virtual environment
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-```
-
-## Install System Dependency
-
-```bash
-make bootstrap
-```
-
-## Install dependencies
-
-```bash
-poetry install
-```
-
-## Configure environment
-
-```bash
-cp .env.example .env
-```
-
-Update the required values in `.env`.
-
-## Start the application
-
-```bash
-make dev-deploy
-```
-
-## Run database migrations
-
-```bash
-make alembic-upgrade
-```
-
-The API will be available at:
+First run builds the image locally (a few minutes) — this will switch to a fast image pull once the first versioned release is published. `setup.sh` generates real secrets, prompts only for your `GROQ_API_KEY` ([get one here](https://console.groq.com/keys)), and waits for a real health check before printing the URL.
 
 - Swagger UI: http://localhost:8001/docs
-- ReDoc: http://localhost:8001/redoc
 
-Your observability containers expose these ports:
+## Deployment Tiers
 
-- Grafana: http://localhost:3000
-- Prometheus: http://localhost:9090
+| Tier | What | Best for |
+| --- | --- | --- |
+| **1 — `setup.sh`** (Quick Start above) | Auto-generates secrets, prompts only for `GROQ_API_KEY`, waits for a real health check | Just want it running |
+| **2 — Manual configuration** | `cp server/env.example server/.env`, fill in every value yourself, then start the stacks with `./setup.sh --install` (compose files live under `docker/`) | Full control over configuration, or scripting your own install |
 
-Note - For Grafana, the default login is typically `admin` / `admin` unless you configured credentials through .env or the Compose file.
+Developer setup (running from source, tests) or a cloud deploy (Terraform/AWS SAM)? See [`docs/server/`](docs/server/).
 
-## So
+## Architecture
 
-# 📂 Project Structure
+Under the hood, a multi-agent system plans, researches, and reasons before answering, with a privacy and safety review stage (harmful-content check, PII redaction) on generated responses; a response the review can't clear, including when the safety check itself can't complete, is regenerated once and otherwise replaced with a fixed refusal. Full technical breakdown: [`docs/server/architecture/overview.md`](docs/server/architecture/overview.md); per-component workflows live in `server/src/agentic/*/README.md` and `server/src/rag/README.md`.
 
-```text
-src/
-├── agents/             # Domain reasoning
-├── aggregation/        # Response aggregation
-├── api/                # HTTP/API layer
-├── cache/              # Cache abstraction
-├── clients/            # External provider integrations
-├── core/               # Shared application primitives
-├── db/                 # Database and ORM
-├── execution/          # Execution engine
-├── middleware/         # Application middleware
-├── orchestration/      # AI lifecycle coordination
-├── planning/           # Intent and execution planning
-├── registry/           # Agent/tool lookup
-├── repositories/       # Database persistence
-├── runtime/            # Dependency wiring/composition
-├── schemas/            # API schemas
-├── security/           # Security functionality
-├── services/           # Application workflows
-├── tools/              # External actions
-├── validation/         # Result validation
-└── main.py             # Application entry point
-```
-
-### Module Responsibilities
-
-| Module          | Responsibility                                               |
-| --------------- | ------------------------------------------------------------ |
-| `agents`        | Domain-specific reasoning                                    |
-| `aggregation`   | Merge agent results and provenance                           |
-| `api`           | HTTP endpoints, authentication, and streaming                |
-| `cache`         | Cache abstraction                                            |
-| `clients`       | External provider integrations                               |
-| `core`          | Shared types, DTOs, configuration, exceptions, and utilities |
-| `db`            | Database engine, sessions, and ORM models                    |
-| `execution`     | Execution of sequential, parallel, and hybrid plans          |
-| `middleware`    | Request-level middleware                                     |
-| `orchestration` | Coordinate the overall AI lifecycle                          |
-| `planning`      | Intent analysis and `ExecutionPlan` creation                 |
-| `registry`      | Agent and tool resolution                                    |
-| `repositories`  | Database persistence operations                              |
-| `runtime`       | Dependency and component composition                         |
-| `schemas`       | API request and response models                              |
-| `security`      | Authentication-related security utilities                    |
-| `services`      | Application-level workflows                                  |
-| `tools`         | Retrieval, parsing, search, and other external actions       |
-| `validation`    | Validate execution and response results                      |
-
----
-
-# 🛠 Technology Stack
-
-| Layer              | Technology              |
-| ------------------ | ----------------------- |
-| Language           | Python 3.11+            |
-| Framework          | FastAPI                 |
-| ASGI Server        | Uvicorn                 |
-| Database           | PostgreSQL              |
-| ORM                | SQLAlchemy 2.x          |
-| Database Migration | Alembic                 |
-| Validation         | Pydantic v2             |
-| Authentication     | pwdlib (Argon2)         |
-| Cache              | Redis / In-Memory       |
-| AI Provider        | Groq (Pluggable)        |
-| Containerization   | Docker & Docker Compose |
-| Code Quality       | Ruff, MyPy, Pre-commit  |
-| Testing            | Pytest                  |
-
----
-
-# 🔌 Provider Independence
-
-LLM provider-specific implementations are isolated behind the LLM client abstraction.
+## Repository Map
 
 ```text
-                    LLM Gateway
-                        │
-          ┌─────────────┼─────────────┐
-          ▼             ▼             ▼
-        Groq          OpenAI        Future
+juris-ai/
+├── server/            # FastAPI backend -- source, tests, Poetry project
+├── clients/           # Reserved for future first-party client apps (none yet)
+├── docker/
+│   ├── server/         # Backend app Docker Compose stack + Dockerfile
+│   ├── dependencies/   # Postgres, Redis, Floci (local AWS emulator) stacks
+│   ├── development/    # Ollama (local LLM), SearXNG, MCP stacks
+│   ├── observability/  # OTel collector, Prometheus, Tempo, Grafana
+│   └── clients/        # Reserved for future client Docker assets (none yet)
+├── docs/
+│   ├── server/         # Backend architecture, setup guides, API reference
+│   └── clients/        # Reserved for future client docs (none yet)
+├── iac/
+│   ├── terraform/      # Multi-cloud IaC (AWS built and parity-tested; GCP/Azure are stubs)
+│   └── cloud/          # AWS SAM/CloudFormation templates (original deploy path)
+├── legal/              # Commercial licensing terms
+├── sample_data/        # Sample legal acts (PDF)
+├── tests/              # Repo-level tests (Claude Code hooks) -- `make test-root`
+├── setup.sh           # Installer and stack lifecycle (install/reinstall/cleanup/uninstall)
+└── Makefile           # Build, test, lint, migrate, deploy -- run `make help` from here
+                       # Configuration template: server/env.example
 ```
 
-Agents and the rest of the application depend on the provider-independent LLM interface rather than directly depending on a provider SDK.
+## Data Processing & Privacy
 
-This allows providers to be changed or added without modifying agent reasoning or orchestration logic.
+Describes what the code actually does — not a legal privacy policy. If you deploy this for others, you own your own compliance obligations.
 
----
+| What | Detail |
+| --- | --- |
+| LLM inference | **Groq** (`GROQ_API_KEY`) — chat messages + retrieved context, always on |
+| Web search | **SearXNG** (self-hosted, `docker/development/`), which forwards queries to Google/Bing/Yahoo — only when the web-research tool runs. A Brave client exists but isn't wired in |
+| Tracing | **LangSmith** — off by default; can include conversation content if enabled |
+| PII redaction | Presidio-based, on generated output only; custom `IN_PAN`/`IN_AADHAAR` recognizers |
+| Local data | Legal corpus is local public-domain PDFs (`sample_data/acts/`; the test/eval copy is `server/tests/datasets/rag/raw_datasets/`); local Ollama model runs on your own infra |
+| Retention | No automatic deletion — conversations/events persist in Postgres until you remove them |
+| Cross-conversation memory | Off by default (opt-in). When a user turns it on, short preference/profile facts they state are saved and reused in later conversations, sent to the LLM provider on every request that injects them; turning it off deletes them immediately. Unlike conversation history, saved memories DO expire automatically (sliding retention window). See [`docs/server/architecture/user-memory.md`](docs/server/architecture/user-memory.md) |
 
-# 🧠 Agent Architecture
+## Verification
 
-Agents are responsible for **reasoning**, not infrastructure or execution orchestration.
+| Area | Status |
+| --- | --- |
+| Compliance logging | Real, DB-trigger-enforced immutability on `compliance_log` — verified by e2e tests against a real Postgres instance |
+| Streaming | `POST /chat/stream` is covered by end-to-end tests |
+| Test suite | 1,388 unit tests passing (2026-09-23) · coverage via Codecov in CI |
 
-```text
-Agent
- │
- ├── PromptBuilder
- │
- ├── RetrieverTool
- │      ├── Documents
- │      ├── Vector Search
- │      └── Web Search
- │
- └── LLM Client
-```
 
-The same agent abstraction can support multiple domain agents:
+## Contributing
 
-```text
-Agents
- ├── LegalAgent
- ├── ContractAgent
- └── Future Agents
-```
+- Backend: see [`server/CONTRIBUTING.md`](server/CONTRIBUTING.md).
+- Clients: see [`clients/CONTRIBUTING.md`](clients/CONTRIBUTING.md).
 
----
+## Community
 
-# 🔄 Request Lifecycle
+- Found a bug or want a feature? Open a [GitHub Issue](https://github.com/bharatkse/juris-ai/issues).
+- Want to contribute code? See [`server/CONTRIBUTING.md`](server/CONTRIBUTING.md) or [`clients/CONTRIBUTING.md`](clients/CONTRIBUTING.md), then open a pull request.
 
-For a normal legal question:
+Nothing beyond GitHub exists yet — no Discord, Slack, or mailing list.
 
-```text
-POST /chat
-   │
-   ▼
-ChatService
-   │
-   ├── Create USER event
-   │
-   ▼
-AIOrchestrator
-   │
-   ▼
-Planner
-   │
-   ├── LLM #1
-   │
-   ▼
-ExecutionPlan
-   │
-   ▼
-Executor
-   │
-   ▼
-LegalAgent
-   │
-   ├── RetrieverTool
-   │      ├── Document
-   │      ├── Vector
-   │      └── Web
-   │
-   ├── PromptBuilder
-   │
-   └── LLM #2
-   │
-   ▼
-ExecutionResult
-   │
-   ▼
-ResponseValidator
-   │
-   ▼
-Aggregator
-   │
-   ├── Content
-   ├── Citations
-   ├── Sources
-   ├── Usage
-   └── Agents
-   │
-   ▼
-OrchestratorResponse
-   │
-   ▼
-ChatService
-   │
-   ├── Create ASSISTANT event
-   │
-   └── COMMIT
-   │
-   ▼
-API Response
-```
+## License
 
----
-
-# 🧩 Responsibility Matrix
-
-| Component                    | Owns                                   | Must NOT Own            |
-| ---------------------------- | -------------------------------------- | ----------------------- |
-| **FastAPI**                  | HTTP, authentication, validation, SSE  | AI logic                |
-| **ChatService**              | Conversation lifecycle, DB transaction | Planning                |
-| **Orchestrator**             | AI lifecycle coordination              | Agent execution         |
-| **Planner**                  | Intent and `ExecutionPlan`             | Actual execution        |
-| **Executor**                 | Plan execution                         | Planning/reasoning      |
-| **Agent**                    | Domain reasoning                       | Infrastructure          |
-| **Tool**                     | External actions                       | Domain reasoning        |
-| **Agent Registry**           | Agent lookup                           | Agent execution         |
-| **Tool Registry**            | Tool lookup                            | Tool execution          |
-| **LLM Gateway**              | Provider abstraction                   | Business logic          |
-| **Aggregator**               | Merge outputs/provenance               | Planning                |
-| **Validator**                | Result validation                      | Answer generation       |
-| **Execution Memory**         | Runtime artifacts                      | Persistent conversation |
-| **ConversationEventService** | DB event persistence                   | AI execution            |
-| **Observability**            | Logs, traces, metrics                  | Business decisions      |
-
----
-
-# 📚 Documentation
-
-| Document               | Description                                 |
-| ---------------------- | ------------------------------------------- |
-| `docs/README.md`       | [Getting Started Guide](docs/README.md)     |
-| `docs/API.md`          | [REST API Reference](docs/API.md)           |
-| `docs/ARCHITECTURE.md` | [System Architecture](docs/ARCHITECTURE.md) |
-| `docs/DEPLOYMENT.md`   | [Deployment Guide](docs/DEPLOYMENT.md)      |
-
----
-
-# 👨‍💻 Maintainer
-
-**Bharat Kumar**
-
-Senior Software Engineer | Backend & Cloud
-
-📧 `kumar.bhart28@gmail.com`
-
-🔗 [LinkedIn](https://www.linkedin.com/in/bharat-kumar28)
-
----
-
-# 📄 License
-
-This project is licensed under the MIT License. See the `LICENSE` file for details.
+AGPL-3.0-only — see [`LICENSE`](LICENSE). Need a proprietary/commercial license instead? See [`legal/COMMERCIAL-LICENSE.md`](legal/COMMERCIAL-LICENSE.md).

@@ -1,0 +1,699 @@
+# CI workflow
+# Runs on pushes, pull requests, or when called by another workflow
+name: CI
+
+on:
+  # Allow this workflow to be reused by other workflows
+  workflow_call:
+    inputs:
+      environment:
+        description: "Environment to deploy to (development, testing, staging, production)"
+        required: false
+        type: string
+
+  # Run CI on pushes to main development branches
+  push:
+    branches:
+      - main
+      - develop
+
+  # Run CI on key pull request lifecycle events
+  # labeled only matters to the on-demand image dry run (see publish-plan);
+  # the fast gates run on every one of these events.
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - edited
+      - labeled
+
+  # Manual run of the full pipeline for the selected branch. dry_run=true
+  # (default) builds and scans (or, on main, checks the promotion) but
+  # pushes/signs/tags nothing. See docs/release-process.md.
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build and scan only (no push, sign, tag or release)"
+        required: false
+        type: boolean
+        default: true
+
+# One run per branch at a time. Only PR runs are cancelled by a newer push:
+# develop and main runs publish (a develop run cancelled between pushing an
+# rc image and creating its git tag would let the next run reuse that rc
+# number; a main run could stop halfway through a release), so they finish.
+# GitHub keeps only the newest waiting run per branch.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.11.9"
+  SEMANTIC_RELEASE_VERSION: "10.7.0"
+  DEFAULT_ENVIRONMENT: "testing"
+  SEARXNG_BASE_URL: "http://localhost"
+
+jobs:
+  # ============================================================================
+  # Setup & Configuration
+  # ============================================================================
+
+  ci-setup:
+    name: CI Setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    outputs:
+      python-version: ${{ steps.config.outputs.python-version }}
+      app-environment: ${{ steps.config.outputs.app-environment }}
+      searnxg-base-url: ${{ steps.config.outputs.searnxg-base-url }}
+
+    steps:
+      - name: Configure CI
+        id: config
+        shell: bash
+        run: |
+          APP_ENVIRONMENT="${{ inputs.environment || env.DEFAULT_ENVIRONMENT }}"
+
+          {
+            echo "python-version=${{ env.PYTHON_VERSION }}"
+            echo "app-environment=${APP_ENVIRONMENT}"
+            echo "searnxg-base-url=${SEARXNG_BASE_URL}"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Python Version : ${{ env.PYTHON_VERSION }}"
+          echo "Environment    : ${APP_ENVIRONMENT}"
+          echo "Search Engine Base UR    : ${SEARXNG_BASE_URL}"
+
+  # ============================================================================
+  # GitHub Actions Validation
+  # ============================================================================
+
+  actionlint:
+    needs: ci-setup
+    name: Lint GitHub Actions
+    uses: ./.github/workflows/actionlint.yaml
+
+  # ============================================================================
+  # Code Quality
+  # ============================================================================
+
+  code-quality:
+    needs: ci-setup
+    name: Code Quality Checks
+    uses: ./.github/workflows/code-quality.yaml
+    with:
+      python-version: ${{ needs.ci-setup.outputs.python-version }}
+      working-directory: server
+
+  # ============================================================================
+  # Type Check
+  # ============================================================================
+
+  type-check:
+    needs: ci-setup
+    name: Type Check
+    uses: ./.github/workflows/type-check.yaml
+    with:
+      python-version: ${{ needs.ci-setup.outputs.python-version }}
+      working-directory: server
+
+  # ============================================================================
+  # Backend Tests
+  # ===========================================================================
+
+  backend-tests:
+    name: Backend Unit Tests
+    needs: ci-setup
+    uses: ./.github/workflows/pra-backend.yaml
+    with:
+      python-version: ${{ needs.ci-setup.outputs.python-version }}
+      app-environment: ${{ needs.ci-setup.outputs.app-environment }}
+      searnxg-base-url: ${{ needs.ci-setup.outputs.searnxg-base-url }}
+      working-directory: server
+    secrets: inherit
+
+  # ===========================================================================
+  # Coverage Validation
+  # ===========================================================================
+  codecov-validation:
+    name: Coverage Validation
+    needs: backend-tests
+    uses: ./.github/workflows/codecov-validation.yaml
+
+  # ===========================================================================
+  # Smoke + E2E (real Postgres/Redis) -- merges to develop only
+  # ===========================================================================
+
+  # Too slow for every PR push, so it runs after the merge, on the commit
+  # that will become the release candidate. Starts alongside the fast gates.
+  integration-tests:
+    name: Smoke + E2E Tests
+    needs:
+      - ci-setup
+      - publish-plan
+    if: >-
+      needs.publish-plan.outputs.mode == 'build' &&
+      needs.publish-plan.outputs.push == 'true'
+    uses: ./.github/workflows/integration-tests.yaml
+    with:
+      python-version: ${{ needs.ci-setup.outputs.python-version }}
+      working-directory: server
+    secrets: inherit
+
+  # ===========================================================================
+  # Image publishing and releases: build once on develop, promote on main.
+  # docs/release-process.md
+  # ===========================================================================
+
+  publish-plan:
+    name: Publish Plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    outputs:
+      mode: ${{ steps.plan.outputs.mode }}
+      push: ${{ steps.plan.outputs.push }}
+
+    steps:
+      # mode: none | build | promote. push: whether anything is published.
+      #   push to develop              -> build, push
+      #   push to main                 -> promote, push (retag only, never builds)
+      #   pull_request into develop    -> build, dry run    } only with the
+      #   pull_request into main       -> promote, dry run  } run-image-scan label
+      #   pull_request into any other branch -> none
+      #   workflow_dispatch            -> build (develop/other) or promote (main);
+      #                                   publishes only for dry_run=false on
+      #                                   develop. Releases happen by merging.
+      - name: Decide what this run publishes
+        id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          BASE_REF: ${{ github.base_ref }}
+          PR_ACTION: ${{ github.event.action }}
+          PR_SCAN_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'run-image-scan') }}
+          ADDED_LABEL: ${{ github.event.label.name }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          mode=none
+          push=false
+
+          case "$EVENT" in
+            push)
+              case "$REF" in
+                refs/heads/develop) mode=build; push=true ;;
+                refs/heads/main) mode=promote; push=true ;;
+              esac
+              ;;
+            pull_request)
+              # The image dry run (~20 min for a build) is on demand only:
+              # a PR into develop or main with the run-image-scan label.
+              # Without it PRs get just the fast gates. The real build +
+              # scan on merge to develop (and the promotion checks on merge
+              # to main) run regardless.
+              case "$BASE_REF" in
+                develop) wanted=build ;;
+                main) wanted=promote ;;
+                *) wanted=none ;;
+              esac
+
+              if [ "$wanted" = none ]; then
+                reason="PR into ${BASE_REF}: no image dry run (only PRs into develop or main)."
+              elif [ "$PR_ACTION" = edited ]; then
+                reason="Title/body edit: image dry run not repeated."
+              elif [ "$PR_ACTION" = labeled ] && [ "$ADDED_LABEL" != run-image-scan ]; then
+                reason="Label '${ADDED_LABEL}' added: image dry run not repeated."
+              elif [ "$PR_SCAN_LABEL" != true ]; then
+                reason="No image dry run (add the run-image-scan label to run one). The image is built and scanned in full on merge to develop."
+              else
+                mode=$wanted
+              fi
+
+              if [ -n "${reason:-}" ]; then
+                echo "$reason" | tee -a "$GITHUB_STEP_SUMMARY"
+              fi
+              ;;
+            workflow_dispatch)
+              if [ "$REF" = refs/heads/main ]; then mode=promote; else mode=build; fi
+              if [ "$DRY_RUN" = false ]; then
+                if [ "$REF" = refs/heads/develop ]; then
+                  push=true
+                else
+                  echo "::warning::dry_run=false only publishes from develop (releases happen by merging into main); running as a dry run."
+                fi
+              fi
+              ;;
+          esac
+
+          echo "mode=${mode}" >> "$GITHUB_OUTPUT"
+          echo "push=${push}" >> "$GITHUB_OUTPUT"
+          echo "Publish plan: mode=${mode} push=${push}" | tee -a "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # develop: build once, as a release candidate
+  # ---------------------------------------------------------------------------
+
+  rc-version:
+    name: Release Candidate Version
+    needs: publish-plan
+    if: needs.publish-plan.outputs.mode == 'build'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    outputs:
+      rc: ${{ steps.rc.outputs.rc }}
+
+    steps:
+      - name: Checkout repository (full history and tags)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install python-semantic-release
+        run: pip install "python-semantic-release==${{ env.SEMANTIC_RELEASE_VERSION }}"
+
+      - name: Compute release candidate
+        id: rc
+        run: |
+          rc=$(.github/scripts/next-rc.sh)
+          echo "rc=${rc}" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Release candidate"
+            if [ -n "$rc" ]; then
+              echo "This build is \`${rc}\`."
+            else
+              echo "No release pending (nothing releasable since the last release); image gets \`:develop\` and \`:sha-<7>\` only."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  publish-image:
+    name: Publish Image
+    needs:
+      - publish-plan
+      - rc-version
+      - actionlint
+      - code-quality
+      - type-check
+      - backend-tests
+      - codecov-validation
+      - integration-tests
+    # Every CI gate must have passed. A publishing run (merge to develop)
+    # also waits for smoke + e2e: an rc can be promoted to a release as-is,
+    # so a commit whose integration tests fail must not get one. Dry runs
+    # (PRs) don't run integration tests and don't wait for them.
+    if: >-
+      always() &&
+      needs.publish-plan.outputs.mode == 'build' &&
+      needs.rc-version.result == 'success' &&
+      needs.actionlint.result == 'success' &&
+      needs.code-quality.result == 'success' &&
+      needs.type-check.result == 'success' &&
+      needs.backend-tests.result == 'success' &&
+      needs.codecov-validation.result == 'success' &&
+      (needs.publish-plan.outputs.push != 'true' ||
+       needs.integration-tests.result == 'success')
+    uses: ./.github/workflows/publish-image.yaml
+    with:
+      version: ${{ needs.rc-version.outputs.rc }}
+      push: ${{ needs.publish-plan.outputs.push == 'true' }}
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      security-events: write
+      actions: read
+
+  rc-tag:
+    name: Tag Release Candidate
+    needs:
+      - publish-plan
+      - rc-version
+      - publish-image
+    # After the image is pushed, signed and attested.
+    if: >-
+      always() &&
+      needs.publish-plan.outputs.push == 'true' &&
+      needs.rc-version.outputs.rc != '' &&
+      needs.publish-image.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    permissions:
+      contents: write # create the rc tag
+
+    steps:
+      # Annotated tag on this develop commit, recording the exact digest the
+      # rc was published under. Promotion reads the digest from here and
+      # checks the registry still agrees, instead of trusting a mutable tag.
+      - name: Create annotated rc tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RC: ${{ needs.rc-version.outputs.rc }}
+          IMAGE: ${{ needs.publish-image.outputs.image }}
+          DIGEST: ${{ needs.publish-image.outputs.digest }}
+        run: |
+          message=$(printf 'Release candidate %s\n\nimage: %s:%s\ndigest: %s\n' "$RC" "$IMAGE" "$RC" "$DIGEST")
+          tag_object=$(gh api "repos/${REPO}/git/tags" \
+            -f "tag=v${RC}" -f "message=${message}" -f "object=${GITHUB_SHA}" -f type=commit --jq .sha)
+          gh api "repos/${REPO}/git/refs" -f "ref=refs/tags/v${RC}" -f "sha=${tag_object}" > /dev/null
+          echo "Tagged ${GITHUB_SHA} as v${RC} (${IMAGE}@${DIGEST})" | tee -a "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # main: promote the release candidate. Never builds.
+  # ---------------------------------------------------------------------------
+
+  promote:
+    name: Promote Release Candidate
+    needs:
+      - publish-plan
+      - actionlint
+      - code-quality
+      - type-check
+      - backend-tests
+      - codecov-validation
+    if: >-
+      always() &&
+      needs.publish-plan.outputs.mode == 'promote' &&
+      needs.actionlint.result == 'success' &&
+      needs.code-quality.result == 'success' &&
+      needs.type-check.result == 'success' &&
+      needs.backend-tests.result == 'success' &&
+      needs.codecov-validation.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    permissions:
+      contents: read
+      pull-requests: read # find the release PR for the merge commit
+      packages: write # add release tags in GHCR
+
+    outputs:
+      released: ${{ steps.resolve.outputs.released }}
+      version: ${{ steps.resolve.outputs.version }}
+      digest: ${{ steps.resolve.outputs.digest }}
+      source_sha: ${{ steps.source.outputs.sha }}
+      image: ${{ steps.source.outputs.image }}
+
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      COSIGN_VERSION: "v2.5.3"
+      CRANE_VERSION: "v0.22.1"
+      TRIVY_VERSION: "0.58.1"
+
+    steps:
+      - name: Checkout repository (full history and tags)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # The develop commit being released: the release PR's head.
+      - name: Identify the develop commit being promoted
+        id: source
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          REPO: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          case "$EVENT" in
+            pull_request)
+              if [ "$PR_HEAD_REF" != develop ]; then
+                echo "::error::Releases are promoted from develop only; this PR's head is '${PR_HEAD_REF}'."
+                exit 1
+              fi
+              source_sha=$PR_HEAD_SHA
+              ;;
+            push)
+              source_sha=$(gh api "repos/${REPO}/commits/${GITHUB_SHA}/pulls" \
+                --jq '[.[] | select(.base.ref == "main" and .head.ref == "develop" and .merged_at != null)][0].head.sha // empty')
+              if [ -z "$source_sha" ]; then
+                echo "::error::${GITHUB_SHA} on main didn't come from a merged develop -> main PR; nothing to promote. main should only change through release PRs."
+                exit 1
+              fi
+              ;;
+            *)
+              # Dispatch (dry run): main's latest release merge.
+              source_sha=$(git rev-parse -q --verify "${GITHUB_SHA}^2" || true)
+              if [ -z "$source_sha" ]; then
+                echo "::error::main's HEAD isn't a merge commit; nothing to check."
+                exit 1
+              fi
+              ;;
+          esac
+
+          # The image is built from source_sha's tree. Promoting it is only
+          # honest if main ends up with exactly that tree.
+          if ! git diff --quiet "$source_sha" "$GITHUB_SHA"; then
+            echo "::error::main (${GITHUB_SHA}) differs from the develop commit being promoted (${source_sha}); its image wouldn't match main's source."
+            git diff --stat "$source_sha" "$GITHUB_SHA"
+            exit 1
+          fi
+
+          echo "sha=${source_sha}" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/${OWNER,,}/juris-ai" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install python-semantic-release
+        run: pip install "python-semantic-release==${{ env.SEMANTIC_RELEASE_VERSION }}"
+
+      - name: Resolve the release candidate
+        id: resolve
+        run: .github/scripts/resolve-release.sh "${{ steps.source.outputs.sha }}" | tee -a "$GITHUB_OUTPUT"
+
+      # crane, cosign and the re-scan's docker pull all need registry
+      # access (the package may be private).
+      - name: Log in to GHCR
+        if: steps.resolve.outputs.released == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The re-scan pulls the ~2.4 GB image into the local daemon.
+      - name: Free disk space
+        if: steps.resolve.outputs.released == 'true'
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - name: Restore Trivy vulnerability DB
+        if: steps.resolve.outputs.released == 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/trivy/db
+            ~/.cache/trivy/java-db
+          key: trivy-db-${{ env.TRIVY_VERSION }}-${{ github.run_id }}
+          restore-keys: |
+            trivy-db-${{ env.TRIVY_VERSION }}-
+
+      - name: Install cosign
+        if: steps.resolve.outputs.released == 'true'
+        uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: ${{ env.COSIGN_VERSION }}
+
+      - name: Install crane
+        if: steps.resolve.outputs.released == 'true'
+        uses: imjasonh/setup-crane@v0.7
+        with:
+          version: ${{ env.CRANE_VERSION }}
+
+      # Verify (incl. re-scanning the rc by digest with the build's Trivy
+      # gate), then (push) add the release tags to the SAME digest with
+      # `crane tag`. No rebuild, no re-sign: the rc was signed and attested
+      # when develop built it, and all of that is keyed by digest.
+      - name: Verify, re-scan and promote
+        id: promote
+        if: steps.resolve.outputs.released == 'true'
+        env:
+          IMAGE: ${{ steps.source.outputs.image }}
+          VERSION: ${{ steps.resolve.outputs.version }}
+          RC_TAG: ${{ steps.resolve.outputs.rc_tag }}
+          DIGEST: ${{ steps.resolve.outputs.digest }}
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+          PUSH: ${{ needs.publish-plan.outputs.push }}
+        run: |
+          .github/scripts/promote-image.sh "$IMAGE" "${RC_TAG#v}" "$DIGEST" "$SOURCE_SHA" "$VERSION" "$PUSH" \
+            "juris-ai-${VERSION}.spdx.json"
+
+      - name: Keep the signed SBOM for the GitHub Release
+        if: steps.resolve.outputs.released == 'true' && needs.publish-plan.outputs.push == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: juris-ai-${{ steps.resolve.outputs.version }}.spdx.json
+          if-no-files-found: error
+
+      - name: Re-scan summary
+        if: always() && steps.promote.outcome != 'skipped' && hashFiles('trivy-promotion/trivy-table.txt') != ''
+        run: |
+          {
+            echo "## Promotion re-scan"
+            echo "Gate: HIGH/CRITICAL findings that have a fix (\`--ignore-unfixed\`), same as the build."
+            echo '```'
+            cat trivy-promotion/trivy-table.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Promotion summary
+        if: always()
+        env:
+          RELEASED: ${{ steps.resolve.outputs.released }}
+          VERSION: ${{ steps.resolve.outputs.version }}
+          RC_TAG: ${{ steps.resolve.outputs.rc_tag }}
+          DIGEST: ${{ steps.resolve.outputs.digest }}
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+          PUSH: ${{ needs.publish-plan.outputs.push }}
+        run: |
+          {
+            echo "## Promotion"
+            if [ "$RELEASED" = true ]; then
+              if [ "$PUSH" = true ]; then verb="Released"; else verb="Merging this releases"; fi
+              echo "${verb} **v${VERSION}** = \`${RC_TAG}\` built from \`${SOURCE_SHA}\`, digest \`${DIGEST}\`."
+            elif [ "$RELEASED" = false ]; then
+              echo "Nothing to release: no releasable commits since the last release."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  release:
+    name: GitHub Release
+    needs:
+      - publish-plan
+      - promote
+    if: >-
+      always() &&
+      needs.publish-plan.outputs.push == 'true' &&
+      needs.promote.result == 'success' &&
+      needs.promote.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    permissions:
+      contents: write # create the tag + GitHub Release, push the sync branch
+      pull-requests: write # open the sync PR to develop
+
+    env:
+      VERSION: ${{ needs.promote.outputs.version }}
+      SOURCE_SHA: ${{ needs.promote.outputs.source_sha }}
+      IMAGE: ${{ needs.promote.outputs.image }}
+      DIGEST: ${{ needs.promote.outputs.digest }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: Checkout repository (full history and tags)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install python-semantic-release
+        run: pip install "python-semantic-release==${{ env.SEMANTIC_RELEASE_VERSION }}"
+
+      # Writes the version into pyproject.toml and regenerates CHANGELOG.md in
+      # this workspace only (no commit, tag or push). rc tags are deleted
+      # LOCALLY first so the changelog lists releases, not every candidate
+      # (with them, the release's own section comes out empty).
+      - name: Apply version and changelog (workspace only)
+        working-directory: server
+        run: |
+          git checkout -q -B main "$SOURCE_SHA"
+          git tag --list 'v*-rc.*' | xargs -r git tag -d > /dev/null
+
+          semantic-release version --no-commit --no-tag --no-push --no-vcs-release --skip-build
+
+          applied=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+          if [ "$applied" != "$VERSION" ]; then
+            echo "::error::semantic-release applied ${applied}, expected ${VERSION}."
+            exit 1
+          fi
+
+      - name: Extract release notes
+        run: |
+          awk -v v="## v${VERSION} " 'index($0, v) == 1 {on = 1; next} /^## v/ && on {exit} on' CHANGELOG.md > release-notes.md
+          {
+            echo
+            echo "### Container image"
+            echo "Promoted from the develop build of \`${SOURCE_SHA}\` (not rebuilt):"
+            echo '```'
+            echo "${IMAGE}:${VERSION}"
+            echo "${IMAGE}@${DIGEST}"
+            echo '```'
+            echo "Verify the signature and SBOM: see docs/release-process.md."
+          } >> release-notes.md
+          cat release-notes.md
+
+      - name: Download signed SBOM
+        uses: actions/download-artifact@v4
+        with:
+          name: sbom
+
+      # The tag goes on the develop commit the image was built from: it's
+      # the image's exact source, the merge makes it reachable from main,
+      # and semantic-release on develop needs to see it.
+      - name: Create tag and GitHub Release
+        run: |
+          gh release create "v${VERSION}" \
+            --target "$SOURCE_SHA" \
+            --title "v${VERSION}" \
+            --notes-file release-notes.md \
+            --generate-notes \
+            "juris-ai-${VERSION}.spdx.json"
+
+      # A commit made through the GraphQL createCommitOnBranch API is signed
+      # by GitHub, so it satisfies develop's signed-commit rule. Only the
+      # version line of develop's own pyproject.toml changes (develop may
+      # have moved on since this release was cut).
+      - name: Open version sync PR to develop
+        env:
+          REPO: ${{ github.repository }}
+        run: |
+          branch="release/sync-v${VERSION}"
+          develop_sha=$(gh api "repos/${REPO}/git/ref/heads/develop" --jq .object.sha)
+
+          gh api "repos/${REPO}/contents/server/pyproject.toml?ref=${develop_sha}" --jq .content \
+            | base64 -d > develop-pyproject.toml
+
+          python .github/scripts/sync_release_payload.py \
+            --repo "$REPO" --branch "$branch" --head "$develop_sha" --version "$VERSION" \
+            --pyproject develop-pyproject.toml --changelog CHANGELOG.md > payload.json
+
+          gh api -X POST "repos/${REPO}/git/refs" -f "ref=refs/heads/${branch}" -f "sha=${develop_sha}"
+          gh api graphql --input payload.json --jq .data.createCommitOnBranch.commit.url
+
+          gh pr create --base develop --head "$branch" \
+            --title "chore(release): sync v${VERSION} to develop" \
+            --body-file - <<EOF
+          ## Developer:
+          github-actions (release workflow)
+
+          ## Summary of Proposed Changes
+          Syncs release v${VERSION} back to develop: \`server/pyproject.toml\` version and the regenerated \`CHANGELOG.md\`. Release: ${GITHUB_SERVER_URL}/${REPO}/releases/tag/v${VERSION}
+
+          ## Type of Change
+          - [x] Release housekeeping (no code changes)
+
+          ## Testing
+          No image was built for this release: the develop build of ${SOURCE_SHA} (digest ${DIGEST}) was promoted by retag in run ${GITHUB_SERVER_URL}/${REPO}/actions/runs/${GITHUB_RUN_ID}.
+          EOF
