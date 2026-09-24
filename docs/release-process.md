@@ -210,7 +210,9 @@ push a "bump version" commit. Instead:
    changing only `develop`'s own `version` line and replacing
    `CHANGELOG.md`.
 4. A PR `chore(release): sync vX.Y.Z to develop` is opened. Merge it like
-   any other PR; it contains no code.
+   any other PR; it contains no code. (This needs "Allow GitHub Actions to
+   create and approve pull requests" enabled in the repo's Actions
+   settings.)
 
 ## Image scanning
 
@@ -358,11 +360,23 @@ Create the label once under Issues → Labels.
   workflows for events created by `GITHUB_TOKEN`. If `develop` requires
   status checks, merge it as an administrator, or close and reopen it to
   trigger CI. It only changes `CHANGELOG.md` and the version line.
-- **A failed `release` job after a successful `promote`** leaves the image
-  tagged with no git tag or GitHub Release. Re-run the failed job from the
-  Actions UI (it reuses the promotion's version and digest). If
-  `release/sync-vX.Y.Z` already exists from the failed attempt, delete it
-  first.
+- **If the `GitHub Release` job fails**, fix the cause and use **Re-run
+  failed jobs** on that run. Nothing needs deleting first: the job checks
+  what an earlier attempt already did and only does the rest.
+  - The tag and GitHub Release are created only if missing (an existing
+    tag gets its Release; an existing Release is left alone). A `vX.Y.Z`
+    tag on a different commit than the one being promoted stops the job.
+  - `CHANGELOG.md` is regenerated from the tags, so it's available even
+    when the release already exists.
+  - The sync PR is skipped if one is already open or merged, or if
+    `develop` already has the version and changelog. Otherwise the bot's
+    `release/sync-vX.Y.Z` branch is reset to current `develop` (a leftover
+    from a failed attempt would otherwise conflict) and the PR is opened.
+
+  The usual cause of a failed sync PR: **Settings → Actions → General →
+  "Allow GitHub Actions to create and approve pull requests"** is off. The
+  step's log then ends with "GitHub Actions is not permitted to create or
+  approve pull requests".
 - **rc git tags accumulate** on `develop` (one per develop build of a
   pending release). They're what gives each candidate its number and
   records its digest; don't delete them.
