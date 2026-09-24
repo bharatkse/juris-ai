@@ -26,6 +26,12 @@ from agentic.agents.runtime.execution import (
     AgentExecutionHandle,
     AgentExecutionResult,
 )
+from agentic.agents.runtime.feedback import (
+    CORRECTIVE_RETRIEVAL_FEEDBACK,
+    EVALUATION_FEEDBACK,
+    is_feedback,
+    runtime_feedback,
+)
 from agentic.agents.runtime.lifecycle.termination import (
     AgentExecutionStatus,
     TerminationReason,
@@ -117,12 +123,6 @@ NO_SOURCES_ANSWER_MESSAGE = (
 # RetrieverTool's own default; the seed is a normal first retrieval, not
 # a broadened corrective one (CORRECTIVE_RETRIEVAL_TOP_K).
 SEED_RETRIEVAL_TOP_K = 5
-
-# Notes the gate adds to reasoning_context for the next attempt. They
-# steer the model but are not evidence an answer can be grounded in.
-_FEEDBACK_SOURCE_TYPES = frozenset(
-    {"evaluation_feedback", "corrective_retrieval_feedback"},
-)
 
 
 @dataclass(slots=True, frozen=True)
@@ -249,6 +249,13 @@ class AgentContinuationService:
                             tool_results=tuple(tool_results),
                         )
 
+                    if self._retry_after_tool_failure(
+                        handle=handle,
+                        tool_result=tool_result,
+                    ):
+                        result = await handle.reason()
+                        continue
+
                     handle.lifecycle.fail(
                         TerminationReason.FAILED_TOOL,
                     )
@@ -365,6 +372,40 @@ class AgentContinuationService:
                 action=result.action,
                 tool_results=tuple(tool_results),
             )
+
+    def _retry_after_tool_failure(
+        self,
+        *,
+        handle: AgentExecutionHandle,
+        tool_result: ToolResult,
+    ) -> bool:
+        """
+        Tell the model why its tool call failed so it can correct it, and
+        return whether it may reason again.
+
+        The error is ToolExecutionService's sanitized message (fields and
+        constraints only). Retrying is bounded by the lifecycle's
+        no-progress budget -- the same failure repeating is no progress --
+        on top of the tool-call and repeated-action budgets every call
+        already goes through. A call a human reviewer rejected is not
+        retried: the model would just propose it again.
+        """
+
+        if "approval_decision" in tool_result.execution_metadata:
+            return False
+
+        feedback = runtime_feedback(
+            f"Your call to tool '{tool_result.tool_name}' failed: "
+            f"{tool_result.error or 'the tool returned an error.'} "
+            "Correct the call, use a different tool, or answer from the "
+            "evidence you have.",
+        )
+
+        if not self._record_progress(handle=handle, context=(feedback,)):
+            return False
+
+        handle.extend_reasoning_context(context=(feedback,))
+        return True
 
     async def _execute_gated_tool(
         self,
@@ -849,7 +890,7 @@ class AgentContinuationService:
                         f"Provide additional evidence or a more complete answer."
                     ),
                     score=None,
-                    metadata={"source_type": "evaluation_feedback"},
+                    metadata={"source_type": EVALUATION_FEEDBACK},
                 ),
             ),
         )
@@ -915,7 +956,7 @@ class AgentContinuationService:
                         f"cannot be answered from the available evidence."
                     ),
                     score=None,
-                    metadata={"source_type": "corrective_retrieval_feedback"},
+                    metadata={"source_type": CORRECTIVE_RETRIEVAL_FEEDBACK},
                 ),
             ),
         )
@@ -1015,8 +1056,7 @@ class AgentContinuationService:
         return tuple(
             item
             for item in handle.reasoning_context
-            if item.metadata.get("source_type") not in _FEEDBACK_SOURCE_TYPES
-            and item.content not in NON_EVIDENCE_CONTENT
+            if not is_feedback(item) and item.content not in NON_EVIDENCE_CONTENT
         )
 
     @staticmethod

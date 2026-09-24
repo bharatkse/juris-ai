@@ -18,8 +18,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from pydantic import Field
+
 from adapters.observability.logger import get_logger
-from agentic.tools.base import Tool
+from agentic.tools.base import Tool, ToolParams
 from agentic.tools.messaging.base import GatedMCPTool
 
 log = get_logger(__name__)
@@ -34,6 +36,11 @@ class EmailDraft:
     body: str
 
 
+class EmailParams(ToolParams):
+    query: str = Field(min_length=1, description="Which emails to read (mail search query).")
+    limit: int = Field(default=10, ge=1, le=20, description="How many emails to return.")
+
+
 class EmailTool(Tool, GatedMCPTool):
     """
     Read, draft, and send email via the Gmail MCP server.
@@ -41,6 +48,8 @@ class EmailTool(Tool, GatedMCPTool):
 
     name = "email"
     description = "Read email, and draft/send email (send requires approval)."
+
+    params_model = EmailParams
 
     async def read(self, *, query: str, limit: int = 10) -> str:
         log.debug("EmailTool.read(limit=%d, query_length=%d).", limit, len(query))

@@ -16,8 +16,10 @@ the model.
 
 from __future__ import annotations
 
+from pydantic import Field
+
 from adapters.observability.logger import get_logger
-from agentic.tools.base import Tool
+from agentic.tools.base import Tool, ToolParams
 from rag.hybrid_retriever import HybridRetriever
 
 log = get_logger(__name__)
@@ -29,6 +31,11 @@ RETRIEVAL_FAILED_CONTENT = "Retrieval failed — please try again."
 # a normal tool result, but it is not evidence an answer can be grounded
 # in (see AgentContinuationService's evidence seeding, A1).
 NON_EVIDENCE_CONTENT = frozenset({NO_RESULTS_CONTENT, RETRIEVAL_FAILED_CONTENT})
+
+
+class RetrieverParams(ToolParams):
+    query: str = Field(min_length=1, description="What to search the legal corpus for.")
+    top_k: int = Field(default=5, ge=1, le=10, description="How many chunks to return.")
 
 
 class RetrieverTool(Tool):
@@ -43,6 +50,8 @@ class RetrieverTool(Tool):
         "search (semantic + keyword) with reranking, over indexed "
         "contracts and legal documents."
     )
+
+    params_model = RetrieverParams
 
     def __init__(self, *, hybrid_retriever: HybridRetriever) -> None:
         self._retriever = hybrid_retriever

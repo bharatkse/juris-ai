@@ -19,17 +19,44 @@ Its responsibility is limited to:
         ↓
     Tool resolution
         ↓
+    Parameter validation (the tool's params_model)
+        ↓
     Tool execution
         ↓
     ToolResult
+
+Parameters come from the model, so they are untrusted: they are validated
+and bounded before the tool runs, and a failure is reported to the model
+as a short message naming only fields and constraints -- never the raw
+exception text or the rejected values, which could carry injected text
+back into the next prompt. The full exception is logged instead.
 """
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
+from pydantic import ValidationError
+
+from adapters.observability.logger import get_logger
 from agentic.registry.protocols import ToolRegistryProtocol
 from agentic.tools.result import ToolEvidence, ToolResult
+
+logger = get_logger(__name__)
+
+# A parameter name is echoed back to the model only if it looks like an
+# identifier; anything else is model-supplied text and is not repeated.
+_PARAMETER_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
+
+_BOUND_MESSAGES = {
+    "less_than_equal": ("le", "must be <= {}"),
+    "less_than": ("lt", "must be < {}"),
+    "greater_than_equal": ("ge", "must be >= {}"),
+    "greater_than": ("gt", "must be > {}"),
+    "string_too_short": ("min_length", "must be at least {} characters"),
+    "string_too_long": ("max_length", "must be at most {} characters"),
+}
 
 
 class ToolExecutionService:
@@ -92,21 +119,51 @@ class ToolExecutionService:
             key=tool_name,
         )
 
+        if tool.params_model is None:
+            logger.warning(
+                "Refused a call to a tool agents can't call: tool=%s.",
+                tool_name,
+            )
+
+            return self._failed(
+                tool_name=tool_name,
+                error=f"Tool '{tool_name}' can't be called by an agent.",
+                error_type="ToolNotCallable",
+            )
+
         try:
+            params = tool.params_model.model_validate(parameters or {})
+
+        except ValidationError as exc:
+            logger.info(
+                "Rejected tool parameters: tool=%s errors=%s.",
+                tool_name,
+                [(error["type"], error["loc"]) for error in exc.errors(include_input=False)],
+            )
+
+            return self._failed(
+                tool_name=tool_name,
+                error=_describe_invalid_parameters(tool_name=tool_name, error=exc),
+                error_type="InvalidParameters",
+            )
+
+        try:
+            # exclude_unset: the tool's own execute() defaults apply to
+            # anything the model didn't pass.
             content = await tool.execute(
-                **parameters,
+                **params.model_dump(exclude_unset=True),
             )
 
         except Exception as exc:
-            return ToolResult(
+            logger.exception(
+                "Tool execution failed: tool=%s.",
+                tool_name,
+            )
+
+            return self._failed(
                 tool_name=tool_name,
-                success=False,
-                content="",
-                evidence=(),
-                execution_metadata={
-                    "error_type": type(exc).__name__,
-                },
-                error=str(exc),
+                error=f"Tool '{tool_name}' failed while running.",
+                error_type=type(exc).__name__,
             )
 
         return ToolResult(
@@ -122,3 +179,59 @@ class ToolExecutionService:
             execution_metadata={},
             error=None,
         )
+
+    @staticmethod
+    def _failed(
+        *,
+        tool_name: str,
+        error: str,
+        error_type: str,
+    ) -> ToolResult:
+        return ToolResult(
+            tool_name=tool_name,
+            success=False,
+            content="",
+            evidence=(),
+            execution_metadata={
+                "error_type": error_type,
+            },
+            error=error,
+        )
+
+
+def _describe_invalid_parameters(*, tool_name: str, error: ValidationError) -> str:
+    """
+    One short, model-readable sentence per problem: the field and the
+    constraint it broke. Never includes the rejected value, and repeats a
+    parameter name only if it looks like an identifier.
+    """
+
+    problems: list[str] = []
+
+    for item in error.errors(include_input=False, include_url=False):
+        location = ".".join(str(part) for part in item["loc"])
+        field = location if _PARAMETER_NAME.match(location) else "a parameter"
+        error_type = item["type"]
+        context = item.get("ctx") or {}
+
+        if error_type == "extra_forbidden":
+            problems.append(
+                f"'{field}' is not a parameter of this tool"
+                if field != "a parameter"
+                else "an unknown parameter was passed"
+            )
+        elif error_type == "missing":
+            problems.append(f"'{field}' is required")
+        elif error_type == "literal_error":
+            problems.append(
+                f"'{field}' must be one of {context.get('expected', 'the allowed values')}"
+            )
+        elif error_type in _BOUND_MESSAGES:
+            key, template = _BOUND_MESSAGES[error_type]
+            problems.append(f"'{field}' " + template.format(context.get(key, "the allowed limit")))
+        elif error_type.endswith(("_type", "_parsing")):
+            problems.append(f"'{field}' has the wrong type")
+        else:
+            problems.append(f"'{field}' is invalid")
+
+    return f"Invalid parameters for tool '{tool_name}': " + "; ".join(problems) + "."

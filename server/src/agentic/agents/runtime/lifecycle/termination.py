@@ -29,7 +29,7 @@ class TerminationReason(StrEnum):
 
     PARTIAL_TIMEOUT = "partial_timeout"
     PARTIAL_REPEATED_ACTION = "partial_repeated_action"
-    PARTIAL_VALIDATION_LIMIT = "partial_validation_limit"
+    PARTIAL_REJECTED_DECISION_LIMIT = "partial_rejected_decision_limit"
     PARTIAL_NO_PROGRESS = "partial_no_progress"
 
     # A FINAL answer failed the answer-quality gate and no budget or new

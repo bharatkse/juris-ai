@@ -24,6 +24,7 @@ def test_create_builds_agent_node_and_compiles_graph() -> None:
     builder.compile.return_value = compiled_graph
 
     agent_registry = MagicMock()
+    tool_registry = MagicMock()
     retry_policy = ExecutionRetryPolicy(max_attempts=3)
     retry_classifier = MagicMock()
     checkpointer = MagicMock()
@@ -38,6 +39,7 @@ def test_create_builds_agent_node_and_compiles_graph() -> None:
     factory = ExecutionGraphFactory(
         builder=builder,
         agent_registry=agent_registry,
+        tool_registry=tool_registry,
         retry_policy=retry_policy,
         retry_classifier=retry_classifier,
         checkpointer=checkpointer,
@@ -77,6 +79,7 @@ def test_create_builds_agent_node_and_compiles_graph() -> None:
     assert agent_execution_kwargs["retry_classifier"] is retry_classifier
     assert agent_execution_kwargs["agent_policy_provider"] is agent_policy_provider
     assert agent_execution_kwargs["agent_policy_guard"] is agent_policy_guard
+    assert agent_execution_kwargs["tool_registry"] is tool_registry
 
     continuation_service_cls.assert_called_once_with(
         tool_execution_service=tool_execution_service,

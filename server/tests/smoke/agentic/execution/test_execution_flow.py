@@ -53,7 +53,7 @@ from agentic.execution.graph.builder import ExecutionGraphBuilder
 from agentic.execution.graph.state import ExecutionGraphState, ExecutionStepUpdate
 from agentic.execution.state import ExecutionStateAssembler
 from agentic.registry.tool import ToolRegistry
-from agentic.tools.base import Tool
+from agentic.tools.base import Tool, ToolParams
 from agentic.tools.runtime.invocation import ToolExecutionService
 from core.dto.agent import AgentContextDTO, AgentRequestDTO
 from core.dto.agent_action import AgentActionRequestDTO
@@ -75,9 +75,15 @@ from core.models.message import AgentMessageSchema
 # ---------------------------------------------------------------------------
 
 
+class SmokeToolParams(ToolParams):
+    value: int | None = None
+    clause: str | None = None
+
+
 class SmokeTool(Tool):
     name = "smoke_tool"
     description = "Deterministic smoke-test tool."
+    params_model = SmokeToolParams
 
     def __init__(
         self,
@@ -536,7 +542,13 @@ async def test_smoke_tool_call_executes_and_continues_reasoning() -> None:
 
 
 @pytest.mark.asyncio
-async def test_smoke_tool_failure_is_failed_tool() -> None:
+async def test_smoke_tool_failure_is_fed_back_and_the_next_decision_is_used() -> None:
+    """
+    A failed tool call no longer ends the turn with failed_tool: the model
+    is told why (a sanitized message, never the raw exception) and its
+    next decision is used.
+    """
+
     tool = SmokeTool(
         error=RuntimeError("tool failed"),
     )
@@ -579,9 +591,15 @@ async def test_smoke_tool_failure_is_failed_tool() -> None:
         ),
     )
 
-    assert result.result.status is ExecutionStatusEnum.FAILED
-    assert result.result.termination_reason == TerminationReason.FAILED_TOOL.value
+    assert result.result.status is ExecutionStatusEnum.COMPLETED
+    assert result.result.decision.decision_type is AgentDecisionType.FINAL
     assert result.tool_results[0].success is False
+
+    feedback = [item.content for item in handle.reasoning_context]
+    assert feedback == [
+        "Your call to tool 'smoke_tool' failed: Tool 'smoke_tool' failed while running. "
+        "Correct the call, use a different tool, or answer from the evidence you have."
+    ]
 
 
 @pytest.mark.asyncio

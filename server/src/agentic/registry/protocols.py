@@ -19,11 +19,13 @@ A registry is NOT responsible for:
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Protocol, TypeVar, runtime_checkable
 
 from adapters.clients.llm.base import LLMClient
 from agentic.agents.base import BaseAgent
 from agentic.tools.base import Tool
+from core.dto.tool import ToolSpecDTO
 
 T = TypeVar("T")
 
@@ -111,7 +113,15 @@ class ToolRegistryProtocol(
     unique tool name.
     """
 
-    ...
+    def describe(
+        self,
+        *,
+        names: Iterable[str],
+    ) -> tuple[ToolSpecDTO, ...]:
+        """
+        Describe the named, agent-callable tools for an agent's prompt.
+        """
+        ...
 
 
 @runtime_checkable

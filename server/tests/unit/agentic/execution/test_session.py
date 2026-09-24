@@ -25,7 +25,13 @@ from agentic.execution.schemas.state import ExecutionStateSchema
 from agentic.execution.session import ExecutionSession
 from agentic.execution.state.assembler import ExecutionStateAssembler
 from core.dto.agent_action import AgentActionResponseDTO
-from core.enums import ActionTypeEnum, AgentActionStatusEnum, ExecutionStatusEnum
+from core.dto.tool import RetrievedContentDTO
+from core.enums import (
+    ActionTypeEnum,
+    AgentActionStatusEnum,
+    ExecutionStatusEnum,
+    RetrievalSourceEnum,
+)
 from core.exceptions.execution import ExecutionError
 from tests.builders.agentic.agent import (
     build_agent_action_request_dto,
@@ -508,7 +514,8 @@ def _build_real_graph_fixture():
     A one-step plan, a real compiled graph, and a stubbed
     FINAL-producing handle.
 
-    Returns (session_kwargs, decision, step) -- session_kwargs excludes
+    Returns (session_kwargs, decision, step, agent_execution) --
+    agent_execution is the stubbed AgentExecution; session_kwargs excludes
     action_workflow_service (the caller's own
     mock_action_workflow_service fixture).
     """
@@ -585,7 +592,7 @@ def _build_real_graph_fixture():
         "timeout_policy": ExecutionTimeoutPolicy(),
     }
 
-    return session_kwargs, decision, step
+    return session_kwargs, decision, step, agent_execution
 
 
 @pytest.mark.asyncio
@@ -598,7 +605,7 @@ async def test_execute_produces_the_expected_result_through_a_real_graph(
     field by field.
     """
 
-    session_kwargs, decision, step = _build_real_graph_fixture()
+    session_kwargs, decision, step, _agent_execution = _build_real_graph_fixture()
 
     session = ExecutionSession(
         action_workflow_service=mock_action_workflow_service,
@@ -627,3 +634,36 @@ async def test_execute_produces_the_expected_result_through_a_real_graph(
     assert result.approval is None
 
     mock_action_workflow_service.prepare.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_parsed_attachments_are_every_steps_starting_context(
+    mock_action_workflow_service: MagicMock,
+) -> None:
+    """
+    The Executor's parsed attachments go into the graph's initial
+    reasoning_context, so the agent step starts from them (and the
+    checkpoint keeps them for a resume()).
+    """
+
+    session_kwargs, _decision, _step, agent_execution = _build_real_graph_fixture()
+
+    attachment = RetrievedContentDTO(
+        source=RetrievalSourceEnum.DOCUMENT,
+        source_name="contract.txt",
+        content="[Uploaded file: contract.txt]\nClause 7: termination.",
+        score=1.0,
+        metadata={"title": "contract.txt", "source_type": "uploaded_file"},
+    )
+
+    session = ExecutionSession(
+        action_workflow_service=mock_action_workflow_service,
+        reasoning_context=(attachment,),
+        **session_kwargs,
+    )
+
+    assert session._build_initial_state()["reasoning_context"] == [attachment]
+
+    await session.execute()
+
+    assert agent_execution.start.await_args.kwargs["reasoning_context"] == (attachment,)

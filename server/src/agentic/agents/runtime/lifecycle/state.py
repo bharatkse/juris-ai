@@ -41,7 +41,7 @@ class AgentState:
     agent_hop_count: int = 0
     total_step_count: int = 0
     decision_count: int = 0
-    validation_attempt_count: int = 0
+    rejected_decision_count: int = 0
 
     evidence_count: int = 0
     context_count: int = 0

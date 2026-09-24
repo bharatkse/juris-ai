@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from io import BytesIO
 from types import MappingProxyType
 
@@ -42,6 +43,20 @@ from rag.ingestion.sanitizer import SecuritySanitizer, ThreatLevel
 log = get_logger(__name__)
 
 WITHHELD_CONTENT_MESSAGE = "[content withheld: prompt-injection pattern detected in uploaded file]"
+
+
+@dataclass(frozen=True, slots=True)
+class ParsedFile:
+    """
+    One uploaded file's parse result: its sanitized text, or why there
+    is none (``problem``). ``withheld`` marks text held back because it
+    contained a prompt-injection pattern.
+    """
+
+    filename: str
+    text: str | None = None
+    problem: str | None = None
+    withheld: bool = False
 
 
 class ParserTool(Tool):
@@ -91,6 +106,22 @@ class ParserTool(Tool):
         stay synchronous.
         """
 
+        parsed = self.parse_file(file)
+
+        if parsed.withheld:
+            return f"[{file.filename}]\n{WITHHELD_CONTENT_MESSAGE}"
+
+        if parsed.text is None:
+            return f"[{file.filename}]: {parsed.problem}"
+
+        return f"[{file.filename}]\n{parsed.text}"
+
+    def parse_file(self, file: ToolFileDTO) -> ParsedFile:
+        """
+        Parse and screen one uploaded file. Synchronous and CPU-bound:
+        async callers run it in a worker thread.
+        """
+
         parser = self._parsers.get(file.content_type)
 
         if parser is None:
@@ -99,7 +130,10 @@ class ParserTool(Tool):
                 file.content_type,
                 file.filename,
             )
-            return f"[{file.filename}]: unsupported content type '{file.content_type}'."
+            return ParsedFile(
+                filename=file.filename,
+                problem=f"unsupported content type '{file.content_type}'.",
+            )
 
         try:
             text = parser(file)
@@ -110,17 +144,19 @@ class ParserTool(Tool):
                 file.filename,
                 file.content_type,
             )
-            return f"[{file.filename}]: failed to parse — file may be corrupted."
+            return ParsedFile(
+                filename=file.filename,
+                problem="failed to parse — file may be corrupted.",
+            )
 
         if not text:
             log.warning("Parsed empty content from file '%s'.", file.filename)
-            return f"[{file.filename}]: no extractable text."
+            return ParsedFile(filename=file.filename, problem="no extractable text.")
 
-        # Extracted text is untrusted and about to be dropped directly
-        # into the agent's LLM prompt via this tool's flattened string
-        # return -- scan it and withhold on a CRITICAL finding rather
-        # than forwarding it, same as ContentFetcher does for fetched
-        # web pages.
+        # Extracted text is untrusted and goes into the agent's prompt --
+        # scan it and withhold on a CRITICAL finding rather than
+        # forwarding it, same as ContentFetcher does for fetched web
+        # pages.
         scan = self._sanitizer.sanitize_and_scan(
             text,
             fail_on=(ThreatLevel.CRITICAL,),
@@ -133,9 +169,13 @@ class ParserTool(Tool):
                 file.filename,
                 len(scan.threats),
             )
-            return f"[{file.filename}]\n{WITHHELD_CONTENT_MESSAGE}"
+            return ParsedFile(
+                filename=file.filename,
+                problem=WITHHELD_CONTENT_MESSAGE,
+                withheld=True,
+            )
 
-        return f"[{file.filename}]\n{scan.clean_text}"
+        return ParsedFile(filename=file.filename, text=scan.clean_text)
 
     @staticmethod
     def _parse_pdf(file: ToolFileDTO) -> str:

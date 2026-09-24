@@ -238,13 +238,14 @@ async def test_unverified_answer_is_replaced_and_logged_unverified(
 ) -> None:
     """
     S5 over real HTTP and Postgres: evidence exists, but the answer never
-    passes the groundedness check. The gate retries with a corrective
-    retrieval until the runtime's validation-attempt budget ends the
-    execution, and the answer is replaced with the fixed "couldn't
-    verify" message -- returned to the client and recorded in the
-    AGENT_DECISION compliance row with answer_verified=False and the
-    rejected answer's scores. (Before the fix, the budget closing the
-    handle mid-retry made this request fail with HTTP 500.)
+    passes the groundedness check. The gate retries with corrective
+    retrievals that keep returning the same chunk until the runtime's
+    no-progress budget ends the execution, and the answer is replaced
+    with the fixed "couldn't verify" message -- returned to the client
+    and recorded in the AGENT_DECISION compliance row with
+    answer_verified=False and the rejected answer's scores. (Before the
+    fix, a budget closing the handle mid-retry made this request fail
+    with HTTP 500.)
     """
 
     from agentic.agents.runtime.continuation import UNVERIFIED_ANSWER_MESSAGE

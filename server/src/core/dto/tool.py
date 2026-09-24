@@ -22,6 +22,21 @@ class ToolMetadataDTO:
 
 
 @dataclass(slots=True, frozen=True)
+class ToolSpecDTO:
+    """
+    What the agent's LLM is told about one tool it may call: its exact
+    name, a one-line purpose, and the JSON Schema of the parameters it
+    accepts (ToolRegistry.describe()).
+    """
+
+    name: str
+
+    description: str
+
+    parameters_schema: dict[str, Any]
+
+
+@dataclass(slots=True, frozen=True)
 class ToolFileDTO:
     """
     File available to a tool.

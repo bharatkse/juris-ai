@@ -33,11 +33,13 @@ from __future__ import annotations
 
 import asyncio
 import json
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 
 from adapters.observability.logger import get_logger
 from agentic.agents.base import BaseAgent
+from agentic.agents.runtime.feedback import runtime_feedback
 from agentic.agents.runtime.lifecycle.budget import AgentExecutionBudget
 from agentic.agents.runtime.lifecycle.guard import BudgetGuard
 from agentic.agents.runtime.lifecycle.lifecycle import AgentLifecycle
@@ -57,7 +59,7 @@ from agentic.execution.config import ExecutionRetryPolicy
 from agentic.policy.agent_policy import AgentPolicyProvider
 from agentic.policy.guard import AgentPolicyGuard
 from agentic.policy.schemas import AgentPolicy
-from agentic.registry.protocols import AgentRegistryProtocol
+from agentic.registry.protocols import AgentRegistryProtocol, ToolRegistryProtocol
 from agentic.tools.constants import GATED_TOOLS
 from core.dto.agent import AgentRequestDTO
 from core.dto.agent_action import AgentActionRequestDTO
@@ -68,6 +70,8 @@ from core.enums import (
 )
 
 logger = get_logger(__name__)
+
+_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
 
 
 @dataclass(slots=True, frozen=True)
@@ -434,20 +438,7 @@ class AgentExecutionHandle:
         self._last_decision = decision
 
         # --------------------------------------------------------------
-        # 4. Validation budget
-        # --------------------------------------------------------------
-
-        validation_budget = self._lifecycle.begin_validation()
-
-        if not validation_budget.allowed:
-            self._closed = True
-
-            return self._build_partial_result(
-                decision=decision,
-            )
-
-        # --------------------------------------------------------------
-        # 5. Validate structured decision
+        # 4. Validate structured decision
         # --------------------------------------------------------------
 
         try:
@@ -456,6 +447,13 @@ class AgentExecutionHandle:
             )
 
         except AgentDecisionValidationError as exc:
+            # The validator's messages name only decision types and
+            # payload fields, so they are safe to show the model.
+            if self._may_correct(
+                feedback=f"Your previous decision was rejected: {exc} Return one valid decision.",
+            ):
+                return await self._execute_reasoning_attempt()
+
             self._lifecycle.fail(
                 TerminationReason.FAILED_VALIDATION,
             )
@@ -490,7 +488,25 @@ class AgentExecutionHandle:
             )
 
         # --------------------------------------------------------------
-        # 7. Decision handling
+        # 7. A tool the agent may not use: say which tools it may use
+        #    and ask again, within the correction budget.
+        # --------------------------------------------------------------
+
+        if (
+            decision.decision_type is AgentDecisionType.TOOL_CALL
+            and decision.tool_call is not None
+            and not self._agent_policy_guard.check_tool(
+                policy=self._policy,
+                tool_name=decision.tool_call.tool_name,
+            ).allowed
+            and self._may_correct(
+                feedback=self._tool_not_available_feedback(decision.tool_call.tool_name),
+            )
+        ):
+            return await self._execute_reasoning_attempt()
+
+        # --------------------------------------------------------------
+        # 8. Decision handling
         # --------------------------------------------------------------
 
         result = self._handle_decision(
@@ -512,6 +528,36 @@ class AgentExecutionHandle:
             self._closed = True
 
         return result
+
+    def _may_correct(self, *, feedback: str) -> bool:
+        """
+        Whether the model may try again after an invalid decision or a
+        tool it may not use; if so, the reason is added to its context.
+
+        max_rejected_decisions counts these corrections, not every
+        reasoning call: with the default of 2, the first rejected
+        decision is re-asked once with the reason, and a second one ends
+        the execution with the current failure reason.
+        """
+
+        self._lifecycle.record_rejected_decision()
+
+        if self.state.rejected_decision_count >= self.state.budget.max_rejected_decisions:
+            return False
+
+        self.extend_reasoning_context(context=(runtime_feedback(feedback),))
+        return True
+
+    def _tool_not_available_feedback(self, tool_name: str) -> str:
+        # The name came from the model: repeat it only if it looks like
+        # an identifier.
+        named = f"'{tool_name}'" if _IDENTIFIER.match(tool_name) else "that tool"
+        available = ", ".join(spec.name for spec in self._request.tool_catalog) or "none"
+
+        return (
+            f"Tool {named} is not available to you. Available tools: {available}. "
+            "Use one of those, or answer from the evidence you have."
+        )
 
     def _handle_decision(
         self,
@@ -897,9 +943,11 @@ class AgentExecution:
         decision_validator: AgentDecisionValidator,
         agent_policy_provider: AgentPolicyProvider,
         agent_policy_guard: AgentPolicyGuard,
+        tool_registry: ToolRegistryProtocol,
         agent_budget: AgentExecutionBudget | None = None,
     ) -> None:
         self._agent_registry = agent_registry
+        self._tool_registry = tool_registry
         self._retry_policy = retry_policy
         self._retry_classifier = retry_classifier
         self._decision_validator = decision_validator
@@ -935,6 +983,15 @@ class AgentExecution:
 
         policy = await self._agent_policy_provider.get_policy(
             agent_id=agent_id,
+        )
+
+        # The agent is told exactly the tools its policy allows, with
+        # their parameter schemas, so it doesn't have to guess names.
+        request = replace(
+            request,
+            tool_catalog=self._tool_registry.describe(
+                names=policy.allowed_tools,
+            ),
         )
 
         started_at = datetime.now(UTC)

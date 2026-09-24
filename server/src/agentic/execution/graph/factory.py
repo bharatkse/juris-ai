@@ -20,7 +20,7 @@ from agentic.execution.graph.builder import ExecutionGraphBuilder
 from agentic.execution.graph.nodes import AgentExecutionNode
 from agentic.policy.agent_policy import AgentPolicyProvider
 from agentic.policy.guard import AgentPolicyGuard
-from agentic.registry.protocols import AgentRegistryProtocol
+from agentic.registry.protocols import AgentRegistryProtocol, ToolRegistryProtocol
 from agentic.tools.runtime.invocation import ToolExecutionService
 from core.dto.planning import ExecutionPlanDTO
 
@@ -47,6 +47,7 @@ class ExecutionGraphFactory:
         *,
         builder: ExecutionGraphBuilder,
         agent_registry: AgentRegistryProtocol,
+        tool_registry: ToolRegistryProtocol,
         agent_policy_provider: AgentPolicyProvider,
         agent_policy_guard: AgentPolicyGuard,
         retry_policy: ExecutionRetryPolicy,
@@ -60,6 +61,7 @@ class ExecutionGraphFactory:
     ) -> None:
         self._builder = builder
         self._agent_registry = agent_registry
+        self._tool_registry = tool_registry
         self._agent_policy_provider = agent_policy_provider
         self._agent_policy_guard = agent_policy_guard
         self._retry_policy = retry_policy
@@ -92,6 +94,7 @@ class ExecutionGraphFactory:
             decision_validator=self._decision_validator,
             agent_policy_provider=self._agent_policy_provider,
             agent_policy_guard=self._agent_policy_guard,
+            tool_registry=self._tool_registry,
         )
 
         continuation_service = AgentContinuationService(

@@ -10,15 +10,30 @@ search_contracts() is intentionally not ACL-scoped.
 
 from __future__ import annotations
 
+from typing import Literal
+
+from pydantic import Field
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from adapters.observability.logger import get_logger
 from adapters.persistence.sqlalchemy.repositories.knowledge_sources import KnowledgeSourceRepository
-from agentic.tools.base import Tool
+from agentic.tools.base import Tool, ToolParams
 from agentic.tools.search_engine.web_research import WebResearchTool
 from core.exceptions.domain import DomainError
 
 log = get_logger(__name__)
+
+
+class CaseLawSearchParams(ToolParams):
+    query: str = Field(min_length=1, description="What to search for.")
+    scope: Literal["case_law", "contracts"] = Field(
+        default="case_law",
+        description=(
+            '"case_law": case law and precedent on the web; '
+            '"contracts": contracts stored in Juris-AI.'
+        ),
+    )
+    limit: int = Field(default=5, ge=1, le=10, description="How many results to return.")
 
 
 class CaseLawSearchTool(Tool):
@@ -46,6 +61,8 @@ class CaseLawSearchTool(Tool):
         "Search for relevant case law and legal precedent on the web, "
         "or search contracts already stored in Juris-AI by content."
     )
+
+    params_model = CaseLawSearchParams
 
     def __init__(
         self,

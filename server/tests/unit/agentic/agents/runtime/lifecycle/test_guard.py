@@ -74,10 +74,10 @@ def test_budget_guard_requires_agent_execution_budget():
             TerminationReason.PARTIAL_REPEATED_ACTION,
         ),
         (
-            "check_validation_attempts",
-            "validation_attempt_count",
-            "max_validation_attempts",
-            TerminationReason.PARTIAL_VALIDATION_LIMIT,
+            "check_rejected_decisions",
+            "rejected_decision_count",
+            "max_rejected_decisions",
+            TerminationReason.PARTIAL_REJECTED_DECISION_LIMIT,
         ),
     ],
 )
@@ -155,10 +155,10 @@ def test_count_checks_allow_below_limit(
             TerminationReason.PARTIAL_REPEATED_ACTION,
         ),
         (
-            "check_validation_attempts",
-            "validation_attempt_count",
-            "max_validation_attempts",
-            TerminationReason.PARTIAL_VALIDATION_LIMIT,
+            "check_rejected_decisions",
+            "rejected_decision_count",
+            "max_rejected_decisions",
+            TerminationReason.PARTIAL_REJECTED_DECISION_LIMIT,
         ),
     ],
 )

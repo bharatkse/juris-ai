@@ -25,7 +25,10 @@ class AgentExecutionBudget:
     # Loop-control limits
     max_repeated_action: int = 2
     max_no_progress: int = 2
-    max_validation_attempts: int = 2
+    # Rejected decisions (invalid, or a tool the agent may not use) per
+    # execution, counting the one that ends it: 2 = re-asked once. Not a
+    # cap on reasoning calls -- max_iterations is.
+    max_rejected_decisions: int = 2
 
     # Collection limits
     max_decisions: int = 50
@@ -49,7 +52,7 @@ class AgentExecutionBudget:
             "max_total_steps": self.max_total_steps,
             "max_repeated_action": self.max_repeated_action,
             "max_no_progress": self.max_no_progress,
-            "max_validation_attempts": self.max_validation_attempts,
+            "max_rejected_decisions": self.max_rejected_decisions,
             "max_decisions": self.max_decisions,
             "max_tool_call_records": self.max_tool_call_records,
             "max_tool_result_records": self.max_tool_result_records,

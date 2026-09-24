@@ -36,7 +36,11 @@ graph node) — this file is the layer in between.
 - `execute()` — runs the plan; returns one `ExecutionResultSchema`.
   Used by both `AIOrchestrator.handle()` and `stream()` (streaming
   slices the reviewed answer in the orchestrator; nothing streams from
-  the graph).
+  the graph). Files attached to the chat message are parsed here, once,
+  into the graph's initial `reasoning_context` (`attachments.py`), so
+  every step starts from them and the checkpoint keeps them for
+  `resume()`. A file that can't be used (unsupported, unreadable, or
+  withheld for a prompt-injection pattern) becomes a note, not evidence.
 - `resume()` — resumes a LangGraph run paused mid-graph by a gated
   tool call (`email`/`slack`, via `interrupt()`). One exception to
   "Executor doesn't decide business rules": actually invoking the
