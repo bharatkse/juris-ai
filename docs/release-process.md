@@ -17,7 +17,7 @@ Everything runs in GitHub Actions; nobody pushes images or tags by hand.
 
 | Event | What happens | Image tags |
 |---|---|---|
-| Merge to `develop` | CI gates + smoke/e2e tests → build → scan → push → sign → SBOM attestation → rc git tag | `X.Y.Z-rc.N` (if a release is pending), `develop`, `sha-<7>` |
+| Merge to `develop` | CI gates + smoke/e2e tests → build → scan → push → sign → SBOM attestation → rc git tag + **pre-release** GitHub Release | `X.Y.Z-rc.N` (if a release is pending), `develop`, `sha-<7>` |
 | Validate | You pull `:develop` or `:X.Y.Z-rc.N` and test it. No pipeline step. | |
 | Merge `develop` → `main` | CI gates → verify and **re-scan** the candidate → **retag** it → git tag + GitHub Release → sync PR to `develop`. **No build.** | `X.Y.Z`, `X.Y`, `X` (from 1.0), `latest` added to the candidate's digest |
 | PR into `develop` | CI gates on every push. Build + scan dry run only with the `run-image-scan` label | none |
@@ -43,6 +43,7 @@ merge PR -> develop
      |
   rc-tag:       annotated git tag vX.Y.Z-rc.N on this commit,
                 recording the digest that was pushed
+                + a pre-release GitHub Release for it
 ```
 
 This is the only image build in the whole process. A running develop build
@@ -110,10 +111,25 @@ can't read is caught before merge. Moving to 1.0 is a deliberate decision, not
 something a commit triggers. The first release is `v0.1.0`, the version
 already in `pyproject.toml`.
 
-No GitHub Release is created for release candidates: one per develop merge
-would bury real releases on the Releases page and notify watchers every
-time. Each candidate is visible as its git tag, its image tag, and the
-`Release Candidate Version` job summary.
+Each candidate also gets a **pre-release GitHub Release** (`vX.Y.Z-rc.N`),
+so candidates are visible on the Releases page. Compared with a real
+release:
+
+| | rc pre-release (merge to `develop`) | release (merge to `main`) |
+|---|---|---|
+| Marked | **Pre-release**, never "Latest" | **Latest** |
+| Notes | short: source commit, image tag and digest, link to this doc | full changelog section + GitHub's PR list since the previous release |
+| Attachments | none (the image's SBOM is attached to the image itself) | the signed SBOM, `juris-ai-X.Y.Z.spdx.json` |
+| Git tag | annotated `vX.Y.Z-rc.N`, records the digest | `vX.Y.Z` on the same develop commit |
+| Sync PR to `develop` | no | yes |
+
+GitHub's generated notes on a real release always start from the previous
+**full** release, not the last rc, so the PR list covers the whole release.
+Like the release job, the rc step is safe to re-run: an existing tag on the
+same commit is kept (a tag on a different commit stops the job) and an
+existing pre-release is left as it is. One consequence of a pre-release per
+develop build: anyone watching the repo's releases gets a notification for
+each candidate.
 
 ## 2. Validate
 
