@@ -611,25 +611,57 @@ jobs:
       - name: Install python-semantic-release
         run: pip install "python-semantic-release==${{ env.SEMANTIC_RELEASE_VERSION }}"
 
-      # Writes the version into pyproject.toml and regenerates CHANGELOG.md in
-      # this workspace only (no commit, tag or push). rc tags are deleted
-      # LOCALLY first so the changelog lists releases, not every candidate
-      # (with them, the release's own section comes out empty).
-      - name: Apply version and changelog (workspace only)
+      # A re-run (e.g. after a failed sync PR) must not redo or trip over
+      # what an earlier attempt already published.
+      - name: Check what already exists
+        id: existing
+        run: |
+          tag_sha=$(git rev-list -n 1 "refs/tags/v${VERSION}" 2>/dev/null || true)
+          if [ -n "$tag_sha" ] && [ "$tag_sha" != "$SOURCE_SHA" ]; then
+            echo "::error::v${VERSION} already exists on ${tag_sha}, not on the promoted commit ${SOURCE_SHA}. Refusing to continue."
+            exit 1
+          fi
+          echo "tag=$([ -n "$tag_sha" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          if gh release view "v${VERSION}" > /dev/null 2>&1; then
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Regenerates CHANGELOG.md (and the pyproject version) in this
+      # workspace only -- no commit, tag or push. rc tags are deleted LOCALLY
+      # first so the changelog lists releases, not every candidate (with
+      # them, the release's own section comes out empty).
+      # First run: `version` computes and writes the new release. Re-run
+      # (vX.Y.Z already tagged): `version` would find nothing to release and
+      # write nothing, so `changelog` regenerates the file from the tags.
+      - name: Generate changelog (workspace only)
         working-directory: server
+        env:
+          TAG_EXISTS: ${{ steps.existing.outputs.tag }}
         run: |
           git checkout -q -B main "$SOURCE_SHA"
           git tag --list 'v*-rc.*' | xargs -r git tag -d > /dev/null
 
-          semantic-release version --no-commit --no-tag --no-push --no-vcs-release --skip-build
+          if [ "$TAG_EXISTS" = true ]; then
+            semantic-release changelog
+          else
+            semantic-release version --no-commit --no-tag --no-push --no-vcs-release --skip-build
 
-          applied=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
-          if [ "$applied" != "$VERSION" ]; then
-            echo "::error::semantic-release applied ${applied}, expected ${VERSION}."
+            applied=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+            if [ "$applied" != "$VERSION" ]; then
+              echo "::error::semantic-release applied ${applied}, expected ${VERSION}."
+              exit 1
+            fi
+          fi
+
+          if ! grep -q "^## v${VERSION} " ../CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no v${VERSION} section."
             exit 1
           fi
 
       - name: Extract release notes
+        if: steps.existing.outputs.release != 'true'
         run: |
           awk -v v="## v${VERSION} " 'index($0, v) == 1 {on = 1; next} /^## v/ && on {exit} on' CHANGELOG.md > release-notes.md
           {
@@ -645,55 +677,44 @@ jobs:
           cat release-notes.md
 
       - name: Download signed SBOM
+        if: steps.existing.outputs.release != 'true'
         uses: actions/download-artifact@v4
         with:
           name: sbom
 
       # The tag goes on the develop commit the image was built from: it's
       # the image's exact source, the merge makes it reachable from main,
-      # and semantic-release on develop needs to see it.
+      # and semantic-release on develop needs to see it. Skipped when a
+      # previous attempt already published the release; if only the tag
+      # exists, the release is created on it.
       - name: Create tag and GitHub Release
+        if: steps.existing.outputs.release != 'true'
+        env:
+          TAG_EXISTS: ${{ steps.existing.outputs.tag }}
         run: |
+          if [ "$TAG_EXISTS" = true ]; then
+            target=(--verify-tag)
+          else
+            target=(--target "$SOURCE_SHA")
+          fi
+
           gh release create "v${VERSION}" \
-            --target "$SOURCE_SHA" \
+            "${target[@]}" \
             --title "v${VERSION}" \
             --notes-file release-notes.md \
             --generate-notes \
             "juris-ai-${VERSION}.spdx.json"
 
-      # A commit made through the GraphQL createCommitOnBranch API is signed
-      # by GitHub, so it satisfies develop's signed-commit rule. Only the
-      # version line of develop's own pyproject.toml changes (develop may
-      # have moved on since this release was cut).
+      - name: Release already published
+        if: steps.existing.outputs.release == 'true'
+        run: echo "v${VERSION} and its GitHub Release already exist (earlier attempt); only syncing develop." | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # Idempotent: skips what an earlier attempt already did (see the
+      # script). Needs "Allow GitHub Actions to create and approve pull
+      # requests" (Settings -> Actions -> General).
       - name: Open version sync PR to develop
         env:
-          REPO: ${{ github.repository }}
+          GH_REPO: ${{ github.repository }}
         run: |
-          branch="release/sync-v${VERSION}"
-          develop_sha=$(gh api "repos/${REPO}/git/ref/heads/develop" --jq .object.sha)
-
-          gh api "repos/${REPO}/contents/server/pyproject.toml?ref=${develop_sha}" --jq .content \
-            | base64 -d > develop-pyproject.toml
-
-          python .github/scripts/sync_release_payload.py \
-            --repo "$REPO" --branch "$branch" --head "$develop_sha" --version "$VERSION" \
-            --pyproject develop-pyproject.toml --changelog CHANGELOG.md > payload.json
-
-          gh api -X POST "repos/${REPO}/git/refs" -f "ref=refs/heads/${branch}" -f "sha=${develop_sha}"
-          gh api graphql --input payload.json --jq .data.createCommitOnBranch.commit.url
-
-          gh pr create --base develop --head "$branch" \
-            --title "chore(release): sync v${VERSION} to develop" \
-            --body-file - <<EOF
-          ## Developer:
-          github-actions (release workflow)
-
-          ## Summary of Proposed Changes
-          Syncs release v${VERSION} back to develop: \`server/pyproject.toml\` version and the regenerated \`CHANGELOG.md\`. Release: ${GITHUB_SERVER_URL}/${REPO}/releases/tag/v${VERSION}
-
-          ## Type of Change
-          - [x] Release housekeeping (no code changes)
-
-          ## Testing
-          No image was built for this release: the develop build of ${SOURCE_SHA} (digest ${DIGEST}) was promoted by retag in run ${GITHUB_SERVER_URL}/${REPO}/actions/runs/${GITHUB_RUN_ID}.
-          EOF
+          .github/scripts/sync-release-pr.sh "$VERSION" CHANGELOG.md \
+            "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
