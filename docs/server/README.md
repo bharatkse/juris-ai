@@ -590,6 +590,15 @@ Run end-to-end tests:
 make test-e2e
 ```
 
+Smoke and E2E tests need the Postgres and Redis containers running
+(`./setup.sh --install --dependency postgres --dependency redis`). They run
+on the host, so `make` points them at `localhost` (the containers' published
+ports) instead of the `postgres`/`redis` hostnames in `server/.env`, which
+only resolve inside the compose network. If your services are somewhere
+else, set `TEST_SERVICES_HOST`, e.g. `make test-e2e TEST_SERVICES_HOST=db.local`.
+Running `pytest` directly (without `make`) needs
+`DB_HOST=localhost REDIS_HOST=localhost` for the same reason.
+
 Run a specific E2E target:
 
 ```bash
