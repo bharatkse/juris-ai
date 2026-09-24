@@ -19,7 +19,8 @@ Everything runs in GitHub Actions; nobody pushes images or tags by hand.
 |---|---|---|
 | Merge to `develop` | CI gates + smoke/e2e tests → build → scan → push → sign → SBOM attestation → rc git tag + **pre-release** GitHub Release | `X.Y.Z-rc.N` (if a release is pending), `develop`, `sha-<7>` |
 | Validate | You pull `:develop` or `:X.Y.Z-rc.N` and test it. No pipeline step. | |
-| Merge `develop` → `main` | CI gates → verify and **re-scan** the candidate → **retag** it → git tag + GitHub Release → sync PR to `develop`. **No build.** | `X.Y.Z`, `X.Y`, `X` (from 1.0), `latest` added to the candidate's digest |
+| **Cut Release** (manual) | Opens the release PR: `release/cut-vX.Y.Z` (at `develop`'s HEAD) → `main`. Merges nothing. | none |
+| Merge the release PR into `main` | CI gates → verify and **re-scan** the candidate → **retag** it → git tag + GitHub Release → sync PR to `develop`. **No build.** | `X.Y.Z`, `X.Y`, `X` (from 1.0), `latest` added to the candidate's digest |
 | PR into `develop` | CI gates on every push. Build + scan dry run only with the `run-image-scan` label | none |
 | PR from `develop` into `main` | CI gates on every push. With the `run-image-scan` label, the promotion checks as a dry run: which rc and digest would ship, that its signature verifies, and that it still passes the image scan | none |
 
@@ -144,13 +145,61 @@ the release PR. If something else lands on `develop` after you validated,
 it becomes a new rc; the release PR tells you which rc it will ship (next
 section).
 
-## 3. Release: promote by retag (merge `develop` into `main`)
+## 3. Cut the release (manual)
 
-Open a PR from `develop` into `main`. Its `Promote Release Candidate` job
-(dry run) shows exactly what merging will release, for example *"Merging
-this releases v0.2.0 = v0.2.0-rc.2 built from `<sha>`, digest `sha256:...`"*,
-and fails if that can't be done safely. Use **Create a merge commit** to
-merge it.
+When a candidate is good to ship, run **Actions → Cut Release → Run
+workflow** ([`cut-release.yaml`](../.github/workflows/cut-release.yaml)),
+from any branch. It:
+
+1. works out what merging would release for `develop`'s HEAD, using the
+   same resolution promotion runs (so the version is the rc's, e.g.
+   `0.2.0-rc.3` → **v0.2.0**);
+2. creates the branch **`release/cut-vX.Y.Z`** at `develop`'s HEAD (no new
+   commits, so nothing needs signing);
+3. opens a PR from it into `main`, describing the version, rc, source
+   commit and image digest.
+
+It **never merges**. Someone reviews the PR, its checks run like any PR's,
+and a person merges it; that merge is the release (next section).
+
+The optional **version** input is a check, not an override: leave it empty
+to release whatever is pending, or enter the version you expect (e.g.
+`0.2.0`) and the run fails if `develop`'s HEAD would release something else.
+The version is decided by the rc being promoted and can't be chosen
+separately.
+
+It refuses, with a message saying why, when:
+
+| Situation | Message |
+|---|---|
+| A PR into `main` is already open | finish or close it first; one release at a time |
+| `develop`'s HEAD is already released, or already on `main` | nothing new to ship |
+| Only `docs:`/`chore:`/... since the last release | nothing releasable |
+| A release is pending but `develop`'s HEAD has no rc yet | its develop build hasn't finished (or failed); wait and re-run |
+| The version input doesn't match | shows the version that would be released |
+
+A leftover `release/cut-vX.Y.Z` branch from a closed PR is reset to
+`develop`'s HEAD and reused.
+
+**Checks on the release PR.** GitHub doesn't start other workflows for a
+PR opened with the workflow's own `GITHUB_TOKEN`. With a
+**`RELEASE_PR_TOKEN`** secret (a GitHub App or fine-grained token with
+contents + pull-requests write), the PR's checks start normally. Without
+it, the run's summary says so: **close and reopen the PR once** to start
+them. Nothing is skipped either way: the PR's head is the develop commit,
+which already carries its develop CI results, and the `main` merge runs
+every gate again before promoting.
+
+Opening a PR from `develop` itself into `main` by hand still works;
+**Cut Release** only saves the steps and adds the guards above.
+
+## 4. Release: promote by retag (merge the release PR into `main`)
+
+Add the **`run-image-scan`** label to the release PR to run its
+`Promote Release Candidate` job as a dry run: it shows exactly what
+merging will release, for example *"Merging this releases v0.2.0 =
+v0.2.0-rc.2 built from `<sha>`, digest `sha256:...`"*, and fails if that
+can't be done safely. Merge with **Create a merge commit**.
 
 ```
 merge release PR -> main
@@ -170,10 +219,14 @@ merge release PR -> main
 What the promotion checks before tagging anything (any failure stops it):
 
 1. **The source.** The commit being released is the head of the merged
-   `develop -> main` PR, and `main` now has exactly that commit's tree. So
-   the image, built from that commit, matches `main`'s source. (If `main`
-   ever gets a commit that isn't on `develop`, promotion refuses; fix on
-   `develop` and release again.)
+   release PR (`develop`, or a `release/cut-v*` branch cut from it). It
+   must be a commit on `develop`: only develop commits have release
+   candidates, so a commit pushed straight to a `release/cut-v*` branch is
+   refused (make the change on `develop` and cut again). And `main` must
+   now have exactly that commit's tree, so the image, built from that
+   commit, matches `main`'s source. (If `main` ever gets a commit that
+   isn't on `develop`, promotion refuses; fix on `develop` and release
+   again.)
 2. **The candidate.** That commit has an rc git tag (its develop build
    finished and published). The release version is the rc without the
    suffix, cross-checked against semantic-release. No rc and nothing
