@@ -4,9 +4,23 @@ Verified against the code on 2026-09-23.
 
 ## What's here
 
-Seven agent-callable tools. Each subclasses `Tool` (`tools/base.py`) and
-exposes `async execute(**kwargs) -> str`. An agent can only call a tool
-that its `agent_policies` row allows.
+Seven tools. Each subclasses `Tool` (`tools/base.py`) and exposes
+`async execute(**kwargs) -> str`. An agent can only call a tool that its
+`agent_policies` row allows.
+
+Each agent-callable tool declares a `params_model` (a `ToolParams`
+pydantic model, unknown parameters rejected). That one schema is:
+- rendered into the agent's prompt, with the tool's name and
+  description, for every tool the agent's policy allows
+  (`ToolRegistry.describe()`, "Available tools");
+- used by `ToolExecutionService` to validate and bound every call before
+  the tool runs;
+- the source of the short error the model gets back when a call is
+  rejected: field names and constraints only, never the rejected values
+  or the exception text (the full exception is logged).
+
+A tool with no `params_model` (`parser`) is server-side only: it is in
+no prompt and `ToolExecutionService` refuses to run it for an agent.
 
 | Tool (`name`) | Module | Backing | Access scoping | Default policy |
 |---|---|---|---|---|
@@ -14,7 +28,7 @@ that its `agent_policies` row allows.
 | `case_law_search` | `tools/search_engine/case_law_search.py` | `KnowledgeSourceRepository` search (shared corpus) + `WebResearchTool` | Shared corpus / public web | legal |
 | `web_research` | `tools/search_engine/web_research.py` | Self-hosted **SearXNG** (`SearxngClient`) + `ContentFetcher` (httpx + trafilatura) | Public web | legal, only when enabled by settings (`wiring/factories/agent_policies.py`) |
 | `library_lookup` | `tools/library/file_lookup.py` (`LibraryLookupTool`) | `LibraryRepository` via a session factory | Per-user: reads `allowed_library_ids` from the request context at execute-time; fails closed if it was never resolved | contract |
-| `parser` | `tools/library/parser.py` | PDF/DOCX/text/Markdown parsing in a worker thread | Operates only on the `files: list[ToolFileDTO]` passed to `execute()` | contract |
+| `parser` | `tools/library/parser.py` | PDF/DOCX/text/Markdown parsing in a worker thread | Server-side only: the Executor parses files attached to a chat message into the agent's starting context (`execution/attachments.py`) | none (not agent-callable) |
 | `email` | `tools/messaging/email.py` | Gmail via MCP | — | none |
 | `slack` | `tools/messaging/slack.py` | Slack via MCP | — | none |
 
@@ -59,9 +73,10 @@ sequenceDiagram
         CS->>CS: interrupt() -> approval (decided only by the requesting user);<br/>on approve, Executor.resume() runs the tool
     else any other tool
         CS->>TES: execute(tool_name, parameters) inside a LangGraph @task (replay-safe)
-        TES->>T: registry.resolve(tool_name).execute(**parameters)
+        TES->>TES: validate parameters against the tool's params_model
+        TES->>T: registry.resolve(tool_name).execute(**validated parameters)
         T-->>TES: str
-        TES-->>CS: ToolResult
+        TES-->>CS: ToolResult (a rejected or failed call: sanitized error)
     end
     CS->>RC: ToolResult -> RetrievedContentDTO
     CS->>RT: extend_reasoning_context(...) -> next reasoning iteration

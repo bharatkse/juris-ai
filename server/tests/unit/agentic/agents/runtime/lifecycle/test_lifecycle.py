@@ -190,29 +190,29 @@ def test_begin_decision_denies_at_limit_without_increment():
     assert state.decision_count == 2
 
 
-def test_begin_validation_increments_after_allowed_check():
-    budget = AgentExecutionBudget(max_validation_attempts=2)
+def test_record_rejected_decision_increments_after_allowed_check():
+    budget = AgentExecutionBudget(max_rejected_decisions=2)
     state = build_state(budget=budget)
     lifecycle = AgentLifecycle(state=state)
 
-    result = lifecycle.begin_validation()
+    result = lifecycle.record_rejected_decision()
 
     assert result.allowed is True
-    assert state.validation_attempt_count == 1
+    assert state.rejected_decision_count == 1
 
 
-def test_begin_validation_denies_at_limit_without_increment():
-    budget = AgentExecutionBudget(max_validation_attempts=2)
+def test_record_rejected_decision_denies_at_limit_without_increment():
+    budget = AgentExecutionBudget(max_rejected_decisions=2)
     state = build_state(
         budget=budget,
-        validation_attempt_count=2,
+        rejected_decision_count=2,
     )
     lifecycle = AgentLifecycle(state=state)
 
-    result = lifecycle.begin_validation()
+    result = lifecycle.record_rejected_decision()
 
-    assert result.reason is TerminationReason.PARTIAL_VALIDATION_LIMIT
-    assert state.validation_attempt_count == 2
+    assert result.reason is TerminationReason.PARTIAL_REJECTED_DECISION_LIMIT
+    assert state.rejected_decision_count == 2
 
 
 @pytest.mark.parametrize(
@@ -587,21 +587,21 @@ def test_begin_decision_timeout_is_checked_before_decision_budget():
     assert state.decision_count == 1
 
 
-def test_begin_validation_timeout_is_checked_before_validation_budget():
+def test_record_rejected_decision_timeout_is_checked_before_rejected_decision_budget():
     started_at = datetime.now(UTC) - timedelta(seconds=20)
     budget = AgentExecutionBudget(
-        max_validation_attempts=1,
+        max_rejected_decisions=1,
         max_execution_time_seconds=10,
     )
     state = build_state(
         budget=budget,
         started_at=started_at,
-        validation_attempt_count=1,
+        rejected_decision_count=1,
     )
 
     lifecycle = AgentLifecycle(state=state)
 
-    result = lifecycle.begin_validation()
+    result = lifecycle.record_rejected_decision()
 
     assert result.reason is TerminationReason.PARTIAL_TIMEOUT
-    assert state.validation_attempt_count == 1
+    assert state.rejected_decision_count == 1

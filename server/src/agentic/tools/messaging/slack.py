@@ -10,8 +10,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from pydantic import Field
+
 from adapters.observability.logger import get_logger
-from agentic.tools.base import Tool
+from agentic.tools.base import Tool, ToolParams
 from agentic.tools.messaging.base import GatedMCPTool
 
 log = get_logger(__name__)
@@ -25,6 +27,11 @@ class SlackDraft:
     text: str
 
 
+class SlackParams(ToolParams):
+    channel: str = Field(min_length=1, description="The Slack channel to read.")
+    limit: int = Field(default=20, ge=1, le=20, description="How many messages to return.")
+
+
 class SlackTool(Tool, GatedMCPTool):
     """
     Read, draft, and post Slack messages via the Slack MCP server.
@@ -32,6 +39,8 @@ class SlackTool(Tool, GatedMCPTool):
 
     name = "slack"
     description = "Read Slack messages, and draft/post messages (posting requires approval)."
+
+    params_model = SlackParams
 
     async def read(self, *, channel: str, limit: int = 20) -> str:
         log.debug("SlackTool.read(channel=%r, limit=%d).", channel, limit)

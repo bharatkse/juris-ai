@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from agentic.agents.runtime.feedback import is_feedback
 from agentic.agents.runtime.lifecycle.state import AgentState
 from agentic.evaluation.answer import AnswerEvaluationSummary
 from core.dto.agent import AgentResponseDTO
@@ -54,6 +55,10 @@ class AgentResponseMapper:
                 compliance log (AIOrchestrator's AGENT_DECISION write)
                 can read real scores instead of always None.
         """
+        # The runtime's and the gate's own notes to the model are not
+        # sources: they are never cited or treated as evidence text.
+        context = tuple(item for item in context if not is_feedback(item))
+
         metadata: dict[str, Any] = {
             "execution_id": execution_id,
             "status": state.status.value,

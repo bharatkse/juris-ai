@@ -61,7 +61,10 @@ def _build_default_agent_policies() -> dict[str, list[str]]:
 
     return {
         "legal": legal_tools,
-        "contract": ["retriever", "parser", "library_lookup"],
+        # No "parser": attachments are parsed server-side before the
+        # agent runs (agentic/execution/attachments.py), and the model
+        # can't call it.
+        "contract": ["retriever", "library_lookup"],
     }
 
 

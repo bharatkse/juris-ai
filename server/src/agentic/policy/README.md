@@ -18,7 +18,9 @@ privilege ("which tools may agent X call"). User-level authorization
 Seeding: `wiring/factories/agent_policies.py` writes defaults at startup
 (`main.py` lifespan): `legal` → `retriever`, `case_law_search` (+
 `web_research` when enabled in settings); `contract` → `retriever`,
-`parser`, `library_lookup`. No agent gets `email` or `slack`.
+`library_lookup`. No agent gets `email` or `slack`. The agent's prompt
+lists exactly these tools (the ones that are registered and
+agent-callable) with their parameter schemas.
 
 ## Flow
 
@@ -34,7 +36,7 @@ sequenceDiagram
     AE->>DB: get_policy(agent_id)
     DB-->>AE: AgentPolicy (allowed_tools from the agent_policies row)
     H->>G: check_tool(policy, tool_name) on every LLM-proposed TOOL_CALL
-    G-->>H: denied → FAILED_POLICY
+    G-->>H: denied → the model is told which tools it may use and asked again<br/>(once, by default); then FAILED_POLICY
     C->>G: check_tool(policy, "retriever") before the forced corrective retrieval
     H->>G: check_delegation(policy, target) on DELEGATE
 ```

@@ -27,7 +27,23 @@ never a parameter of execute() itself if it's security-sensitive
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, ClassVar
+
+from pydantic import BaseModel, ConfigDict
+
+
+class ToolParams(BaseModel):
+    """
+    Base for a tool's model-facing parameters.
+
+    One schema serves three purposes: it is rendered into the agent's
+    prompt (ToolRegistry.describe()), it validates and bounds every call
+    before the tool runs (ToolExecutionService), and its validation
+    errors become the short, model-readable reason fed back to the agent.
+    Unknown parameters are rejected, never ignored.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
 
 class Tool(ABC):
@@ -37,6 +53,12 @@ class Tool(ABC):
 
     name: str
     description: str
+
+    # The parameters an agent may pass to execute(). None means the tool
+    # is not callable by an agent at all (it is used server-side only):
+    # it is left out of every tool catalog and ToolExecutionService
+    # refuses to run it.
+    params_model: ClassVar[type[ToolParams] | None] = None
 
     @abstractmethod
     async def execute(self, *args: Any, **kwargs: Any) -> str:

@@ -12,7 +12,7 @@ def test_budget_defaults():
     assert budget.max_total_steps == 30
     assert budget.max_execution_time_seconds == 120.0
     assert budget.max_repeated_action == 2
-    assert budget.max_validation_attempts == 2
+    assert budget.max_rejected_decisions == 2
     assert budget.max_decisions == 50
     assert budget.max_tool_call_records == 50
     assert budget.max_tool_result_records == 50
@@ -33,7 +33,7 @@ def test_budget_defaults():
         "max_agent_hops",
         "max_total_steps",
         "max_repeated_action",
-        "max_validation_attempts",
+        "max_rejected_decisions",
         "max_decisions",
         "max_tool_call_records",
         "max_tool_result_records",
@@ -59,7 +59,7 @@ def test_budget_rejects_boolean_integer_limit(field_name):
         "max_agent_hops",
         "max_total_steps",
         "max_repeated_action",
-        "max_validation_attempts",
+        "max_rejected_decisions",
         "max_decisions",
         "max_tool_call_records",
         "max_tool_result_records",
@@ -85,7 +85,7 @@ def test_budget_rejects_non_integer_limit(field_name):
         "max_agent_hops",
         "max_total_steps",
         "max_repeated_action",
-        "max_validation_attempts",
+        "max_rejected_decisions",
         "max_decisions",
         "max_tool_call_records",
         "max_tool_result_records",
@@ -111,7 +111,7 @@ def test_budget_accepts_custom_positive_limits():
         max_total_steps=4,
         max_execution_time_seconds=5.5,
         max_repeated_action=1,
-        max_validation_attempts=1,
+        max_rejected_decisions=1,
         max_decisions=6,
         max_tool_call_records=7,
         max_tool_result_records=8,
@@ -130,7 +130,7 @@ def test_budget_accepts_custom_positive_limits():
     assert budget.max_total_steps == 4
     assert budget.max_execution_time_seconds == 5.5
     assert budget.max_repeated_action == 1
-    assert budget.max_validation_attempts == 1
+    assert budget.max_rejected_decisions == 1
     assert budget.max_decisions == 6
     assert budget.max_tool_call_records == 7
     assert budget.max_tool_result_records == 8

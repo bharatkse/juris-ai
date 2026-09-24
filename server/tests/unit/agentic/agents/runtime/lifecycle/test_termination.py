@@ -32,7 +32,7 @@ def test_complete_marks_execution_completed():
         TerminationReason.PARTIAL_MAX_TOOL_RESULTS,
         TerminationReason.PARTIAL_TIMEOUT,
         TerminationReason.PARTIAL_REPEATED_ACTION,
-        TerminationReason.PARTIAL_VALIDATION_LIMIT,
+        TerminationReason.PARTIAL_REJECTED_DECISION_LIMIT,
     ],
 )
 def test_partial_marks_execution_partial(reason):

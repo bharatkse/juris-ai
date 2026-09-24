@@ -12,9 +12,11 @@ which would raise ImportError at startup.
 
 from __future__ import annotations
 
+from pydantic import Field
+
 from adapters.clients.search_engine.searxng import DEFAULT_ENGINES, SearxngClient
 from adapters.observability.logger import get_logger
-from agentic.tools.base import Tool
+from agentic.tools.base import Tool, ToolParams
 from agentic.tools.search_engine.content_fetch import ContentFetcher
 from agentic.tools.search_engine.url_normalizer import normalize_and_dedupe
 from core.dto.clients.search_engine import WebPageContent
@@ -24,6 +26,13 @@ from rag.ingestion.sanitizer import SecuritySanitizer, ThreatLevel
 log = get_logger(__name__)
 
 WITHHELD_TITLE_MESSAGE = "[title withheld: prompt-injection pattern detected]"
+
+
+class WebResearchParams(ToolParams):
+    # `engines` is deliberately not exposed: which search engines receive
+    # a query is not the model's choice.
+    query: str = Field(min_length=1, description="What to search the web for.")
+    limit: int = Field(default=5, ge=1, le=5, description="How many pages to fetch.")
 
 
 class WebResearchTool(Tool):
@@ -39,6 +48,8 @@ class WebResearchTool(Tool):
         "when full article/page content is needed, not just a "
         "search snippet."
     )
+
+    params_model = WebResearchParams
 
     def __init__(
         self,

@@ -208,19 +208,22 @@ class AgentLifecycle:
         self._state.tool_result_count = new_count
         return BudgetCheckResult.allow()
 
-    def begin_validation(self) -> BudgetCheckResult:
-        """Check and consume one validation-attempt budget unit."""
+    def record_rejected_decision(self) -> BudgetCheckResult:
+        """
+        Count one rejected decision (invalid, or a tool the agent may not
+        use) against max_rejected_decisions.
+        """
         result = self.check_time()
         if not result.allowed:
             return self._terminate_partial(result.reason)
 
-        result = self._guard.check_validation_attempts(
-            validation_attempt_count=self._state.validation_attempt_count,
+        result = self._guard.check_rejected_decisions(
+            rejected_decision_count=self._state.rejected_decision_count,
         )
         if not result.allowed:
             return self._terminate_partial(result.reason)
 
-        self._state.validation_attempt_count += 1
+        self._state.rejected_decision_count += 1
         return result
 
     def record_action(self, action_key: str) -> BudgetCheckResult:

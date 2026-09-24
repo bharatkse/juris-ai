@@ -47,7 +47,7 @@ flowchart TD
     AGENT --> DECISION{AgentDecision}
     DECISION -->|TOOL_CALL| GUARD["AgentPolicyGuard.check_tool()"]
     GUARD -->|allowed| TOOLREG["Tool Registry -> Tool.execute()"]
-    GUARD -->|denied| FAILPOLICY[FAILED_POLICY termination]
+    GUARD -->|denied| FAILPOLICY["reason fed back, re-asked once;<br/>then FAILED_POLICY"]
     TOOLREG --> CONT["AgentContinuationService<br/>(agents/runtime/continuation.py)<br/>feeds result back, re-reasons"]
     CONT --> AGENT
     DECISION -->|DELEGATE| BUS["CollaborationBus.send()<br/>(only if policy allows delegation)"]
@@ -188,7 +188,7 @@ idempotent upsert):
 ```python
 {
     "legal": ["retriever", "case_law_search"],       # + "web_research" if enabled, see below
-    "contract": ["retriever", "parser", "library_lookup"],
+    "contract": ["retriever", "library_lookup"],
 }
 ```
 

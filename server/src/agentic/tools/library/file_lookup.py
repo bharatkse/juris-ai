@@ -11,15 +11,26 @@ request_context per call, same reasoning as retrieval.py.
 
 from __future__ import annotations
 
+from pydantic import Field
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from adapters.observability.logger import get_logger
 from adapters.persistence.sqlalchemy.repositories.library import LibraryRepository
-from agentic.tools.base import Tool
+from agentic.tools.base import Tool, ToolParams
 from application.context.request import get_request_context
 from core.exceptions.domain import DomainError
 
 log = get_logger(__name__)
+
+
+class LibraryLookupParams(ToolParams):
+    library_id: str | None = Field(
+        default=None,
+        min_length=1,
+        description="Return this uploaded file. Omit to list or search files instead.",
+    )
+    query: str | None = Field(default=None, description="Filter the listed files by this text.")
+    limit: int = Field(default=10, ge=1, le=20, description="How many files to list.")
 
 
 class LibraryLookupTool(Tool):
@@ -32,6 +43,8 @@ class LibraryLookupTool(Tool):
         "Retrieve a specific upload file by ID, or list/search upload files "
         "already stored in Juris-AI by title or metadata."
     )
+
+    params_model = LibraryLookupParams
 
     def __init__(self, *, session_factory: async_sessionmaker) -> None:
         self._session_factory = session_factory

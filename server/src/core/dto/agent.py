@@ -10,7 +10,7 @@ from typing import Any
 from core.dto.agent_action import AgentActionRequestDTO
 from core.dto.conversation import ConversationDTO
 from core.dto.response import CitationDTO, SourceDTO, UsageDTO
-from core.dto.tool import ToolFileDTO
+from core.dto.tool import ToolFileDTO, ToolSpecDTO
 
 
 @dataclass(slots=True, frozen=True)
@@ -64,6 +64,11 @@ class AgentRequestDTO:
     arguments: dict[str, Any] = field(
         default_factory=dict,
     )
+
+    # The tools this agent's policy allows it to call, as rendered into
+    # its prompt. Set by AgentExecution.start(); empty means the agent
+    # may call no tool.
+    tool_catalog: tuple[ToolSpecDTO, ...] = ()
 
 
 @dataclass(slots=True, frozen=True)

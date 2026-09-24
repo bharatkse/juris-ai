@@ -23,6 +23,7 @@ from core.dto.agent import AgentContextDTO
 from core.dto.agent_action import AgentActionRequestDTO
 from core.dto.conversation import ConversationDTO
 from core.dto.planning import ExecutionPlanDTO, serialize_plan
+from core.dto.tool import RetrievedContentDTO
 from core.enums import ActionTypeEnum, ActorTypeEnum, ExecutionStatusEnum
 from core.exceptions.execution import ExecutionError
 
@@ -66,11 +67,13 @@ class ExecutionSession:
         state_assembler: ExecutionStateAssembler,
         timeout_policy: ExecutionTimeoutPolicy,
         action_workflow_service: ActionWorkflowService,
+        reasoning_context: tuple[RetrievedContentDTO, ...] = (),
     ) -> None:
         self._request_id = request_id
         self._conversation = conversation
         self._plan = plan
         self._context = context
+        self._reasoning_context = reasoning_context
 
         self._graph_factory = graph_factory
         self._state_assembler = state_assembler
@@ -453,7 +456,8 @@ class ExecutionSession:
             "deadline": deadline,
             "conversation": self._conversation,
             "context": self._context,
-            "reasoning_context": [],
+            # Evidence every step starts from: the parsed attachments.
+            "reasoning_context": list(self._reasoning_context),
             "plan": self._plan,
             "execution_state_updates": [],
             "memory_updates": [],

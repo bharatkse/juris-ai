@@ -89,14 +89,23 @@ def test_memory_is_its_own_system_message_before_context_and_history() -> None:
     )
 
     roles_and_markers = [
-        (message.role, "<user_memory>" in message.content, "<retrieved_context>" in message.content)
+        (
+            message.role,
+            message.content.startswith("## Available tools"),
+            message.content.startswith("## Task for this step"),
+            "<user_memory>" in message.content,
+            "<retrieved_context>" in message.content,
+        )
         for message in messages
     ]
 
-    # system prompt, memory block, retrieved context, then history.
-    assert roles_and_markers[0] == (MessageRoleEnum.SYSTEM, False, False)
-    assert roles_and_markers[1] == (MessageRoleEnum.SYSTEM, True, False)
-    assert roles_and_markers[2] == (MessageRoleEnum.SYSTEM, False, True)
+    # system prompt, available tools, task for this step, memory block,
+    # retrieved context, then history.
+    assert roles_and_markers[0] == (MessageRoleEnum.SYSTEM, False, False, False, False)
+    assert roles_and_markers[1] == (MessageRoleEnum.SYSTEM, True, False, False, False)
+    assert roles_and_markers[2] == (MessageRoleEnum.SYSTEM, False, True, False, False)
+    assert roles_and_markers[3] == (MessageRoleEnum.SYSTEM, False, False, True, False)
+    assert roles_and_markers[4] == (MessageRoleEnum.SYSTEM, False, False, False, True)
     assert messages[-1].role is MessageRoleEnum.USER
 
 

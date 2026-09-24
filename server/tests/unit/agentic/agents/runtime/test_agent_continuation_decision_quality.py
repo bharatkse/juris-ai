@@ -47,6 +47,7 @@ from agentic.policy.guard import AgentPolicyGuard
 from agentic.policy.schemas import AgentPolicy
 from agentic.policy.tool_permission import ToolPermissionGuard
 from agentic.registry.agent import AgentRegistry
+from agentic.registry.tool import ToolRegistry
 from agentic.tools.result import ToolEvidence, ToolResult
 from agentic.tools.retrieval import NO_RESULTS_CONTENT, RETRIEVAL_FAILED_CONTENT
 from agentic.tools.runtime.invocation import ToolExecutionService
@@ -240,6 +241,7 @@ def execution(agent: LegalAgent) -> AgentExecution:
         decision_validator=AgentDecisionValidator(),
         agent_policy_provider=policy_provider,
         agent_policy_guard=policy_guard,
+        tool_registry=ToolRegistry(),
         agent_budget=AgentExecutionBudget(),
     )
 
@@ -373,47 +375,95 @@ async def test_tool_result_is_real_continuation_input(
     assert llm_client.generate_structured.await_count == 2
 
 
-@pytest.mark.asyncio
-async def test_failed_tool_terminates_real_lifecycle_without_next_reasoning(
-    execution: AgentExecution,
-    llm_client: object,
+def _sufficient_policy_continuation(
     tool_execution_service: ToolExecutionService,
     collaboration_bus,
-) -> None:
-    llm_client.generate_structured.return_value = _tool_decision()
-
-    failed = _tool_result(
-        content="",
-        score=None,
-        success=False,
-    )
-    tool_execution_service.execute = AsyncMock(return_value=failed)
-
-    handle = await _start_handle(execution)
-    initial = await handle.reason()
-
-    answer_evaluator = AsyncMock()
+) -> AgentContinuationService:
     answer_quality_policy = MagicMock()
     answer_quality_policy.is_sufficient.return_value = True
 
-    continuation = AgentContinuationService(
+    return AgentContinuationService(
         tool_execution_service=tool_execution_service,
         collaboration_bus=collaboration_bus,
-        answer_evaluator=answer_evaluator,
+        answer_evaluator=AsyncMock(),
         answer_quality_policy=answer_quality_policy,
         agent_policy_guard=MagicMock(),
         compliance_log=AsyncMock(),
     )
 
-    result = await continuation.execute(
-        handle=handle,
-        initial_result=initial,
+
+@pytest.mark.asyncio
+async def test_failed_tool_is_fed_back_and_the_model_reasons_again(
+    execution: AgentExecution,
+    llm_client: object,
+    tool_execution_service: ToolExecutionService,
+    collaboration_bus,
+) -> None:
+    """
+    A failed tool call no longer ends the turn: the model is told why
+    (the sanitized error) and reasons again. Before, the turn ended with
+    failed_tool and the user got the generic fallback.
+    """
+
+    llm_client.generate_structured.side_effect = [
+        _tool_decision(),
+        _final_decision("Answer from the evidence available."),
+    ]
+    tool_execution_service.execute = AsyncMock(
+        return_value=_tool_result(content="", score=None, success=False),
     )
 
-    assert result.result.status.value == "failed"
-    assert result.result.termination_reason == "failed_tool"
-    assert tool_execution_service.execute.await_count == 1
-    assert llm_client.generate_structured.await_count == 1
+    handle = await _start_handle(execution)
+    initial = await handle.reason()
+
+    result = await _sufficient_policy_continuation(
+        tool_execution_service, collaboration_bus
+    ).execute(handle=handle, initial_result=initial)
+
+    assert result.result.decision.final_response == "Answer from the evidence available."
+    assert llm_client.generate_structured.await_count == 2
+
+    second_prompt = llm_client.generate_structured.await_args_list[1].kwargs["request"]
+    assert any(
+        "Your call to tool 'retriever' failed: tool failed" in message.content
+        for message in second_prompt.messages
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_repeating_tool_failure_still_ends_the_execution(
+    execution: AgentExecution,
+    llm_client: object,
+    tool_execution_service: ToolExecutionService,
+    collaboration_bus,
+) -> None:
+    """
+    Feeding failures back is bounded: the model repeating the same failing
+    call hits the repeated-action budget and the execution ends.
+    """
+
+    llm_client.generate_structured.return_value = _tool_decision()
+    tool_execution_service.execute = AsyncMock(
+        return_value=_tool_result(content="", score=None, success=False),
+    )
+
+    handle = await _start_handle(execution)
+    initial = await handle.reason()
+
+    result = await asyncio.wait_for(
+        _sufficient_policy_continuation(tool_execution_service, collaboration_bus).execute(
+            handle=handle,
+            initial_result=initial,
+        ),
+        timeout=5,
+    )
+
+    assert result.result.status.value != "completed"
+    assert result.result.termination_reason == "partial_repeated_action"
+    # max_repeated_action=2: the identical call runs three times, and the
+    # fourth proposal of it ends the execution.
+    assert tool_execution_service.execute.await_count == 3
+    assert llm_client.generate_structured.await_count == 4
 
 
 @pytest.mark.asyncio
@@ -1251,6 +1301,7 @@ def _execution_with_budget(agent: LegalAgent, **budget: int) -> AgentExecution:
         agent_policy_guard=AgentPolicyGuard(
             tool_permission_guard=ToolPermissionGuard(),
         ),
+        tool_registry=ToolRegistry(),
         agent_budget=AgentExecutionBudget(**budget),
     )
 
@@ -1513,6 +1564,7 @@ async def test_seed_evidence_respects_the_agent_tool_policy(
             policies={AGENT_ID: AgentPolicy(agent_id=AGENT_ID, allowed_tools=frozenset())},
         ),
         agent_policy_guard=AgentPolicyGuard(tool_permission_guard=ToolPermissionGuard()),
+        tool_registry=ToolRegistry(),
         agent_budget=AgentExecutionBudget(),
     )
     tool_execution_service.execute = AsyncMock()
@@ -1757,8 +1809,8 @@ async def test_retry_closed_by_validation_budget_replaces_the_rejected_answer(
     answer_evaluator, answer_quality_policy = _yielding_insufficient_answer_evaluator()
     answer_quality_policy.require_evidence = False
 
-    # One validation attempt: the corrective retry's reasoning call is refused.
-    execution = _execution_with_budget(agent, max_validation_attempts=1)
+    # One retained decision: the corrective retry's new decision is refused.
+    execution = _execution_with_budget(agent, max_decisions=1)
     handle = await _start_handle(
         execution,
         reasoning_context=(_evidence(content="Section 43 covers damage.", score=0.8),),
@@ -1802,7 +1854,7 @@ async def test_final_arriving_on_an_ended_execution_is_never_accepted(
     )
     answer_evaluator, answer_quality_policy = _sufficient_answer_evaluator()
 
-    execution = _execution_with_budget(agent, max_validation_attempts=1)
+    execution = _execution_with_budget(agent, max_decisions=1)
     handle = await _start_handle(execution)
     initial = await handle.reason()
 

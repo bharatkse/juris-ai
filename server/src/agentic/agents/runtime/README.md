@@ -29,13 +29,17 @@ flowchart TD
     RC -->|yes, attempts left| R
     RC -->|no| FAILR[FAILED]
     R --> V{"AgentDecisionValidator.validate()"}
-    V -->|invalid| FAILV["FAILED_VALIDATION"]
+    V -->|invalid| CV{"correction budget left?<br/>(max_rejected_decisions)"}
+    CV -->|yes| FBV["add the reason to reasoning_context"] --> R
+    CV -->|no| FAILV["FAILED_VALIDATION"]
     V -->|valid| D{decision_type}
     D -->|FINAL| F["set_partial_response(final_response)<br/>COMPLETED"]
     D -->|NEED_INPUT| NI[user_input_required]
     D -->|FAIL| FL[FAILED]
     D -->|TOOL_CALL| P{"AgentPolicyGuard.check_tool()"}
-    P -->|denied| FP["FAILED_POLICY"]
+    P -->|denied| CP{"correction budget left?"}
+    CP -->|yes| FBP["add 'not available; available tools: …'"] --> R
+    CP -->|no| FP["FAILED_POLICY"]
     P -->|allowed| ACT["action: TOOL_CALL,<br/>or SEND if tool in GATED_TOOLS<br/>record_action → loop breaker"]
     D -->|DELEGATE| PD{"AgentPolicyGuard.check_delegation()"}
 ```
@@ -60,7 +64,8 @@ sequenceDiagram
             C->>T: execute(tool_name, parameters) inside @task (replay-safe)
             T-->>C: ToolResult
             alt tool failed
-                C-->>N: FAILED_TOOL
+                C->>H: add the sanitized error to reasoning_context and reason() again,<br/>unless the same failure repeats (no-progress) or a reviewer rejected it
+                C-->>N: FAILED_TOOL (only then)
             end
         end
         C->>H: extend_reasoning_context(ToolResult → RetrievedContentDTO)

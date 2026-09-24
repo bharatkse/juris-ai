@@ -24,6 +24,7 @@ from agentic.execution.state import ExecutionStateAssembler
 from agentic.policy.agent_policy import DatabaseAgentPolicyProvider
 from agentic.policy.guard import AgentPolicyGuard
 from agentic.policy.tool_permission import ToolPermissionGuard
+from agentic.tools.library.parser import ParserTool
 from agentic.tools.runtime.invocation import ToolExecutionService
 from wiring.containers import ClientContainer, RegistryContainer
 from wiring.factories.evaluation import build_faithfulness_backend
@@ -86,6 +87,7 @@ def create_executor(
     graph_factory = ExecutionGraphFactory(
         builder=graph_builder,
         agent_registry=registries.agent_registry,
+        tool_registry=registries.tool_registry,
         agent_policy_provider=policy_provider,
         agent_policy_guard=policy_guard,
         retry_policy=retry_policy,
@@ -100,9 +102,15 @@ def create_executor(
 
     state_assembler = ExecutionStateAssembler()
 
+    attachment_parser = registries.tool_registry.resolve(key="parser")
+
+    if not isinstance(attachment_parser, ParserTool):
+        raise TypeError("The 'parser' tool must be a ParserTool to parse chat attachments.")
+
     return Executor(
         graph_factory=graph_factory,
         state_assembler=state_assembler,
         timeout_policy=timeout_policy,
         tool_execution_service=tool_execution_service,
+        attachment_parser=attachment_parser,
     )

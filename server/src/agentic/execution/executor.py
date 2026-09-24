@@ -7,6 +7,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
+from agentic.execution.attachments import attachment_context
 from agentic.execution.config import ExecutionTimeoutPolicy
 from agentic.execution.graph.factory import ExecutionGraphFactory
 from agentic.execution.schemas.result import ExecutionResultSchema
@@ -17,6 +18,7 @@ from core.dto.conversation import ConversationDTO
 from core.dto.planning import ExecutionPlanDTO
 
 if TYPE_CHECKING:
+    from agentic.tools.library.parser import ParserTool
     from agentic.tools.runtime.invocation import ToolExecutionService
     from application.services.action_workflow import ActionWorkflowService
 
@@ -49,11 +51,13 @@ class Executor:
         state_assembler: ExecutionStateAssembler,
         timeout_policy: ExecutionTimeoutPolicy,
         tool_execution_service: ToolExecutionService,
+        attachment_parser: ParserTool,
     ) -> None:
         self._graph_factory = graph_factory
         self._state_assembler = state_assembler
         self._timeout_policy = timeout_policy
         self._tool_execution_service = tool_execution_service
+        self._attachment_parser = attachment_parser
 
     async def execute(
         self,
@@ -70,6 +74,11 @@ class Executor:
         A request-scoped ExecutionSession is created for the
         execution. LangGraph owns the runtime graph state and
         checkpoint persistence.
+
+        Files attached to the message are parsed here, once, into the
+        graph's initial reasoning_context (see execution/attachments.py),
+        so every step's agent starts from them and a later resume() finds
+        them in the checkpoint.
         """
 
         session = ExecutionSession(
@@ -77,6 +86,10 @@ class Executor:
             conversation=conversation,
             plan=plan,
             context=context,
+            reasoning_context=await attachment_context(
+                parser=self._attachment_parser,
+                files=context.uploaded_files,
+            ),
             graph_factory=self._graph_factory,
             state_assembler=self._state_assembler,
             timeout_policy=self._timeout_policy,

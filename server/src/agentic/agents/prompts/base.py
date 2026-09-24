@@ -8,10 +8,12 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 
 from adapters.observability.logger import get_logger
+from agentic.agents.prompts.step_task import render_step_task
 from agentic.agents.prompts.token_budget import (
     DEFAULT_RESERVED_OUTPUT_TOKENS,
     fit_to_budget,
 )
+from agentic.agents.prompts.tool_catalog import render_tool_catalog
 from agentic.agents.prompts.user_memory import render_user_memory_block
 from core.dto.agent import AgentRequestDTO
 from core.dto.clients.llm import LLMMessageDTO, LLMRequestDTO
@@ -97,12 +99,27 @@ class BasePromptBuilder(ABC):
         history or context; then the block is dropped, with a warning,
         rather than sacrificing the whole conversation for optional
         context.
+
+        The agent's available tools (``request.tool_catalog``) and, when
+        there is one, its task for this plan step (``request.instruction``
+        / ``request.arguments``) follow the system prompt as their own
+        SYSTEM messages, above any evidence. They are part of the agent's
+        instructions, so they are reserved with the system prompt and
+        never dropped.
         """
 
+        tools_block = render_tool_catalog(request.tool_catalog)
+        task_block = render_step_task(
+            instruction=request.instruction,
+            arguments=request.arguments,
+        )
+        instructions = "\n\n".join(
+            block for block in (system_prompt, tools_block, task_block) if block
+        )
         memory_block = render_user_memory_block(request.conversation.user_memory)
 
         kept_history, kept_context, report = fit_to_budget(
-            system_prompt=self._reserve(system_prompt, memory_block),
+            system_prompt=self._reserve(instructions, memory_block),
             history=request.conversation.messages,
             context=context,
             model=model,
@@ -123,7 +140,7 @@ class BasePromptBuilder(ABC):
             memory_block = ""
 
             kept_history, kept_context, _report = fit_to_budget(
-                system_prompt=system_prompt,
+                system_prompt=instructions,
                 history=request.conversation.messages,
                 context=context,
                 model=model,
@@ -135,7 +152,19 @@ class BasePromptBuilder(ABC):
                 role=MessageRoleEnum.SYSTEM,
                 content=system_prompt,
             ),
+            LLMMessageDTO(
+                role=MessageRoleEnum.SYSTEM,
+                content=tools_block,
+            ),
         ]
+
+        if task_block:
+            messages.append(
+                LLMMessageDTO(
+                    role=MessageRoleEnum.SYSTEM,
+                    content=task_block,
+                ),
+            )
 
         if memory_block:
             messages.append(

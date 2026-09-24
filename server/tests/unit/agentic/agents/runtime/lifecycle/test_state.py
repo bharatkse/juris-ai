@@ -50,7 +50,7 @@ def test_agent_state_defaults():
     assert state.agent_hop_count == 0
     assert state.total_step_count == 0
     assert state.decision_count == 0
-    assert state.validation_attempt_count == 0
+    assert state.rejected_decision_count == 0
 
     assert state.evidence_count == 0
     assert state.context_count == 0
@@ -115,7 +115,7 @@ def test_agent_state_accepts_custom_execution_counters():
         agent_hop_count=1,
         total_step_count=6,
         decision_count=4,
-        validation_attempt_count=2,
+        rejected_decision_count=2,
     )
 
     assert state.iteration_count == 2
@@ -123,7 +123,7 @@ def test_agent_state_accepts_custom_execution_counters():
     assert state.agent_hop_count == 1
     assert state.total_step_count == 6
     assert state.decision_count == 4
-    assert state.validation_attempt_count == 2
+    assert state.rejected_decision_count == 2
 
 
 def test_agent_state_accepts_custom_collection_counters():

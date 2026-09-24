@@ -116,3 +116,49 @@ def test_map_omits_answer_verified_when_no_evaluation_ran() -> None:
     )
 
     assert "answer_verified" not in response.metadata
+
+
+def test_map_never_cites_the_runtimes_or_the_gates_own_notes() -> None:
+    """
+    Notes the runtime adds for the model (a rejected tool call, a gate
+    rejection) are not sources: they appear in no citation, source or
+    evidence text. Before, the gate's notes were listed as citations.
+    """
+
+    from agentic.agents.runtime.feedback import (
+        CORRECTIVE_RETRIEVAL_FEEDBACK,
+        EVALUATION_FEEDBACK,
+        runtime_feedback,
+    )
+
+    evidence = RetrievedContentDTO(
+        source=RetrievalSourceEnum.DOCUMENT,
+        source_name="statute",
+        content="Section 43: penalty for damage.",
+        score=0.9,
+    )
+    notes = (
+        runtime_feedback("Your call to tool 'retriever' failed."),
+        RetrievedContentDTO(
+            source=RetrievalSourceEnum.MEMORY,
+            source_name="answer_evaluator",
+            content="Previous answer was insufficient.",
+            metadata={"source_type": EVALUATION_FEEDBACK},
+        ),
+        RetrievedContentDTO(
+            source=RetrievalSourceEnum.MEMORY,
+            source_name="answer_evaluator",
+            content="Previous answer failed quality checks.",
+            metadata={"source_type": CORRECTIVE_RETRIEVAL_FEEDBACK},
+        ),
+    )
+
+    response = AgentResponseMapper(agent_name="legal").map(
+        state=_state(),
+        execution_id="exec-1",
+        context=(notes[0], evidence, *notes[1:]),
+    )
+
+    assert [citation.source for citation in response.citations] == ["statute"]
+    assert [source.title for source in response.sources] == ["statute"]
+    assert response.metadata["evidence_text"] == "Section 43: penalty for damage."

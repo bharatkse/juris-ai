@@ -203,17 +203,17 @@ class BudgetGuard:
             reason=TerminationReason.PARTIAL_NO_PROGRESS,
         )
 
-    def check_validation_attempts(
+    def check_rejected_decisions(
         self,
         *,
-        validation_attempt_count: int,
+        rejected_decision_count: int,
     ) -> BudgetCheckResult:
-        """Check whether another validation attempt may start."""
+        """Check whether another rejected decision may be counted."""
         return self._count_check(
-            name="validation_attempt",
-            current_count=validation_attempt_count,
-            maximum=self._budget.max_validation_attempts,
-            reason=TerminationReason.PARTIAL_VALIDATION_LIMIT,
+            name="rejected_decision",
+            current_count=rejected_decision_count,
+            maximum=self._budget.max_rejected_decisions,
+            reason=TerminationReason.PARTIAL_REJECTED_DECISION_LIMIT,
         )
 
     @staticmethod
