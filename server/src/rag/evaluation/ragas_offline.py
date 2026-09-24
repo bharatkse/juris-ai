@@ -83,6 +83,7 @@ def run_ragas_evaluation(records: list[dict[str, Any]]) -> dict[str, float]:
     try:
         from datasets import Dataset
         from ragas import evaluate
+        from ragas.dataset_schema import EvaluationResult
         from ragas.metrics import (
             answer_relevancy,
             context_precision,
@@ -100,6 +101,12 @@ def run_ragas_evaluation(records: list[dict[str, Any]]) -> dict[str, float]:
         metrics=[faithfulness, answer_relevancy, context_precision, context_recall],
     )
 
+    # evaluate() returns an Executor only when return_executor=True.
+    if not isinstance(result, EvaluationResult):
+        raise TypeError(
+            f"ragas evaluate() returned {type(result).__name__}, expected EvaluationResult."
+        )
+
     # Extract means safely across dataset evaluations
     scores: dict[str, float] = {}
     try:
@@ -110,8 +117,17 @@ def run_ragas_evaluation(records: list[dict[str, Any]]) -> dict[str, float]:
             if matching_cols:
                 scores[metric] = float(df[matching_cols[0]].mean())
     except Exception:
-        # Fallback to direct dict conversion
-        scores = {k: float(v) for k, v in dict(result).items() if v is not None}
+        # Fallback: average the per-row scores directly (EvaluationResult
+        # is not a Mapping, so the former dict(result) could not work).
+        for metric in QUALITY_GATES:
+            values = [
+                float(value)
+                for row in result.scores
+                for name, value in row.items()
+                if metric in name.lower() and value is not None
+            ]
+            if values:
+                scores[metric] = sum(values) / len(values)
 
     return scores
 

@@ -1,5 +1,3 @@
-from typing import cast
-
 from pwdlib import PasswordHash
 from pwdlib.exceptions import UnknownHashError
 
@@ -23,7 +21,7 @@ class PasswordService:
         if not password.strip():
             raise ValueError("Password cannot be empty.")
 
-        return cast(str, _password_hasher.hash(password))
+        return _password_hasher.hash(password)
 
     @staticmethod
     def verify(
@@ -38,12 +36,9 @@ class PasswordService:
         """
 
         try:
-            return cast(
-                bool,
-                _password_hasher.verify(
-                    password,
-                    password_hash,
-                ),
+            return _password_hasher.verify(
+                password,
+                password_hash,
             )
         except UnknownHashError:
             # pwdlib raises different exceptions for malformed hashes

@@ -92,6 +92,18 @@ jobs:
       working-directory: server
 
   # ============================================================================
+  # Type Check
+  # ============================================================================
+
+  type-check:
+    needs: ci-setup
+    name: Type Check
+    uses: ./.github/workflows/type-check.yaml
+    with:
+      python-version: ${{ needs.ci-setup.outputs.python-version }}
+      working-directory: server
+
+  # ============================================================================
   # Backend Tests
   # ===========================================================================
 

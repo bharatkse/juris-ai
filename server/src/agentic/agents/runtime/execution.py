@@ -58,7 +58,7 @@ from agentic.execution.config import ExecutionRetryPolicy
 from agentic.policy.agent_policy import AgentPolicyProvider
 from agentic.policy.guard import AgentPolicyGuard
 from agentic.policy.schemas import AgentPolicy
-from agentic.registry.agent import AgentRegistry
+from agentic.registry.protocols import AgentRegistryProtocol
 from agentic.tools.constants import GATED_TOOLS
 from core.dto.agent import AgentRequestDTO, AgentStreamChunkDTO
 from core.dto.agent_action import AgentActionRequestDTO
@@ -917,7 +917,7 @@ class AgentExecution:
     def __init__(
         self,
         *,
-        agent_registry: AgentRegistry,
+        agent_registry: AgentRegistryProtocol,
         retry_policy: ExecutionRetryPolicy,
         retry_classifier: RetryClassifier,
         decision_validator: AgentDecisionValidator,

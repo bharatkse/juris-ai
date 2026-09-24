@@ -1,213 +1,147 @@
 """
-Library service.
+Unit tests for LibraryService.
 """
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from adapters.clients.storage.base import StorageClient
-from adapters.observability.logger import get_logger
 from adapters.persistence.sqlalchemy.models.library import Library
-from adapters.persistence.sqlalchemy.repositories.library import (
-    LibraryRepository,
-)
-from application.services.base import BaseService
+from application.services.library import LibraryService
 from core.dto.clients.storage import (
     DeleteRequestDTO,
     StoredObjectDTO,
     UploadRequestDTO,
+    UploadResponseDTO,
 )
-from core.enums import LibraryStatusEnum
-from core.exceptions.client import ClientProviderError, ClientResponseError
-
-log = get_logger(__name__)
+from core.enums import LibrarySourceEnum, LibraryStatusEnum, StorageTypeEnum
 
 
-class LibraryService(BaseService):
-    """
-    Manage user-uploaded files.
+def _session() -> MagicMock:
+    session = MagicMock()
+    transaction = MagicMock()
+    transaction.__aenter__ = AsyncMock(return_value=None)
+    transaction.__aexit__ = AsyncMock(return_value=False)
+    session.begin.return_value = transaction
+    return session
 
-    This service owns the upload/storage lifecycle and persistence
-    of Library metadata.
 
-    It does not own:
-        - document parsing
-        - chunking
-        - embeddings
-        - vector search
-        - RAG
-        - LLM context construction
-    """
+def _storage() -> AsyncMock:
+    storage = AsyncMock(spec=StorageClient)
+    storage.storage_type = StorageTypeEnum.LOCAL
 
-    def __init__(
-        self,
-        *,
-        session: AsyncSession,
-        repository: LibraryRepository,
-        storage: StorageClient,
-    ) -> None:
-        super().__init__(session)
-
-        self._repository = repository
-        self._storage = storage
-
-    async def upload(
-        self,
-        *,
-        conversation_id: str,
-        uploads: list[UploadRequestDTO],
-    ) -> list[Library]:
-        """
-        Upload files and persist their metadata.
-
-        Uploaded files remain transactional user artifacts.
-        Any subsequent document understanding or context-engineering
-        workflow is handled outside this service.
-        """
-
-        if not uploads:
-            return []
-
-        log.info(
-            "Uploading %d file(s) for conversation '%s'.",
-            len(uploads),
-            conversation_id,
+    async def upload(*, request: UploadRequestDTO) -> UploadResponseDTO:
+        return UploadResponseDTO(
+            object=StoredObjectDTO(
+                object_id=request.object_id,
+                filename=f"stored-{request.filename}",
+                content_type=request.content_type,
+                size=len(request.content),
+                checksum="abc",
+                storage_path=f"/data/{request.object_id}/stored-{request.filename}",
+            ),
         )
 
-        uploaded_objects: list[StoredObjectDTO] = []
-        library: list[Library] = []
+    storage.upload.side_effect = upload
+    return storage
 
-        try:
-            async with self._session.begin():
-                for request in uploads:
-                    response = await self._storage.upload(
-                        request=request,
-                    )
 
-                    stored = response.object
+def _upload(filename: str) -> UploadRequestDTO:
+    return UploadRequestDTO(
+        object_id="conv-1",
+        filename=filename,
+        content=b"hello",
+        content_type="text/plain",
+    )
 
-                    uploaded_objects.append(stored)
 
-                    library = Library(
-                        conversation_id=conversation_id,
-                        source_type=request.source_type,
-                        original_filename=request.filename,
-                        filename=stored.filename,
-                        mime_type=stored.content_type,
-                        size=stored.size,
-                        checksum=stored.checksum,
-                        storage_type=self._storage.storage_type,
-                        storage_path=stored.storage_path,
-                        status=LibraryStatusEnum.UPLOADED,
-                    )
+def _service(*, storage: AsyncMock, repository: AsyncMock | None = None) -> LibraryService:
+    return LibraryService(
+        session=_session(),
+        repository=repository or AsyncMock(),
+        storage=storage,
+    )
 
-                    await self._repository.create(
-                        library=library,
-                    )
 
-                    library.append(library)
+async def test_upload_returns_one_library_row_per_file() -> None:
+    repository = AsyncMock()
+    service = _service(storage=_storage(), repository=repository)
 
-            log.info(
-                "Uploaded %d file(s) for conversation '%s'.",
-                len(library),
-                conversation_id,
-            )
+    libraries = await service.upload(
+        conversation_id="conv-1",
+        uploads=[_upload("a.txt"), _upload("b.txt")],
+    )
 
-            return library
+    assert [library.original_filename for library in libraries] == ["a.txt", "b.txt"]
+    assert all(isinstance(library, Library) for library in libraries)
+    assert repository.create.await_count == 2
 
-        except (
-            ClientProviderError,
-            ClientResponseError,
-            SQLAlchemyError,
-        ):
-            log.exception(
-                "Failed to upload file(s) for conversation '%s'.",
-                conversation_id,
-            )
 
-            await self._cleanup_uploads(
-                uploaded_objects=uploaded_objects,
-            )
+async def test_upload_persists_stored_object_metadata_as_user_file() -> None:
+    service = _service(storage=_storage())
 
-            raise
+    (library,) = await service.upload(conversation_id="conv-1", uploads=[_upload("a.txt")])
 
-    async def get_by_id(
-        self,
-        *,
-        library_id: str,
-    ) -> Library | None:
-        """
-        Retrieve an uploaded file by identifier.
-        """
+    assert library.conversation_id == "conv-1"
+    assert library.source_type is LibrarySourceEnum.FILE
+    assert library.status is LibraryStatusEnum.UPLOADED
+    assert library.filename == "stored-a.txt"
+    assert library.storage_path == "/data/conv-1/stored-a.txt"
+    assert library.size == 5
 
-        return await self._repository.get_by_id(
-            library_id=library_id,
+
+async def test_upload_with_no_files_does_nothing() -> None:
+    storage = _storage()
+    service = _service(storage=storage)
+
+    assert await service.upload(conversation_id="conv-1", uploads=[]) == []
+    storage.upload.assert_not_awaited()
+
+
+async def test_failed_persist_removes_already_uploaded_objects() -> None:
+    storage = _storage()
+    repository = AsyncMock()
+    repository.create.side_effect = [None, SQLAlchemyError("insert failed")]
+    service = _service(storage=storage, repository=repository)
+
+    with pytest.raises(SQLAlchemyError):
+        await service.upload(
+            conversation_id="conv-1",
+            uploads=[_upload("a.txt"), _upload("b.txt")],
         )
 
-    async def list(
-        self,
-        *,
-        conversation_id: str,
-    ) -> list[Library]:
-        """
-        Retrieve all uploaded files for a conversation.
-        """
+    deleted = [call.kwargs["request"] for call in storage.delete.await_args_list]
+    assert deleted == [
+        DeleteRequestDTO(object_id="conv-1", filename="stored-a.txt"),
+        DeleteRequestDTO(object_id="conv-1", filename="stored-b.txt"),
+    ]
 
-        return await self._repository.list_by_conversation(
-            conversation_id=conversation_id,
-        )
 
-    async def delete(
-        self,
-        *,
-        library: Library,
-    ) -> None:
-        """
-        Delete an uploaded file from storage and persistence.
-        """
+async def test_delete_removes_stored_object_and_row() -> None:
+    storage = _storage()
+    repository = AsyncMock()
+    service = _service(storage=storage, repository=repository)
+    library = Library(id="lib-1", filename="stored-a.txt", storage_path="/data/x")
 
-        if library.storage_path:
-            await self._storage.delete(
-                request=DeleteRequestDTO(
-                    object_id=library.id,
-                    filename=library.filename,
-                ),
-            )
+    await service.delete(library=library)
 
-        await self._repository.delete(
-            library,
-        )
+    storage.delete.assert_awaited_once_with(
+        request=DeleteRequestDTO(object_id="lib-1", filename="stored-a.txt"),
+    )
+    repository.delete.assert_awaited_once_with(library)
 
-    async def _cleanup_uploads(
-        self,
-        *,
-        uploaded_objects: list[StoredObjectDTO],
-    ) -> None:
-        """
-        Remove uploaded files from storage after a failed transaction.
-        """
 
-        for stored in uploaded_objects:
-            try:
-                await self._storage.delete(
-                    request=DeleteRequestDTO(
-                        object_id=stored.object_id,
-                        filename=stored.filename,
-                    ),
-                )
+async def test_delete_without_stored_object_only_removes_row() -> None:
+    storage = _storage()
+    repository = AsyncMock()
+    service = _service(storage=storage, repository=repository)
+    library = Library(id="lib-1", filename=None, storage_path=None)
 
-                log.info(
-                    "Cleaned up '%s'.",
-                    stored.filename,
-                )
+    await service.delete(library=library)
 
-            except (
-                ClientProviderError,
-                ClientResponseError,
-            ):
-                log.exception(
-                    "Failed to clean up '%s'.",
-                    stored.filename,
-                )
+    storage.delete.assert_not_awaited()
+    repository.delete.assert_awaited_once_with(library)

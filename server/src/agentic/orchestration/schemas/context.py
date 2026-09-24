@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from agentic.orchestration.schemas.request import Attachment
+from core.dto.tool import ToolFileDTO
 from core.dto.user_memory import UserMemoryContextItem
 from core.models.conversation import ConversationMessageSchema
 from core.types import ConversationId, UserId
@@ -74,9 +74,7 @@ class DocumentContext(BaseModel):
         extra="forbid",
     )
 
-    attachments: list[Attachment] = Field(
-        default_factory=list,
-    )
+    attachments: tuple[ToolFileDTO, ...] = ()
 
 
 class RuntimeContext(BaseModel):

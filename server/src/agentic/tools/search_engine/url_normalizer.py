@@ -70,7 +70,7 @@ def normalize_and_dedupe(
                 title=result.title,
                 url=canonical,
                 snippet=result.snippet,
-                engine=result.engine,
+                metadata=result.metadata,
             )
         )
 

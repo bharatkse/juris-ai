@@ -66,7 +66,6 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
-from typing import Literal
 from uuid import uuid4
 
 from core.models.response import AIUsageModel, MetadataModel
@@ -106,11 +105,11 @@ class RequestContext:
     # isn't a plain `set[str] | None = None` field. Access via the
     # allowed_library_ids property below, not this attribute
     # directly.
-    _allowed_library_ids: set[str] | None | Literal[_Unset] = field(default=_UNSET, repr=False)
+    _allowed_library_ids: set[str] | None | _Unset = field(default=_UNSET, repr=False)
 
     @property
     def allowed_library_ids(self) -> set[str] | None:
-        if self._allowed_library_ids is _UNSET:
+        if isinstance(self._allowed_library_ids, _Unset):
             raise RuntimeError(
                 "allowed_library_ids was never resolved for this request. "
                 "An ACL-scoped tool executed before the authorization "
@@ -126,7 +125,7 @@ class RequestContext:
     def allowed_library_ids(self, value: set[str] | None) -> None:
         self._allowed_library_ids = value
 
-    def to_metadata(self) -> dict[str, object]:
+    def to_metadata(self) -> MetadataModel:
         """
         Convert request context into metadata suitable for API responses
         and observability.

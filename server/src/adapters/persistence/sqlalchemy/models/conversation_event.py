@@ -17,7 +17,6 @@ from core.enums import MessageRoleEnum
 if TYPE_CHECKING:
     from .agent_action import AgentAction
     from .conversation import Conversation
-    from .conversation_event import ConversationEvent
 
 
 class ConversationEvent(

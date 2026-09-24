@@ -46,7 +46,7 @@ priority = "explicit"
 [tool.poetry.dependencies]
 
 # Web API framework and ASGI server
-fastapi = "^0.116.0"
+fastapi = "^0.141.1"
 uvicorn = { extras = ["standard"], version = "^0.31.1" }
 
 # Authentication and password hashing
@@ -54,7 +54,7 @@ pwdlib = { extras = ["argon2"], version = "^0.3.0" }
 python-jose = "^3.5.0"
 
 # Multipart form/file uploads
-python-multipart = "^0.0.9"
+python-multipart = "^0.0.32"
 
 # Data validation and application configuration
 pydantic = { version = "^2.7.1", extras = ["email"] }
@@ -90,8 +90,13 @@ pgvector = ">=0.3,<1.0"
 # sentence-transformers depends on PyTorch.
 # Explicitly use the CPU PyTorch distribution for the
 # default application environment.
-sentence-transformers = "5.1.2"
+sentence-transformers = "6.1.0"
 torch = { version = "*", source = "pytorch-cpu" }
+# Transitive (via sentence-transformers), declared only as a security
+# floor: <5.3 has an RCE via config injection (CVE-2026-4372) and <5.10
+# a path traversal in save_pretrained (CVE-2026-9856); neither is
+# backported to 4.x.
+transformers = "^5.10.0"
 
 # Token counting for prompt budgeting (agentic/agents/prompts/token_budget.py).
 # Not an exact tokenizer for the Llama/Qwen models actually in use --
@@ -104,9 +109,10 @@ tiktoken = "^0.14.0"
 #
 # agentic/guardrails/pii.py -- NER-based PII detection needs a real
 # entity recognizer, not regex, which is what presidio-analyzer's
-# spaCy-backed AnalyzerEngine provides; presidio-anonymizer applies
-# the redaction. en-core-web-sm (not the default, larger
-# en_core_web_lg) keeps this addition small relative to the
+# spaCy-backed AnalyzerEngine provides; redaction itself is a plain
+# span replacement in pii.py (presidio-anonymizer was dropped: its
+# cryptography<49 pin blocked two HIGH CVE fixes). en-core-web-sm
+# (not the default, larger en_core_web_lg) keeps this addition small relative to the
 # torch/sentence-transformers stack already installed for embeddings
 # -- see pii.py's module docstring for the full design reasoning.
 # spaCy models aren't published to PyPI, hence the direct wheel URL
@@ -114,17 +120,11 @@ tiktoken = "^0.14.0"
 # installs).
 # -------------------------------------------------
 # Same pattern as aws-sam-cli below: requires-python's declared upper
-# bound (<4.0) is looser than presidio-anonymizer's own (<3.15,
+# bound (<4.0) is looser than presidio-analyzer's own (<3.15,
 # Python 3.15 not yet released at time of writing) -- an explicit
 # python= marker here, not a raised project floor/lowered ceiling.
 presidio-analyzer = { version = "^2.2.364", python = ">=3.11,<3.15" }
-presidio-anonymizer = { version = "^2.2.364", python = ">=3.11,<3.15" }
 en-core-web-sm = { url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl", python = ">=3.11,<3.15" }
-
-# ONNX runtime for CPU inference
-onnxruntime = "^1.22"
-# Required by sentence-transformers when CrossEncoder uses backend="onnx".
-optimum = { extras = ["onnxruntime"], version = "1.23.3" }
 
 # -------------------------------------------------
 # Large Language Model Providers
@@ -184,20 +184,15 @@ langsmith = "^0.10.17"
 # Evaluation Dependencies
 # -------------------------------------------------
 [tool.poetry.group.eval.dependencies]
-# Pinned exact, not "^0.2": the langchain-community<0.4 pin below was
-# hand-verified against this specific ragas version's import chain
-# (ragas/llms/base.py). An unconstrained ^0.2 lets `poetry update`
-# silently pick a newer ragas patch whose compatibility with that pin
-# has not been checked.
-ragas = "0.2.15"
-datasets = "^2.20"
-# ragas 0.2.x declares no upper bound on langchain-community ("*"), so
-# an unconstrained resolution picks the latest available -- which, as
-# of langchain-community 0.4.x, dropped the old langchain_community
-# .chat_models.vertexai module that ragas/llms/base.py imports
-# eagerly at package load, making `import ragas` fail outright. Pin to
-# the last pre-split (0.3.x) line, which still has that module.
-langchain-community = "<0.4"
+# Pinned exact: ragas' public API has shifted between minors (0.2 -> 0.4
+# moved the legacy metrics behind ragas.metrics.collections), and
+# rag/evaluation/ragas_*.py imports specific internals
+# (ragas.llms.base, ragas.dataset_schema). 0.2.x also carried
+# CVE-2025-45691 (arbitrary file read via ImageTextPromptValue), fixed
+# in 0.3.0. The former langchain-community<0.4 pin is gone: it existed
+# only because ragas 0.2.15 eagerly imported a module 0.4 removed.
+ragas = "0.4.3"
+datasets = "^4.0"
 
 
 # -------------------------------------------------
@@ -208,8 +203,8 @@ langchain-community = "<0.4"
 [tool.poetry.group.dev.dependencies]
 
 # Testing
-pytest = "^8.3.0"
-pytest-asyncio = "^0.24.0"
+pytest = "^8.4.0"
+pytest-asyncio = "^1.4.0"
 pytest-cov = "^6.0.0"
 pytest-mock = "^3.15.1"
 factory-boy = "^3.3.3"
@@ -221,7 +216,9 @@ types-aiofiles = "^25.1.0.20260518"
 ruff = "^0.8.0"
 mypy = "^1.13.0"
 pre-commit = "^4.0.0"
-types-redis = "^4.6.0"
+# No types-redis: redis>=5 ships its own inline types (py.typed), and
+# the stale 4.x stubs shadowed them (e.g. hid Redis.aclose()).
+types-python-jose = "^3.5.0"
 
 # Local AWS development tools
 aws-sam-cli = { version = "^1.148.0", python = ">=3.10,<3.14" }
@@ -265,6 +262,9 @@ line-ending = "auto"
 # Static type checking rules.
 # -------------------------------------------------
 [tool.mypy]
+# Pydantic's plugin: BaseSettings fields come from the environment, so
+# e.g. Field(default_factory=SecuritySettings) is valid.
+plugins = ["pydantic.mypy"]
 python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
@@ -285,7 +285,7 @@ exclude = ["src/.*/__pycache__", "src/__pycache__", ".venv", "venv", "env"]
 
 # Work around missing type stubs for third-party libraries.
 [[tool.mypy.overrides]]
-module = ["faiss.*", "fitz.*", "sentence_transformers.*"]
+module = ["faiss.*", "fitz.*", "sentence_transformers.*", "sklearn.*", "datasets.*"]
 ignore_missing_imports = true
 
 

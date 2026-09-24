@@ -77,7 +77,7 @@ jobs:
       - name: Ingest golden-dataset corpus
         env:
           PYTHONPATH: src
-        run: poetry run python -m rag.ingestion.ingest_offline raw_datasets/acts
+        run: poetry run python -m rag.ingestion.ingest_offline tests/datasets/rag/raw_datasets
 
       - name: Run golden-dataset retrieval evaluation
         env:

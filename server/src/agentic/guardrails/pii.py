@@ -1,8 +1,8 @@
 """
 PII detection and redaction.
 
-Built on Microsoft Presidio (presidio-analyzer + presidio-anonymizer)
-rather than hand-rolled regex, for one reason regex fundamentally
+Built on Microsoft Presidio (presidio-analyzer) rather than hand-rolled
+regex, for one reason regex fundamentally
 cannot cover: recognizing that a span of text is a person's name or an
 address needs named-entity recognition, not pattern matching. Presidio
 gives that (spaCy-backed AnalyzerEngine) plus a pluggable registry for
@@ -39,24 +39,27 @@ over-redacting corrupts correct answers):
            than a name genuinely drawn from what was retrieved, and
            redaction is the safer default for that case.
 
-Anonymization detail: Presidio's AnonymizerEngine applies operators
-per ENTITY TYPE across a whole analyze() call, which cannot express
-"redact this PERSON match but not that one" -- exactly the
-evidence-dependent, per-instance decision this module needs. The fix
-used here is not a different library, just a narrower call: only the
+Anonymization detail: redaction is decided per instance (redact this
+PERSON match but not that one, depending on evidence), so only the
 RecognizerResults this module has already decided to redact are ever
-passed to anonymize(); the ones being flagged-not-redacted are simply
-never included in that call, so Presidio's per-entity-type operator
-limitation never actually binds.
+replaced; the ones being flagged-not-redacted are never touched.
+Replacement is done here (_redact_spans()) rather than by
+presidio-anonymizer's AnonymizerEngine: the only operator ever used is
+a fixed-string "replace", and presidio-anonymizer (as of 2.2.364, its
+latest release) hard-pins cryptography<49, which blocked upgrading
+cryptography past two HIGH CVEs (CVE-2026-69249, CVE-2026-69247).
+_redact_spans() reproduces AnonymizerEngine.anonymize()'s output for
+the inputs this module passes it -- verified differentially against
+presidio-anonymizer 2.2.364 before it was removed.
 """
 
 from __future__ import annotations
 
+import re
+
 from presidio_analyzer import AnalyzerEngine, Pattern, PatternRecognizer, RecognizerRegistry
 from presidio_analyzer.nlp_engine import NlpEngineProvider
 from presidio_analyzer.recognizer_result import RecognizerResult
-from presidio_anonymizer import AnonymizerEngine
-from presidio_anonymizer.entities import OperatorConfig
 
 from agentic.guardrails.schemas import GuardrailActionEnum, PIICategoryEnum, PIIDetection
 
@@ -151,8 +154,8 @@ def _resolve_overlaps(results: list[RecognizerResult]) -> list[RecognizerResult]
     pattern recognizer and the generic PERSON NER model, both at
     score 0.85; an email address matches both EMAIL_ADDRESS and
     ORGANIZATION) -- confirmed empirically while building this module.
-    Passing overlapping spans to AnonymizerEngine.anonymize() raises,
-    and even where it wouldn't, two categorizations of the same text
+    Overlapping spans cannot be replaced independently, and even if
+    they could, two categorizations of the same text
     is not a coherent action to take. Greedy non-max suppression,
     standard for resolving overlapping detections in NLP pipelines:
     process the strongest candidate first, keep a detection only if it
@@ -196,6 +199,46 @@ def _resolve_overlaps(results: list[RecognizerResult]) -> list[RecognizerResult]
     return sorted(kept, key=lambda item: item.start)
 
 
+_SPACES_ONLY = re.compile(r" +")
+
+
+def _redact_spans(*, text: str, results: list[RecognizerResult]) -> str:
+    """
+    Replace each (non-overlapping, per _resolve_overlaps()) span with
+    `[REDACTED:<entity_type>]`.
+
+    Mirrors presidio-anonymizer's AnonymizerEngine.anonymize() with a
+    "replace" operator, including its one non-obvious step: adjacent
+    spans of the same entity type separated only by spaces are merged
+    into one replacement (so a first/last name split into two PERSON
+    detections redacts as a single `[REDACTED:PERSON]`, not two).
+    """
+
+    merged: list[tuple[int, int, str]] = []
+
+    for result in sorted(results, key=lambda item: (item.start, item.end)):
+        if merged:
+            prev_start, prev_end, prev_type = merged[-1]
+            if prev_type == result.entity_type and _SPACES_ONLY.fullmatch(
+                text[prev_end : result.start]
+            ):
+                merged[-1] = (prev_start, result.end, prev_type)
+                continue
+        merged.append((result.start, result.end, result.entity_type))
+
+    parts: list[str] = []
+    cursor = 0
+
+    for start, end, entity_type in merged:
+        parts.append(text[cursor:start])
+        parts.append(f"[REDACTED:{entity_type}]")
+        cursor = end
+
+    parts.append(text[cursor:])
+
+    return "".join(parts)
+
+
 def _evidence_matched(*, matched_text: str, evidence_text: str) -> bool:
     """
     Whether the matched span is traceable to this turn's retrieved
@@ -225,7 +268,6 @@ class PresidioPIIDetector:
 
     def __init__(self, *, spacy_model: str = "en_core_web_sm") -> None:
         self._analyzer = _build_analyzer(spacy_model=spacy_model)
-        self._anonymizer = AnonymizerEngine()
         self._entities = tuple(_ENTITY_CATEGORIES.keys())
 
     def review(
@@ -297,24 +339,4 @@ class PresidioPIIDetector:
         if not to_redact:
             return text, tuple(detections)
 
-        operators = {
-            entity_type: OperatorConfig(
-                "replace",
-                {"new_value": f"[REDACTED:{entity_type}]"},
-            )
-            for entity_type in {result.entity_type for result in to_redact}
-        }
-
-        anonymized = self._anonymizer.anonymize(
-            text=text,
-            # presidio-analyzer and presidio-anonymizer each declare
-            # their own RecognizerResult class (analyzer_results is
-            # typed against the anonymizer package's copy); confirmed
-            # empirically that the analyzer's real return value works
-            # correctly here (see this module's own tests) -- a stub
-            # mismatch between the two packages, not a real type error.
-            analyzer_results=to_redact,  # type: ignore[arg-type]
-            operators=operators,
-        )
-
-        return anonymized.text, tuple(detections)
+        return _redact_spans(text=text, results=to_redact), tuple(detections)

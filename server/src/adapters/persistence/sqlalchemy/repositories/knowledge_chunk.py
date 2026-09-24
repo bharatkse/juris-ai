@@ -11,8 +11,10 @@ through KnowledgeEmbeddingRepository.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import Any, cast
 
 from sqlalchemy import delete, select
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from adapters.persistence.sqlalchemy.models.knowledge_chunk import (
@@ -191,7 +193,7 @@ class KnowledgeChunkRepository:
 
         await self._session.flush()
 
-        return bool(result.rowcount)
+        return bool(cast(CursorResult[Any], result).rowcount)
 
     async def delete_by_knowledge_source_id(
         self,
@@ -220,4 +222,4 @@ class KnowledgeChunkRepository:
 
         await self._session.flush()
 
-        return result.rowcount or 0
+        return cast(CursorResult[Any], result).rowcount or 0

@@ -57,7 +57,7 @@ class ExecutionRetryPolicy:
             )
 
         return min(
-            self.base_delay_seconds * (2 ** (retry_count - 1)),
+            self.base_delay_seconds * (2.0 ** (retry_count - 1)),
             self.max_delay_seconds,
         )
 

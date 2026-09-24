@@ -9,14 +9,49 @@ so each tool file only contains what's actually specific to it.
 
 from __future__ import annotations
 
+from typing import Protocol
+
 from adapters.clients.mcp.registry import MCPServerRegistry
 from adapters.observability.logger import get_logger
-from application.authorization.approval_lifecycle.protocols import (
-    ApprovalLifecycleServiceProtocol,
-)
 from core.exceptions.mcp import MCPError
 
 log = get_logger(__name__)
+
+
+class ApprovalTokenVerifier(Protocol):
+    """
+    What a gated tool needs from the approval system: whether an
+    approval token covers this exact action + payload.
+    """
+
+    async def is_approved(
+        self,
+        *,
+        token: str,
+        action: str,
+        payload: dict[str, object],
+    ) -> bool: ...
+
+
+class DenyAllApprovalVerifier:
+    """
+    Fail-closed ApprovalTokenVerifier.
+
+    Nothing implements approval-token verification yet (see
+    docs/architecture-review.md S4: gated send()/post() have no caller),
+    so every gated action is denied. Replaces wiring that passed
+    AuthorizationService here, which has no is_approved() at all -- the
+    gate would have raised AttributeError instead of denying.
+    """
+
+    async def is_approved(
+        self,
+        *,
+        token: str,
+        action: str,
+        payload: dict[str, object],
+    ) -> bool:
+        return False
 
 
 class GatedMCPTool:
@@ -35,7 +70,7 @@ class GatedMCPTool:
         self,
         *,
         mcp_registry: MCPServerRegistry,
-        approval_service: ApprovalLifecycleServiceProtocol,
+        approval_service: ApprovalTokenVerifier,
     ) -> None:
         self._mcp_registry = mcp_registry
         self._approval_service = approval_service

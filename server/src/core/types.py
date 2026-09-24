@@ -9,7 +9,7 @@ using a common prefixed-UUID format.
 from __future__ import annotations
 
 import uuid
-from typing import Annotated, TypeAlias
+from typing import Annotated, Any, TypeAlias
 
 from pydantic import Field
 
@@ -26,7 +26,7 @@ def prefixed_id_field(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex}"
 
 
-def prefixed_id_validator(prefix: str) -> Field:
+def prefixed_id_validator(prefix: str) -> Any:
     """
     Build Pydantic field metadata for a prefixed identifier.
     """

@@ -7,12 +7,13 @@ Streamable HTTP transport. One instance per connected server.
 
 from __future__ import annotations
 
-from contextlib import AsyncExitStack
+from contextlib import AsyncExitStack, suppress
 from typing import Any
 
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.client.streamable_http import streamable_http_client
+from mcp.shared._httpx_utils import create_mcp_http_client
 
 from adapters.clients.mcp.base import MCPClient
 from adapters.observability.logger import get_logger
@@ -74,23 +75,32 @@ class MCPClientImpl(MCPClient):
                         "for streamable_http transport but has no url."
                     )
 
-                read, write, _ = await self._exit_stack.enter_async_context(
-                    streamable_http_client(
-                        self._config.url,
-                        headers=self._config.headers or None,
+                # mcp>=2 takes headers via a caller-owned HTTP client, not
+                # a headers= argument. create_mcp_http_client keeps the
+                # SDK's default transport timeouts; a client we pass in is
+                # ours to close, hence entering it on the exit stack.
+                http_client = None
+                if self._config.headers:
+                    http_client = await self._exit_stack.enter_async_context(
+                        create_mcp_http_client(headers=dict(self._config.headers))
                     )
+
+                read, write = await self._exit_stack.enter_async_context(
+                    streamable_http_client(self._config.url, http_client=http_client)
                 )
 
             self._session = await self._exit_stack.enter_async_context(ClientSession(read, write))
-            await self._sessioninitialize()
+            await self._session.initialize()
 
             log.info("Connected to MCP server '%s'.", self._config.name)
 
         except MCPConnectionError:
+            await self._discard_partial_connection()
             raise
 
         except Exception as exc:
             log.exception("Failed to connect to MCP server '%s'.", self._config.name)
+            await self._discard_partial_connection()
 
             raise MCPConnectionError(
                 message=f"Failed to connect to MCP server '{self._config.name}'."
@@ -114,7 +124,7 @@ class MCPClientImpl(MCPClient):
             MCPToolDescriptor(
                 name=tool.name,
                 description=tool.description,
-                input_schema=tool.inputSchema,
+                input_schema=tool.input_schema,
             )
             for tool in result.tools
         ]
@@ -149,7 +159,7 @@ class MCPClientImpl(MCPClient):
 
         content = [block.model_dump() for block in result.content]
 
-        if result.isError:
+        if result.is_error:
             log.warning(
                 "MCP tool '%s' on server '%s' returned an error result.",
                 name,
@@ -159,9 +169,24 @@ class MCPClientImpl(MCPClient):
         return MCPToolCallResult(
             tool_name=name,
             server_name=self._config.name,
-            is_error=result.isError,
+            is_error=result.is_error,
             content=content,
         )
+
+    async def _discard_partial_connection(self) -> None:
+        """
+        Release whatever connect() entered before failing -- e.g. a
+        spawned stdio server process and its transport task group --
+        so a failed connect doesn't leak them (a leaked stdio transport
+        also keeps the event loop from shutting down). Cleanup errors
+        are suppressed so the original connect failure is what surfaces.
+        """
+
+        exit_stack, self._exit_stack, self._session = self._exit_stack, None, None
+
+        if exit_stack is not None:
+            with suppress(Exception):
+                await exit_stack.aclose()
 
     def _require_session(self) -> ClientSession:
         if self._session is None:

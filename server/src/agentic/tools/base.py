@@ -39,10 +39,14 @@ class Tool(ABC):
     description: str
 
     @abstractmethod
-    async def execute(self, **kwargs: Any) -> str:
+    async def execute(self, *args: Any, **kwargs: Any) -> str:
         """
         Run the tool and return a string result suitable for
         inclusion in an LLM prompt.
+
+        Each tool declares its own keyword arguments; `*args: Any,
+        **kwargs: Any` is the signature mypy accepts any override of.
+        Tools are always invoked by keyword (ToolExecutionService).
 
         Tools with additional gated methods (e.g. EmailTool.send,
         SlackTool.post) intentionally do NOT route those through

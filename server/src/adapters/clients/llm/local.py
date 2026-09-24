@@ -48,7 +48,7 @@ class LocalLLMClient(LLMClient):
     def __init__(
         self,
         *,
-        base_url: str,
+        base_url: str | None,
         model: str,
     ) -> None:
         self._client = AsyncClient(
@@ -332,7 +332,7 @@ class LocalLLMClient(LLMClient):
 
         schema = json_schema.get("schema")
 
-        if schema is None:
+        if not isinstance(schema, dict):
             return response_format
 
         return schema

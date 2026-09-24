@@ -22,6 +22,9 @@ from core.exceptions.client import (
 
 log = get_logger(__name__)
 
+# What httpx can encode as a query-string value.
+QueryValue = str | int | float | bool | None
+
 
 class AsyncHTTPClient:
     """
@@ -63,7 +66,7 @@ class AsyncHTTPClient:
         method: str,
         path: str = "",
         *,
-        params: Mapping[str, object] | None = None,
+        params: Mapping[str, QueryValue] | None = None,
         json: Mapping[str, Any] | None = None,
     ) -> httpx.Response:
         """
@@ -108,7 +111,7 @@ class AsyncHTTPClient:
         self,
         path: str = "",
         *,
-        params: Mapping[str, object] | None = None,
+        params: Mapping[str, QueryValue] | None = None,
     ) -> httpx.Response:
         """
         Perform an HTTP GET request.
@@ -132,7 +135,7 @@ class AsyncHTTPClient:
         self,
         path: str = "",
         *,
-        params: Mapping[str, object] | None = None,
+        params: Mapping[str, QueryValue] | None = None,
     ) -> dict[str, Any]:
         """
         Perform an HTTP GET request and return JSON.

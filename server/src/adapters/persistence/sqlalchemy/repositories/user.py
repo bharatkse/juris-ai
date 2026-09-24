@@ -4,8 +4,6 @@ User repository.
 
 from __future__ import annotations
 
-from typing import cast
-
 from sqlalchemy import exists, select
 
 from adapters.persistence.sqlalchemy.models.user import User
@@ -52,10 +50,7 @@ class UserRepository(
             statement,
         )
 
-        return cast(
-            User | None,
-            result.scalar_one_or_none(),
-        )
+        return result.scalar_one_or_none()
 
     async def get_by_email(
         self,
@@ -75,10 +70,7 @@ class UserRepository(
             statement,
         )
 
-        return cast(
-            User | None,
-            result.scalar_one_or_none(),
-        )
+        return result.scalar_one_or_none()
 
     async def exists_by_email(
         self,

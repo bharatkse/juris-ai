@@ -141,7 +141,7 @@ class SentenceTransformerEmbeddingProvider(EmbeddingProviderProtocol):
                     self.metadata.model_name,
                 )
 
-                actual_dimension = model.get_sentence_embedding_dimension()
+                actual_dimension = model.get_embedding_dimension()
 
                 if actual_dimension is None or actual_dimension <= 0:
                     raise EmbeddingError(

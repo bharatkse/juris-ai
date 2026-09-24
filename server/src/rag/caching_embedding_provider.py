@@ -17,6 +17,7 @@ sites with a single change.
 from __future__ import annotations
 
 import hashlib
+from typing import cast
 
 from adapters.cache.base import AbstractCache
 from adapters.observability.metrics import metrics
@@ -89,7 +90,8 @@ class CachingEmbeddingProvider:
                     ttl=self._ttl_seconds,
                 )
 
-        return cached
+        # Every None (miss) was filled from `computed` above.
+        return cast(list[list[float]], cached)
 
     async def embed_one(
         self,

@@ -7,8 +7,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 
-from agentic.execution.aggregation.schemas import AggregatedResponse
-from agentic.orchestration.schemas.response import AgentResponse
+from agentic.execution.aggregation.schemas import AggregationResult
+from core.dto.agent import AgentResponseDTO
 
 
 class BaseAggregator(ABC):
@@ -23,8 +23,8 @@ class BaseAggregator(ABC):
     @abstractmethod
     async def aggregate(
         self,
-        responses: Sequence[AgentResponse],
-    ) -> AggregatedResponse:
+        responses: Sequence[AgentResponseDTO],
+    ) -> AggregationResult:
         """
         Aggregate multiple agent responses into a single response.
         """

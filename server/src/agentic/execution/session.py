@@ -13,7 +13,7 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, cast
 from uuid import UUID
 
-from langgraph.types import Command
+from langgraph.types import Command, Interrupt
 
 from adapters.observability.logger import get_logger
 from agentic.decisions.decision import AgentDecisionType
@@ -118,7 +118,7 @@ class ExecutionSession:
             )
 
             return await self._finish(
-                graph_state=graph_state,
+                graph_state=cast(ExecutionGraphState, graph_state),
                 user_id=self._context.user_id,
             )
 
@@ -340,7 +340,7 @@ class ExecutionSession:
             )
 
             return await self._finish(
-                graph_state=graph_state,
+                graph_state=cast(ExecutionGraphState, graph_state),
                 user_id=user_id,
             )
 
@@ -518,7 +518,9 @@ class ExecutionSession:
         reliably round-trip JSON-primitive types.
         """
 
-        interrupts = graph_state.get("__interrupt__")
+        # LangGraph adds "__interrupt__" to the returned state; it is
+        # not part of the declared ExecutionGraphState schema.
+        interrupts = cast("list[Interrupt] | None", graph_state.get("__interrupt__"))
 
         if not interrupts:
             return None
@@ -593,4 +595,5 @@ class ExecutionSession:
             "memory_updates": [],
             "agent_decision_updates": [],
             "action": None,
+            "termination_reason": None,
         }

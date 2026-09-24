@@ -35,7 +35,9 @@ def get_embedding_provider(
     loaded exactly once for the whole process.
     """
 
-    return request.app.state.embedding_provider
+    embedding_provider: EmbeddingProviderProtocol = request.app.state.embedding_provider
+
+    return embedding_provider
 
 
 def get_memory_extraction_scheduler(
@@ -48,7 +50,9 @@ def get_memory_extraction_scheduler(
     in-flight background runs, so it must be a single shared instance.
     """
 
-    return request.app.state.memory_extraction_scheduler
+    scheduler: MemoryExtractionScheduler = request.app.state.memory_extraction_scheduler
+
+    return scheduler
 
 
 def get_user_memory_repository(

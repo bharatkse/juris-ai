@@ -7,7 +7,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from agentic.execution.validation.base import BaseValidator
-from agentic.orchestration.schemas.response import AgentResponse
+from core.dto.agent import AgentResponseDTO
 from core.exceptions.validation import (
     DuplicateAgentResponseError,
     EmptyContentError,
@@ -23,7 +23,7 @@ class ResponseValidator(BaseValidator):
     async def validate(
         self,
         *,
-        responses: Sequence[AgentResponse],
+        responses: Sequence[AgentResponseDTO],
     ) -> None:
         """
         Validate agent responses.
@@ -45,7 +45,7 @@ class ResponseValidator(BaseValidator):
 
     @staticmethod
     def _validate_unique_agents(
-        responses: Sequence[AgentResponse],
+        responses: Sequence[AgentResponseDTO],
     ) -> None:
         """
         Ensure each agent contributes at most one response.
@@ -65,7 +65,7 @@ class ResponseValidator(BaseValidator):
 
     @staticmethod
     def _validate_content(
-        responses: Sequence[AgentResponse],
+        responses: Sequence[AgentResponseDTO],
     ) -> None:
         """
         Ensure every response contains content.

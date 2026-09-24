@@ -16,12 +16,18 @@ logger = get_logger(__name__)
 
 
 def app_exception_handler(
-    _: Request,
-    exc: AppError,
+    request: Request,
+    exc: Exception,
 ) -> ApiResponse:
     """
     Handle expected application errors.
+
+    Registered for AppError only; typed `Exception` because that is
+    the handler signature Starlette accepts.
     """
+
+    if not isinstance(exc, AppError):
+        return unhandled_exception_handler(request, exc)
 
     logger.warning(
         "Application error.",

@@ -5,6 +5,7 @@ Unit tests for the API router.
 from __future__ import annotations
 
 from fastapi import APIRouter
+from fastapi.routing import iter_route_contexts
 
 from api.v1.routers import api_router
 
@@ -33,7 +34,7 @@ def test_api_router_registers_expected_routes() -> None:
     It should register all endpoint routers.
     """
 
-    paths = {route.path for route in api_router.routes}
+    paths = {route.path for route in iter_route_contexts(api_router.routes)}
 
     assert "/api/v1/health" in paths
     assert "/api/v1/users" in paths
@@ -46,7 +47,7 @@ def test_api_router_registers_health_before_domain_routes() -> None:
     It should register the health router before the domain routers.
     """
 
-    paths = [route.path for route in api_router.routes]
+    paths = [route.path for route in iter_route_contexts(api_router.routes)]
 
     assert paths.index("/api/v1/health") < paths.index("/api/v1/users")
     assert paths.index("/api/v1/health") < paths.index("/api/v1/conversations")

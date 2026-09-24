@@ -33,7 +33,9 @@ def get_hitl_ai_orchestrator(
     return request.app.state.ai_orchestrator.
     """
 
-    return request.app.state.ai_orchestrator
+    orchestrator: AIOrchestrator = request.app.state.ai_orchestrator
+
+    return orchestrator
 
 
 def get_hitl_resume_service(
