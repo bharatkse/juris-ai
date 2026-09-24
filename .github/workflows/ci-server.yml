@@ -349,25 +349,72 @@ jobs:
     timeout-minutes: 5
 
     permissions:
-      contents: write # create the rc tag
+      contents: write # create the rc tag and its pre-release
+
+    # Shared by both steps: the tag and the pre-release describe the same
+    # rc, image and digest.
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      REPO: ${{ github.repository }}
+      RC: ${{ needs.rc-version.outputs.rc }}
+      IMAGE: ${{ needs.publish-image.outputs.image }}
+      DIGEST: ${{ needs.publish-image.outputs.digest }}
 
     steps:
       # Annotated tag on this develop commit, recording the exact digest the
       # rc was published under. Promotion reads the digest from here and
       # checks the registry still agrees, instead of trusting a mutable tag.
+      # Safe to re-run: an existing tag on this commit is kept.
       - name: Create annotated rc tag
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          RC: ${{ needs.rc-version.outputs.rc }}
-          IMAGE: ${{ needs.publish-image.outputs.image }}
-          DIGEST: ${{ needs.publish-image.outputs.digest }}
         run: |
+          existing=$(gh api "repos/${REPO}/git/ref/tags/v${RC}" --jq .object.sha 2> /dev/null || true)
+          if [ -n "$existing" ]; then
+            # Annotated tag: the ref points at the tag object; peel to its commit.
+            tagged=$(gh api "repos/${REPO}/git/tags/${existing}" --jq .object.sha 2> /dev/null || echo "$existing")
+            if [ "$tagged" != "$GITHUB_SHA" ]; then
+              echo "::error::v${RC} already exists on ${tagged}, not on ${GITHUB_SHA}."
+              exit 1
+            fi
+            echo "v${RC} already exists on ${GITHUB_SHA} (earlier attempt); keeping it." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
           message=$(printf 'Release candidate %s\n\nimage: %s:%s\ndigest: %s\n' "$RC" "$IMAGE" "$RC" "$DIGEST")
           tag_object=$(gh api "repos/${REPO}/git/tags" \
             -f "tag=v${RC}" -f "message=${message}" -f "object=${GITHUB_SHA}" -f type=commit --jq .sha)
           gh api "repos/${REPO}/git/refs" -f "ref=refs/tags/v${RC}" -f "sha=${tag_object}" > /dev/null
           echo "Tagged ${GITHUB_SHA} as v${RC} (${IMAGE}@${DIGEST})" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # A pre-release GitHub Release for the rc, so candidates are visible on
+      # the Releases page. Deliberately light: no changelog, never "Latest"
+      # (only main's release job marks a release Latest). Skipped if it
+      # already exists (re-run).
+      - name: Publish rc pre-release
+        run: |
+          if gh release view "v${RC}" > /dev/null 2>&1; then
+            echo "Pre-release v${RC} already exists (earlier attempt); nothing to do." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          notes=$(cat <<EOF
+          Release candidate built from develop, not a release. It becomes release v${RC%-rc.*} if it's promoted by merging develop into main.
+
+          - Source commit: \`${GITHUB_SHA}\`
+          - Image: \`${IMAGE}:${RC}\`
+          - Digest: \`${IMAGE}@${DIGEST}\`
+
+          How candidates are built, promoted and verified: docs/release-process.md.
+          EOF
+          )
+
+          gh release create "v${RC}" \
+            --verify-tag \
+            --prerelease \
+            --latest=false \
+            --title "v${RC}" \
+            --notes "$notes"
+          echo "Published pre-release v${RC}." | tee -a "$GITHUB_STEP_SUMMARY"
 
   # ---------------------------------------------------------------------------
   # main: promote the release candidate. Never builds.
@@ -417,7 +464,9 @@ jobs:
         with:
           fetch-depth: 0
 
-      # The develop commit being released: the release PR's head.
+      # The develop commit being released: the release PR's head -- develop
+      # itself, or a release/cut-vX.Y.Z branch opened at develop's HEAD by
+      # the Cut Release workflow (cut-release.yaml).
       - name: Identify the develop commit being promoted
         id: source
         env:
@@ -429,17 +478,20 @@ jobs:
         run: |
           case "$EVENT" in
             pull_request)
-              if [ "$PR_HEAD_REF" != develop ]; then
-                echo "::error::Releases are promoted from develop only; this PR's head is '${PR_HEAD_REF}'."
-                exit 1
-              fi
+              case "$PR_HEAD_REF" in
+                develop | release/cut-v*) ;;
+                *)
+                  echo "::error::Releases are promoted from develop (or a release/cut-v* branch cut from it); this PR's head is '${PR_HEAD_REF}'."
+                  exit 1
+                  ;;
+              esac
               source_sha=$PR_HEAD_SHA
               ;;
             push)
               source_sha=$(gh api "repos/${REPO}/commits/${GITHUB_SHA}/pulls" \
-                --jq '[.[] | select(.base.ref == "main" and .head.ref == "develop" and .merged_at != null)][0].head.sha // empty')
+                --jq '[.[] | select(.base.ref == "main" and .merged_at != null and (.head.ref == "develop" or (.head.ref | startswith("release/cut-v"))))][0].head.sha // empty')
               if [ -z "$source_sha" ]; then
-                echo "::error::${GITHUB_SHA} on main didn't come from a merged develop -> main PR; nothing to promote. main should only change through release PRs."
+                echo "::error::${GITHUB_SHA} on main didn't come from a merged release PR (develop or release/cut-v*); nothing to promote. main should only change through release PRs."
                 exit 1
               fi
               ;;
@@ -452,6 +504,14 @@ jobs:
               fi
               ;;
           esac
+
+          # Only develop commits have release-candidate images. A commit added
+          # directly to a release/cut-v* branch never went through develop's
+          # build; fix it on develop and cut again.
+          if ! git merge-base --is-ancestor "$source_sha" origin/develop; then
+            echo "::error::${source_sha} isn't on develop, so it has no release candidate. Make changes on develop and cut the release again."
+            exit 1
+          fi
 
           # The image is built from source_sha's tree. Promoting it is only
           # honest if main ends up with exactly that tree.
@@ -698,11 +758,21 @@ jobs:
             target=(--target "$SOURCE_SHA")
           fi
 
+          # GitHub's generated notes cover the PRs since the previous full
+          # release, not since the last rc pre-release.
+          previous=$(git tag --list 'v[0-9]*' --sort=-v:refname | grep -Ev -- '-rc\.[0-9]+$' | grep -vx "v${VERSION}" | head -n 1 || true)
+          range=()
+          if [ -n "$previous" ]; then
+            range=(--notes-start-tag "$previous")
+          fi
+
           gh release create "v${VERSION}" \
             "${target[@]}" \
             --title "v${VERSION}" \
+            --latest \
             --notes-file release-notes.md \
             --generate-notes \
+            "${range[@]}" \
             "juris-ai-${VERSION}.spdx.json"
 
       - name: Release already published

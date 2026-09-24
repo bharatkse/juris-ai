@@ -26,7 +26,12 @@ rc_tag=$(git -C "$repo_root" tag --points-at "$source_sha" --list 'v*-rc.*' | so
 # What semantic-release would release from this commit on main.
 git -C "$repo_root" checkout -q -B main "$source_sha"
 next=$(cd "$repo_root/server" && semantic-release version --print 2>/dev/null)
-last=$(cd "$repo_root/server" && { semantic-release version --print-last-released 2>/dev/null || true; })
+# The last full release REACHABLE from this commit. Not semantic-release's
+# --print-last-released: that reports the newest version tag anywhere in
+# the repo, rc tags on later commits included, which made "nothing new
+# since the last release" look like "a release is pending but has no rc".
+last_tag=$(git -C "$repo_root" describe --tags --abbrev=0 --match 'v[0-9]*' --exclude '*-rc.*' "$source_sha" 2> /dev/null || true)
+last=${last_tag#v}
 
 if [[ -z "$rc_tag" ]]; then
   if [[ "$next" == "$last" ]]; then
