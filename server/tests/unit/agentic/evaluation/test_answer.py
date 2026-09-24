@@ -15,7 +15,12 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from agentic.evaluation.answer import AnswerEvaluator
+from agentic.evaluation.answer import (
+    AnswerEvaluationResult,
+    AnswerEvaluator,
+    AnswerQualityPolicy,
+    GroundednessResult,
+)
 
 
 def _similarity_stub(scores: dict[tuple[str, str], float]):
@@ -159,3 +164,52 @@ async def test_evaluate_runs_its_checks_concurrently() -> None:
     # of serialized overhead. Concurrent execution should finish in
     # close to one delay_seconds, not several.
     assert elapsed < delay_seconds * 2
+
+
+async def _evaluate_without_evidence():
+    """
+    The A1 repro case: an on-topic answer with no evidence at all --
+    groundedness is "not applicable", relevance passes.
+    """
+
+    evaluator = AnswerEvaluator(
+        similarity=_similarity_stub({("What is section 43?", "Section 43 is about damage."): 0.9}),
+        faithfulness_backend=AsyncMock(),
+    )
+
+    result = await evaluator.evaluate(
+        question="What is section 43?",
+        answer="Section 43 is about damage.",
+        evidence=(),
+    )
+
+    assert result.groundedness_detail.applicable is False
+    return result
+
+
+@pytest.mark.asyncio
+async def test_answer_without_evidence_is_insufficient_when_evidence_is_required() -> None:
+    result = await _evaluate_without_evidence()
+
+    assert AnswerQualityPolicy(require_evidence=True).is_sufficient(result) is False
+
+
+@pytest.mark.asyncio
+async def test_answer_without_evidence_still_passes_when_evidence_is_not_required() -> None:
+    result = await _evaluate_without_evidence()
+
+    assert AnswerQualityPolicy().is_sufficient(result) is True
+
+
+def test_require_evidence_does_not_affect_an_answer_checked_against_evidence() -> None:
+    result = AnswerEvaluationResult(
+        groundedness=0.9,
+        relevance=0.9,
+        completeness=0.9,
+        correctness=None,
+        citation_precision=0.0,
+        citation_coverage=0.0,
+        groundedness_detail=GroundednessResult(score=0.9, applicable=True),
+    )
+
+    assert AnswerQualityPolicy(require_evidence=True).is_sufficient(result) is True

@@ -10,8 +10,8 @@ an outbound MCP (Gmail/Slack) network call -- never the application's
 own routing, persistence, authorization, or HITL logic. See each
 test module's own docstring for what it mocks and why. No test reaches a
 real LLM provider: the autouse hermetic_llm fixture below stubs the
-output guardrail's judge and fails any test that makes another,
-unmocked LLM call.
+output guardrail's judge and the answer gate's groundedness judge, and
+fails any test that makes another, unmocked LLM call.
 
 Run via `make test-e2e` (needs the real docker compose Postgres/Redis
 services up -- `./setup.sh --install --dependency postgres
@@ -29,14 +29,27 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 from adapters.clients.llm.base import LLMClient
+from adapters.clients.llm.groq import GroqClient  # noqa: F401 -- registers the subclass
+from adapters.clients.llm.local import LocalLLMClient  # noqa: F401 -- registers the subclass
 from adapters.persistence.sqlalchemy.session import dispose_engine
 from agentic.guardrails.harmful_content import RESPONSE_TAG
 from core.dto.clients.llm import LLMRequestDTO, LLMResponseDTO
 from main import app as fastapi_app
+from rag.hybrid_retriever import HybridRetriever
+from rag.models import Chunk, RetrievalResult
 
 # The stubbed harmful-content judge's verdict: "not harmful", so a test's
 # (scripted) answer reaches the client exactly as the agent produced it.
 _NOT_HARMFUL_VERDICT = '{"harmful": false, "category": null, "reason": "e2e stub"}'
+
+
+def _llm_client_classes() -> list[type[LLMClient]]:
+    """LLMClient and every subclass of it, at any depth."""
+
+    classes: list[type[LLMClient]] = [LLMClient]
+    for client_class in classes:
+        classes.extend(client_class.__subclasses__())
+    return classes
 
 
 @dataclass
@@ -49,6 +62,10 @@ class LLMStub:
 
     judge_error: Exception | None = None
     judge_calls: int = 0
+    # Score the stubbed groundedness judge returns for an answer checked
+    # against evidence.
+    groundedness: float = 1.0
+    groundedness_calls: int = 0
     unexpected_calls: list[str] = field(default_factory=list)
 
 
@@ -71,10 +88,20 @@ def hermetic_llm(monkeypatch: pytest.MonkeyPatch) -> Iterator[LLMStub]:
       verdict is ever written to Redis (a shared dev Redis included).
       HarmfulContentJudge's real prompt building, escaping and verdict
       parsing still run on it.
+    - The answer gate's groundedness judge (the FaithfulnessBackend the
+      executor factory builds) is replaced by a stub returning
+      ``LLMStub.groundedness``. It only runs when there is evidence to
+      check an answer against (see the statute_evidence fixture).
     - Any other LLMClient.generate() call (generate_structured() goes
       through it too) is recorded and fails the test at teardown, so a
       new unmocked LLM dependency shows up as exactly that instead of as
       a refusal or a flaky network error.
+    - Any LLMClient.stream() call is recorded the same way. Nothing
+      streams from a model today: /chat/stream sends the reviewed text
+      (S2), so a streaming generation reappearing fails every e2e test.
+      stream() is patched on every class that defines it -- the Groq and
+      local clients override the base method, so patching LLMClient
+      alone would miss them.
     """
 
     stub = LLMStub()
@@ -89,13 +116,32 @@ def hermetic_llm(monkeypatch: pytest.MonkeyPatch) -> Iterator[LLMStub]:
 
         return judge
 
+    class StubFaithfulnessBackend:
+        async def evaluate(self, *, query: str, answer: str, contexts: list[str]) -> float:
+            stub.groundedness_calls += 1
+            assert contexts, "groundedness judged without evidence"
+            return stub.groundedness
+
     async def unexpected_generate(self: LLMClient, *, request: LLMRequestDTO) -> LLMResponseDTO:
         prompt = request.messages[-1].content if request.messages else ""
         stub.unexpected_calls.append(prompt[:200])
         return LLMResponseDTO(content="", provider="e2e-stub", model="e2e-stub")
 
+    async def unexpected_stream(self: LLMClient, *, request: LLMRequestDTO):
+        prompt = request.messages[-1].content if request.messages else ""
+        stub.unexpected_calls.append(f"stream: {prompt[:200]}")
+        return
+        yield  # an async generator, like the real stream()
+
     monkeypatch.setattr("wiring.factories.guardrails.build_llm_judge", stub_build_llm_judge)
+    monkeypatch.setattr(
+        "wiring.factories.executor.build_faithfulness_backend",
+        lambda **_kwargs: StubFaithfulnessBackend(),
+    )
     monkeypatch.setattr(LLMClient, "generate", unexpected_generate)
+    for client_class in _llm_client_classes():
+        if "stream" in vars(client_class):
+            monkeypatch.setattr(client_class, "stream", unexpected_stream)
 
     yield stub
 
@@ -103,6 +149,50 @@ def hermetic_llm(monkeypatch: pytest.MonkeyPatch) -> Iterator[LLMStub]:
         "Unmocked LLM call(s) in an e2e test (mock them in the test, like the "
         f"planner/agent calls): {stub.unexpected_calls}"
     )
+
+
+STATUTE_EVIDENCE_TEXT = (
+    "Section 2(1)(ta) of the Information Technology Act, 2000: "
+    '"electronic signature" means authentication of any electronic record '
+    "by a subscriber by means of the electronic technique specified in the "
+    "Second Schedule and includes digital signature."
+)
+
+
+@pytest.fixture
+def statute_evidence(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """
+    Give the retriever one statute chunk to find.
+
+    The dev and CI databases hold no ingested corpus, so real retrieval
+    finds nothing and every answer that goes through the real answer
+    gate becomes the "no sources" answer (evidence is required, A1).
+    This patches only HybridRetriever.retrieve -- the Postgres/pgvector
+    boundary. RetrieverTool, the agent's evidence seeding, tool policy
+    and the answer gate all run for real on the returned chunk.
+
+    Returns the list of queries the retriever received.
+    """
+
+    queries: list[str] = []
+
+    async def retrieve(self, *, query: str, top_k: int = 5, **_kwargs):
+        queries.append(query)
+        return [
+            RetrievalResult(
+                chunk=Chunk(
+                    id="it-act-2000-s2-1-ta",
+                    text=STATUTE_EVIDENCE_TEXT,
+                    metadata={"title": "Information Technology Act, 2000", "sequence": "1"},
+                    source="it_act_2000.pdf",
+                ),
+                score=0.92,
+            ),
+        ]
+
+    monkeypatch.setattr(HybridRetriever, "retrieve", retrieve)
+
+    return queries
 
 
 @pytest_asyncio.fixture

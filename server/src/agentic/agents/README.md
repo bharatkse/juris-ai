@@ -7,15 +7,14 @@ agent lives in `runtime/` (its own README).
 
 An agent turns one `AgentRequestDTO` plus accumulated evidence into either
 a structured `AgentDecision` (`FINAL`, `TOOL_CALL`, `DELEGATE`,
-`NEED_INPUT`, `FAIL`) or, once the runtime has confirmed `FINAL`, a
-streamed plain-text answer. Agents never call tools or adapters
-themselves; they propose a `TOOL_CALL` and the runtime executes it.
+`NEED_INPUT`, `FAIL`). Agents never call tools or adapters themselves;
+they propose a `TOOL_CALL` and the runtime executes it.
 
 ## Components
 
 | File | Class | Role |
 |---|---|---|
-| `base.py` | `BaseAgent` | `_reason()` (structured decision), `stream_final_answer()` (plain-text regeneration), `handle_message()` (collaboration bus) |
+| `base.py` | `BaseAgent` | `_reason()` (structured decision), `handle_message()` (collaboration bus) |
 | `legal.py` | `LegalAgent` | name `legal`; `LegalPromptBuilder`; `inference_task = FACTUAL_ANSWER` |
 | `contract.py` | `ContractAgent` | name `contract`; `ContractPromptBuilder`; `inference_task = FACTUAL_ANSWER` |
 | `prompts/base.py` | `BasePromptBuilder` | Loads the template, budgets tokens, assembles messages, wraps evidence in `<retrieved_context>` after escaping any `<retrieved_context>`/`</retrieved_context>` tag inside the content (`core/utils/prompt_safety.escape_delimiter`), so evidence can't close the wrapper early |
@@ -23,7 +22,10 @@ themselves; they propose a `TOOL_CALL` and the runtime executes it.
 | `prompts/user_memory.py` | `render_user_memory_block()` | `<user_memory>` block (or "") |
 | `prompts/templates/{legal,contract}.md` | — | System prompts: decision rules and the untrusted-content warning |
 
-## Two LLM calls per answering turn
+## One LLM call per reasoning step
+
+`/chat/stream` streams the FINAL answer's own text after it has been
+reviewed; there is no separate streaming generation.
 
 ```mermaid
 sequenceDiagram
@@ -41,13 +43,12 @@ sequenceDiagram
     A->>LLM: generate_structured(response_model=AgentDecision)<br/>LLMTask.STRUCTURED_DECISION, low temperature
     LLM-->>A: AgentDecision
     A-->>RT: decision (validated by decisions/, gated by runtime)
-
-    Note over RT,LLM: streaming sessions only, after the decision is confirmed FINAL
-    RT->>A: stream_final_answer(request, context)
-    A->>PB: build(...) (same messages)
-    A->>LLM: stream(...) at inference_task (FACTUAL_ANSWER)
-    LLM-->>RT: AgentStreamChunkDTO ... (a second, independent generation)
 ```
+
+Before the first `_reason()` call the runtime seeds `context` with a
+retriever call for the user's question
+(`AgentContinuationService.seed_evidence()`), so the agent starts from
+retrieved sources.
 
 ---
 

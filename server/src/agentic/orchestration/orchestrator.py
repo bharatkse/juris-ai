@@ -6,13 +6,13 @@ Coordinates the AI request lifecycle.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Sequence
+import re
+from collections.abc import AsyncIterator, Iterator, Sequence
 from typing import TYPE_CHECKING
 
 from adapters.observability.logger import get_logger
 from adapters.observability.tracing import span
 from agentic.execution.aggregation.schemas import AggregationMetadata
-from agentic.execution.schemas.result import ExecutionResultSchema
 from agentic.guardrails.schemas import GuardrailActionEnum, GuardrailReviewResult
 from agentic.orchestration.schemas.context import (
     ConversationContext,
@@ -33,7 +33,7 @@ from agentic.orchestration.schemas.response import (
     Source,
     Usage,
 )
-from core.dto.agent import AgentContextDTO, AgentResponseDTO, AgentStreamChunkDTO
+from core.dto.agent import AgentContextDTO, AgentResponseDTO
 from core.dto.agent_action import AgentActionRequestDTO, AgentActionResponseDTO
 from core.dto.approval import ApprovalResponseDTO
 from core.dto.conversation import ConversationDTO
@@ -67,6 +67,33 @@ _GUARDRAIL_BLOCKED_MESSAGE = (
     "I'm not able to provide a response to this request. If you believe "
     "this is a mistake, please rephrase your question or contact support."
 )
+
+
+# Target size of each streamed slice of the reviewed answer. Slices end
+# on whitespace, so a word is never split across two chunks.
+_STREAM_SLICE_CHARS = 48
+
+_STREAM_TOKEN = re.compile(r"\s*\S+\s*|\s+")
+
+
+def _stream_slices(text: str) -> Iterator[str]:
+    """
+    Split text into consecutive slices of roughly _STREAM_SLICE_CHARS
+    characters, breaking only at whitespace. "".join() of the slices
+    is exactly `text`.
+    """
+
+    current = ""
+
+    for match in _STREAM_TOKEN.finditer(text):
+        current += match.group(0)
+
+        if len(current) >= _STREAM_SLICE_CHARS:
+            yield current
+            current = ""
+
+    if current:
+        yield current
 
 
 def _evidence_text(
@@ -760,6 +787,7 @@ class AIOrchestrator:
                             decision_type="final",
                             groundedness=agent_response.metadata.get("groundedness"),
                             relevance=agent_response.metadata.get("relevance"),
+                            answer_verified=agent_response.metadata.get("answer_verified"),
                         )
 
                     # ---------------------------------------------------------
@@ -922,38 +950,28 @@ class AIOrchestrator:
         method's docstring for the base lifecycle. The differences are
         all about how the FINAL step's answer reaches the caller:
 
-        Each regenerate-loop attempt calls Executor.execute_streaming()
-        instead of execute(), but its output (AgentStreamChunkDTO
-        chunks, then one ExecutionResultSchema) is fully buffered
-        here, not forwarded -- nothing reaches this method's own
-        caller until the loop has fully resolved (cleared, accepted-
-        blocked with a pending action, or out of attempts). This is
-        the whole point: a caller must never see a partial answer from
-        an attempt that gets thrown away and regenerated. It costs
-        latency before the first chunk goes out (the system has to
-        finish confirming an attempt won't be discarded first) --
-        an accepted, deliberate tradeoff, not an oversight.
+        Each regenerate-loop attempt runs the same Executor.execute()
+        as handle(); nothing reaches this method's caller until the loop
+        has fully resolved (cleared, accepted-blocked with a pending
+        action, or out of attempts), so a caller never sees part of an
+        attempt that gets thrown away and regenerated.
 
-        Once resolved, what actually reaches the caller depends on the
-        winning attempt's guardrail verdict:
+        Once resolved, what reaches the caller is exactly the text the
+        guardrails reviewed and ChatService persists -- never a separate
+        generation:
 
-        - NONE or FLAGGED (content unmodified from what was
-          generated): the buffered chunks are replayed verbatim, then
-          one empty is_final=True chunk carries the full
-          OrchestratorResponse -- content is empty there deliberately,
-          since the caller already received it incrementally via the
-          replayed chunks; repeating it would duplicate the text for
-          an append-based consumer.
-        - REDACTED (content modified by PII redaction) or BLOCKED: the
-          buffered chunks are discarded entirely and never reach the
-          caller. Redacted content differs from what was actually
-          streamed during generation -- replaying the pre-redaction
-          chunks would leak the exact PII redaction exists to prevent,
-          just moved into the streaming path instead of prevented by
-          it. A single is_final=True chunk carries the correct
-          (redacted, or fixed-refusal) content instead, matching
-          handle()'s non-streaming behavior for these two cases
-          exactly, just delivered over the stream as one chunk.
+        - NONE, FLAGGED or REDACTED: guardrail_result.content (for NONE
+          and FLAGGED, the aggregated, answer-gated text; for REDACTED,
+          its redacted form) is sent as consecutive slices, then one
+          empty is_final=True chunk carries the full
+          OrchestratorResponse. The terminal content is empty because
+          the caller already received the text through the slices;
+          repeating it would duplicate it for an append-based consumer.
+        - BLOCKED: a single is_final=True chunk carries the fixed
+          refusal, matching handle().
+
+        Chunk boundaries are slices of the final text, not model tokens:
+        the model's output can't be forwarded before it is reviewed.
 
         aggregate()/validate() are the exact same calls handle() makes
         (reusing agent_responses extracted from the same
@@ -1061,31 +1079,13 @@ class AIOrchestrator:
                         )
                     )
 
-                    # ---------------------------------------------------------
-                    # Execute (streaming), fully buffered -- see this
-                    # method's own docstring for why nothing is
-                    # forwarded here.
-                    # ---------------------------------------------------------
-
-                    buffered_chunks: list[AgentStreamChunkDTO] = []
-                    execution_result: ExecutionResultSchema | None = None
-
-                    async for item in self._executor.execute_streaming(
+                    execution_result = await self._executor.execute(
                         request_id=request.request_id,
                         conversation=conversation,
                         plan=execution_plan,
                         context=attempt_context,
                         action_workflow_service=action_workflow_service,
-                    ):
-                        if isinstance(item, ExecutionResultSchema):
-                            execution_result = item
-                        else:
-                            buffered_chunks.append(item)
-
-                    if execution_result is None:
-                        raise RuntimeError(
-                            "Streaming execution completed without a final result.",
-                        )
+                    )
 
                     if execution_result.state.status is ExecutionStatusEnum.FAILED:
                         failed_steps = [
@@ -1117,10 +1117,7 @@ class AIOrchestrator:
 
                     # Same fallback as handle() for a tool failure that
                     # ends the turn without ever reaching FINAL -- a
-                    # fixed string needs no guardrail review, and
-                    # buffered_chunks is guaranteed empty here anyway
-                    # (AgentExecutionNode only ever streams a FINAL
-                    # decision's answer).
+                    # fixed string needs no guardrail review.
                     if not agent_responses:
                         log.error(
                             "Execution ended without a FINAL response (a "
@@ -1175,6 +1172,7 @@ class AIOrchestrator:
                             decision_type="final",
                             groundedness=agent_response.metadata.get("groundedness"),
                             relevance=agent_response.metadata.get("relevance"),
+                            answer_verified=agent_response.metadata.get("answer_verified"),
                         )
 
                     action_request: AgentActionRequestDTO | None = _to_action_request(
@@ -1247,19 +1245,7 @@ class AIOrchestrator:
                 # ---------------------------------------------------------
                 # Resolve: emit exactly what handle() would have
                 # returned, over the stream.
-                #
-                # execution_result is reassigned fresh (starting None)
-                # on every loop iteration above, which is why mypy
-                # can't carry its non-None narrowing this far past the
-                # loop on its own -- range(1, max_attempts + 1) always
-                # iterates at least once (max_attempts >= 1), and the
-                # loop body's own guard already raises before this
-                # point if a given attempt's execution_result was ever
-                # None, so this is a restatement of an already-enforced
-                # guarantee, not a new runtime check.
                 # ---------------------------------------------------------
-
-                assert execution_result is not None
 
                 if guardrail_result.action is GuardrailActionEnum.BLOCKED:
                     blocked_response = OrchestratorResponse(
@@ -1293,29 +1279,16 @@ class AIOrchestrator:
                     guardrail=_build_guardrail_info(guardrail_result),
                 )
 
-                if guardrail_result.action is GuardrailActionEnum.REDACTED:
-                    # Content differs from what was actually generated
-                    # and buffered -- see this method's docstring for
-                    # why the buffered chunks must not be replayed here.
-                    yield OrchestratorStreamChunk(
-                        content=orchestrator_response.content,
-                        is_final=True,
-                        response=orchestrator_response,
-                    )
-                else:
-                    # NONE or FLAGGED: content is verbatim what was
-                    # streamed -- safe to replay.
-                    for chunk in buffered_chunks:
-                        yield OrchestratorStreamChunk(
-                            content=chunk.content,
-                            metadata=dict(chunk.metadata),
-                        )
+                # Stream the reviewed text itself (S2): never a second
+                # generation the guardrails and answer gate didn't see.
+                for text_slice in _stream_slices(orchestrator_response.content):
+                    yield OrchestratorStreamChunk(content=text_slice)
 
-                    yield OrchestratorStreamChunk(
-                        content="",
-                        is_final=True,
-                        response=orchestrator_response,
-                    )
+                yield OrchestratorStreamChunk(
+                    content="",
+                    is_final=True,
+                    response=orchestrator_response,
+                )
 
                 log.info(
                     "Streaming chat response completed.",

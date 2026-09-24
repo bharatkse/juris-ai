@@ -85,23 +85,6 @@ class AgentResponseDTO:
 
 
 @dataclass(slots=True, frozen=True)
-class AgentStreamChunkDTO:
-    """
-    Streaming response chunk produced by an AI agent.
-    """
-
-    content: str = ""
-
-    is_final: bool = False
-
-    finish_reason: str | None = None
-
-    metadata: dict[str, Any] = field(
-        default_factory=dict,
-    )
-
-
-@dataclass(slots=True, frozen=True)
 class AgentMetadataDTO:
     """
     Immutable metadata describing an AI agent.

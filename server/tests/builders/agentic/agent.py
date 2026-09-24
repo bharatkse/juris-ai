@@ -12,7 +12,6 @@ from core.dto.agent import (
     AgentContextDTO,
     AgentRequestDTO,
     AgentResponseDTO,
-    AgentStreamChunkDTO,
 )
 from core.dto.message import MessageDTO
 from core.dto.tool import ToolFileDTO
@@ -104,24 +103,5 @@ def build_agent_response(
     return AgentResponseDTO(
         content=content,
         agent_name=agent_name,
-        metadata=metadata or {},
-    )
-
-
-def build_agent_stream_chunk(
-    *,
-    content: str = "Hello",
-    is_final: bool = False,
-    finish_reason: str | None = None,
-    metadata: dict[str, Any] | None = None,
-) -> AgentStreamChunkDTO:
-    """
-    Build an AgentStreamChunkDTO.
-    """
-
-    return AgentStreamChunkDTO(
-        content=content,
-        is_final=is_final,
-        finish_reason=finish_reason,
         metadata=metadata or {},
     )

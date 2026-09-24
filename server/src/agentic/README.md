@@ -26,11 +26,12 @@ Every component below has its own `README.md` (workflow diagram, verified 2026-0
 
 This is the path every real chat request takes.
 
-`BaseAgent` has no `run()` method today. Its `stream_final_answer()`
-method (agents/base.py) is real and live — called from
-`graph/nodes.py::_stream_final_answer_if_reached()` on this exact
-path, for a streaming session's FINAL step only (see the request
-lifecycle diagram below and the `/chat/stream` section further down).
+Each agent step starts with a retriever call for the user's question
+(`AgentContinuationService.seed_evidence()`), so the agent reasons over
+retrieved sources. An answer that can't be checked against evidence, or
+that fails the answer-quality gate with no budget left to improve it, is
+replaced with a fixed "no sources" / "couldn't verify" answer and marked
+`answer_verified=False`.
 
 ```mermaid
 flowchart TD
@@ -42,7 +43,7 @@ flowchart TD
     SESSION --> GRAPH["Compiled LangGraph<br/>(execution/graph/builder.py)<br/>topology derived from step.depends_on"]
     GRAPH --> NODE["AgentExecutionNode<br/>(execution/graph/nodes.py)"]
     NODE --> AEXEC["AgentExecution.start()<br/>(agents/runtime/execution.py)<br/>resolves AgentPolicy via DatabaseAgentPolicyProvider"]
-    AEXEC --> AGENT["BaseAgent._reason()<br/>(LegalAgent / ContractAgent)<br/>structured AgentDecision, STRUCTURED_DECISION<br/>(streamed FINAL text: stream_final_answer(), FACTUAL_ANSWER)"]
+    AEXEC --> AGENT["BaseAgent._reason()<br/>(LegalAgent / ContractAgent)<br/>structured AgentDecision, STRUCTURED_DECISION"]
     AGENT --> DECISION{AgentDecision}
     DECISION -->|TOOL_CALL| GUARD["AgentPolicyGuard.check_tool()"]
     GUARD -->|allowed| TOOLREG["Tool Registry -> Tool.execute()"]
@@ -298,15 +299,15 @@ whatever a provider or dataclass default happens to be.
 ## `/chat/stream` implementation
 
 `AIOrchestrator.stream()`
-(`orchestration/orchestrator.py:911`) is called by
+(`orchestration/orchestrator.py`) is called by
 `ChatService.stream_chat()` (`application/services/chat.py`) and
 exercised end-to-end — real FastAPI routing, real Postgres, the real
 LangGraph checkpointer, real guardrails — by
 `tests/e2e/test_chat_stream.py`. See that test's module docstring for
-the full "what's real vs. what's mocked" accounting. The streamed answer
-text is produced by a separate LLM call (`BaseAgent.stream_final_answer()`)
-from the structured decision (`BaseAgent._reason()`), by design; see
-`agents/README.md`.
+the full "what's real vs. what's mocked" accounting. The streamed text
+is the guardrail-reviewed answer itself, sent in slices once review is
+done — the same text `ChatService` persists; there is no second
+generation.
 
 ---
 

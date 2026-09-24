@@ -32,6 +32,13 @@ class TerminationReason(StrEnum):
     PARTIAL_VALIDATION_LIMIT = "partial_validation_limit"
     PARTIAL_NO_PROGRESS = "partial_no_progress"
 
+    # A FINAL answer failed the answer-quality gate and no budget or new
+    # decision was left to improve it; the answer is replaced (S5).
+    QUALITY_GATE_EXHAUSTED = "quality_gate_exhausted"
+    # Evidence is required (A1) but retrieval found none, so no answer
+    # could be grounded.
+    NO_EVIDENCE = "no_evidence"
+
     FAILED_TOOL = "failed_tool"
     FAILED_LLM = "failed_llm"
     FAILED_VALIDATION = "failed_validation"
