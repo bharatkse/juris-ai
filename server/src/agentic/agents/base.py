@@ -9,7 +9,7 @@ translation.
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 from adapters.clients.llm.base import LLMClient
 from agentic.agents.prompts.base import BasePromptBuilder
@@ -23,6 +23,9 @@ from core.dto.clients.llm import LLMRequestDTO
 from core.dto.inference import InferencePolicy, LLMTask
 from core.dto.tool import RetrievedContentDTO
 from core.models.message import AgentMessageSchema
+
+if TYPE_CHECKING:
+    from agentic.policy.tool_catalog import AgentToolCatalog
 
 
 class BaseAgent:
@@ -48,10 +51,14 @@ class BaseAgent:
         llm_client: LLMClient,
         prompt_builder: BasePromptBuilder,
         inference_policy: InferencePolicy | None = None,
+        tool_catalog: AgentToolCatalog | None = None,
     ) -> None:
         self._llm = llm_client
         self._prompt_builder = prompt_builder
         self._inference_policy = inference_policy or InferencePolicy()
+        # Only handle_message() needs it: on the normal path
+        # AgentExecution.start() sets the request's tool_catalog.
+        self._tool_catalog = tool_catalog
 
     @property
     def llm(
@@ -155,7 +162,19 @@ class BaseAgent:
         It does not execute tools, delegate to another agent, or perform
         concrete business actions here. Any resulting decision is returned
         to the parent execution through the collaboration bus.
+
+        The request is the parent agent's, so its tool_catalog lists the
+        parent's tools. The delegated request instead gets this agent's
+        own catalog, from its own policy (the same source as
+        AgentExecution.start()). Without a catalog source this refuses to
+        reason rather than tell the model it has no tools.
         """
+        if self._tool_catalog is None:
+            raise RuntimeError(
+                f"Agent '{self.metadata.name}' has no tool catalog to handle a "
+                "collaboration message with.",
+            )
+
         payload = message.payload
 
         request = payload.get("request")
@@ -180,6 +199,9 @@ class BaseAgent:
                 **parameters,
             },
             context=request.context,
+            tool_catalog=await self._tool_catalog.describe(
+                agent_id=self.metadata.name,
+            ),
         )
 
         return await self._reason(

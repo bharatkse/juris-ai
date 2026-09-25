@@ -30,7 +30,7 @@ sequenceDiagram
     Note over H,T: the steps below only run if delegation is allowed
     C->>B: send(AgentMessageSchema(recipient, payload{request, parameters}))
     B->>T: handle_message(message)
-    T->>T: one _reason() call with the delegated request
+    T->>T: one _reason() call with the delegated request,<br/>told its own tools (AgentToolCatalog), not the parent's
     T-->>C: AgentDecision (returned as a bare object)
     C->>H: extend_reasoning_context(...), reason() again
 ```
