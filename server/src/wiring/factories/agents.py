@@ -17,9 +17,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from adapters.persistence.sqlalchemy.session import session_factory
 from agentic.agents.contract import ContractAgent
 from agentic.agents.legal import LegalAgent
 from agentic.collaboration.bus import CollaborationBus
+from agentic.policy.agent_policy import DatabaseAgentPolicyProvider
+from agentic.policy.tool_catalog import AgentToolCatalog
 from core.dto.inference import InferencePolicy
 from wiring.containers import ClientContainer, RegistryContainer
 
@@ -53,14 +56,26 @@ def register_agents(
 
     llm_client = clients.llm_resolver.get()
 
+    # Tells an agent its own tools when it handles a collaboration message
+    # (BaseAgent.handle_message()): the same agent_policies table and tool
+    # registry AgentExecution.start() uses on the normal path.
+    tool_catalog = AgentToolCatalog(
+        agent_policy_provider=DatabaseAgentPolicyProvider(
+            session_factory=session_factory,
+        ),
+        tool_registry=registries.tool_registry,
+    )
+
     legal_agent = LegalAgent(
         llm_client=llm_client,
         inference_policy=inference_policy,
+        tool_catalog=tool_catalog,
     )
 
     contract_agent = ContractAgent(
         llm_client=llm_client,
         inference_policy=inference_policy,
+        tool_catalog=tool_catalog,
     )
 
     registries.agent_registry.register(

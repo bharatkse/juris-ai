@@ -14,6 +14,7 @@ privilege ("which tools may agent X call"). User-level authorization
 | `agent_policy.py` | `StaticAgentPolicyProvider` | In-memory provider (not wired in production) |
 | `guard.py` | `AgentPolicyGuard` | `check_tool()`, `check_delegation()`, `check_citations()` |
 | `tool_permission.py` | `ToolPermissionGuard` | `tool_name in policy.allowed_tools` |
+| `tool_catalog.py` | `AgentToolCatalog` | `describe(agent_id)`: the agent's policy → `ToolRegistry.describe()`; gives an agent handling a collaboration message its own tools |
 
 Seeding: `wiring/factories/agent_policies.py` writes defaults at startup
 (`main.py` lifespan): `legal` → `retriever`, `case_law_search` (+
