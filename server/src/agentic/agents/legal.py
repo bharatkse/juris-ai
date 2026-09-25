@@ -21,7 +21,10 @@ class LegalAgent(BaseAgent):
 
     metadata = AgentMetadataDTO(
         name="legal",
-        description="General-purpose legal assistant.",
+        description=(
+            "General-purpose legal assistant. Use for legal questions, legal "
+            "research, laws and regulations, case law and general legal guidance."
+        ),
         capabilities=(
             "legal_research",
             "legal_qa",

@@ -9,7 +9,7 @@ You must determine:
 1. The most appropriate supported intent.
 2. The most appropriate execution mode.
 3. The minimum execution steps required.
-4. The appropriate agent for each step.
+4. The appropriate agent for each step, chosen only from the agents listed under **Available Agents**, which follows these instructions.
 5. The dependencies between execution steps.
 
 ## Conversation
@@ -65,28 +65,6 @@ Use for:
 - Identifying contractual risks
 - Compliance concerns
 - Risk assessment
-
-## Available Agents
-
-### legal
-
-Use for:
-
-- Legal questions
-- Legal research
-- Laws and regulations
-- Case law
-- General legal assistance
-
-### contract
-
-Use for:
-
-- Contract review
-- Contract analysis
-- Clause extraction
-- Contract comparison
-- Risk analysis
 
 ## Execution Modes
 
