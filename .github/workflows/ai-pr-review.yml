@@ -1,0 +1,181 @@
+name: AI PR Review
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: ai-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  ai-review:
+    name: Local LLM Review
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Ollama
+        run: |
+          curl -fsSL https://ollama.com/install.sh | sh
+
+      - name: Start Ollama
+        run: |
+          ollama serve > /tmp/ollama.log 2>&1 &
+
+          for i in {1..30}; do
+            if curl -sf http://localhost:11434/api/tags > /dev/null; then
+              echo "Ollama is ready"
+              break
+            fi
+
+            sleep 2
+          done
+
+      - name: Pull review model
+        run: |
+          ollama pull qwen2.5-coder:3b
+
+      - name: Get PR diff
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr diff \
+            "${{ github.event.pull_request.number }}" \
+            > /tmp/pr.diff
+
+      - name: Load architecture rules
+        run: |
+          cat .github/review/architecture.md > /tmp/architecture.md
+
+      - name: Run AI review
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          with open("/tmp/pr.diff", encoding="utf-8") as f:
+              diff = f.read()
+
+          with open("/tmp/architecture.md", encoding="utf-8") as f:
+              architecture = f.read()
+
+          prompt = f"""
+          You are reviewing a pull request for Juris-AI.
+
+          Your job is to identify real engineering problems.
+          Do not invent problems.
+
+          Review these areas:
+
+          1. Bugs
+          2. Security vulnerabilities
+          3. Authentication and authorization
+          4. Database correctness
+          5. Transaction and concurrency problems
+          6. Async/sync problems
+          7. Error handling
+          8. Performance
+          9. Missing important tests
+          10. API compatibility
+          11. Architecture violations
+          12. Potential breaking changes
+
+          IMPORTANT:
+
+          Only report an issue when there is concrete evidence
+          in the supplied diff.
+
+          Do not report:
+          - formatting issues
+          - subjective style preferences
+          - hypothetical problems without evidence
+          - things already handled by Ruff/MyPy
+
+          For every issue provide:
+
+          - Severity: CRITICAL / HIGH / MEDIUM / LOW
+          - File
+          - Explanation
+          - Why it matters
+          - Suggested fix
+
+          Architecture rules:
+
+          {architecture}
+
+          PR DIFF:
+
+          {diff}
+
+          Return Markdown.
+
+          Use this structure:
+
+          ## AI Code Review
+
+          ### Critical
+
+          ### High
+
+          ### Medium
+
+          ### Low
+
+          ### Positive observations
+
+          If a section has no findings, write:
+
+          None.
+          """
+
+          payload = {
+              "model": "qwen2.5-coder:3b",
+              "prompt": prompt,
+              "stream": False,
+              "options": {
+                  "temperature": 0.1
+              }
+          }
+
+          request = urllib.request.Request(
+              "http://localhost:11434/api/generate",
+              data=json.dumps(payload).encode(),
+              headers={
+                  "Content-Type": "application/json"
+              },
+              method="POST",
+          )
+
+          with urllib.request.urlopen(request, timeout=1800) as response:
+              result = json.loads(response.read())
+
+          review = result["response"]
+
+          with open("/tmp/review.md", "w", encoding="utf-8") as f:
+              f.write(review)
+
+          print(review)
+          PY
+
+      - name: Post review to PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment \
+            "${{ github.event.pull_request.number }}" \
+            --body-file /tmp/review.md
