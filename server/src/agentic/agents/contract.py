@@ -21,7 +21,10 @@ class ContractAgent(BaseAgent):
 
     metadata = AgentMetadataDTO(
         name="contract",
-        description="Contract analysis specialist.",
+        description=(
+            "Contract analysis specialist. Use for contract review and analysis, "
+            "clause extraction, contract comparison and risk analysis."
+        ),
         capabilities=(
             "contract_review",
             "contract_analysis",

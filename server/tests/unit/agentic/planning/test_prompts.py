@@ -6,9 +6,9 @@ from __future__ import annotations
 
 from agentic.planning.prompts.planning import PlanningPromptBuilder
 from core.dto.clients.llm import LLMRequestDTO
-from core.dto.planning import PlanningRequestDTO
+from core.dto.planning import AgentCapabilityDTO, PlanningRequestDTO
 from core.dto.user_memory import UserMemoryContextItem
-from core.enums import MessageRoleEnum, UserMemoryKindEnum
+from core.enums import AgentTypeEnum, MessageRoleEnum, UserMemoryKindEnum
 from core.models.conversation import ConversationMessageSchema
 
 
@@ -134,3 +134,41 @@ def test_build_omits_the_memory_message_entirely_when_there_is_nothing_to_inject
 
     assert len(llm_request.messages) == 2
     assert all("<user_memory>" not in message.content for message in llm_request.messages)
+
+
+def test_build_inserts_the_agent_capabilities_after_the_instructions_and_before_memory() -> None:
+    """
+    request.agent_capabilities renders as its own SYSTEM message right
+    after the planning instructions: part of the instructions, never
+    history, and ahead of the user's memory.
+    """
+
+    builder = PlanningPromptBuilder()
+
+    request = PlanningRequestDTO(
+        message="Summarize this judgment.",
+        history=(ConversationMessageSchema(role=MessageRoleEnum.USER, content="earlier"),),
+        user_memory=(
+            UserMemoryContextItem(
+                id="umem_" + "b" * 32,
+                kind=UserMemoryKindEnum.PREFERENCE,
+                content="Prefers concise answers",
+            ),
+        ),
+        agent_capabilities=(
+            AgentCapabilityDTO(agent=AgentTypeEnum.LEGAL, description="Legal questions."),
+        ),
+    )
+
+    messages = builder.build(request=request).messages
+
+    assert [message.role for message in messages] == [
+        MessageRoleEnum.SYSTEM,
+        MessageRoleEnum.SYSTEM,
+        MessageRoleEnum.SYSTEM,
+        MessageRoleEnum.USER,
+        MessageRoleEnum.USER,
+    ]
+    assert messages[1].content.startswith("## Available Agents")
+    assert "### `legal`\nLegal questions." in messages[1].content
+    assert "<user_memory>" in messages[2].content

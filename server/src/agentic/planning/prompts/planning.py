@@ -5,6 +5,7 @@ Planning prompt builder.
 from __future__ import annotations
 
 from agentic.agents.prompts.user_memory import render_user_memory_block
+from agentic.planning.prompts.agent_capabilities import render_agent_capabilities
 from core.dto.clients.llm import LLMMessageDTO, LLMRequestDTO
 from core.dto.planning import PlanningRequestDTO
 from core.enums import MessageRoleEnum
@@ -39,8 +40,15 @@ class PlanningPromptBuilder(
     ) -> LLMRequestDTO:
         """
         Build an execution planning request.
+
+        The agents the plan may use, and the tools each one's policy
+        allows (``request.agent_capabilities``), follow the planning
+        instructions as their own SYSTEM message. They're generated per
+        request, never written into planning.md, so they match what the
+        runtime enforces.
         """
 
+        capabilities_block = render_agent_capabilities(request.agent_capabilities)
         memory_block = render_user_memory_block(request.user_memory)
 
         return LLMRequestDTO(
@@ -48,6 +56,16 @@ class PlanningPromptBuilder(
                 LLMMessageDTO(
                     role=MessageRoleEnum.SYSTEM,
                     content=self._system_prompt,
+                ),
+                *(
+                    (
+                        LLMMessageDTO(
+                            role=MessageRoleEnum.SYSTEM,
+                            content=capabilities_block,
+                        ),
+                    )
+                    if capabilities_block
+                    else ()
                 ),
                 # Its own message, after the system prompt and before the
                 # history -- never a history message, which would let it

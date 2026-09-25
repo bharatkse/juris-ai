@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
+from agentic.planning.capabilities import AgentCapabilityCatalog
 from agentic.planning.llm_planner import LLMPlanGenerator
 from agentic.planning.planner import ExecutionPlanner
 from agentic.planning.prompts.planning import PlanningPromptBuilder
@@ -56,9 +57,22 @@ def mock_prompt_builder() -> Mock:
 
 
 @pytest.fixture
+def mock_capability_catalog() -> Mock:
+    """
+    Provide a mocked agent capability catalog (no agents).
+    """
+
+    catalog = Mock(spec=AgentCapabilityCatalog)
+    catalog.describe = AsyncMock(return_value=())
+
+    return catalog
+
+
+@pytest.fixture
 def llm_generator(
     mock_llm_client: Mock,
     mock_prompt_builder: Mock,
+    mock_capability_catalog: Mock,
 ) -> LLMPlanGenerator:
     """
     Provide an LLM plan generator.
@@ -67,6 +81,7 @@ def llm_generator(
     return LLMPlanGenerator(
         llm_client=mock_llm_client,
         prompt_builder=mock_prompt_builder,
+        capability_catalog=mock_capability_catalog,
     )
 
 
