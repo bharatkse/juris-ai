@@ -1,0 +1,35 @@
+name: Warm model cache
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * 1"   # weekly, Monday
+
+env:
+  MODEL: qwen2.5-coder:7b
+
+jobs:
+  warm:
+    runs-on: ubuntu-latest
+    steps:
+      - id: cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.ollama/models
+          key: ollama-${{ env.MODEL }}
+          lookup-only: true
+
+      - name: Download model
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/.ollama/models
+          docker run -d --name ollama -p 11434:11434 \
+            -v ~/.ollama/models:/root/.ollama/models ollama/ollama
+          until curl -sf http://localhost:11434/api/version >/dev/null; do sleep 1; done
+          curl -sf http://localhost:11434/api/pull -d "{\"model\":\"$MODEL\",\"stream\":false}"
+          sudo chown -R $USER:$USER ~/.ollama   # Ollama writes as root; fix ownership so the cache can be saved
+
+      - if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.ollama/models
+          key: ollama-${{ env.MODEL }}
