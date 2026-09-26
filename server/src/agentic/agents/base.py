@@ -22,7 +22,6 @@ from core.dto.agent import (
 from core.dto.clients.llm import LLMRequestDTO
 from core.dto.inference import InferencePolicy, LLMTask
 from core.dto.tool import RetrievedContentDTO
-from core.models.message import AgentMessageSchema
 
 
 class BaseAgent:
@@ -138,50 +137,4 @@ class BaseAgent:
         return replace(
             request,
             inference=inference,
-        )
-
-    async def handle_message(
-        self,
-        *,
-        message: AgentMessageSchema,
-    ) -> AgentDecision:
-        """
-        Handle an agent-to-agent collaboration message.
-
-        The collaboration message carries the original agent request
-        together with delegation-specific parameters.
-
-        The receiving agent performs one reasoning operation only.
-        It does not execute tools, delegate to another agent, or perform
-        concrete business actions here. Any resulting decision is returned
-        to the parent execution through the collaboration bus.
-        """
-        payload = message.payload
-
-        request = payload.get("request")
-
-        if not isinstance(request, AgentRequestDTO):
-            raise ValueError(
-                "Agent collaboration message is missing a valid AgentRequestDTO.",
-            )
-
-        parameters = payload.get("parameters", {})
-
-        if not isinstance(parameters, dict):
-            raise ValueError(
-                "Agent collaboration message parameters must be a dictionary.",
-            )
-
-        delegated_request = AgentRequestDTO(
-            conversation=request.conversation,
-            instruction=request.instruction,
-            arguments={
-                **request.arguments,
-                **parameters,
-            },
-            context=request.context,
-        )
-
-        return await self._reason(
-            request=delegated_request,
         )

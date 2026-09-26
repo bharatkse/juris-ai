@@ -7,9 +7,26 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from core.dto.tool import ToolSpecDTO
 from core.dto.user_memory import UserMemoryContextItem
 from core.enums import AgentTypeEnum, ExecutionModeEnum, IntentEnum
 from core.models.conversation import ConversationMessageSchema
+
+
+@dataclass(slots=True, frozen=True)
+class AgentCapabilityDTO:
+    """
+    What the planner is told about one agent it may assign steps to: its
+    name, what it's for, and the tools its policy allows (the same
+    ToolRegistry.describe() output the agent itself is given as its
+    tool_catalog).
+    """
+
+    agent: AgentTypeEnum
+
+    description: str
+
+    tools: tuple[ToolSpecDTO, ...] = ()
 
 
 @dataclass(slots=True, frozen=True)
@@ -23,6 +40,11 @@ class PlanningRequestDTO:
     history: tuple[ConversationMessageSchema, ...] = ()
 
     user_memory: tuple[UserMemoryContextItem, ...] = ()
+
+    # Filled by LLMPlanGenerator from the agent registry and agent
+    # policies (AgentCapabilityCatalog) just before the planning prompt
+    # is built; empty on the template path, which doesn't need it.
+    agent_capabilities: tuple[AgentCapabilityDTO, ...] = ()
 
     metadata: dict[str, Any] = field(
         default_factory=dict,

@@ -51,7 +51,12 @@ from agentic.tools.runtime.invocation import ToolExecutionService
 from agentic.tools.runtime.result_converter import ToolResultConverter
 from core.dto.agent_action import AgentActionRequestDTO
 from core.dto.tool import RetrievedContentDTO
-from core.enums import ActionTypeEnum, MessageRoleEnum, RetrievalSourceEnum
+from core.enums import (
+    ActionTypeEnum,
+    ExecutionStatusEnum,
+    MessageRoleEnum,
+    RetrievalSourceEnum,
+)
 from core.exceptions.registry import ToolNotFoundError
 from core.models.message import AgentMessageSchema
 
@@ -630,20 +635,21 @@ class AgentContinuationService:
         Delegation failures propagate to the execution layer. A budget
         denial is handled as a normal PARTIAL lifecycle termination.
 
-        NOT wrapped in the same replay-safety @task fix as
-        _execute_tool() (see there) -- deliberately, not an oversight.
-        DELEGATE is confirmed unreachable in production today
-        (AgentPolicyGuard.check_delegation() always denies: allow_
-        delegation defaults False and agent_policies has no column for
-        it -- see claude.md's CollaborationBus audit), so there is no
-        live replay hazard to fix yet. It would also need a real
-        serialization scheme first: CollaborationBus.send() returns a
-        bare ``object`` (whatever the target agent's handle_message()
-        produces, e.g. a pydantic AgentDecision), and a @task's
-        checkpointed return value needs the same plain-dict treatment
-        ToolResult got here -- inventing that for a type this method
-        doesn't actually constrain would be guessing. Revisit
-        alongside adding real allow_delegation support.
+        The bus handler for every agent is a DelegatedAgentRunner
+        (agents/runtime/delegation.py), which runs the target's whole
+        turn on the normal runtime path -- its own tools and policy,
+        seeded evidence, tool calls executed by this same service, the
+        answer-quality gate, its own budget -- and returns its
+        AgentContinuationResult.
+
+        DELEGATE is unreachable in production today
+        (AgentPolicyGuard.check_delegation() always denies:
+        allow_delegation defaults False and agent_policies has no column
+        for it). Not wrapped in a replay-safe @task as a whole: the
+        target's tool calls are, individually, via _execute_tool(), but
+        its reasoning calls re-run if the node replays after an
+        approval. Revisit alongside adding real allow_delegation
+        support.
         """
 
         target_agent_id = action.target_agent_id
@@ -1164,6 +1170,15 @@ class AgentContinuationService:
         """
         Convert delegated-agent output into reasoning context.
 
+        A DelegatedAgentRunner returns the target's whole turn
+        (AgentContinuationResult): its tool calls have already run and
+        its answer has been through the answer-quality gate. Only a
+        completed, verified FINAL answer becomes context the delegating
+        agent can build on; anything else (a budget-exhausted, failed or
+        unverified turn) becomes a runtime note saying so, never
+        evidence. The decision object itself is never stringified into
+        the prompt.
+
         Delegated-agent output is not retrieval evidence, so it is
         represented using the existing MEMORY retrieval source.
         """
@@ -1171,7 +1186,21 @@ class AgentContinuationService:
         if result is None:
             return ()
 
-        if isinstance(result, str):
+        target = action.target_agent_id or "delegated_agent"
+
+        if isinstance(result, AgentContinuationResult):
+            content = _verified_delegated_answer(result)
+
+            if content is None:
+                reason = result.result.termination_reason or result.result.status.value
+                return (
+                    runtime_feedback(
+                        f"Agent '{target}' could not produce a verified answer "
+                        f"({reason}). Answer from the evidence you have.",
+                    ),
+                )
+
+        elif isinstance(result, str):
             content = result
         else:
             content = str(result)
@@ -1182,7 +1211,7 @@ class AgentContinuationService:
         return (
             RetrievedContentDTO(
                 source=RetrievalSourceEnum.MEMORY,
-                source_name=action.target_agent_id or "delegated_agent",
+                source_name=target,
                 content=content,
                 score=None,
                 metadata={
@@ -1191,3 +1220,21 @@ class AgentContinuationService:
                 },
             ),
         )
+
+
+def _verified_delegated_answer(result: AgentContinuationResult) -> str | None:
+    """A delegated turn's answer, if it completed with a verified FINAL."""
+
+    turn = result.result
+    decision = turn.decision
+
+    if (
+        turn.status is not ExecutionStatusEnum.COMPLETED
+        or decision is None
+        or decision.decision_type is not AgentDecisionType.FINAL
+        or not decision.final_response
+        or (result.evaluation_summary is not None and not result.evaluation_summary.verified)
+    ):
+        return None
+
+    return decision.final_response

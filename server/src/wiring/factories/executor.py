@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from langgraph.checkpoint.base import BaseCheckpointSaver
 
 from adapters.persistence.sqlalchemy.session import session_factory
+from agentic.agents.runtime.delegation import DelegatedAgentRunner
 from agentic.agents.runtime.retry import RetryClassifier
 from agentic.collaboration.bus import CollaborationBus
 from agentic.evaluation.answer import AnswerEvaluator, AnswerQualityPolicy
@@ -99,6 +100,20 @@ def create_executor(
         checkpointer=checkpointer,
         compliance_log=compliance_log,
     )
+
+    # A delegated agent's turn runs on the same runtime as a plan step:
+    # every agent's bus handler is a DelegatedAgentRunner, never the agent
+    # itself (agents don't execute tools). Delegation stays disabled by
+    # policy (AgentPolicyGuard.check_delegation()).
+    for agent_id in registries.agent_registry.keys():
+        collaboration_bus.register(
+            agent=agent_id,
+            handler=DelegatedAgentRunner(
+                agent_id=agent_id,
+                agent_execution=graph_factory.agent_execution(),
+                continuation_service=graph_factory.continuation_service(),
+            ),
+        )
 
     state_assembler = ExecutionStateAssembler()
 

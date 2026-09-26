@@ -9,6 +9,7 @@ from dataclasses import replace
 from langsmith import traceable
 
 from adapters.clients.llm.base import LLMClient
+from agentic.planning.capabilities import AgentCapabilityCatalog
 from agentic.planning.prompts.planning import PlanningPromptBuilder
 from core.dto.inference import InferencePolicy, LLMTask
 from core.dto.planning import ExecutionPlanDTO, ExecutionStepDTO, PlanningRequestDTO
@@ -35,10 +36,12 @@ class LLMPlanGenerator:
         *,
         llm_client: LLMClient,
         prompt_builder: PlanningPromptBuilder,
+        capability_catalog: AgentCapabilityCatalog,
         inference_policy: InferencePolicy | None = None,
     ) -> None:
         self._llm = llm_client
         self._prompt_builder = prompt_builder
+        self._capability_catalog = capability_catalog
         # Planning produces a single structured decision (the execution
         # plan) consumed programmatically, not prose read by a user --
         # same inference intent as an agent's STRUCTURED_DECISION
@@ -64,7 +67,16 @@ class LLMPlanGenerator:
 
         The LLM determines the intent and execution mode
         as part of the same structured response.
+
+        The model is told which agents it may assign steps to and the
+        tools each one's policy allows, read from the agent policies at
+        call time, so it doesn't plan steps no agent can carry out.
         """
+
+        request = replace(
+            request,
+            agent_capabilities=await self._capability_catalog.describe(),
+        )
 
         llm_request = self._prompt_builder.build(
             request=request,
