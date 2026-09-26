@@ -64,7 +64,6 @@ def create_ai_orchestrator(
         settings=settings,
         clients=clients,
         registries=registries,
-        collaboration_bus=collaboration_bus,
     )
 
     # AIOrchestrator, Executor, and the LangGraph nodes underneath it
