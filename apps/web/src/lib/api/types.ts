@@ -65,8 +65,8 @@ export interface ApprovalResponse {
   expires_at: string;
 }
 
-export interface ApprovalDecisionResponse {
-  approval: ApprovalResponse;
+export interface ApprovalDecisionResponse extends ApprovalResponse {
+  resume_status?: string | null;
   resumed_event?: ConversationEvent | null;
 }
 

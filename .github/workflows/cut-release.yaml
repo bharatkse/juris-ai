@@ -1,0 +1,89 @@
+name: Cut Release
+
+# Manual "ship it": opens the release PR from develop's HEAD into main
+# (branch release/cut-vX.Y.Z). It never merges. Merging that PR, after
+# review and its checks, is what releases: ci-server.yml's promote and
+# release jobs run on the push to main.
+#
+# The version is whatever promotion would release for develop's HEAD (its
+# release candidate, via .github/scripts/resolve-release.sh), so the PR
+# always matches what merging does. Process doc: docs/release-process.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: >-
+          Optional: the version you expect to release (e.g. 0.2.0). Only a
+          check -- the run fails if develop's HEAD would release something
+          else. Leave empty to release whatever is pending.
+        required: false
+        type: string
+        default: ""
+
+# Never two cuts at once.
+concurrency:
+  group: cut-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.11.9"
+  SEMANTIC_RELEASE_VERSION: "10.7.0"
+
+jobs:
+  cut-release:
+    name: Open Release PR
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    permissions:
+      contents: write # create the release/cut-vX.Y.Z branch
+      pull-requests: write # open the PR into main
+
+    steps:
+      - name: Checkout develop (full history and tags)
+        uses: actions/checkout@v4
+        with:
+          ref: develop
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install python-semantic-release
+        run: pip install "python-semantic-release==${{ env.SEMANTIC_RELEASE_VERSION }}"
+
+      # PRs opened with the workflow's own GITHUB_TOKEN don't trigger other
+      # workflows, so the PR's pull_request checks wouldn't start on their
+      # own. With a RELEASE_PR_TOKEN secret (GitHub App or fine-grained token
+      # with contents + pull-requests write) they run as for any PR; without
+      # it, close and reopen the PR once to start them.
+      - name: Open the release PR
+        id: cut
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN || secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          EXPECTED_VERSION: ${{ inputs.version }}
+        run: .github/scripts/cut-release.sh "$EXPECTED_VERSION"
+
+      - name: Summary
+        env:
+          PR_URL: ${{ steps.cut.outputs.pr_url }}
+          VERSION: ${{ steps.cut.outputs.version }}
+          USING_FALLBACK_TOKEN: ${{ secrets.RELEASE_PR_TOKEN == '' }}
+        run: |
+          {
+            echo "## Release PR for v${VERSION}"
+            echo "${PR_URL}"
+            echo
+            echo "Review it and merge with **Create a merge commit** to release. Nothing is merged automatically."
+            if [ "$USING_FALLBACK_TOKEN" = true ]; then
+              echo
+              echo "Opened with the default GITHUB_TOKEN, so the PR's own checks haven't started: **close and reopen the PR once** to run them (or add a RELEASE_PR_TOKEN secret)."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

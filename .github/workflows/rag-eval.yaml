@@ -11,9 +11,13 @@ on:
     - cron: "0 6 * * *" # 06:00 UTC daily
   workflow_dispatch: {}
 
+permissions:
+  contents: read
+
 defaults:
   run:
     shell: bash -eo pipefail {0}
+    working-directory: server
 
 env:
   PYTHON_VERSION: "3.11.9"
@@ -65,14 +69,17 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           poetry-groups: "--with=dev,eval"
+          working-directory: server
 
       - name: Run database migrations
+        env:
+          PYTHONPATH: src
         run: poetry run alembic upgrade head
 
       - name: Ingest golden-dataset corpus
         env:
           PYTHONPATH: src
-        run: poetry run python -m rag.ingestion.ingest_offline raw_datasets/acts
+        run: poetry run python -m rag.ingestion.ingest_offline tests/datasets/rag/raw_datasets
 
       - name: Run golden-dataset retrieval evaluation
         env:

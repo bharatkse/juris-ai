@@ -1,0 +1,60 @@
+# Compose project name lives here so setup.sh, the Makefile and a bare
+# `docker compose up` all resolve to the same project.
+name: juris-ai-server
+
+services:
+
+  # -----------------------------------------------------
+  # FastAPI API service
+  # Accessible from host as: localhost:8001
+  # Accessible inside the network as: api:8000
+  #
+  # Their actual endpoints are configured through server/.env.
+  # -----------------------------------------------------
+  api:
+    build:
+      context: ../../server
+      dockerfile: ../docker/server/Dockerfile
+
+    container_name: juris_ai_api
+    restart: unless-stopped
+
+    ports:
+      - "${API_PORT:-8001}:8000"
+
+    env_file:
+      - ../../server/.env
+
+    environment:
+      WATCHFILES_FORCE_POLLING: "true"
+
+    volumes:
+      - ../../server/src:/juris_ai_server/src
+      - ../../server/.env:/juris_ai_server/.env:ro
+      - ../../server/alembic.ini:/juris_ai_server/alembic.ini:ro
+
+    command: >
+      poetry run uvicorn
+      main:app
+      --host 0.0.0.0
+      --port 8000
+      --reload
+      --reload-dir /juris_ai_server/src
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+    networks:
+      - juris_ai_network
+
+
+# ============================================================================
+# External Network
+# ============================================================================
+networks:
+  juris_ai_network:
+    external: true

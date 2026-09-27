@@ -1,0 +1,51 @@
+name: PR Title
+
+# PRs into develop are squash-merged, so the PR title becomes the commit
+# message python-semantic-release reads to pick the next version. Reject a
+# title it can't parse before merge, not after a missing/wrong release.
+#
+# Allowed types are exactly semantic-release's conventional parser types
+# (server/pyproject.toml [tool.semantic_release], parser defaults):
+#   feat -> minor; fix, perf -> patch; the rest -> no release.
+# `type!:` or a "BREAKING CHANGE:" footer marks a breaking change.
+#
+# Release PRs into main are excluded: they're merged with a merge commit,
+# whose "Merge pull request ..." message semantic-release ignores.
+
+on:
+  pull_request:
+    branches:
+      - develop
+    types:
+      - opened
+      - edited
+      - synchronize
+      - reopened
+
+permissions:
+  pull-requests: read
+
+jobs:
+  conventional-title:
+    name: Conventional PR Title
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    steps:
+      - name: Check the title is a Conventional Commit
+        uses: amannn/action-semantic-pull-request@v6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            perf
+            build
+            chore
+            ci
+            docs
+            style
+            refactor
+            test
+          requireScope: false

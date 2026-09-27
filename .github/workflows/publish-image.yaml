@@ -1,0 +1,221 @@
+name: Publish Image
+
+# Build -> scan -> (push -> sign -> attest) the server image.
+#
+# This is the ONLY place an image is built. Releases never rebuild: they
+# promote a develop build by adding tags to its digest (promote-image.sh).
+#
+# Called from ci-server.yml only after every CI gate has passed. Nothing is
+# pushed unless the Trivy gate passes (.github/scripts/trivy-gate.sh). With
+# push=false (PRs, dry-run dispatch) it stops after the scan.
+#
+# Pushed tags: ghcr.io/<owner>/juris-ai:X.Y.Z-rc.N (when a release is
+# pending), :develop, :sha-<7>. Every pushed image is signed (keyless) and
+# carries a signed SPDX SBOM attestation plus Buildx SBOM/provenance, so a
+# promoted release already has all of them.
+#
+# Process doc: docs/release-process.md
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: "Release candidate (X.Y.Z-rc.N); empty when no release is pending"
+        required: false
+        type: string
+        default: ""
+      push:
+        description: "Push, sign and attest; false = build and scan only"
+        required: true
+        type: boolean
+    outputs:
+      digest:
+        description: "Pushed image digest (empty when push=false)"
+        value: ${{ jobs.publish.outputs.digest }}
+      image:
+        description: "Image repository, e.g. ghcr.io/owner/juris-ai"
+        value: ${{ jobs.publish.outputs.image }}
+
+jobs:
+  publish:
+    name: Build, Scan${{ inputs.push && ', Push' || ' (dry run)' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+
+    permissions:
+      contents: read
+      packages: write # push to GHCR
+      id-token: write # keyless cosign signing (GitHub OIDC)
+      security-events: write # Trivy SARIF -> Security tab
+      actions: read # upload-sarif
+
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+      image: ${{ steps.meta.outputs.image }}
+
+    env:
+      TRIVY_VERSION: "0.58.1"
+      COSIGN_VERSION: "v2.5.3"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # The image is ~2.4 GB (CPU torch); building it and loading it into
+      # the local daemon for scanning needs more room than a stock runner.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - name: Compute image name and tags
+        id: meta
+        env:
+          VERSION: ${{ inputs.version }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          image="ghcr.io/${OWNER,,}/juris-ai"
+          tags=$(.github/scripts/image-tags.sh "$image" develop "$GITHUB_SHA" "$VERSION")
+
+          {
+            echo "image=${image}"
+            echo "scan_ref=juris-ai-scan:${GITHUB_SHA}"
+            echo "tags<<EOF"
+            echo "$tags"
+            echo "EOF"
+            echo "label_version=${VERSION:-develop-${GITHUB_SHA::7}}"
+            echo "created=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Tags:"; echo "$tags"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Build once into the local daemon so the exact image can be scanned
+      # before anything leaves the runner. The push build below reuses
+      # every layer from the GHA cache.
+      - name: Build image for scanning
+        uses: docker/build-push-action@v6
+        with:
+          context: server
+          file: docker/server/Dockerfile
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: ${{ steps.meta.outputs.scan_ref }}
+          cache-from: type=gha,scope=server-image
+          cache-to: type=gha,scope=server-image,mode=max
+
+      # Only the vulnerability DBs are worth caching; fanal/ holds per-image
+      # layer analysis that never repeats across builds.
+      - name: Restore Trivy vulnerability DB
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/trivy/db
+            ~/.cache/trivy/java-db
+          key: trivy-db-${{ env.TRIVY_VERSION }}-${{ github.run_id }}
+          restore-keys: |
+            trivy-db-${{ env.TRIVY_VERSION }}-
+
+      - name: Scan image (gate)
+        id: scan
+        run: .github/scripts/trivy-gate.sh "${{ steps.meta.outputs.scan_ref }}" trivy-results
+
+      - name: Scan summary
+        if: always() && steps.scan.outcome != 'skipped'
+        run: |
+          {
+            echo "## Trivy image scan (${{ steps.scan.outcome }})"
+            echo "Gate: HIGH/CRITICAL findings that have a fix (\`--ignore-unfixed\`)."
+            echo '```'
+            if [ -s trivy-results/trivy-table.txt ]; then cat trivy-results/trivy-table.txt; else echo "No gating findings."; fi
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Fork PRs get a read-only token; skip the upload rather than fail.
+      - name: Upload scan results to Security tab
+        if: >-
+          always() && hashFiles('trivy-results/trivy.sarif') != '' &&
+          (github.event_name != 'pull_request' ||
+           github.event.pull_request.head.repo.full_name == github.repository)
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results/trivy.sarif
+          category: trivy-image
+
+      # ---- Everything below runs only when pushing (gate already passed) ----
+
+      - name: Log in to GHCR
+        if: inputs.push
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push (with SBOM + provenance attestations)
+        id: push
+        if: inputs.push
+        uses: docker/build-push-action@v6
+        with:
+          context: server
+          file: docker/server/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          sbom: true
+          provenance: mode=max
+          labels: |
+            org.opencontainers.image.title=juris-ai
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.meta.outputs.label_version }}
+            org.opencontainers.image.created=${{ steps.meta.outputs.created }}
+            org.opencontainers.image.licenses=AGPL-3.0-only
+          cache-from: type=gha,scope=server-image
+
+      - name: Install cosign
+        if: inputs.push
+        uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: ${{ env.COSIGN_VERSION }}
+
+      # Keyless: the signature is bound to this workflow's GitHub OIDC
+      # identity and recorded in the public Rekor log. Signing the digest
+      # covers every tag that points at it.
+      - name: Sign image
+        if: inputs.push
+        env:
+          REF: ${{ steps.meta.outputs.image }}@${{ steps.push.outputs.digest }}
+        run: cosign sign --yes "$REF"
+
+      # Signed SBOM on every pushed image: a release is a promoted develop
+      # build, so this is the attestation the release will carry.
+      - name: Generate SPDX SBOM
+        if: inputs.push
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ steps.meta.outputs.image }}@${{ steps.push.outputs.digest }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Attest SBOM with cosign
+        if: inputs.push
+        env:
+          REF: ${{ steps.meta.outputs.image }}@${{ steps.push.outputs.digest }}
+        run: cosign attest --yes --type spdxjson --predicate sbom.spdx.json "$REF"
+
+      - name: Publish summary
+        if: inputs.push
+        run: |
+          {
+            echo "## Published ${{ steps.meta.outputs.image }}"
+            echo "Digest: \`${{ steps.push.outputs.digest }}\`"
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

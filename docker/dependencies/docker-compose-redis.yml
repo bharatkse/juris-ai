@@ -1,0 +1,44 @@
+# Compose project name lives here so setup.sh, the Makefile and a bare
+# `docker compose up` all resolve to the same project.
+name: juris-ai-redis
+
+services:
+
+  # -----------------------------------------------------
+  # Redis — application cache / execution state
+  # Accessible inside the network as: redis:6379
+  # Accessible from host as:          localhost:6379
+  # -----------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: juris_ai_redis
+    restart: unless-stopped
+
+    ports:
+      - "6379:6379"
+
+    command:
+      redis-server
+      --appendonly yes
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+
+    volumes:
+      - ../.volumes/redis:/data
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    networks:
+      - juris_ai_network
+
+
+# ============================================================================
+# External Network
+# ============================================================================
+networks:
+  juris_ai_network:
+    external: true

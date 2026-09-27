@@ -49,6 +49,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
+    permissions:
+      contents: read
+
     env:
       ENVIRONMENT: ${{ inputs.app-environment }}
       SECRET_KEY: ${{ secrets.SECRET_KEY }}
@@ -66,8 +69,10 @@ jobs:
         uses: ./.github/actions/setup-python-poetry
         with:
           python-version: ${{ inputs.python-version }}
+          working-directory: ${{ inputs.working-directory }}
 
       - name: Install extra test dependencies
+        working-directory: ${{ inputs.working-directory }}
         run: |
           poetry run pip install \
             keyring \
@@ -80,7 +85,6 @@ jobs:
           poetry run pytest \
             tests/unit \
             --cov=src \
-            --cov-config=.coveragerc \
             --cov-branch \
             --cov-report=term-missing \
             --cov-report=xml:coverage.xml \

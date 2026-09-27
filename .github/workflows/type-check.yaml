@@ -1,0 +1,40 @@
+name: Type Check
+
+# Runs mypy over server/src with the project's full dependency set
+# (mypy resolves real third-party types, so dev-only installs are not
+# enough). Same command as `make type-check`.
+
+on:
+  workflow_call:
+    inputs:
+      python-version:
+        required: true
+        type: string
+      working-directory:
+        required: false
+        type: string
+        default: .
+
+jobs:
+  type-check:
+    name: Type Check (mypy)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python and Poetry
+        uses: ./.github/actions/setup-python-poetry
+        with:
+          python-version: ${{ inputs.python-version }}
+          poetry-groups: "--with=dev,eval"
+          working-directory: ${{ inputs.working-directory }}
+
+      - name: Run mypy
+        working-directory: ${{ inputs.working-directory }}
+        run: poetry run mypy src/

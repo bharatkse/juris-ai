@@ -1,0 +1,163 @@
+# Compose project name lives here so setup.sh, the Makefile and a bare
+# `docker compose up` all resolve to the same project.
+name: juris-ai-observability
+
+services:
+
+  # ==========================================================================
+  # OpenTelemetry Collector
+  # ==========================================================================
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: juris_ai_otel_collector
+    restart: unless-stopped
+
+    env_file:
+      - ../../server/.env
+
+    command:
+      - "--config=/etc/otelcol-contrib/config.yaml"
+
+    volumes:
+      # Source-controlled configuration
+      - ./otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+
+    ports:
+      - "4317:4317"     # OTLP gRPC
+      - "4318:4318"     # OTLP HTTP
+      - "8889:8889"     # Prometheus metrics exposed by Collector
+      - "13133:13133"   # health_check extension (GET / -> 200 when healthy)
+
+    # otel/opentelemetry-collector-contrib is a scratch image (no shell, no
+    # curl/wget) -- Docker's exec-form `healthcheck:` can't run inside it.
+    # The health_check extension above is enabled and reachable from the
+    # host at :13133 for external/manual checks; depends_on below stays at
+    # service_started since there's no real container-exec health signal
+    # to gate on.
+    depends_on:
+      prometheus:
+        condition: service_started
+      tempo:
+        condition: service_started
+
+    networks:
+      - juris_ai_network
+
+
+  # ==========================================================================
+  # Prometheus
+  # ==========================================================================
+
+  prometheus:
+    image: prom/prometheus:latest-distroless
+    container_name: juris_ai_prometheus
+    restart: unless-stopped
+
+    ports:
+      - "9090:9090"
+
+    env_file:
+      - ../../server/.env
+
+    volumes:
+      # Source-controlled configuration
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+
+      # Persistent Prometheus TSDB data
+      - prometheus_data:/prometheus
+
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+
+    # prom/prometheus:*-distroless has no shell/curl/wget, so Docker's
+    # exec-form `healthcheck:` can't run inside it even though the app
+    # exposes GET /-/healthy on :9090 -- check it manually/externally.
+
+    networks:
+      - juris_ai_network
+
+
+  # ==========================================================================
+  # Tempo
+  # ==========================================================================
+
+  tempo:
+    image: grafana/tempo:latest
+    container_name: juris_ai_tempo
+    restart: unless-stopped
+
+    command:
+      - "-config.file=/etc/tempo/tempo.yaml"
+
+    volumes:
+      # Source-controlled configuration
+      - ./tempo.yaml:/etc/tempo/tempo.yaml:ro
+
+      # Persistent Tempo trace data
+      - tempo_data:/var/tempo
+
+    ports:
+      - "3200:3200"   # Tempo HTTP API
+
+    # grafana/tempo has no shell/curl/wget in its image, so Docker's
+    # exec-form `healthcheck:` can't run inside it even though the app
+    # exposes GET /ready on :3200 -- check it manually/externally.
+
+    networks:
+      - juris_ai_network
+
+
+  # ==========================================================================
+  # Grafana
+  # ==========================================================================
+
+  grafana:
+    image: grafana/grafana:latest-distroless-slim
+    container_name: juris_ai_grafana
+    restart: unless-stopped
+
+    ports:
+      - "3000:3000"
+
+    volumes:
+      # Persistent Grafana state
+      - grafana_data:/var/lib/grafana
+
+    # grafana/grafana:*-distroless-slim has no shell/curl/wget, so Docker's
+    # exec-form `healthcheck:` can't run inside it even though the app
+    # exposes GET /api/health on :3000 -- check it manually/externally.
+    # depends_on below stays at service_started since prometheus/tempo
+    # have no real container-exec health signal to gate on either.
+    depends_on:
+      prometheus:
+        condition: service_started
+      tempo:
+        condition: service_started
+
+    networks:
+      - juris_ai_network
+
+
+# ============================================================================
+# Persistent volumes
+# ============================================================================
+
+volumes:
+  prometheus_data:
+    name: juris_ai_prometheus_data
+
+  tempo_data:
+    name: juris_ai_tempo_data
+
+  grafana_data:
+    name: juris_ai_grafana_data
+
+# ============================================================================
+# Shared Docker network
+# ============================================================================
+
+networks:
+  juris_ai_network:
+    external: true

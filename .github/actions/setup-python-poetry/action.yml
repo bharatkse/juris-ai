@@ -37,15 +37,33 @@ runs:
         virtualenvs-create: true # Always use isolated virtualenv
         virtualenvs-in-project: true # Keeps .venv inside the project
 
+    - name: Derive cache label from poetry groups
+      id: groups
+      shell: bash
+      env:
+        POETRY_GROUPS: ${{ inputs.poetry-groups }}
+      run: |
+        # actions/cache rejects keys containing commas (and >512 chars), so
+        # the raw install args (e.g. "--with=dev,eval") can't go in the key.
+        # Map anything outside [A-Za-z0-9._-] to "-": "--with=dev,eval" ->
+        # "with-dev-eval", "--only=dev" -> "only-dev". Distinct group sets
+        # stay distinct.
+        label=$(printf '%s' "$POETRY_GROUPS" | tr -c 'A-Za-z0-9._-' '-' | tr -s '-' | sed 's/^-//; s/-$//')
+        echo "label=${label:-default}" >> "$GITHUB_OUTPUT"
+
     - name: Cache virtualenv
       uses: actions/cache@v4
       with:
         path: |
-          .venv
+          ${{ inputs.working-directory }}/.venv
           ~/.cache/pypoetry
-        key: venv-${{ runner.os }}-${{ inputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
+        # Groups are part of the key: jobs install different group sets
+        # (--only=dev vs --with=dev,eval) and must not share one venv.
+        # "--" ends the label (labels never contain "--"), so the
+        # restore-keys prefix for "with-dev" can't match "with-dev-eval".
+        key: venv-${{ runner.os }}-${{ inputs.python-version }}-${{ steps.groups.outputs.label }}--${{ hashFiles('**/poetry.lock') }}
         restore-keys: |
-          venv-${{ runner.os }}-${{ inputs.python-version }}-
+          venv-${{ runner.os }}-${{ inputs.python-version }}-${{ steps.groups.outputs.label }}--
 
     - name: Install dependencies
       shell: bash
@@ -54,5 +72,9 @@ runs:
         POETRY_VIRTUALENVS_CREATE: true
         POETRY_VIRTUALENVS_IN_PROJECT: true
       run: |
-        echo "Installing dependencies for poetry groups: ${{ inputs.poetry-groups }}"
-        poetry install ${{ inputs.poetry-groups }} --no-interaction
+        echo "Syncing dependencies for poetry groups: ${{ inputs.poetry-groups }}"
+        # sync, not install: the restore-keys fallback can restore a venv
+        # built from an older poetry.lock, and install never removes
+        # packages the lock has since dropped (stale types-redis stubs
+        # broke mypy this way). sync makes the venv match the lock exactly.
+        poetry sync ${{ inputs.poetry-groups }} --no-interaction
