@@ -4,18 +4,24 @@ Conversation API routes.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 
 from adapters.observability.logger import get_logger
 from api.dependencies.auth import get_current_user
-from api.dependencies.conversation import get_conversation_service
+from api.dependencies.conversation import (
+    get_conversation_event_service,
+    get_conversation_service,
+)
+from api.schemas.chat import ConversationEventListResponse, ConversationEventResponse
 from api.schemas.conversation import (
     ConversationListResponse,
     ConversationResponse,
     CreateConversationRequest,
+    UpdateConversationRequest,
 )
 from api.utilities.api_response import ApiResponse
 from application.services.conversation import ConversationService
+from application.services.conversation_event import ConversationEventService
 from core.types import ConversationId
 
 logger = get_logger(__name__)
@@ -148,6 +154,89 @@ async def get_conversation(
             from_attributes=True,
         ),
         message="Conversation retrieved successfully.",
+    )
+
+
+@router.patch(
+    "/{conversation_id}",
+    summary="Rename a conversation",
+)
+async def update_conversation(
+    conversation_id: ConversationId,
+    request: UpdateConversationRequest,
+    current_user=Depends(get_current_user),
+    service: ConversationService = Depends(
+        get_conversation_service,
+    ),
+) -> ApiResponse:
+    """
+    Update an authenticated user's conversation title.
+    """
+
+    conversation = await service.update_title(
+        conversation_id=conversation_id,
+        user_id=current_user.id,
+        title=request.title,
+    )
+
+    return ApiResponse(
+        data=ConversationResponse.model_validate(
+            conversation,
+            from_attributes=True,
+        ),
+        message="Conversation updated successfully.",
+    )
+
+
+@router.get(
+    "/{conversation_id}/events",
+    summary="List conversation events",
+)
+async def list_conversation_events(
+    conversation_id: ConversationId,
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=100),
+    current_user=Depends(get_current_user),
+    conversation_service: ConversationService = Depends(
+        get_conversation_service,
+    ),
+    event_service: ConversationEventService = Depends(
+        get_conversation_event_service,
+    ),
+) -> ApiResponse:
+    """
+    Retrieve a chronological, paginated transcript.
+
+    Conversation ownership is checked before events are queried.
+    """
+
+    await conversation_service.get_or_raise(
+        conversation_id=conversation_id,
+        user_id=current_user.id,
+    )
+
+    events, total = await event_service.list_page(
+        conversation_id=conversation_id,
+        offset=offset,
+        limit=limit,
+    )
+
+    return ApiResponse(
+        data=ConversationEventListResponse(
+            items=[
+                ConversationEventResponse.model_validate(
+                    event,
+                    from_attributes=True,
+                )
+                for event in events
+            ],
+            pagination={
+                "offset": offset,
+                "limit": limit,
+                "total": total,
+                "has_more": offset + limit < total,
+            },
+        )
     )
 
 

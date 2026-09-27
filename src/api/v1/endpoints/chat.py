@@ -26,6 +26,8 @@ from api.schemas.chat import (
 from api.utilities.api_response import ApiResponse
 from api.utilities.streaming import encode_sse_event
 from application.services.chat import ChatService
+from core.exceptions.base import AppError
+from core.models.response import ApiResponseModel, ErrorDetailModel, MetadataModel
 
 logger = get_logger(__name__)
 
@@ -79,7 +81,7 @@ async def chat(
         citations=result.response.citations,
         sources=result.response.sources,
         usage=result.response.usage,
-        # metadata=result.response.metadata,
+        metadata=result.response.metadata,
     )
 
     return ApiResponse(
@@ -118,11 +120,9 @@ async def stream_chat(
     """
     Stream a chat response.
 
-    NOTE: streaming itself is currently broken independent of rate
-    limiting (AIOrchestrator has no stream() method; see the chat
-    service). This dependency still runs and enforces the same
-    limits before that failure, so a rate-limited/quota-exhausted
-    user is rejected here rather than reaching the broken code path.
+    Rate limits and quota are enforced before the generator starts.
+    Failures after the SSE headers are sent are encoded as ``error``
+    events so the client can render them instead of hanging.
     """
 
     logger.info(
@@ -169,6 +169,33 @@ async def stream_chat(
             )
             raise
 
+        except AppError as exc:
+            logger.warning(
+                "Chat stream failed.",
+                extra={
+                    "operation": "stream_chat",
+                    "conversation_id": str(
+                        chat_request.conversation_id,
+                    ),
+                    "user_id": str(current_user.id),
+                    "error_code": exc.error_code,
+                    "error_message": exc.message,
+                },
+            )
+            yield encode_sse_event(
+                ApiResponseModel(
+                    success=False,
+                    error=ErrorDetailModel(
+                        code=exc.error_code,
+                        message=exc.message,
+                    ),
+                    metadata=MetadataModel(
+                        request_id=str(http_request.state.context.request_id),
+                    ),
+                ),
+                event_name="error",
+            )
+
         except Exception:
             logger.exception(
                 "Chat stream failed.",
@@ -180,7 +207,19 @@ async def stream_chat(
                     "user_id": str(current_user.id),
                 },
             )
-            raise
+            yield encode_sse_event(
+                ApiResponseModel(
+                    success=False,
+                    error=ErrorDetailModel(
+                        code="INTERNAL_SERVER_ERROR",
+                        message="Juris AI could not complete this request.",
+                    ),
+                    metadata=MetadataModel(
+                        request_id=str(http_request.state.context.request_id),
+                    ),
+                ),
+                event_name="error",
+            )
 
     return StreamingResponse(
         event_generator(),

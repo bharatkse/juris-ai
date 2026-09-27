@@ -15,14 +15,19 @@ class LLMSettings(BaseAppSettings):
     LLM_LOCAL: str = LLMProviderEnum.LOCAL
     LLM_LOCAL_BASE_URL: str | None = None
     LLM_LOCAL_MODEL: str = LLMMODELEnum.QWEN3_8B
+    # Keep this at or below ~4096 on 8 GiB Docker VMs. qwen3:8b with
+    # 32768 num_ctx allocates ~4.5 GiB of KV cache and is SIGKILL'd.
+    LLM_LOCAL_NUM_CTX: int = 4096
 
     # Provider-independent inference defaults
     LLM_TEMPERATURE: float = 0.2
     LLM_TOP_P: float | None = None
-    LLM_MAX_OUTPUT_TOKENS: int | None = None
+    # Cap generation so local CPU models cannot fill the whole 4096
+    # window. Groq can raise this when GROQ_API_KEY is set.
+    LLM_MAX_OUTPUT_TOKENS: int | None = 1024
 
     # Search & RAG
-    SEARXNG_BASE_URL: str
+    SEARXNG_BASE_URL: str = "http://searxng:8080"
     mcp_rag_server_url: str = "http://searxng:8080"
     web_research_max_concurrency: int = 10
     web_research_fetch_timeout_seconds: int = 10

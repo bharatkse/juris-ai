@@ -10,7 +10,13 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from typing import Any
 
-from ollama import AsyncClient, ResponseError
+try:
+    from ollama import AsyncClient, ResponseError
+except ImportError:  # pragma: no cover - optional in incomplete local images
+    AsyncClient = None
+
+    class ResponseError(Exception):
+        status_code: int | None = None
 
 from adapters.clients.helper import map_exception
 from adapters.clients.llm.base import LLMClient
@@ -30,14 +36,15 @@ from core.exceptions.client import (
 
 log = get_logger(__name__)
 
-# Qwen3's native context window (per its published model config), used
-# for both models this client serves (qwen3:4b, qwen3:8b). Ollama's own
-# default num_ctx is 2048 regardless of what a model natively supports
-# -- explicitly requesting Qwen3's real window here is what makes that
-# window actually usable, rather than silently capping every request at
-# 2048. agentic/agents/prompts/token_budget.py's MODEL_CONTEXT_WINDOWS
-# imports this same constant so the two can never drift apart.
-QWEN3_NUM_CTX = 32_768
+# Qwen3's published native window. Not requested as Ollama num_ctx on
+# typical Docker Desktop VMs: 32k KV cache is ~4.5 GiB on qwen3:8b,
+# which plus ~5 GiB weights is SIGKILL'd inside an 8 GiB VM.
+QWEN3_NATIVE_CTX = 32_768
+
+# Default Ollama allocation for qwen3:4b / qwen3:8b. token_budget.py
+# imports this same constant so prompt budgets match what is requested.
+QWEN3_NUM_CTX = 4_096
+LOCAL_DEFAULT_NUM_PREDICT = 1_024
 
 
 class LocalLLMClient(LLMClient):
@@ -50,17 +57,27 @@ class LocalLLMClient(LLMClient):
         *,
         base_url: str,
         model: str,
+        num_ctx: int = QWEN3_NUM_CTX,
     ) -> None:
+        if AsyncClient is None:
+            raise ClientProviderError(
+                "The ollama package is not installed.",
+            )
+
         self._client = AsyncClient(
             host=base_url,
         )
+        self._base_url = base_url
         self._model = model
+        self._num_ctx = num_ctx
         self._think = False
 
         log.info(
-            "Initialized local LLM client with Ollama. " "Base URL: '%s', model: '%s'.",
+            "Initialized local LLM client with Ollama. "
+            "Base URL: '%s', model: '%s', num_ctx: %s.",
             base_url,
             model,
+            num_ctx,
         )
 
     @property
@@ -103,14 +120,15 @@ class LocalLLMClient(LLMClient):
 
         options: dict[str, Any] = {
             "temperature": inference.temperature,
-            "num_ctx": QWEN3_NUM_CTX,
+            "num_ctx": self._num_ctx,
         }
 
         if inference.top_p is not None:
             options["top_p"] = inference.top_p
 
-        if inference.max_output_tokens is not None:
-            options["num_predict"] = inference.max_output_tokens
+        options["num_predict"] = (
+            inference.max_output_tokens or LOCAL_DEFAULT_NUM_PREDICT
+        )
 
         if options:
             request_kwargs["options"] = options
@@ -148,11 +166,14 @@ class LocalLLMClient(LLMClient):
             raise map_exception(
                 exc=exc,
                 mappings={
-                    ResponseError: lambda e: ClientProviderError(
-                        message=str(e),
-                    ),
+                    ResponseError: lambda e: self._provider_error(e),
                     TimeoutError: lambda _: ClientTimeoutError(),
-                    ConnectionError: lambda _: ClientConnectionError(),
+                    ConnectionError: lambda _: ClientConnectionError(
+                        message=(
+                            f"Cannot reach Ollama at {self._base_url}. "
+                            "Start the Ollama service, or set GROQ_API_KEY in .env."
+                        ),
+                    ),
                 },
                 default=lambda e: ClientProviderError(
                     message=str(e),
@@ -227,14 +248,15 @@ class LocalLLMClient(LLMClient):
 
         options: dict[str, Any] = {
             "temperature": inference.temperature,
-            "num_ctx": QWEN3_NUM_CTX,
+            "num_ctx": self._num_ctx,
         }
 
         if inference.top_p is not None:
             options["top_p"] = inference.top_p
 
-        if inference.max_output_tokens is not None:
-            options["num_predict"] = inference.max_output_tokens
+        options["num_predict"] = (
+            inference.max_output_tokens or LOCAL_DEFAULT_NUM_PREDICT
+        )
 
         if options:
             request_kwargs["options"] = options
@@ -276,16 +298,40 @@ class LocalLLMClient(LLMClient):
             raise map_exception(
                 exc=exc,
                 mappings={
-                    ResponseError: lambda e: ClientProviderError(
-                        message=str(e),
-                    ),
+                    ResponseError: lambda e: self._provider_error(e),
                     TimeoutError: lambda _: ClientTimeoutError(),
-                    ConnectionError: lambda _: ClientConnectionError(),
+                    ConnectionError: lambda _: ClientConnectionError(
+                        message=(
+                            f"Cannot reach Ollama at {self._base_url}. "
+                            "Start the Ollama service, or set GROQ_API_KEY in .env."
+                        ),
+                    ),
                 },
                 default=lambda e: ClientProviderError(
                     message=str(e),
                 ),
             ) from exc
+
+    def _provider_error(self, exc: Exception) -> ClientProviderError:
+        status_code = getattr(exc, "status_code", None)
+        text = str(exc)
+        if status_code == 404 or "not found" in text.lower():
+            return ClientProviderError(
+                message=(
+                    f"Ollama does not have {self._model} yet. "
+                    f"Pull it with `ollama pull {self._model}`, "
+                    "or set GROQ_API_KEY in .env."
+                ),
+            )
+        if "killed" in text.lower():
+            return ClientProviderError(
+                message=(
+                    f"Ollama ran out of memory loading {self._model} "
+                    f"(num_ctx={self._num_ctx}). Lower LLM_LOCAL_NUM_CTX "
+                    "or give Docker more RAM."
+                ),
+            )
+        return ClientProviderError(message=text)
 
     @staticmethod
     def _to_messages(

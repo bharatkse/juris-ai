@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
 
+from sqlalchemy import func, select
+
 from adapters.persistence.sqlalchemy.models.conversation_event import ConversationEvent
 from adapters.persistence.sqlalchemy.repositories.base import BaseRepository
 
@@ -123,6 +125,48 @@ class ConversationEventRepository(
             events.reverse()
 
         return events
+
+    async def list_page(
+        self,
+        *,
+        conversation_id: ConversationId,
+        offset: int,
+        limit: int,
+    ) -> tuple[list[ConversationEvent], int]:
+        """
+        Retrieve one chronological page and the total event count.
+        """
+
+        statement = (
+            self.select()
+            .where(
+                self._model.conversation_id == conversation_id,
+            )
+            .order_by(
+                self._model.created_at.asc(),
+                self._model.id.asc(),
+            )
+            .offset(offset)
+            .limit(limit)
+        )
+
+        result = await self._session.execute(
+            statement,
+        )
+
+        count_statement = (
+            select(func.count())
+            .select_from(self._model)
+            .where(
+                self._model.conversation_id == conversation_id,
+            )
+        )
+
+        total = await self._session.scalar(
+            count_statement,
+        )
+
+        return list(result.scalars().all()), total or 0
 
     async def update(
         self,

@@ -23,6 +23,16 @@ def configure_langsmith(
     """
 
     if not settings.llm.LANGSMITH_TRACING:
+        # LANGSMITH_TRACING_V2 in the process env (e.g. from .env /
+        # docker-compose) still makes the SDK POST traces, which 401s
+        # when LANGSMITH_API_KEY is empty. Clear both names so a
+        # disabled setting actually disables tracing.
+        for var in (
+            "LANGSMITH_TRACING",
+            "LANGSMITH_TRACING_V2",
+            "LANGCHAIN_TRACING_V2",
+        ):
+            os.environ.pop(var, None)
         return
 
     os.environ["LANGSMITH_TRACING"] = "true"

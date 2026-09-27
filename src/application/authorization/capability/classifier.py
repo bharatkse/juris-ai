@@ -9,11 +9,20 @@ It does not perform authorization, approval, or execution.
 
 from __future__ import annotations
 
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
+import logging
+from typing import Any
 
 from core.dto.capability import CapabilityMatchDTO
 from core.enums import ActionTypeEnum
+
+logger = logging.getLogger(__name__)
+
+try:
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.metrics.pairwise import cosine_similarity
+except ImportError:  # pragma: no cover - optional in incomplete local images
+    TfidfVectorizer = None
+    cosine_similarity = None
 
 
 class TFIDFCapabilityClassifier:
@@ -47,6 +56,15 @@ class TFIDFCapabilityClassifier:
             )
 
         self._threshold = threshold
+        self._vectorizer: Any = None
+        self._matrix: Any = None
+        self._action_types: list[ActionTypeEnum] = []
+
+        if TfidfVectorizer is None or cosine_similarity is None:
+            logger.warning(
+                "scikit-learn is not installed; capability classification is disabled.",
+            )
+            return
 
         action_types: list[ActionTypeEnum] = []
         documents: list[str] = []
@@ -91,7 +109,7 @@ class TFIDFCapabilityClassifier:
 
         content = content.strip()
 
-        if not content:
+        if not content or self._vectorizer is None:
             return ()
 
         content_vector = self._vectorizer.transform(

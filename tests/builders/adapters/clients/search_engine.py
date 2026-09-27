@@ -45,6 +45,7 @@ def build_search_engine_result(
         title=title,
         url=url,
         snippet=snippet,
+        engine="google",
         metadata=metadata or {},
     )
 

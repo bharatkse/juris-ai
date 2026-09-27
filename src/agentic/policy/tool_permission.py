@@ -9,6 +9,57 @@ from agentic.policy.schemas import (
     PolicyCheckResult,
 )
 
+# Local models often invent generic search names. Map them onto tools
+# that actually exist, then fall back to whatever research tool the
+# agent is allowed to use.
+_TOOL_ALIASES: dict[str, str] = {
+    "search_internet": "web_research",
+    "internet_search": "web_research",
+    "web_search": "web_research",
+    "google_search": "web_research",
+    "google": "web_research",
+    "search": "web_research",
+    "browse": "web_research",
+    "case_law": "case_law_search",
+    "precedent_search": "case_law_search",
+    "legal_search": "case_law_search",
+    "retrieve": "retriever",
+    "rag": "retriever",
+    "document_search": "retriever",
+}
+
+_SEARCH_FALLBACKS = (
+    "web_research",
+    "case_law_search",
+    "retriever",
+)
+
+
+def canonicalize_tool_name(
+    *,
+    tool_name: str,
+    allowed_tools: frozenset[str],
+) -> str:
+    """
+    Map a model-invented tool name onto a permitted tool when possible.
+    """
+
+    name = tool_name.strip()
+    if name in allowed_tools:
+        return name
+
+    key = name.lower().replace(" ", "_").replace("-", "_")
+    aliased = _TOOL_ALIASES.get(key, name)
+    if aliased in allowed_tools:
+        return aliased
+
+    if key in _TOOL_ALIASES:
+        for fallback in _SEARCH_FALLBACKS:
+            if fallback in allowed_tools:
+                return fallback
+
+    return name
+
 
 class ToolPermissionGuard:
     """

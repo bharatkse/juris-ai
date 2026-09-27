@@ -135,6 +135,7 @@ TEST_DB_URL = "sqlite+aiosqlite:///./pytests.db"
 
 # Default Auth Configuration
 DEFAULT_JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+DEFAULT_JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
 
 API_DESCRIPTION = """

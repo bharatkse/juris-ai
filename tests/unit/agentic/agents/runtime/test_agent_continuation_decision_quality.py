@@ -336,13 +336,16 @@ async def test_tool_result_is_real_continuation_input(
 
 
 @pytest.mark.asyncio
-async def test_failed_tool_terminates_real_lifecycle_without_next_reasoning(
+async def test_failed_tool_is_fed_back_and_reasoning_continues(
     execution: AgentExecution,
     llm_client: object,
     tool_execution_service: ToolExecutionService,
     collaboration_bus,
 ) -> None:
-    llm_client.generate_structured.return_value = _tool_decision()
+    llm_client.generate_structured.side_effect = [
+        _tool_decision(),
+        _final_decision("Answer after the tool error was reported."),
+    ]
 
     failed = _tool_result(
         content="",
@@ -371,10 +374,13 @@ async def test_failed_tool_terminates_real_lifecycle_without_next_reasoning(
         initial_result=initial,
     )
 
-    assert result.result.status.value == "failed"
-    assert result.result.termination_reason == "failed_tool"
+    assert result.result.status.value == "completed"
+    assert result.result.decision is not None
+    assert result.result.decision.decision_type is AgentDecisionType.FINAL
+    assert result.tool_results[0].success is False
     assert tool_execution_service.execute.await_count == 1
-    assert llm_client.generate_structured.await_count == 1
+    assert llm_client.generate_structured.await_count == 2
+    assert handle.reasoning_context[-1].content == "tool failed"
 
 
 @pytest.mark.asyncio

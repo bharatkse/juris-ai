@@ -120,3 +120,38 @@ async def test_handle_still_raises_for_a_real_orchestration_error(
             request=request,
             action_workflow_service=MagicMock(),
         )
+
+
+@pytest.mark.asyncio
+async def test_stream_reports_progress_then_canonical_response(
+    orchestrator: AIOrchestrator,
+) -> None:
+    """
+    It should stream lifecycle progress without fabricating token chunks.
+    """
+
+    request = build_orchestrator_request()
+    response = OrchestratorResponse(
+        conversation_id=request.conversation_id,
+        content="Canonical legal answer",
+    )
+    orchestrator.handle = AsyncMock(
+        return_value=response,
+    )
+
+    chunks = [
+        chunk
+        async for chunk in orchestrator.stream(
+            request=request,
+            action_workflow_service=MagicMock(),
+        )
+    ]
+
+    assert len(chunks) == 2
+    assert chunks[0].is_final is False
+    assert chunks[0].content == ""
+    assert chunks[0].metadata["status"] == "working"
+    assert chunks[1].is_final is True
+    assert chunks[1].content == response.content
+    assert chunks[1].response is response
+    orchestrator.handle.assert_awaited_once()

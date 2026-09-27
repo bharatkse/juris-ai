@@ -12,6 +12,7 @@ from adapters.persistence.sqlalchemy.models.user import User
 from adapters.persistence.sqlalchemy.repositories.user import UserRepository
 from adapters.security.jwt import (
     create_access_token,
+    create_refresh_token,
     decode_token,
     get_subject,
     is_token_type,
@@ -129,6 +130,28 @@ class AuthenticationService:
             user.id,
             expires_in,
         )
+
+        return token, expires_in
+
+    def create_refresh_token(
+        self,
+        *,
+        user: User,
+    ) -> tuple[str, int]:
+        """
+        Create a refresh token for an authenticated user.
+        """
+
+        try:
+            token, expires_in = create_refresh_token(
+                user,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to create refresh token user_id=%s",
+                user.id,
+            )
+            raise
 
         return token, expires_in
 

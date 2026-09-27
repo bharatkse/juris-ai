@@ -8,6 +8,7 @@ orchestrator after planning, execution, validation, and aggregation.
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -171,3 +172,25 @@ class OrchestratorResponse(ResponsePayload):
     conversation_id: ConversationId
     approval: ApprovalResponse | None = None
     action: AgentActionRequestDTO | None = None
+
+
+class OrchestratorStreamChunk(BaseModel):
+    """
+    Progress or completion emitted by the orchestration stream.
+
+    The current executor is request/response based, so intermediate
+    chunks report lifecycle progress rather than fabricated token
+    fragments. The final chunk carries the canonical response.
+    """
+
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+    )
+
+    content: str = ""
+    is_final: bool = False
+    response: OrchestratorResponse | None = None
+    metadata: dict[str, Any] = Field(
+        default_factory=dict,
+    )

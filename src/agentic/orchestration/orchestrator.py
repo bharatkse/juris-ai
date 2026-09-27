@@ -6,6 +6,7 @@ Coordinates the AI request lifecycle.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING
 
 from adapters.observability.logger import get_logger
@@ -22,6 +23,7 @@ from agentic.orchestration.schemas.request import OrchestratorRequest
 from agentic.orchestration.schemas.response import (
     ApprovalResponse,
     OrchestratorResponse,
+    OrchestratorStreamChunk,
     Usage,
 )
 from core.dto.agent import AgentContextDTO, AgentResponseDTO
@@ -143,6 +145,60 @@ class AIOrchestrator:
         self._validator = validator
         self._aggregator = aggregator
         self._authorization = authorization
+
+    async def stream(
+        self,
+        *,
+        request: OrchestratorRequest,
+        action_workflow_service: ActionWorkflowService,
+    ) -> AsyncIterator[OrchestratorStreamChunk]:
+        """
+        Execute orchestration while exposing an SSE-friendly lifecycle.
+
+        The executor does not yet expose model-token callbacks. Emitting
+        fabricated fragments would be misleading, so this stream sends a
+        progress event and then one canonical completion event.
+        """
+
+        yield OrchestratorStreamChunk(
+            metadata={
+                "status": "working",
+                "phase": "answering",
+            },
+        )
+
+        response = await self.handle(
+            request=request,
+            action_workflow_service=action_workflow_service,
+        )
+
+        metadata: dict[str, object] = {
+            "status": "complete",
+            "citations": [
+                citation.model_dump(mode="json")
+                for citation in response.citations
+            ],
+            "sources": [
+                source.model_dump(mode="json")
+                for source in response.sources
+            ],
+            "usage": response.usage.model_dump(mode="json"),
+            "response_metadata": response.metadata.model_dump(
+                mode="json",
+            ),
+        }
+
+        if response.approval is not None:
+            metadata["approval"] = response.approval.model_dump(
+                mode="json",
+            )
+
+        yield OrchestratorStreamChunk(
+            content=response.content,
+            is_final=True,
+            response=response,
+            metadata=metadata,
+        )
 
     async def resume(
         self,
@@ -472,14 +528,44 @@ class AIOrchestrator:
                         },
                     )
 
-                    return OrchestratorResponse(
-                        conversation_id=request.conversation_id,
-                        content=(
+                    failed_errors = [
+                        step.error
+                        for step in execution_result.state.steps.values()
+                        if step.error
+                    ]
+                    joined_errors = " ".join(failed_errors).lower()
+                    search_failed = any(
+                        token in joined_errors
+                        for token in ("searxng", "web search", "web_research")
+                    )
+
+                    if search_failed:
+                        content = (
+                            "I couldn't retrieve live web sources "
+                            "because search is unavailable. Ask again "
+                            "after search is running, or ask me to "
+                            "answer from general legal principles "
+                            "without a live lookup."
+                        )
+                    elif (
+                        execution_result.state.status
+                        is ExecutionStatusEnum.PARTIAL
+                    ):
+                        content = (
+                            "I couldn't finish gathering the sources "
+                            "needed to answer. Please try again."
+                        )
+                    else:
+                        content = (
                             "I wasn't able to complete this request -- "
                             "something went wrong while gathering the "
                             "information needed to answer. Please try "
                             "again."
-                        ),
+                        )
+
+                    return OrchestratorResponse(
+                        conversation_id=request.conversation_id,
+                        content=content,
                         citations=[],
                         sources=[],
                         usage=Usage(),

@@ -26,10 +26,15 @@ Its responsibility is limited to:
 
 from __future__ import annotations
 
+import inspect
 from typing import Any
 
+from adapters.observability.logger import get_logger
 from agentic.registry.tool import ToolRegistry
+from agentic.tools.base import Tool
 from agentic.tools.result import ToolEvidence, ToolResult
+
+log = get_logger(__name__)
 
 
 class ToolExecutionService:
@@ -94,10 +99,17 @@ class ToolExecutionService:
 
         try:
             content = await tool.execute(
-                **parameters,
+                **_bound_execute_kwargs(tool=tool, parameters=parameters),
             )
 
         except Exception as exc:
+            log.exception(
+                "Tool execution failed.",
+                extra={
+                    "tool_name": tool_name,
+                    "error_type": type(exc).__name__,
+                },
+            )
             return ToolResult(
                 tool_name=tool_name,
                 success=False,
@@ -122,3 +134,47 @@ class ToolExecutionService:
             execution_metadata={},
             error=None,
         )
+
+
+def _bound_execute_kwargs(
+    *,
+    tool: Tool,
+    parameters: dict[str, Any],
+) -> dict[str, Any]:
+    """
+    Keep only parameters that ``tool.execute`` actually accepts.
+
+    Agent tool_call.parameters is an open JSON object, so models often
+    invent extra keys. Passing them through raises TypeError and used
+    to fail the whole chat turn.
+    """
+
+    signature = inspect.signature(tool.execute)
+
+    if any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in signature.parameters.values()
+    ):
+        return dict(parameters)
+
+    allowed = {
+        name
+        for name, parameter in signature.parameters.items()
+        if parameter.kind
+        in (
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            inspect.Parameter.KEYWORD_ONLY,
+        )
+    }
+    dropped = [key for key in parameters if key not in allowed]
+
+    if dropped:
+        log.warning(
+            "Dropping unknown tool parameters.",
+            extra={
+                "tool_name": tool.name,
+                "dropped": dropped,
+            },
+        )
+
+    return {key: value for key, value in parameters.items() if key in allowed}

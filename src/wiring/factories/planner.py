@@ -21,7 +21,6 @@ from agentic.planning.planner import ExecutionPlanner
 from agentic.planning.prompts.planning import PlanningPromptBuilder
 from agentic.planning.templates import PlanTemplateRegistry
 from agentic.planning.validator import ExecutionPlanValidator
-from core.enums import LLMProviderEnum
 from wiring.containers import ClientContainer
 
 
@@ -29,7 +28,7 @@ def create_planner(*, clients: ClientContainer) -> ExecutionPlanner:
     return ExecutionPlanner(
         template_registry=PlanTemplateRegistry(),
         llm_planner=LLMPlanGenerator(
-            llm_client=clients.llm_resolver.get(LLMProviderEnum.LOCAL),
+            llm_client=clients.llm_resolver.get(),
             prompt_builder=PlanningPromptBuilder(),
         ),
         validator=ExecutionPlanValidator(),

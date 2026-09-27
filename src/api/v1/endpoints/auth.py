@@ -12,6 +12,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from adapters.persistence.sqlalchemy.models.user import User
 from api.dependencies.auth import get_authentication_service, get_current_user
 from api.schemas.auth import LoginResponse, LogoutResponse, RefreshTokenRequest
+from api.schemas.user import UserResponse
 from api.utilities.api_response import ApiResponse
 from application.services.auth import AuthenticationService
 
@@ -53,6 +54,9 @@ async def login(
         )
 
         access_token, expires_in = service.create_access_token(
+            user=user,
+        )
+        refresh_token, refresh_expires_in = service.create_refresh_token(
             user=user,
         )
 
@@ -102,6 +106,28 @@ async def login(
         access_token=access_token,
         token_type="bearer",
         expires_in=expires_in,
+        refresh_token=refresh_token,
+        refresh_expires_in=refresh_expires_in,
+    )
+
+
+@router.get(
+    "/me",
+    response_model=None,
+    summary="Retrieve the current user",
+)
+async def current_user_profile(
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse[UserResponse]:
+    """
+    Return the authenticated user's profile.
+    """
+
+    return ApiResponse(
+        data=UserResponse.model_validate(
+            current_user,
+            from_attributes=True,
+        ),
     )
 
 

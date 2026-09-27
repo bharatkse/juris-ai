@@ -59,9 +59,19 @@ class WebResearchTool(Tool):
         self,
         *,
         query: str,
-        limit: int = 5,
+        limit: int = 2,
         engines: tuple[str, ...] = DEFAULT_ENGINES,
     ) -> str:
+        try:
+            limit = max(1, int(limit))
+        except (TypeError, ValueError):
+            limit = 5
+
+        if isinstance(engines, str):
+            engines = tuple(
+                part.strip() for part in engines.split(",") if part.strip()
+            ) or DEFAULT_ENGINES
+
         log.debug("WebResearchTool.execute(limit=%d, query_length=%d).", limit, len(query))
 
         try:
@@ -76,7 +86,13 @@ class WebResearchTool(Tool):
 
         except ClientConnectionError:
             log.exception("SearXNG search failed.")
-            return "Web search failed — please try again."
+            return (
+                "Web search is unavailable because SearXNG could not be "
+                "reached. Do not retry web_research or case_law_search. "
+                "Return a FINAL decision using only the conversation; "
+                "say live sources could not be retrieved and do not "
+                "invent citations."
+            )
 
         deduped = normalize_and_dedupe(raw_results, limit=limit)
 

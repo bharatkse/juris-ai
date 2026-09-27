@@ -12,7 +12,7 @@ from fastapi import HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
 
 from api.schemas.auth import RefreshTokenRequest
-from api.v1.endpoints.auth import access_token, login, logout
+from api.v1.endpoints.auth import access_token, current_user_profile, login, logout
 from tests.unit.factories.user import UserFactory
 
 
@@ -51,6 +51,10 @@ async def test_login_returns_authentication_response() -> None:
         "access-token",
         3600,
     )
+    service.create_refresh_token.return_value = (
+        "refresh-token",
+        604800,
+    )
 
     response = await login(
         form_data=build_form_data(),
@@ -60,6 +64,8 @@ async def test_login_returns_authentication_response() -> None:
     assert response.access_token == "access-token"
     assert response.token_type == "bearer"
     assert response.expires_in == 3600
+    assert response.refresh_token == "refresh-token"
+    assert response.refresh_expires_in == 604800
 
     service.authenticate.assert_awaited_once_with(
         email="user@example.com",
@@ -69,6 +75,27 @@ async def test_login_returns_authentication_response() -> None:
     service.create_access_token.assert_called_once_with(
         user=user,
     )
+    service.create_refresh_token.assert_called_once_with(
+        user=user,
+    )
+
+
+@pytest.mark.asyncio
+async def test_current_user_profile_returns_authenticated_user() -> None:
+    """
+    It should return the profile resolved from the access token.
+    """
+
+    user = UserFactory.build()
+
+    response = await current_user_profile(
+        current_user=user,
+    )
+    payload = json.loads(response.body)
+
+    assert payload["success"] is True
+    assert payload["data"]["id"] == user.id
+    assert payload["data"]["email"] == user.email
 
 
 @pytest.mark.asyncio

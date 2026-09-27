@@ -26,7 +26,7 @@ class LegalAgent(BaseAgent):
             "legal_research",
             "legal_qa",
         ),
-        tools=("retriever",),
+        tools=("retriever", "case_law_search", "web_research"),
     )
     inference_task = LLMTask.FACTUAL_ANSWER
 

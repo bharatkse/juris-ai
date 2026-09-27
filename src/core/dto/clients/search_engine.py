@@ -36,6 +36,8 @@ class SearchEngineResultDTO:
 
     snippet: str
 
+    engine: str = "unknown"
+
     metadata: Mapping[str, Any] = field(
         default_factory=dict,
     )

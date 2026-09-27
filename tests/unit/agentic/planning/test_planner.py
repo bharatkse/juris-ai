@@ -18,8 +18,6 @@ from agentic.orchestration.schemas.context import (
 )
 from agentic.planning.planner import ExecutionPlanner
 from agentic.planning.templates import PlanTemplateRegistry
-from core.dto.planning import ExecutionPlanDTO
-from core.enums import AgentTypeEnum, ExecutionModeEnum, IntentEnum
 from core.exceptions.planning import PlanValidationError
 from tests.builders.agentic.orchestrator import build_conversation_message
 from tests.builders.agentic.planning import build_context, build_planning_request
@@ -64,41 +62,24 @@ async def test_create_plan_uses_template_without_llm(
 
 
 @pytest.mark.asyncio
-async def test_create_plan_uses_llm_when_template_does_not_match(
+async def test_create_plan_uses_default_when_template_does_not_match(
     planner: ExecutionPlanner,
     mock_template_registry: Mock,
     mock_llm_planner: Mock,
     mock_plan_validator: Mock,
 ) -> None:
     """
-    Use the LLM planner when no deterministic template matches.
+    Use the default one-step plan instead of a planning LLM call.
     """
 
     mock_template_registry.resolve.return_value = None
 
-    llm_plan = ExecutionPlanDTO(
-        intent=IntentEnum.RISK_ANALYSIS,
-        mode=ExecutionModeEnum.SEQUENTIAL,
-        steps=(
-            # Keep this test focused on planner orchestration.
-            # The LLMPlanGenerator tests already cover step mapping.
-            # A minimal valid domain step is enough here.
-            __import__(
-                "core.dto.planning",
-                fromlist=["ExecutionStepDTO"],
-            ).ExecutionStepDTO(
-                id="identify_risks",
-                agent=AgentTypeEnum.CONTRACT,
-                instruction="Identify contractual risks.",
-            ),
-        ),
-    )
-
-    mock_llm_planner.generate.return_value = llm_plan
-    mock_plan_validator.validate.return_value = llm_plan
+    default_plan = PlanTemplateRegistry().default()
+    mock_template_registry.default.return_value = default_plan
+    mock_plan_validator.validate.return_value = default_plan
 
     context = build_context(
-        message="What contractual risks should I consider?",
+        message="How do I ask for alimony during a divorce?",
     )
 
     result = await planner.create_plan(
@@ -106,12 +87,10 @@ async def test_create_plan_uses_llm_when_template_does_not_match(
     )
 
     mock_template_registry.resolve.assert_called_once()
-
-    mock_llm_planner.generate.assert_awaited_once()
-
-    mock_plan_validator.validate.assert_called_once_with(llm_plan)
-
-    assert result is llm_plan
+    mock_template_registry.default.assert_called_once_with()
+    mock_llm_planner.generate.assert_not_called()
+    mock_plan_validator.validate.assert_called_once_with(default_plan)
+    assert result is default_plan
 
 
 @pytest.mark.asyncio

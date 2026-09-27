@@ -1,0 +1,36 @@
+{
+  "version": "1.0.0",
+  "defaultTransitions": {
+    "drawerOrSheet": { "type": "SMART_ANIMATE", "durationMs": 200, "easing": "EASE_OUT" },
+    "toast": { "type": "DISSOLVE", "durationMs": 120 },
+    "authToApp": { "type": "INSTANT", "durationMs": 0 }
+  },
+  "connections": [
+    { "from": "D01 Landing", "hotspot": "Log in", "to": "D02 Login", "transition": "INSTANT" },
+    { "from": "D01 Landing", "hotspot": "Get started", "to": "D03 Register", "transition": "INSTANT" },
+    { "from": "D02 Login", "hotspot": "Sign in", "to": "D04 App / empty", "transition": "INSTANT" },
+    { "from": "D02 Login", "hotspot": "Create an account", "to": "D03 Register", "transition": "INSTANT" },
+    { "from": "D02 Login", "hotspot": "error", "to": "D02b Login / error", "transition": "INSTANT" },
+    { "from": "D03 Register", "hotspot": "Create account", "to": "D02 Login", "transition": "INSTANT" },
+    { "from": "D04 App / empty", "hotspot": "New chat", "to": "D06 App / thread", "transition": "INSTANT" },
+    { "from": "D04 App / empty", "hotspot": "Review this contract", "to": "D08 App / with files", "transition": "INSTANT" },
+    { "from": "D04 App / empty", "hotspot": "starter card", "to": "D07 App / working", "transition": "INSTANT" },
+    { "from": "D05 App / sidebar populated", "hotspot": "conversation row", "to": "D06 App / thread", "transition": "INSTANT" },
+    { "from": "D05 App / sidebar populated", "hotspot": "archive icon", "to": "D15 Modal / archive", "transition": "DISSOLVE_120" },
+    { "from": "D15 Modal / archive", "hotspot": "Archive", "to": "D05 App / sidebar populated", "transition": "INSTANT" },
+    { "from": "D06 App / thread", "hotspot": "Send", "to": "D07 App / working", "transition": "INSTANT" },
+    { "from": "D07 App / working", "hotspot": "response", "to": "D06 App / thread", "transition": "INSTANT" },
+    { "from": "D06 App / thread", "hotspot": "citation chip", "to": "D09 App / citations open", "transition": "SMART_ANIMATE_200" },
+    { "from": "D09 App / citations open", "hotspot": "close", "to": "D06 App / thread", "transition": "SMART_ANIMATE_200" },
+    { "from": "D08 App / with files", "hotspot": "gated tool", "to": "D10 App / HITL waiting", "transition": "INSTANT" },
+    { "from": "D10 App / HITL waiting", "hotspot": "Approve", "to": "D10b App / HITL approved", "transition": "INSTANT" },
+    { "from": "D10 App / HITL waiting", "hotspot": "Reject", "to": "D10c App / HITL rejected", "transition": "INSTANT" },
+    { "from": "D07 App / working", "hotspot": "429", "to": "D11 App / quota", "transition": "INSTANT" },
+    { "from": "D06 App / thread", "hotspot": "UserMenu Settings", "to": "D14 Settings", "transition": "INSTANT" },
+    { "from": "D14 Settings", "hotspot": "Log out", "to": "D02 Login", "transition": "INSTANT" },
+    { "from": "D02 Login", "hotspot": "401 session", "to": "D02 Login", "transition": "INSTANT" },
+    { "from": "D16 Toast examples", "hotspot": "toast", "to": "D06 App / thread", "transition": "DISSOLVE_120" },
+    { "from": "M06 Thread", "hotspot": "citation chip", "to": "M09 Citations", "transition": "SMART_ANIMATE_200" },
+    { "from": "M09 Citations", "hotspot": "close", "to": "M06 Thread", "transition": "SMART_ANIMATE_200" }
+  ]
+}

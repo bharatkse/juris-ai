@@ -10,8 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from adapters.persistence.sqlalchemy.repositories.conversation import (
     ConversationRepository,
 )
+from adapters.persistence.sqlalchemy.repositories.conversation_event import (
+    ConversationEventRepository,
+)
 from adapters.persistence.sqlalchemy.session import get_db_session
 from application.services.conversation import ConversationService
+from application.services.conversation_event import ConversationEventService
 
 
 def get_conversation_repository(
@@ -43,4 +47,21 @@ def get_conversation_service(
     return ConversationService(
         session=session,
         repository=repository,
+    )
+
+
+def get_conversation_event_service(
+    session: AsyncSession = Depends(
+        get_db_session,
+    ),
+) -> ConversationEventService:
+    """
+    Create a conversation event service for history endpoints.
+    """
+
+    return ConversationEventService(
+        session=session,
+        repository=ConversationEventRepository(
+            session=session,
+        ),
     )

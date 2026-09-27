@@ -185,6 +185,43 @@ class ConversationService(BaseService):
             limit=limit,
         )
 
+    async def update_title(
+        self,
+        *,
+        conversation_id: ConversationId,
+        user_id: UserId,
+        title: str,
+    ) -> Conversation:
+        """
+        Rename an active conversation owned by the user.
+        """
+
+        conversation = await self.get_or_raise(
+            conversation_id=conversation_id,
+            user_id=user_id,
+        )
+        conversation.title = title
+
+        try:
+            conversation = await self._repository.update(
+                conversation,
+            )
+            await self.commit()
+            return conversation
+        except SQLAlchemyError as exc:
+            await self.rollback()
+            logger.exception(
+                "Database error while renaming conversation.",
+                extra={
+                    "operation": "update_conversation_title",
+                    "conversation_id": str(conversation_id),
+                    "user_id": str(user_id),
+                },
+            )
+            raise DatabaseError(
+                "Failed to update conversation.",
+            ) from exc
+
     async def archive(
         self,
         *,

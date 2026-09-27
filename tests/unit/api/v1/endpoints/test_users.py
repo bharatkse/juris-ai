@@ -7,7 +7,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi import status
+from fastapi import HTTPException, status
 
 from api.utilities.api_response import ApiResponse
 from api.v1.endpoints.users import (
@@ -88,6 +88,7 @@ async def test_get_user(
 
     response = await get_user_details(
         user_id=user.id,
+        current_user=user,
         service=service,
     )
 
@@ -133,6 +134,7 @@ async def test_update_user(
     response = await update_user_profile(
         user_id=user.id,
         request=request,
+        current_user=user,
         service=service,
     )
 
@@ -152,3 +154,22 @@ async def test_update_user(
         user,
         from_attributes=True,
     )
+
+
+@pytest.mark.asyncio
+async def test_get_user_rejects_another_users_profile() -> None:
+    """
+    It should reject cross-user profile access.
+    """
+
+    current_user = UserFactory.build()
+    other_user = UserFactory.build()
+
+    with pytest.raises(HTTPException) as exc_info:
+        await get_user_details(
+            user_id=other_user.id,
+            current_user=current_user,
+            service=MagicMock(),
+        )
+
+    assert exc_info.value.status_code == status.HTTP_403_FORBIDDEN

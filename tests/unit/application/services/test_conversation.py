@@ -240,6 +240,35 @@ async def test_get_returns_conversation(
 
 
 @pytest.mark.asyncio
+async def test_update_title_persists_owned_conversation(
+    conversation_service: ConversationService,
+    mock_conversation_repository: MagicMock,
+) -> None:
+    """
+    It should update and commit a conversation title.
+    """
+
+    conversation = ConversationFactory.build(
+        title="Old title",
+    )
+    mock_conversation_repository.get.return_value = conversation
+    mock_conversation_repository.update.return_value = conversation
+    conversation_service.commit = AsyncMock()
+    conversation_service.rollback = AsyncMock()
+
+    result = await conversation_service.update_title(
+        conversation_id=conversation.id,
+        user_id=conversation.user_id,
+        title="New title",
+    )
+
+    assert result.title == "New title"
+    mock_conversation_repository.update.assert_awaited_once_with(conversation)
+    conversation_service.commit.assert_awaited_once_with()
+    conversation_service.rollback.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_archive_archives_conversation(
     conversation_service: ConversationService,
     mock_conversation_repository: MagicMock,

@@ -179,6 +179,21 @@ class SentenceTransformerEmbeddingProvider(EmbeddingProviderProtocol):
                 )
                 raise
 
+            except ModuleNotFoundError as exc:
+                logger.exception(
+                    "Failed to load embedding model.",
+                    extra={
+                        "model": self.metadata.model_name,
+                    },
+                )
+
+                raise EmbeddingError(
+                    message=(
+                        "The sentence-transformers package is not installed, "
+                        f"so '{self.metadata.model_name}' cannot be loaded."
+                    ),
+                ) from exc
+
             except Exception as exc:
                 logger.exception(
                     "Failed to load embedding model.",

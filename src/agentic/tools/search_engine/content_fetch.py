@@ -32,9 +32,9 @@ ever drops below 3.10.
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 
 import httpx
-import trafilatura
 
 from adapters.observability.logger import get_logger
 from core.dto.clients.search_engine import SearchEngineResultDTO, WebPageContent
@@ -47,6 +47,12 @@ DEFAULT_TIMEOUT_SECONDS = 8.0
 DEFAULT_MAX_CHARS = 4000  # per-page cap fed to the LLM
 
 WITHHELD_CONTENT_MESSAGE = "[content withheld: prompt-injection pattern detected in fetched page]"
+
+
+def _extract_html(html: str, **kwargs: Any) -> str | None:
+    import trafilatura
+
+    return trafilatura.extract(html, **kwargs)
 
 
 class ContentFetcher:
@@ -94,7 +100,7 @@ class ContentFetcher:
 
             try:
                 extracted = await asyncio.to_thread(
-                    trafilatura.extract,
+                    _extract_html,
                     response.text,
                     include_comments=False,
                     include_tables=False,

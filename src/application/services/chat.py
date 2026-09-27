@@ -19,7 +19,6 @@ from application.services.conversation_summarization import (
 )
 from application.services.internal_dto.chat import ChatResultDTO
 from application.services.internal_dto.stream import ChatStreamChunkDTO
-from core.dto.agent import AgentResponseDTO
 from core.enums import MessageRoleEnum
 from core.models.conversation import ConversationMessageSchema
 from core.types import ConversationEventId, ConversationId, UserId
@@ -171,6 +170,17 @@ class ChatService(BaseService):
             metadata = result.metadata.model_dump(
                 mode="json",
             )
+            metadata["citations"] = [
+                citation.model_dump(mode="json")
+                for citation in result.citations
+            ]
+            metadata["sources"] = [
+                source.model_dump(mode="json")
+                for source in result.sources
+            ]
+            metadata["usage"] = result.usage.model_dump(
+                mode="json",
+            )
 
             if result.approval is not None:
                 metadata["approval"] = result.approval.model_dump(
@@ -277,18 +287,31 @@ class ChatService(BaseService):
                 action_workflow_service=self._action_workflow_service,
             )
 
-            final_response: AgentResponseDTO | None = None
+            final_chunk = None
+            final_response = None
 
             async for chunk in stream:
-                if chunk.is_complete:
+                if chunk.is_final:
+                    final_chunk = chunk
                     final_response = chunk.response
+                    continue
 
-                yield chunk
+                yield ChatStreamChunkDTO(
+                    content=chunk.content,
+                    is_final=False,
+                    metadata=chunk.metadata,
+                )
 
-            if final_response is None:
+            if final_chunk is None or final_response is None:
                 raise RuntimeError(
                     "Streaming completed without a final response.",
                 )
+
+            await self._usage_service.record(
+                user_id=user_id,
+                input_tokens=final_response.usage.prompt_tokens,
+                output_tokens=final_response.usage.completion_tokens,
+            )
 
             # ---------------------------------------------------------
             # Persist assistant response
@@ -298,6 +321,17 @@ class ChatService(BaseService):
             # ---------------------------------------------------------
 
             metadata = final_response.metadata.model_dump(
+                mode="json",
+            )
+            metadata["citations"] = [
+                citation.model_dump(mode="json")
+                for citation in final_response.citations
+            ]
+            metadata["sources"] = [
+                source.model_dump(mode="json")
+                for source in final_response.sources
+            ]
+            metadata["usage"] = final_response.usage.model_dump(
                 mode="json",
             )
 
@@ -327,6 +361,18 @@ class ChatService(BaseService):
                     "user_event_id": str(user_event.id),
                     "assistant_event_id": str(assistant_event.id),
                     "approval_required": final_response.approval is not None,
+                },
+            )
+
+            yield ChatStreamChunkDTO(
+                content=final_chunk.content,
+                is_final=True,
+                response=final_response,
+                metadata={
+                    **final_chunk.metadata,
+                    "conversation_id": str(conversation.id),
+                    "user_event_id": str(user_event.id),
+                    "assistant_event_id": str(assistant_event.id),
                 },
             )
 

@@ -18,4 +18,4 @@ class AgentPolicySettings(BaseAppSettings):
     # Default OFF for the legal agent until it's been observed under
     # real traffic; flip to True (or grant per-agent directly in
     # DEFAULT_AGENT_POLICIES) once it has.
-    ENABLE_WEB_RESEARCH_FOR_LEGAL: bool = False
+    ENABLE_WEB_RESEARCH_FOR_LEGAL: bool = True

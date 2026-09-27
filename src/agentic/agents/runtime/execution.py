@@ -57,6 +57,7 @@ from agentic.execution.config import ExecutionRetryPolicy
 from agentic.policy.agent_policy import AgentPolicyProvider
 from agentic.policy.guard import AgentPolicyGuard
 from agentic.policy.schemas import AgentPolicy
+from agentic.policy.tool_permission import canonicalize_tool_name
 from agentic.registry.agent import AgentRegistry
 from agentic.tools.constants import GATED_TOOLS
 from core.dto.agent import AgentRequestDTO
@@ -622,6 +623,23 @@ class AgentExecutionHandle:
                     retry_count=retry_count,
                     started_at=self._started_at,
                     completed_at=completed_at,
+                )
+
+            canonical_tool_name = canonicalize_tool_name(
+                tool_name=tool_call.tool_name,
+                allowed_tools=self._policy.allowed_tools,
+            )
+            if canonical_tool_name != tool_call.tool_name:
+                logger.info(
+                    "Mapped invented tool name to a permitted tool.",
+                    extra={
+                        "requested_tool": tool_call.tool_name,
+                        "canonical_tool": canonical_tool_name,
+                        "agent_id": self._agent_id,
+                    },
+                )
+                tool_call = tool_call.model_copy(
+                    update={"tool_name": canonical_tool_name},
                 )
 
             permission = self._agent_policy_guard.check_tool(

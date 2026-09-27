@@ -9,6 +9,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from api.schemas.chat import ConversationEventResponse
 from core.enums import ApprovalDecisionEnum, ApprovalStatusEnum
 
 
@@ -63,3 +64,16 @@ class ApprovalResponse(BaseModel):
     created_at: datetime
 
     expires_at: datetime
+
+
+class ApprovalDecisionResponse(BaseModel):
+    """
+    Approval state plus the assistant event produced by a resume.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
+    approval: ApprovalResponse
+    resumed_event: ConversationEventResponse | None = None

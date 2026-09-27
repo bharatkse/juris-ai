@@ -4,9 +4,10 @@ User API routes.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from adapters.observability.logger import get_logger
+from api.dependencies.auth import get_current_user
 from api.dependencies.user import get_user_service
 from api.schemas.user import (
     RegisterNewUserRequest,
@@ -23,6 +24,22 @@ router = APIRouter(
     prefix="/users",
     tags=["Users"],
 )
+
+
+def ensure_profile_owner(
+    *,
+    user_id: UserId,
+    current_user_id: UserId,
+) -> None:
+    """
+    Restrict profile reads and updates to the authenticated user.
+    """
+
+    if str(user_id) != str(current_user_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You may only access your own profile",
+        )
 
 
 @router.post(
@@ -70,6 +87,7 @@ async def user_registration(
 )
 async def get_user_details(
     user_id: UserId,
+    current_user=Depends(get_current_user),
     service: UserService = Depends(
         get_user_service,
     ),
@@ -77,6 +95,11 @@ async def get_user_details(
     """
     Retrieve a user details.
     """
+
+    ensure_profile_owner(
+        user_id=user_id,
+        current_user_id=current_user.id,
+    )
 
     logger.info(
         "Retrieving user details.",
@@ -107,6 +130,7 @@ async def get_user_details(
 async def update_user_profile(
     user_id: UserId,
     request: UpdateUserProfileRequest,
+    current_user=Depends(get_current_user),
     service: UserService = Depends(
         get_user_service,
     ),
@@ -114,6 +138,11 @@ async def update_user_profile(
     """
     Update a user profile.
     """
+
+    ensure_profile_owner(
+        user_id=user_id,
+        current_user_id=current_user.id,
+    )
 
     logger.info(
         "Updating user profile.",

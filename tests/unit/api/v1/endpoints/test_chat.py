@@ -17,6 +17,7 @@ from api.utilities.api_response import ApiResponse
 from api.v1.endpoints.chat import chat, stream_chat
 from application.authorization.service import AuthorizationService
 from application.context.request import bind_request_context
+from core.exceptions.client import ClientConnectionError
 from tests.builders.api.schemas import build_chat_request
 from tests.builders.application.chat import (
     build_chat_result,
@@ -355,3 +356,124 @@ async def test_stream_chat_propagates_cancelled_error(
             "user_id": str(current_user.id),
         },
     )
+
+
+@pytest.mark.asyncio
+@patch("api.v1.endpoints.chat.encode_sse_event")
+async def test_stream_chat_yields_error_event_for_app_error(
+    mock_encode_sse_event: MagicMock,
+) -> None:
+    """
+    It should yield an SSE error event when the chat service fails.
+    """
+
+    request = build_chat_request()
+
+    current_user = MagicMock()
+    current_user.id = unknown_user_id()
+
+    async def stream():
+        raise ClientConnectionError(
+            message="Cannot reach Ollama at http://ollama:11434.",
+        )
+        yield
+
+    service = MagicMock()
+    service.stream_chat.return_value = stream()
+
+    http_request = build_http_request()
+    mock_encode_sse_event.return_value = "event: error\ndata: {}\n\n"
+
+    authorization_service = _build_authorization_service()
+
+    with bind_request_context(
+        request_id=http_request.state.context.request_id,
+        conversation_id=str(request.conversation_id),
+    ):
+        await bind_document_acl(
+            current_user=current_user,
+            authorization_service=authorization_service,
+        )
+
+        response = await stream_chat(
+            http_request=http_request,
+            chat_request=request,
+            current_user=current_user,
+            service=service,
+        )
+
+        body = []
+
+        async for item in response.body_iterator:
+            body.append(item)
+
+    assert body == ["event: error\ndata: {}\n\n"]
+
+    mock_encode_sse_event.assert_called_once()
+
+    event = mock_encode_sse_event.call_args.args[0]
+    event_name = mock_encode_sse_event.call_args.kwargs["event_name"]
+
+    assert event_name == "error"
+    assert event.success is False
+    assert event.error is not None
+    assert event.error.code == "CLIENT_CONNECTION_ERROR"
+    assert event.error.message == "Cannot reach Ollama at http://ollama:11434."
+
+
+@pytest.mark.asyncio
+@patch("api.v1.endpoints.chat.encode_sse_event")
+async def test_stream_chat_yields_error_event_for_unexpected_failure(
+    mock_encode_sse_event: MagicMock,
+) -> None:
+    """
+    It should yield a generic SSE error event for unexpected failures.
+    """
+
+    request = build_chat_request()
+
+    current_user = MagicMock()
+    current_user.id = unknown_user_id()
+
+    async def stream():
+        raise RuntimeError("planner exploded")
+        yield
+
+    service = MagicMock()
+    service.stream_chat.return_value = stream()
+
+    http_request = build_http_request()
+    mock_encode_sse_event.return_value = "event: error\ndata: {}\n\n"
+
+    authorization_service = _build_authorization_service()
+
+    with bind_request_context(
+        request_id=http_request.state.context.request_id,
+        conversation_id=str(request.conversation_id),
+    ):
+        await bind_document_acl(
+            current_user=current_user,
+            authorization_service=authorization_service,
+        )
+
+        response = await stream_chat(
+            http_request=http_request,
+            chat_request=request,
+            current_user=current_user,
+            service=service,
+        )
+
+        body = []
+
+        async for item in response.body_iterator:
+            body.append(item)
+
+    assert body == ["event: error\ndata: {}\n\n"]
+
+    event = mock_encode_sse_event.call_args.args[0]
+    event_name = mock_encode_sse_event.call_args.kwargs["event_name"]
+
+    assert event_name == "error"
+    assert event.success is False
+    assert event.error is not None
+    assert event.error.code == "INTERNAL_SERVER_ERROR"

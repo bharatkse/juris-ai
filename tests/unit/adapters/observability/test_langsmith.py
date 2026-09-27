@@ -66,6 +66,24 @@ def test_configure_langsmith_disabled() -> None:
     assert os.getenv("LANGSMITH_API_KEY") is None
 
 
+def test_configure_langsmith_disabled_clears_inherited_tracing_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Tracing-off must unset inherited LANGSMITH_TRACING_V2 so the SDK
+    does not keep posting unauthorized traces.
+    """
+    monkeypatch.setenv("LANGSMITH_TRACING", "false")
+    monkeypatch.setenv("LANGSMITH_TRACING_V2", "true")
+    monkeypatch.setenv("LANGCHAIN_TRACING_V2", "true")
+
+    configure_langsmith(settings=_build_test_settings(tracing=False))
+
+    assert os.getenv("LANGSMITH_TRACING") is None
+    assert os.getenv("LANGSMITH_TRACING_V2") is None
+    assert os.getenv("LANGCHAIN_TRACING_V2") is None
+
+
 def test_configure_langsmith_enabled() -> None:
     """
     LangSmith environment variables are configured

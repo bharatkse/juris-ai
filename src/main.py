@@ -9,7 +9,6 @@ from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
 from adapters.observability.logger import get_logger, setup_logging
@@ -21,7 +20,6 @@ from api.v1.routers import api_router
 from config.settings import get_settings
 from core.constants import API_DESCRIPTION, API_TITLE
 from core.utils.file_system import ensure_dir
-from wiring.composition import create_ai_orchestrator
 from wiring.factories.agent_policies import seed_default_agent_policies
 
 logger = get_logger(__name__)
@@ -106,26 +104,54 @@ async def lifespan(
     """
 
     await startup()
+    checkpointer_cm = None
 
     try:
-        await seed_default_agent_policies()
-
-        async with AsyncPostgresSaver.from_conn_string(
-            settings.langgraph_database_url,
-        ) as checkpointer:
-            await checkpointer.setup()
-
-            app.state.ai_orchestrator = create_ai_orchestrator(
-                checkpointer=checkpointer,
+        try:
+            await seed_default_agent_policies()
+        except Exception:
+            logger.exception(
+                "Default agent policies could not be seeded.",
             )
 
-            logger.info(
-                "AI orchestrator initialized.",
+        try:
+            from wiring.composition import create_ai_orchestrator
+
+            try:
+                from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+            except ImportError:
+                from langgraph.checkpoint.memory import InMemorySaver
+
+                logger.warning(
+                    "langgraph-checkpoint-postgres is not installed; using an in-memory checkpointer.",
+                )
+                app.state.ai_orchestrator = create_ai_orchestrator(
+                    checkpointer=InMemorySaver(),
+                )
+            else:
+                checkpointer_cm = AsyncPostgresSaver.from_conn_string(
+                    settings.langgraph_database_url,
+                )
+                checkpointer = await checkpointer_cm.__aenter__()
+                await checkpointer.setup()
+                app.state.ai_orchestrator = create_ai_orchestrator(
+                    checkpointer=checkpointer,
+                )
+
+            logger.info("AI orchestrator initialized.")
+        except Exception:
+            logger.exception(
+                "AI orchestrator failed to start; chat will be unavailable.",
             )
+            app.state.ai_orchestrator = None
+            if checkpointer_cm is not None:
+                await checkpointer_cm.__aexit__(None, None, None)
+                checkpointer_cm = None
 
-            yield
-
+        yield
     finally:
+        if checkpointer_cm is not None:
+            await checkpointer_cm.__aexit__(None, None, None)
         await shutdown()
         shutdown_telemetry()
 

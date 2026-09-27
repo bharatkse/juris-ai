@@ -35,8 +35,7 @@ import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import lru_cache
-
-import tiktoken
+from typing import Any
 
 from adapters.clients.llm.local import QWEN3_NUM_CTX
 from adapters.observability.logger import get_logger
@@ -57,12 +56,10 @@ SAFETY_MARGIN_RATIO = 0.20
 # actual traffic.
 #
 # The Qwen3 (local/Ollama) entries use QWEN3_NUM_CTX -- the same
-# constant adapters/clients/llm/local.py now explicitly passes as
-# Ollama's num_ctx request option, so this registry can never silently
-# drift from what's actually requested. Previously this used Ollama's
-# own bare default (2048) because local.py never set num_ctx at all;
-# now that it does (Qwen3's real native window), the budget matches
-# what's actually served.
+# default adapters/clients/llm/local.py passes as Ollama's num_ctx
+# option -- so this registry cannot silently drift from what is
+# requested. That value is the Docker-safe allocation (4096), not
+# Qwen3's native 32k window.
 MODEL_CONTEXT_WINDOWS: dict[str, int] = {
     GroqModelEnum.LLAMA_3_1_8B: 131_072,
     GroqModelEnum.LLAMA_3_3_70B: 131_072,
@@ -89,7 +86,9 @@ FIXED_SAFETY_MARGIN_TOKENS = 256
 
 
 @lru_cache(maxsize=1)
-def _encoding() -> tiktoken.Encoding:
+def _encoding() -> Any:
+    import tiktoken
+
     return tiktoken.get_encoding(_ENCODING_NAME)
 
 
@@ -99,7 +98,10 @@ def count_tokens(text: str) -> int:
     if not text:
         return 0
 
-    return len(_encoding().encode(text))
+    try:
+        return len(_encoding().encode(text))
+    except ImportError:
+        return max(1, len(text) // 4)
 
 
 def estimate_tokens(text: str) -> int:
@@ -165,30 +167,47 @@ def fit_to_budget(
 
     window = context_window_for(model)
     system_tokens = estimate_tokens(system_prompt)
-    available = window - reserved_output_tokens - system_tokens - FIXED_SAFETY_MARGIN_TOKENS
+    overhead = system_tokens + FIXED_SAFETY_MARGIN_TOKENS
+    min_input_tokens = 256
+    max_reserved = window - overhead - min_input_tokens
 
-    if available <= 0:
-        logger.critical(
-            "System prompt (+reserved output) alone exceeds the model "
-            "context window: model=%s window=%d system_tokens=%d "
-            "reserved_output_tokens=%d. Dropping all history/context "
-            "for this request rather than truncating system "
-            "instructions.",
+    if reserved_output_tokens > max_reserved:
+        if max_reserved < 256:
+            logger.critical(
+                "System prompt (+reserved output) alone exceeds the model "
+                "context window: model=%s window=%d system_tokens=%d "
+                "reserved_output_tokens=%d. Dropping all history/context "
+                "for this request rather than truncating system "
+                "instructions.",
+                model,
+                window,
+                system_tokens,
+                reserved_output_tokens,
+            )
+            return (
+                [],
+                [],
+                TruncationReport(
+                    history_messages_dropped=len(history),
+                    context_items_dropped=len(context),
+                    available_tokens=0,
+                    used_tokens=0,
+                ),
+            )
+
+        logger.warning(
+            "Capping reserved output tokens to fit the local context "
+            "window: model=%s window=%d system_tokens=%d "
+            "reserved_output_tokens=%d capped_to=%d.",
             model,
             window,
             system_tokens,
             reserved_output_tokens,
+            max_reserved,
         )
-        return (
-            [],
-            [],
-            TruncationReport(
-                history_messages_dropped=len(history),
-                context_items_dropped=len(context),
-                available_tokens=max(available, 0),
-                used_tokens=0,
-            ),
-        )
+        reserved_output_tokens = max_reserved
+
+    available = window - reserved_output_tokens - overhead
 
     kept_history = list(history)
     # Drop lowest-scored context first: sort ascending by score (None

@@ -232,3 +232,17 @@ claude.md
 .claude/
 
 .logs/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo
+.env*.local
+
+# Keep the frontend's source library (the Python template ignores lib/).
+!apps/web/src/lib/
+!apps/web/src/lib/**

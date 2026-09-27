@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from langgraph.config import var_child_runnable_config
 from langgraph.func import task as langgraph_task
 
+from adapters.observability.logger import get_logger
 from agentic.agents.runtime.execution import (
     AgentExecutionHandle,
     AgentExecutionResult,
@@ -41,6 +42,31 @@ from core.dto.tool import RetrievedContentDTO
 from core.enums import ActionTypeEnum, MessageRoleEnum, RetrievalSourceEnum
 from core.exceptions.registry import ToolNotFoundError
 from core.models.message import AgentMessageSchema
+
+log = get_logger(__name__)
+
+
+def _tool_result_for_reasoning(result: ToolResult) -> ToolResult:
+    """
+    Ensure a failed ToolResult still has content the agent can read.
+
+    ToolResultConverter drops empty content, so a TypeError with
+    content="" would otherwise continue the turn with no explanation.
+    """
+
+    if result.content or result.evidence:
+        return result
+
+    error_text = result.error or "Tool execution failed."
+
+    return ToolResult(
+        tool_name=result.tool_name,
+        success=False,
+        content=error_text,
+        evidence=(),
+        execution_metadata=result.execution_metadata,
+        error=result.error,
+    )
 
 
 async def _call_replay_safe(task_fn, /, **kwargs):
@@ -199,14 +225,23 @@ class AgentContinuationService:
                             tool_results=tuple(tool_results),
                         )
 
-                    handle.lifecycle.fail(
-                        TerminationReason.FAILED_TOOL,
+                    # A failed tool used to terminate the turn immediately
+                    # (FAILED_TOOL) with no FINAL, which the orchestrator
+                    # surfaces as a generic "couldn't gather information"
+                    # bubble. Feed the error back so the agent can answer
+                    # from what it has instead of going silent.
+                    log.warning(
+                        "Tool call failed; continuing with the error as "
+                        "reasoning context.",
+                        extra={
+                            "tool_name": tool_result.tool_name,
+                            "error": tool_result.error,
+                            "error_type": tool_result.execution_metadata.get(
+                                "error_type",
+                            ),
+                        },
                     )
-
-                    return AgentContinuationResult(
-                        result=handle.terminal_result(),
-                        tool_results=tuple(tool_results),
-                    )
+                    tool_result = _tool_result_for_reasoning(tool_result)
 
                 context = ToolResultConverter.to_reasoning_context(
                     result=tool_result,

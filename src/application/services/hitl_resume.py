@@ -32,6 +32,7 @@ from core.exceptions.agent_action import AgentActionError
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
+    from adapters.persistence.sqlalchemy.models.conversation_event import ConversationEvent
     from agentic.orchestration.orchestrator import AIOrchestrator
     from application.services.action_workflow import ActionWorkflowService
     from application.services.conversation_event import ConversationEventService
@@ -79,7 +80,7 @@ class HitlResumeService(BaseService):
         approval_id: str,
         agent_action_id: str,
         decision_type: ApprovalDecisionEnum | None,
-    ) -> None:
+    ) -> ConversationEvent | None:
         """
         Resume the execution paused by agent_action_id's gated tool
         call, using the decision already recorded by
@@ -164,7 +165,7 @@ class HitlResumeService(BaseService):
                 action_workflow_service=self._action_workflow_service,
             )
 
-            await self._conversation_event_service.create(
+            resumed_event = await self._conversation_event_service.create(
                 conversation_id=conversation_event.conversation_id,
                 # A fresh UUID, NOT the original request's -- the
                 # original request_id already produced an ASSISTANT
@@ -208,6 +209,8 @@ class HitlResumeService(BaseService):
                 },
             )
 
+            return resumed_event
+
         except Exception:
             await self.rollback()
 
@@ -221,3 +224,4 @@ class HitlResumeService(BaseService):
                     "agent_action_id": agent_action.id,
                 },
             )
+            return None

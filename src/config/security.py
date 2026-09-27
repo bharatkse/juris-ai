@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 
 from config.base import BaseAppSettings
-from core.constants import DEFAULT_JWT_ACCESS_TOKEN_EXPIRE_MINUTES
+from core.constants import (
+    DEFAULT_JWT_ACCESS_TOKEN_EXPIRE_MINUTES,
+    DEFAULT_JWT_REFRESH_TOKEN_EXPIRE_DAYS,
+)
 from core.enums import CacheBackendEnum, JWTAlgorithmEnum
 
 
@@ -17,7 +20,8 @@ class SecuritySettings(BaseAppSettings):
 
     JWT_ALGORITHM: str = JWTAlgorithmEnum.HS256
     access_token_expire_minutes: int = DEFAULT_JWT_ACCESS_TOKEN_EXPIRE_MINUTES
-    JWT_SECRET_KEY: SecretStr
+    refresh_token_expire_days: int = DEFAULT_JWT_REFRESH_TOKEN_EXPIRE_DAYS
+    JWT_SECRET_KEY: SecretStr | None = None
 
     # Cache
     CACHE_BACKEND: CacheBackendEnum = CacheBackendEnum.REDIS
@@ -35,6 +39,14 @@ class SecuritySettings(BaseAppSettings):
     # (deploy/docker/docker-compose.yml) does the actual bounding.
     CACHE_TTL_SECONDS: int = 604_800
 
+    @model_validator(mode="after")
+    def default_jwt_secret_key(self) -> SecuritySettings:
+        if self.JWT_SECRET_KEY is None:
+            if not self.SECRET_KEY:
+                raise ValueError("JWT_SECRET_KEY or SECRET_KEY is required.")
+            self.JWT_SECRET_KEY = SecretStr(self.SECRET_KEY)
+        return self
+
     @field_validator("CACHE_TTL", "CACHE_TTL_SECONDS")
     @classmethod
     def validate_cache_ttl(cls, value: int) -> int:
@@ -48,4 +60,6 @@ class SecuritySettings(BaseAppSettings):
 
     @property
     def jwt_secret_key(self) -> str:
+        if self.JWT_SECRET_KEY is None:
+            raise ValueError("JWT secret is not configured.")
         return self.JWT_SECRET_KEY.get_secret_value()

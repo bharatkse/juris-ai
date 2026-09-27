@@ -7,7 +7,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from agentic.orchestration.schemas.response import AgentResponse
+from agentic.orchestration.schemas.response import OrchestratorResponse
 
 
 @dataclass(
@@ -25,7 +25,7 @@ class ChatStreamChunkDTO:
 
     is_final: bool = False
 
-    response: AgentResponse | None = None
+    response: OrchestratorResponse | None = None
 
     metadata: dict[str, Any] = field(
         default_factory=dict,

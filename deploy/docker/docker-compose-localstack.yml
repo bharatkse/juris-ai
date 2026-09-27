@@ -14,22 +14,22 @@ services:
       - ../../.env
 
     environment:
-      POSTGRES_USER: ${DB_USER:-juris}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-jurispassword}
-      POSTGRES_DB: ${DB_NAME:-jurisai}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME:-juris_ai}
 
     ports:
       - "5432:5432"
 
     volumes:
-      - ./.volumes/postgres:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
       - ./.init/postgres:/docker-entrypoint-initdb.d:ro
 
     healthcheck:
       test:
         [
           "CMD-SHELL",
-          "pg_isready -U ${DB_USER:-juris} -d ${DB_NAME:-jurisai}"
+          "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-juris_ai}"
         ]
       interval: 10s
       timeout: 5s
@@ -154,4 +154,9 @@ services:
 # ============================================================================
 networks:
   juris_ai_network:
+    external: true
+
+volumes:
+  postgres_data:
+    name: juris-ai_postgres_data
     external: true

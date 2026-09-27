@@ -10,7 +10,12 @@ from adapters.observability.logger import get_logger
 from api.dependencies.approval import get_approval_lifecycle_service
 from api.dependencies.auth import get_current_user
 from api.dependencies.hitl_resume import get_hitl_resume_service
-from api.schemas.approval import ApprovalDecisionRequest, ApprovalResponse
+from api.schemas.approval import (
+    ApprovalDecisionRequest,
+    ApprovalDecisionResponse,
+    ApprovalResponse,
+)
+from api.schemas.chat import ConversationEventResponse
 from api.utilities.api_response import ApiResponse
 from application.services.approval_lifecycle import ApprovalLifecycleService
 from application.services.hitl_resume import HitlResumeService
@@ -73,7 +78,7 @@ async def process_approval(
             user_id=current_user.id,
         )
 
-        await hitl_resume_service.resume_after_decision(
+        resumed_event = await hitl_resume_service.resume_after_decision(
             approval_id=result.approval_id,
             agent_action_id=result.agent_action_id,
             decision_type=result.decision_type,
@@ -82,9 +87,19 @@ async def process_approval(
         return ApiResponse(
             success=True,
             status_code=status.HTTP_200_OK,
-            data=ApprovalResponse.model_validate(
-                result,
-                from_attributes=True,
+            data=ApprovalDecisionResponse(
+                approval=ApprovalResponse.model_validate(
+                    result,
+                    from_attributes=True,
+                ),
+                resumed_event=(
+                    ConversationEventResponse.model_validate(
+                        resumed_event,
+                        from_attributes=True,
+                    )
+                    if resumed_event is not None
+                    else None
+                ),
             ),
         )
 

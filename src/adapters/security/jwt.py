@@ -62,6 +62,55 @@ def create_access_token(
     return token, expires_in
 
 
+def create_refresh_token(
+    user: User,
+) -> tuple[str, int]:
+    """
+    Create a refresh token for a user.
+
+    Refresh tokens are intentionally longer lived than access tokens
+    and are accepted only by the token-exchange endpoint.
+    """
+
+    settings = get_settings()
+
+    expires_in = settings.security.refresh_token_expire_days * 24 * 60 * 60
+
+    now = datetime.now(UTC)
+    expires_at = now + timedelta(
+        seconds=expires_in,
+    )
+
+    payload = {
+        "sub": str(user.id),
+        "email": user.email,
+        "type": "refresh",
+        "iat": now,
+        "exp": expires_at,
+    }
+
+    try:
+        token = jwt.encode(
+            payload,
+            settings.security.jwt_secret_key,
+            algorithm=settings.security.JWT_ALGORITHM,
+        )
+    except Exception:
+        logger.exception(
+            "Failed to create refresh token user_id=%s",
+            user.id,
+        )
+        raise
+
+    logger.debug(
+        "Refresh token created user_id=%s expires_in=%s",
+        user.id,
+        expires_in,
+    )
+
+    return token, expires_in
+
+
 def decode_token(
     token: str,
 ) -> dict[str, Any]:

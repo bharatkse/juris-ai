@@ -114,6 +114,23 @@ class ConversationEventService(BaseService):
             limit=limit,
         )
 
+    async def list_page(
+        self,
+        *,
+        conversation_id: ConversationId,
+        offset: int = 0,
+        limit: int = 50,
+    ) -> tuple[list[ConversationEvent], int]:
+        """
+        Retrieve a chronological page of conversation history.
+        """
+
+        return await self._repository.list_page(
+            conversation_id=conversation_id,
+            offset=offset,
+            limit=limit,
+        )
+
     async def get_by_id(
         self,
         *,

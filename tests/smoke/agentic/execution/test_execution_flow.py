@@ -8,7 +8,7 @@ current execution runtime:
 - bounded AgentLifecycle
 - TOOL_CALL continuation
 - DELEGATE continuation through CollaborationBus
-- tool failure / budget termination
+- tool failure continues with error context / budget termination
 - graph dependency eligibility
 - AgentExecutionNode -> continuation integration
 - ExecutionStateAssembler terminal-state propagation
@@ -519,7 +519,7 @@ async def test_smoke_tool_call_executes_and_continues_reasoning() -> None:
 
 
 @pytest.mark.asyncio
-async def test_smoke_tool_failure_is_failed_tool() -> None:
+async def test_smoke_tool_failure_continues_with_error_context() -> None:
     tool = SmokeTool(
         error=RuntimeError("tool failed"),
     )
@@ -561,9 +561,11 @@ async def test_smoke_tool_failure_is_failed_tool() -> None:
         ),
     )
 
-    assert result.result.status is ExecutionStatusEnum.FAILED
-    assert result.result.termination_reason == TerminationReason.FAILED_TOOL.value
+    assert result.result.status is ExecutionStatusEnum.COMPLETED
+    assert result.result.decision is not None
+    assert result.result.decision.decision_type is AgentDecisionType.FINAL
     assert result.tool_results[0].success is False
+    assert handle._reason_calls == 1
 
 
 @pytest.mark.asyncio

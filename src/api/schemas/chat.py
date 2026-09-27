@@ -17,6 +17,7 @@ from agentic.orchestration.schemas.response import (
     Usage,
 )
 from core.enums import MessageRoleEnum
+from core.models.response import Page
 from core.types import ConversationEventId, ConversationId
 
 
@@ -82,6 +83,16 @@ class ConversationEventResponse(BaseModel):
     )
 
     created_at: datetime
+
+
+class ConversationEventListResponse(
+    Page[ConversationEventResponse],
+):
+    """
+    Paginated conversation event response.
+    """
+
+    pass
 
 
 class AIResponse(BaseModel):

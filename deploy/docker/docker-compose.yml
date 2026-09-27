@@ -50,6 +50,10 @@ services:
 
     environment:
       DB_HOST: postgres
+      PYTHONPATH: /juris_ai/src
+      LLM_LOCAL_BASE_URL: http://ollama:11434
+      LLM_LOCAL_NUM_CTX: "4096"
+      REDIS_URL: redis://legal_ai_redis:6379/0
 
     env_file:
       - ../../.env
@@ -64,7 +68,7 @@ services:
         condition: service_healthy
 
     command: >
-      poetry run uvicorn
+      uvicorn
       main:app
       --host 0.0.0.0
       --port 8000

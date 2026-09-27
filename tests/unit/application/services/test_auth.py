@@ -221,6 +221,30 @@ def test_create_access_token_propagates_token_creation_error(
             )
 
 
+def test_create_refresh_token_returns_token_and_expiry(
+    authentication_service: AuthenticationService,
+) -> None:
+    """
+    It should create and return a refresh token.
+    """
+
+    user = UserFactory.build(
+        is_active=True,
+    )
+
+    with patch(
+        "application.services.auth.create_refresh_token",
+        return_value=("refresh-token", 604800),
+    ) as create_token:
+        token, expires_in = authentication_service.create_refresh_token(
+            user=user,
+        )
+
+    assert token == "refresh-token"
+    assert expires_in == 604800
+    create_token.assert_called_once_with(user)
+
+
 @pytest.mark.asyncio
 async def test_refresh_access_token_returns_new_access_token(
     authentication_service: AuthenticationService,

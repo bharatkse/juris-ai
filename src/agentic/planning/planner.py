@@ -20,11 +20,7 @@ Found?
 Yes    No
 │     │
 ▼     ▼
-Plan  LLM Generator
-      │
-      │ ONE LLM CALL
-      ▼
-   ExecutionPlan
+Plan  Default one-step plan
 │     │
 └──┬──┘
    ▼
@@ -52,11 +48,12 @@ class ExecutionPlanner:
 
         1. Build a planning request.
         2. Attempt deterministic template resolution.
-        3. Fall back to the LLM planner when no template matches.
+        3. Use the default one-step legal plan when no template matches.
         4. Validate the resulting execution plan.
 
-    The LLM planner performs intent classification and
-    execution-plan generation in a single LLM call.
+    The LLM planner is kept for tests and explicit callers. Chat does
+    not wait on a planning model: a local 8B planner was adding
+    15–100s before the answering call even started.
     """
 
     def __init__(
@@ -124,9 +121,9 @@ class ExecutionPlanner:
         """
         Resolve an execution plan.
 
-        Deterministic templates are attempted first. The LLM
-        planner is invoked only when no deterministic template
-        matches.
+        Deterministic templates are attempted first. Unmatched chat
+        requests use the default one-step legal plan instead of a
+        second local LLM round-trip.
 
         Returns:
             The execution plan and its source.
@@ -139,11 +136,7 @@ class ExecutionPlanner:
         if plan is not None:
             return plan, "template"
 
-        plan = await self._llm_planner.generate(
-            request=request,
-        )
-
-        return plan, "llm"
+        return self._template_registry.default(), "default"
 
     @staticmethod
     def _build_planning_request(

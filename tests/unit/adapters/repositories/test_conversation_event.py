@@ -310,3 +310,32 @@ async def test_list_returns_recent_events_in_chronological_order(
     assert events[0].content == "Message 2"
     assert events[1].content == "Message 3"
     assert events[2].content == "Message 4"
+
+
+@pytest.mark.asyncio
+async def test_list_page_returns_chronological_page_and_total(
+    conversation_event_repository,
+    conversation,
+) -> None:
+    """
+    It should paginate history without losing the total count.
+    """
+
+    for index in range(4):
+        await conversation_event_repository.create(
+            ConversationEventFactory.build(
+                conversation=conversation,
+                request_id=uuid4(),
+                user_message=True,
+                content=f"Message {index}",
+            ),
+        )
+
+    events, total = await conversation_event_repository.list_page(
+        conversation_id=conversation.id,
+        offset=1,
+        limit=2,
+    )
+
+    assert total == 4
+    assert [event.content for event in events] == ["Message 1", "Message 2"]

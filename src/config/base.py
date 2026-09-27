@@ -34,7 +34,12 @@ class AppSettings(BaseAppSettings):
 
     API_PREFIX: str = "/api/v1"
     ENABLE_DOCS: bool = True
-    CORS_ORIGINS: list[str] = ["*"]
+    CORS_ORIGINS: list[str] = [
+        "http://localhost:3100",
+        "http://127.0.0.1:3100",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
 
     # OpenTelemetry
     OTEL_TRACING: bool = False
