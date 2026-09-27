@@ -278,8 +278,8 @@ test-results/
 .env*.local
 
 # Keep the frontend's source library (the Python template ignores lib/).
-!apps/web/src/lib/
-!apps/web/src/lib/**
+!clients/web/src/lib/
+!clients/web/src/lib/**
 
 # docker volume and .setup
 docker/.volumes/

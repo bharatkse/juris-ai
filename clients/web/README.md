@@ -13,7 +13,7 @@ editable profile settings.
 ## Setup
 
 ```bash
-cd apps/web
+cd clients/web
 cp .env.example .env.local
 npm install
 npm run dev

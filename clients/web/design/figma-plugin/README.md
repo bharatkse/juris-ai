@@ -7,7 +7,7 @@ document without network access or a Figma API token.
 
 1. Create a new, empty Figma Design file.
 2. Open **Plugins → Development → Import plugin from manifest…**.
-3. Select `apps/web/design/figma-plugin/manifest.json`.
+3. Select `clients/web/design/figma-plugin/manifest.json`.
 4. Run **Plugins → Development → Juris AI Web v1 Generator**.
 5. Wait for the success notification; the plugin returns to `00 Cover`.
 
