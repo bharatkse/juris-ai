@@ -1,0 +1,20 @@
+---
+description: Deterministic RBAC double-check (intent then action); no LLM on the authorization path.
+globs: server/src/application/authorization/**/*.py,server/src/agentic/policy/**/*.py,server/src/api/dependencies/authorization.py,server/src/wiring/factories/authorization.py,server/src/wiring/factories/roles.py
+alwaysApply: false
+---
+
+# Authorization
+
+**No LLM** in this path. Capability detection is `TFIDFCapabilityClassifier` + `CAPABILITY_EXAMPLES` (`capability/examples.py` — **SEND only** today). RBAC is code + DB roles.
+
+**Double check, same policy**
+
+1. Request time (before planning): `AuthorizationService.authorize_request()` → analyzer → `RBACService.check_intent()` (user role may request those `ActionTypeEnum`s).
+2. Execute time: `authorize_action()` → `RBACExecuteGate` → `RBACService.check_action()` (user role **and** `RBACPolicy.agent_action_allowed(agent_id, tool_name, action)` from `rbac/policy.py`).
+
+Do not add a third check that reads a different table or prompt.
+
+**Also separate** (do not fold into `AuthorizationService`): `AgentPolicyGuard.check_tool()` (agent may use that tool); `ApprovalLifecyclePolicy` + `ApprovalRecordVerifier` (human approved this payload once). Fail closed: unknown user/role/permission grants nothing. `allowed_library_ids` unset → raise, never treat as unrestricted (`RequestContext` sentinel).
+
+New RBAC action: update `rbac/policy.py`, classifier examples if `check_intent` should see it, role seeds (`wiring/factories/roles.py` is create-if-missing), and both check tests. See command `add-policy-rule`.

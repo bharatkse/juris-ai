@@ -1,0 +1,17 @@
+---
+description: Agent/tool singletons, RequestContext at execute(), HITL interrupt(), planner templates first.
+globs: server/src/agentic/**/*.py
+alwaysApply: false
+---
+
+# Agents and tools
+
+Tools and agents are **process-lifetime singletons** (`wiring/factories/tools.py`, `agents.py`). Per-request values (session, `allowed_library_ids`) come from `get_request_context()` or `async with session_factory()` **inside `execute()`**, never `__init__`. Security-sensitive filters must not be `execute()` kwargs (the model supplies those).
+
+**HITL** (not a `dry_run()` method — that API does not exist): only `GATED_TOOLS` (`email_send`, `slack_post`). Validate params → `interrupt({...plain dict...})` in `AgentContinuationService._execute_gated_tool()` → human approves **concrete payload** → `HitlResumeService` / `Executor.run_approved_tool()` → tool `_ensure_approved()`. Wrap other tool calls in LangGraph `@task` so node replay does not re-run them. Do not `interrupt()` on read tools.
+
+**LLM budget**: `ExecutionPlanner` tries `PlanTemplateRegistry` first, then one planner LLM call. Agents: structured `AgentDecision` only. Prompt trim: history then lowest-score context (`prompts/token_budget.py`). Stop conditions go through `AgentLifecycle` / `BudgetGuard`, not ad-hoc counters.
+
+**Asymmetry**: `tools/runtime/` is resolve → validate params → `execute()` → `ToolResult`. Policy, interrupt, `_gate_final`, lifecycle live in `agents/runtime/`. Do not duplicate those in tools.
+
+`Tool.execute() -> str` drops structured provenance (known gap K10). Ungated tools must stay idempotent or `@task`-wrapped.

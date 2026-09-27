@@ -1,0 +1,15 @@
+---
+description: SQLAlchemy async sessions, no metadata columns, Alembic and APP_DB_USER conventions.
+globs: server/src/adapters/persistence/**/*.py,server/src/rag/pgvector_store.py,server/src/rag/keyword_store.py,server/alembic.ini
+alwaysApply: false
+---
+
+# Database
+
+**Never name a mapped column `metadata`** — SQLAlchemy `Base.metadata` is the registry (`KnowledgeChunk.chunk_metadata`, `ConversationEvent.event_metadata`).
+
+**Sessions**: process-lifetime services take `session_factory` (the callable), then `async with self._session_factory() as session:` **per operation**. Do not store an `AsyncSession` on a singleton. Request routes use `get_db_session()`. Admin-only: `admin_session_factory` (`DB_USER`); never in request handlers.
+
+Factories: `autoflush=False`, `expire_on_commit=False`. Repositories **flush, never commit**. Chat commit is `ChatService`; other owners: conversation, user, `rag_index_persistence`, approval lifecycle.
+
+**Migrations**: generate with `make alembic-revision`; do not hand-edit `versions/`. Add LangGraph tables (`checkpoints`, …) to `_EXTERNALLY_MANAGED_TABLES` in `env.py`. No per-table `GRANT` for `APP_DB_USER` (default privileges). Restrict with `REVOKE` **on `APP_DB_USER`**, not the owner. Models: `_id_prefix` on `PrimaryKeyMixin`.

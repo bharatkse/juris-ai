@@ -1,0 +1,87 @@
+# Compose project name lives here so setup.sh, the Makefile and a bare
+# `docker compose up` all resolve to the same project.
+name: juris-ai-clients
+
+# The FastAPI service is defined in docker/server/docker-compose.yml
+# (container_name juris_ai_api, Compose DNS name `api` on juris_ai_network).
+# Compose cannot depends_on a service from another project; start the
+# server stack first (`./setup.sh --install --bundle server` or
+# docker compose -f docker/server/docker-compose.yml up -d).
+#
+# Production (default):  docker compose -f docker/clients/docker-compose.yml up -d web
+# Dev (hot reload):      docker compose -f docker/clients/docker-compose.yml --profile dev up web-dev
+
+services:
+  web:
+    build:
+      # Context is the Next.js package. dockerfile is relative to that context
+      # (Compose bake), not to this YAML file.
+      context: ../../clients/web
+      dockerfile: ../../docker/clients/web/Dockerfile
+      args:
+        BACKEND_API_URL: ${BACKEND_API_URL:-http://api:8000/api/v1}
+        NEXT_PUBLIC_CHAT_STREAMING: ${NEXT_PUBLIC_CHAT_STREAMING:-true}
+        NEXT_PUBLIC_DEFAULT_THEME: ${NEXT_PUBLIC_DEFAULT_THEME:-system}
+    image: juris-ai-web:local
+    container_name: juris_ai_web
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-3100}:3100"
+    environment:
+      BACKEND_API_URL: ${BACKEND_API_URL:-http://api:8000/api/v1}
+      NEXT_PUBLIC_CHAT_STREAMING: ${NEXT_PUBLIC_CHAT_STREAMING:-true}
+      NEXT_PUBLIC_DEFAULT_THEME: ${NEXT_PUBLIC_DEFAULT_THEME:-system}
+      NODE_ENV: production
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3100/api/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - juris_ai_network
+
+  web-dev:
+    profiles: ["dev"]
+    image: node:20.19.4-alpine3.21
+    container_name: juris_ai_web_dev
+    working_dir: /app
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-3100}:3100"
+    environment:
+      BACKEND_API_URL: ${BACKEND_API_URL:-http://api:8000/api/v1}
+      NEXT_PUBLIC_CHAT_STREAMING: ${NEXT_PUBLIC_CHAT_STREAMING:-true}
+      NEXT_PUBLIC_DEFAULT_THEME: ${NEXT_PUBLIC_DEFAULT_THEME:-system}
+      WATCHPACK_POLLING: "true"
+    volumes:
+      - ../../clients/web:/app
+      - web_dev_node_modules:/app/node_modules
+    command: sh -c "npm ci && npm run dev"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3100/api/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    networks:
+      - juris_ai_network
+
+volumes:
+  web_dev_node_modules:
+
+networks:
+  juris_ai_network:
+    external: true

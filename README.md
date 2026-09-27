@@ -49,7 +49,8 @@ Under the hood, a multi-agent system plans, researches, and reasons before answe
 ```text
 juris-ai/
 ├── server/            # FastAPI backend -- source, tests, Poetry project
-├── clients/           # Reserved for future first-party client apps (none yet)
+├── clients/
+│   └── web/           # Next.js web app (auth, chat, citations, settings)
 ├── docker/
 │   ├── server/         # Backend app Docker Compose stack + Dockerfile
 │   ├── dependencies/   # Postgres, Redis, Floci (local AWS emulator) stacks

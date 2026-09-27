@@ -1,0 +1,115 @@
+/* Token values are defined in src/config/theme.ts (generateThemeCss). */
+:root,
+.light {
+  color-scheme: light;
+  --background: 40 36% 95%;
+  --foreground: 215 51% 12%;
+  --surface: 38 100% 98%;
+  --surface-elevated: 38 100% 98%;
+  --border: 39 27% 86%;
+  --muted: 40 30% 92%;
+  --muted-foreground: 214 25% 32%;
+  --primary: 43 82% 28%;
+  --primary-foreground: 38 100% 98%;
+  --accent: 43 82% 28%;
+  --accent-foreground: 38 100% 98%;
+  --ring: 43 82% 28%;
+  --success: 152 45% 28%;
+  --success-foreground: 38 100% 98%;
+  --warning: 43 82% 28%;
+  --warning-foreground: 38 100% 98%;
+  --danger: 0 56% 39%;
+  --danger-foreground: 38 100% 98%;
+  --info: 216 49% 33%;
+  --info-foreground: 38 100% 98%;
+  --chat-user: 215 51% 12%;
+  --chat-user-foreground: 38 100% 98%;
+  --chat-assistant: 38 100% 98%;
+  --chat-assistant-foreground: 216 45% 18%;
+  --code: 215 51% 12%;
+  --code-foreground: 40 36% 95%;
+  --citation: 45 69% 86%;
+  --citation-foreground: 216 45% 18%;
+  --sidebar: 215 51% 12%;
+  --sidebar-foreground: 38 100% 98%;
+  --sidebar-muted: 214 17% 72%;
+  --sidebar-border: 215 28% 22%;
+  --selection: 45 69% 86%;
+  --skeleton: 39 20% 88%;
+}
+
+.dark {
+  color-scheme: dark;
+  --background: 215 28% 9%;
+  --foreground: 40 36% 95%;
+  --surface: 215 26% 12%;
+  --surface-elevated: 215 24% 16%;
+  --border: 215 16% 24%;
+  --muted: 215 20% 15%;
+  --muted-foreground: 214 18% 72%;
+  --primary: 43 78% 56%;
+  --primary-foreground: 215 51% 10%;
+  --accent: 43 78% 56%;
+  --accent-foreground: 215 51% 10%;
+  --ring: 43 78% 56%;
+  --success: 152 38% 58%;
+  --success-foreground: 215 40% 8%;
+  --warning: 43 78% 56%;
+  --warning-foreground: 215 51% 10%;
+  --danger: 0 58% 68%;
+  --danger-foreground: 215 40% 8%;
+  --info: 214 55% 72%;
+  --info-foreground: 215 40% 8%;
+  --chat-user: 215 24% 18%;
+  --chat-user-foreground: 40 36% 95%;
+  --chat-assistant: 215 24% 16%;
+  --chat-assistant-foreground: 40 30% 92%;
+  --code: 215 32% 7%;
+  --code-foreground: 40 20% 90%;
+  --citation: 43 40% 20%;
+  --citation-foreground: 43 80% 82%;
+  --sidebar: 215 32% 7%;
+  --sidebar-foreground: 40 36% 95%;
+  --sidebar-muted: 214 16% 70%;
+  --sidebar-border: 215 18% 18%;
+  --selection: 43 40% 24%;
+  --skeleton: 215 16% 20%;
+}
+
+html {
+  color-scheme: light;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
+* {
+  border-color: hsl(var(--border));
+  scrollbar-color: hsl(var(--muted-foreground) / 0.45) hsl(var(--muted));
+}
+
+::selection {
+  background: hsl(var(--selection));
+  color: hsl(var(--foreground));
+}
+
+:focus-visible {
+  outline-color: hsl(var(--ring));
+}
+
+::placeholder {
+  color: hsl(var(--muted-foreground));
+  opacity: 0.8;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html:not(.disable-theme-transitions) *,
+  html:not(.disable-theme-transitions) *::before,
+  html:not(.disable-theme-transitions) *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -1,0 +1,17 @@
+---
+description: Python 3.11 typing, async, errors, logging, dataclass truthiness.
+globs: **/*.py
+alwaysApply: false
+---
+
+# Python style
+
+`from __future__ import annotations`. Ruff: line 100, `E,W,F,I,C4,B,UP` (ignore E501, B008). mypy: `check_untyped_defs`, `no_implicit_optional`, `strict_equality`; `src/` on `mypy_path`.
+
+**Dataclass truthiness**: instances are always truthy. `if not source:` on `DocumentSource` never catches missing data — use `is None` or check fields (`source.id`). Same for other `@dataclass` models.
+
+**Async**: no blocking I/O in async functions. LLM clients and tools are concurrency-safe singletons. ContextVars (`RequestContext`, `UsageMeter`, deadline) copy into asyncio tasks.
+
+**Errors**: subclass `core.exceptions` (`AppError` → Domain / Infrastructure / AI, or `httpx.py` `NotFoundError` / `ForbiddenError` / `ConflictError`). `error_code` is `SCREAMING_SNAKE`. Routes do not build error bodies. 5xx messages stay internal unless `expose_message = True`.
+
+**Logging**: `get_logger(__name__)`. Log types/ids/lengths, never raw queries or document text (`HybridRetriever._warn_degraded`). Prefer `log.exception` in `except`.

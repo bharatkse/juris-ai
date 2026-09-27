@@ -1,0 +1,25 @@
+---
+description: Juris-AI purpose, stack, bounded contexts, and layer import direction. Always apply.
+alwaysApply: true
+---
+
+# Juris-AI
+
+Agentic legal assistant with RAG over Indian acts. Python lives in `server/` (`server/pyproject.toml`). Run `make` from the repo root. FastAPI is published on `${API_PORT:-8001}`. Next.js client: `clients/web/` (port 3100).
+
+**Stack**: Python 3.11.9, FastAPI, SQLAlchemy 2 async + pgvector, Alembic, LangGraph + Postgres checkpointer, Groq (agents/judge) and Ollama (planner first), sentence-transformers 6.1 / transformers 5, SearXNG, Presidio, Redis fail-open, OTel + LangSmith SDK. **No LangChain on the request path** (see `observability.mdc`).
+
+**Layers** (`server/src/`, import-linter in `server/pyproject.toml`):
+
+| Layer | Role |
+|---|---|
+| `core/` | DTOs, enums, exceptions, `UsageMeter` / deadline ContextVars. Imports nothing above itself. |
+| `api/` | HTTP, JWT, SSE. Routes must not import `agentic`. |
+| `application/` | Chat/conversation/auth services; RBAC + approval lifecycle. |
+| `agentic/` | Plan → orchestrate → execute graph → agent runtime → tools. |
+| `rag/` | Ingest, chunk, hybrid retrieve, eval. |
+| `adapters/` | DB, LLM/MCP/search/storage, OTel. |
+| `config/` | Settings. |
+| `wiring/` | Only composition root. |
+
+Orchestrator plans; Executor runs the graph; agents reason; tools act; `ChatService` owns the chat commit. Details: sibling rules, not this file.

@@ -1,0 +1,17 @@
+node_modules
+.next
+out
+coverage
+playwright-report
+test-results
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+*.md
+tests
+public/.gitkeep
+**/*.test.ts
+**/*.test.tsx
+tsconfig.tsbuildinfo
