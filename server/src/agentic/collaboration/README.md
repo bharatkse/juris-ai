@@ -1,38 +1,42 @@
 # src/agentic/collaboration/ — Agent-to-Agent Messaging (DELEGATE)
 
-Verified against the code on 2026-09-23. Delegation is disabled by
+Verified against the code on 2026-09-28. Delegation is disabled by
 default: no agent policy grants `allow_delegation`.
 
 ## Purpose
 
 `CollaborationBus` (`bus.py`) routes an `AgentMessageSchema` to the
-recipient agent's `handle_message()`, which performs **one** reasoning
-step (no tools, no further delegation) and returns its `AgentDecision` to
-the delegating agent.
+handler registered for the recipient agent. That handler is a
+`DelegatedAgentRunner` (`agents/runtime/delegation.py`), not the agent
+itself: it runs the target agent's whole turn on the same runtime path as
+a plan step, with the target's own tools and policy, and returns the
+result to the delegating agent.
 
-Both `legal` and `contract` are registered on the bus at startup
-(`wiring/factories/agents.py:74-80`); the bus is created once in
-`wiring/composition.py:54`.
+One runner per registered agent is put on the bus at startup, in
+`create_executor()` (`wiring/factories/executor.py`); the bus is created
+once in `wiring/composition.py`.
 
 ## Flow
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant H as AgentExecutionHandle
+    participant H as AgentExecutionHandle (parent)
     participant G as AgentPolicyGuard
     participant C as AgentContinuationService._delegate()
     participant B as CollaborationBus
-    participant T as Target BaseAgent
+    participant R as DelegatedAgentRunner (target)
+    participant T as Target's AgentExecution + continuation
 
     H->>G: check_delegation(policy, target_agent_id)
     G-->>H: allowed / denied per AgentPolicy
     Note over H,T: the steps below only run if delegation is allowed
     C->>B: send(AgentMessageSchema(recipient, payload{request, parameters}))
-    B->>T: handle_message(message)
-    T->>T: one _reason() call with the delegated request
-    T-->>C: AgentDecision (returned as a bare object)
-    C->>H: extend_reasoning_context(...), reason() again
+    B->>R: handle_message(message)
+    R->>T: start() with the target's own policy and tool catalog,<br/>seed_evidence(), reason()
+    R->>T: execute(): TOOL_CALLs validated and run,<br/>errors fed back, FINAL answer gated
+    T-->>C: AgentContinuationResult
+    C->>H: verified FINAL answer as context (otherwise a short note),<br/>then reason() again
 ```
 
 ---

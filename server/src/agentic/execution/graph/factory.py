@@ -87,7 +87,25 @@ class ExecutionGraphFactory:
         execution state is owned by AgentExecutionHandle.
         """
 
-        agent_execution = AgentExecution(
+        step_node = AgentExecutionNode(
+            agent_execution=self.agent_execution(),
+            continuation_service=self.continuation_service(),
+        )
+
+        return self._builder.compile(
+            plan=plan,
+            step_node=step_node,
+            checkpointer=self._checkpointer,
+        )
+
+    def agent_execution(
+        self,
+    ) -> AgentExecution:
+        """
+        A stateless AgentExecution (per-request state lives on the handle).
+        """
+
+        return AgentExecution(
             agent_registry=self._agent_registry,
             retry_policy=self._retry_policy,
             retry_classifier=self._retry_classifier,
@@ -97,22 +115,18 @@ class ExecutionGraphFactory:
             tool_registry=self._tool_registry,
         )
 
-        continuation_service = AgentContinuationService(
+    def continuation_service(
+        self,
+    ) -> AgentContinuationService:
+        """
+        A stateless AgentContinuationService for the same runtime.
+        """
+
+        return AgentContinuationService(
             tool_execution_service=self._tool_execution_service,
             collaboration_bus=self._collaboration_bus,
             answer_evaluator=self._answer_evaluator,
             answer_quality_policy=self._answer_quality_policy,
             agent_policy_guard=self._agent_policy_guard,
             compliance_log=self._compliance_log,
-        )
-
-        step_node = AgentExecutionNode(
-            agent_execution=agent_execution,
-            continuation_service=continuation_service,
-        )
-
-        return self._builder.compile(
-            plan=plan,
-            step_node=step_node,
-            checkpointer=self._checkpointer,
         )

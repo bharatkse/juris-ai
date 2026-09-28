@@ -4,6 +4,8 @@ Structured schemas for agent decisions.
 
 from __future__ import annotations
 
+import copy
+from collections.abc import Sequence
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -54,3 +56,31 @@ class AgentDecision(BaseModel):
     delegation: AgentDelegation | None = None
     user_input: AgentUserInputRequest | None = None
     failure: AgentFailure | None = None
+
+
+def decision_json_schema(*, tool_names: Sequence[str]) -> dict[str, Any]:
+    """
+    AgentDecision's JSON Schema with ``tool_call.tool_name`` limited to
+    ``tool_names`` (the agent's allowed tools), or with no tool call
+    possible when there are none.
+
+    Carried as LLMRequestDTO.response_schema and used only by a client
+    that enforces the schema while decoding (Ollama's ``format``, verified
+    in review A19), which then can't produce a tool the agent may not use.
+    Groq is sent AgentDecision's own schema: with the enum attached, its
+    best-effort mode changed decisions (a no-evidence question got a
+    retriever call instead of an answer, 3/3 live), so its path stays as
+    it was until measured (review A19). The runtime's policy check stays
+    the authority either way. Only names are constrained: parameters are
+    validated by ToolExecutionService.
+    """
+
+    schema = copy.deepcopy(AgentDecision.model_json_schema())
+    names = sorted(set(tool_names))
+
+    if names:
+        schema["$defs"]["AgentToolCall"]["properties"]["tool_name"]["enum"] = names
+    else:
+        schema["properties"]["tool_call"] = {"type": "null", "default": None}
+
+    return schema

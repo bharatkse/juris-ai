@@ -11,6 +11,7 @@ JA-54 / PR #35; it sits **under** `execution/`, not in place of it.
 | `execution.py` | `AgentExecution` | `start()` (loads the agent's `AgentPolicy` from the DB) → `AgentExecutionHandle` |
 | `execution.py` | `AgentExecutionHandle` | `reason()`: one bounded reasoning attempt (budgets → `_reason()` → decision validation → decision handling); owns `reasoning_context` |
 | `continuation.py` | `AgentContinuationService` | `execute()`: loops TOOL_CALL / DELEGATE → re-reason, gates FINAL through `_gate_final`, pauses gated tools via `interrupt()` |
+| `delegation.py` | `DelegatedAgentRunner` | `CollaborationBus` handler for each agent (registered in `wiring/factories/executor.py`): runs a delegated turn like a plan step (`start()` with the target's own policy → `seed_evidence()` → `reason()` → `execute()`) and returns its `AgentContinuationResult`; only a verified FINAL answer reaches the delegating agent. Delegation is disabled by policy |
 | `retry.py` | `RetryClassifier` | Which reasoning exceptions are retryable (configured in `wiring/factories/executor.py`) |
 | `lifecycle/lifecycle.py` | `AgentLifecycle` | Budget checks + state transitions (`complete`, `fail`, `partial`, `user_input_required`) |
 | `lifecycle/budget.py` | `AgentExecutionBudget` | Limits: 10 iterations, 20 tool calls, 5 hops, 30 steps, 120 s, repeated action 2, no-progress 2, validation 2, plus record-count and size caps |

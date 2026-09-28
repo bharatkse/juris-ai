@@ -46,6 +46,16 @@ class ApplicationMetrics:
             unit="1",
         )
 
+        self.llm_failovers: Counter = meter.create_counter(
+            name="juris_ai_llm_failovers_total",
+            description=(
+                "Calls a primary LLM provider couldn't serve, labeled by "
+                "primary/fallback provider, reason (error type) and outcome "
+                "(attempted|skipped_context|skipped_deadline|failed)."
+            ),
+            unit="1",
+        )
+
     def increment_health_checks(
         self,
         *,
@@ -117,6 +127,32 @@ class ApplicationMetrics:
                 usage.completion_tokens,
                 attributes={**attributes, "type": "output"},
             )
+
+    def record_llm_failover(
+        self,
+        *,
+        primary: str,
+        fallback: str,
+        reason: str,
+        outcome: Literal["attempted", "skipped_context", "skipped_deadline", "failed"],
+    ) -> None:
+        """
+        Record one call the primary LLM provider couldn't serve.
+
+        "attempted" is recorded when the fallback call starts, so a
+        "failed" count (error or deadline reached) is a subset of it, not
+        in addition.
+        """
+
+        self.llm_failovers.add(
+            1,
+            attributes={
+                "primary": primary,
+                "fallback": fallback,
+                "reason": reason,
+                "outcome": outcome,
+            },
+        )
 
 
 metrics = ApplicationMetrics()

@@ -2,17 +2,27 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 
 from config.base import BaseAppSettings
-from core.enums import GroqModelEnum, LLMMODELEnum, LLMProviderEnum
+from core.enums import GroqModelEnum, LLMMODELEnum
 
 
 class LLMSettings(BaseAppSettings):
     """AI Providers, Local Models, Search Engines, and Observability."""
 
-    # Local LLM
-    LLM_LOCAL: str = LLMProviderEnum.LOCAL
+    # Local LLM (Ollama). The planner always uses it (wiring/factories/
+    # planner.py). LLM_LOCAL decides whether agents may fall back to it
+    # when Groq is unavailable (adapters/clients/llm/failover.py):
+    # "ollama" (or "local") enables that; "none", the default, keeps agents
+    # on Groq only, so a deployment without Ollama never tries it.
+    LLM_LOCAL: Literal["ollama", "local", "none"] = "none"
+    # Don't fail an agent call over to the local model when less than this
+    # remains of its deadline (the agent turn's time budget or the graph
+    # timeout); a fallback call still running at the deadline is cancelled.
+    # 60 s assumes a GPU host. On a CPU-only host a realistic decision took
+    # ~450 s (review R2), longer than the whole 300 s graph timeout.
+    LLM_LOCAL_FAILOVER_MIN_SECONDS: float = Field(default=60.0, gt=0)
     LLM_LOCAL_BASE_URL: str | None = None
     LLM_LOCAL_MODEL: str = LLMMODELEnum.QWEN3_8B
 
@@ -87,6 +97,11 @@ class LLMSettings(BaseAppSettings):
     LANGSMITH_API_KEY: SecretStr | None = None
     LANGSMITH_PROJECT: str = "juris-ai"
     LANGSMITH_ENDPOINT: str = "https://api.smith.langchain.com"
+
+    @property
+    def agent_local_failover(self) -> bool:
+        """Whether agents fall back to the local model when Groq is unavailable."""
+        return self.LLM_LOCAL != "none"
 
     @property
     def groq_api_key(self) -> str | None:

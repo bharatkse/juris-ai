@@ -42,6 +42,14 @@ class LLMRequestDTO:
 
     response_format: dict[str, Any] | None = None
 
+    # A narrower JSON Schema than the structured response model's, for
+    # this request only (e.g. an agent decision whose tool name must be
+    # one of the agent's own tools). Used only by clients that enforce the
+    # schema while decoding (LocalLLMClient: Ollama's format, review
+    # A19); other providers get the model's own schema, unchanged. The
+    # response is validated into the model class either way.
+    response_schema: dict[str, Any] | None = None
+
     def with_response_format(
         self,
         *,

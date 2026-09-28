@@ -124,6 +124,11 @@ class LLMClient(ABC):
     ) -> T:
         """
         Generate and validate a structured response.
+
+        The provider is asked for response_model's own schema. A client
+        that enforces the schema while decoding may use the narrower
+        request.response_schema instead (LocalLLMClient); either way the
+        output is validated into response_model.
         """
 
         log.debug(

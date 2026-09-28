@@ -14,7 +14,7 @@ they propose a `TOOL_CALL` and the runtime executes it.
 
 | File | Class | Role |
 |---|---|---|
-| `base.py` | `BaseAgent` | `_reason()` (structured decision), `handle_message()` (collaboration bus) |
+| `base.py` | `BaseAgent` | `_reason()` (structured decision) |
 | `legal.py` | `LegalAgent` | name `legal`; `LegalPromptBuilder`; `inference_task = FACTUAL_ANSWER` |
 | `contract.py` | `ContractAgent` | name `contract`; `ContractPromptBuilder`; `inference_task = FACTUAL_ANSWER` |
 | `prompts/base.py` | `BasePromptBuilder` | Loads the template, budgets tokens, assembles messages, wraps evidence in `<retrieved_context>` after escaping any `<retrieved_context>`/`</retrieved_context>` tag inside the content (`core/utils/prompt_safety.escape_delimiter`), so evidence can't close the wrapper early |
@@ -42,10 +42,24 @@ sequenceDiagram
     PB->>PB: fit_to_budget(system+tools+task+memory, history, context)
     PB->>PB: build_context(): escape delimiter tags inside each evidence item, then wrap all items in one <retrieved_context>
     PB-->>A: messages = [SYSTEM prompt, SYSTEM available tools, SYSTEM task for this step?,<br/>SYSTEM <user_memory>?, SYSTEM <retrieved_context>?, ...history]
-    A->>LLM: generate_structured(response_model=AgentDecision)<br/>LLMTask.STRUCTURED_DECISION, low temperature
+    A->>LLM: generate_structured(response_model=AgentDecision)<br/>LLMTask.STRUCTURED_DECISION, low temperature,<br/>(Ollama only: schema limited to the agent's tool names)
     LLM-->>A: AgentDecision
     A-->>RT: decision (validated by decisions/, gated by runtime)
 ```
+
+The structured-output schema is `AgentDecision`'s. The request also
+carries a narrower copy with `tool_name` limited to the tools in the
+agent's catalog (`decision_json_schema()`), which only the local Ollama
+client uses (Ollama decodes against it); Groq is sent the plain schema.
+Tools are never sent as a provider `tools=` parameter. The agents' LLM
+client is Groq; with `LLM_LOCAL=ollama` it is a `FailoverLLMClient` that
+repeats a call on the local Ollama model when Groq is unavailable (rate
+limit, timeout, connection error, 5xx), with the same prompt, as long as
+the prompt fits the local model's context window and at least
+`LLM_LOCAL_FAILOVER_MIN_SECONDS` of the call's deadline remain (the turn's
+time budget or the graph timeout, `core/deadline.py`); a fallback call
+still running at the deadline is cancelled (`wiring/factories/agents.py`).
+A failed-over decision can only name the agent's own tools.
 
 Before the first `_reason()` call, `context` holds any files attached to
 the chat message (parsed by the Executor) and the runtime seeds it with a

@@ -1,10 +1,12 @@
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from agentic.agents.base import BaseAgent
 from agentic.decisions.decision import AgentDecisionType
-from agentic.decisions.schemas import AgentDecision, AgentToolCall
+from agentic.decisions.schemas import AgentDecision, AgentToolCall, decision_json_schema
+from core.dto.tool import ToolSpecDTO
 from tests.builders.adapters.clients.llm import build_llm_request
 
 
@@ -47,7 +49,11 @@ def agent(
 
 @pytest.fixture
 def mock_request():
-    return ...
+    # The prompt builder is mocked; _reason() itself only reads the
+    # request's tool catalog (for the decision schema).
+    return SimpleNamespace(
+        tool_catalog=(ToolSpecDTO(name="retriever", description="Search.", parameters_schema={}),),
+    )
 
 
 @pytest.mark.asyncio
@@ -106,3 +112,23 @@ async def test_reason_supports_tool_call_decision(
     call = llm_client.generate_structured.await_args
 
     assert call.kwargs["response_model"] is AgentDecision
+
+
+@pytest.mark.asyncio
+async def test_reason_limits_the_decision_schema_to_the_agents_tools(
+    agent: TestAgent,
+    llm_client: AsyncMock,
+    mock_request,
+) -> None:
+    llm_client.generate_structured.return_value = AgentDecision(
+        decision_type=AgentDecisionType.FINAL,
+        final_response="Done.",
+    )
+
+    await agent._reason(
+        request=mock_request,
+    )
+
+    sent = llm_client.generate_structured.await_args.kwargs["request"]
+
+    assert sent.response_schema == decision_json_schema(tool_names=["retriever"])

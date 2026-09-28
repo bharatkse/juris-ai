@@ -16,8 +16,9 @@ steps, each naming one agent (`AgentTypeEnum`), an instruction and its
 |---|---|---|
 | `ExecutionPlanner` | `planner.py` | `create_plan(context)`: template first, else LLM; then validate |
 | `PlanTemplateRegistry` | `templates.py` | Deterministic plans for contract review, contract analysis, clause extraction, risk analysis, legal research |
-| `LLMPlanGenerator` | `llm_planner.py` | `generate_structured(response_model=ExecutionPlanResponseSchema)` at `LLMTask.STRUCTURED_DECISION` (temperature 0.0) |
-| `PlanningPromptBuilder` | `prompts/planning.py` + `prompts/templates/planning.md` | System prompt, history, `<user_memory>` block |
+| `LLMPlanGenerator` | `llm_planner.py` | Fills `agent_capabilities`, then `generate_structured(response_model=ExecutionPlanResponseSchema)` at `LLMTask.STRUCTURED_DECISION` (temperature 0.0) |
+| `AgentCapabilityCatalog` | `capabilities.py` | Each plannable agent (`AgentTypeEnum`, registered, with a policy): its metadata description and the tools its `agent_policies` row allows, via `ToolRegistry.describe()`, the same source as the agent's own tool catalog |
+| `PlanningPromptBuilder` | `prompts/planning.py` + `prompts/templates/planning.md` + `prompts/agent_capabilities.py` | Instructions, the generated "Available Agents" block (tool names and purposes, no parameter schemas), `<user_memory>` block, history |
 | `ExecutionPlanValidator` | `validator.py` | Structural checks; raises `PlanValidationError` |
 
 ## Flow
@@ -27,7 +28,8 @@ flowchart TD
     CTX["OrchestrationContext<br/>(message, history, user_memory)"] --> REQ["ExecutionPlanner._build_planning_request()"]
     REQ --> TPL{"PlanTemplateRegistry.resolve()<br/>exactly one keyword template matches?"}
     TPL -->|yes| PLAN["ExecutionPlanDTO<br/>source = template"]
-    TPL -->|none, or more than one| LLM["LLMPlanGenerator.generate()<br/>LLM structured output<br/>(ExecutionPlanResponseSchema)"]
+    TPL -->|none, or more than one| CAP["AgentCapabilityCatalog.describe()<br/>agents + policy-allowed tools"]
+    CAP --> LLM["LLMPlanGenerator.generate()<br/>LLM structured output<br/>(ExecutionPlanResponseSchema)"]
     LLM --> PLAN2["ExecutionPlanDTO<br/>source = llm"]
     PLAN --> VAL["ExecutionPlanValidator.validate()"]
     PLAN2 --> VAL
