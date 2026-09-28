@@ -115,6 +115,9 @@ expires.
 | `PATCH` | `/users/{user_id}` | Update user profile   |
 
 `POST /users` (registration) needs no authentication and returns `201`.
+`GET` and `PATCH /users/{user_id}` need a bearer access token (`401`
+without one) and act only on the caller's own profile: any other
+`user_id` returns `403 FORBIDDEN`, whether or not that user exists.
 
 #### User ID Format
 

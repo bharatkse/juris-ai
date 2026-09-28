@@ -15,6 +15,7 @@ from api.v1.endpoints.users import (
     update_user_profile,
     user_registration,
 )
+from core.exceptions.httpx import ForbiddenError
 from tests.builders.api.schemas import (
     build_create_user_request,
     build_update_user_request,
@@ -88,6 +89,7 @@ async def test_get_user(
 
     response = await get_user_details(
         user_id=user.id,
+        current_user=user,
         service=service,
     )
 
@@ -133,6 +135,7 @@ async def test_update_user(
     response = await update_user_profile(
         user_id=user.id,
         request=request,
+        current_user=user,
         service=service,
     )
 
@@ -152,3 +155,48 @@ async def test_update_user(
         user,
         from_attributes=True,
     )
+
+
+@pytest.mark.asyncio
+async def test_get_other_user_is_forbidden() -> None:
+    """
+    It should refuse to return another user's profile, without a lookup.
+    """
+
+    current_user = UserFactory.build()
+    other_user = UserFactory.build()
+
+    service = MagicMock()
+    service.get_or_raise = AsyncMock()
+
+    with pytest.raises(ForbiddenError):
+        await get_user_details(
+            user_id=other_user.id,
+            current_user=current_user,
+            service=service,
+        )
+
+    service.get_or_raise.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_update_other_user_is_forbidden() -> None:
+    """
+    It should refuse to update another user's profile.
+    """
+
+    current_user = UserFactory.build()
+    other_user = UserFactory.build()
+
+    service = MagicMock()
+    service.update = AsyncMock()
+
+    with pytest.raises(ForbiddenError):
+        await update_user_profile(
+            user_id=other_user.id,
+            request=build_update_user_request(),
+            current_user=current_user,
+            service=service,
+        )
+
+    service.update.assert_not_awaited()
