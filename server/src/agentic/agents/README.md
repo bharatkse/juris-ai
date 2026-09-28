@@ -14,7 +14,7 @@ they propose a `TOOL_CALL` and the runtime executes it.
 
 | File | Class | Role |
 |---|---|---|
-| `base.py` | `BaseAgent` | `_reason()` (structured decision), `handle_message()` (collaboration bus) |
+| `base.py` | `BaseAgent` | `_reason()` (structured decision) |
 | `legal.py` | `LegalAgent` | name `legal`; `LegalPromptBuilder`; `inference_task = FACTUAL_ANSWER` |
 | `contract.py` | `ContractAgent` | name `contract`; `ContractPromptBuilder`; `inference_task = FACTUAL_ANSWER` |
 | `prompts/base.py` | `BasePromptBuilder` | Loads the template, budgets tokens, assembles messages, wraps evidence in `<retrieved_context>` after escaping any `<retrieved_context>`/`</retrieved_context>` tag inside the content (`core/utils/prompt_safety.escape_delimiter`), so evidence can't close the wrapper early |
