@@ -10,7 +10,7 @@ malformed decisions before the runtime acts on them.
 | File | Contents |
 |---|---|
 | `decision.py` | `AgentDecisionType`: `final`, `tool_call`, `delegate`, `need_input`, `fail` |
-| `schemas.py` | `AgentDecision` (Pydantic; the `response_model` for `BaseAgent._reason()`), `AgentToolCall(tool_name, parameters: dict)`, `AgentDelegation`, `AgentUserInputRequest`, `AgentFailure` |
+| `schemas.py` | `AgentDecision` (Pydantic; the `response_model` for `BaseAgent._reason()`), `AgentToolCall(tool_name, parameters: dict)`, `AgentDelegation`, `AgentUserInputRequest`, `AgentFailure`; `decision_json_schema(tool_names)`: `AgentDecision`'s JSON Schema with `tool_name` limited to the agent's tools, sent as the structured-output schema |
 | `validator.py` | `AgentDecisionValidator.validate()`: per-type required payload, and every other payload must be empty |
 
 ## Flow

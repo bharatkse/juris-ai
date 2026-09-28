@@ -42,10 +42,20 @@ sequenceDiagram
     PB->>PB: fit_to_budget(system+tools+task+memory, history, context)
     PB->>PB: build_context(): escape delimiter tags inside each evidence item, then wrap all items in one <retrieved_context>
     PB-->>A: messages = [SYSTEM prompt, SYSTEM available tools, SYSTEM task for this step?,<br/>SYSTEM <user_memory>?, SYSTEM <retrieved_context>?, ...history]
-    A->>LLM: generate_structured(response_model=AgentDecision)<br/>LLMTask.STRUCTURED_DECISION, low temperature
+    A->>LLM: generate_structured(response_model=AgentDecision)<br/>LLMTask.STRUCTURED_DECISION, low temperature,<br/>schema = decision_json_schema(the agent's tool names)
     LLM-->>A: AgentDecision
     A-->>RT: decision (validated by decisions/, gated by runtime)
 ```
+
+The structured-output schema is `AgentDecision`'s, with `tool_name`
+limited to the tools in the agent's catalog (`decision_json_schema()`).
+Tools are never sent as a provider `tools=` parameter. The agents' LLM
+client is Groq; with `LLM_LOCAL=ollama` it is a `FailoverLLMClient` that
+repeats a call on the local Ollama model when Groq is unavailable (rate
+limit, timeout, connection error, 5xx), with the same prompt, as long as
+the prompt fits the local model's context window
+(`wiring/factories/agents.py`). Ollama decodes against the schema, so a
+failed-over decision can only name the agent's own tools.
 
 Before the first `_reason()` call, `context` holds any files attached to
 the chat message (parsed by the Executor) and the runtime seeds it with a

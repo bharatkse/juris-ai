@@ -97,3 +97,17 @@ class ClientProviderError(ClientError):
     status_code = HTTPStatus.BAD_GATEWAY
     error_code = "CLIENT_PROVIDER_ERROR"
     default_message = "The external service returned an unexpected error."
+
+
+class ClientServiceUnavailableError(ClientProviderError):
+    """
+    The external service failed on its side (HTTP 5xx).
+
+    A ClientProviderError, so existing handling is unchanged; separate so
+    callers can tell a provider outage from a request the provider
+    rejected (4xx) or a response that couldn't be used.
+    """
+
+    status_code = HTTPStatus.BAD_GATEWAY
+    error_code = "CLIENT_SERVICE_UNAVAILABLE"
+    default_message = "The external service is temporarily unavailable."

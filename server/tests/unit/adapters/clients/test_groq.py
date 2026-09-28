@@ -7,7 +7,13 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
-from groq import APIConnectionError, APIStatusError, APITimeoutError
+from groq import (
+    APIConnectionError,
+    APIStatusError,
+    APITimeoutError,
+    BadRequestError,
+    InternalServerError,
+)
 
 from config.settings import get_settings
 from core.enums import LLMProviderEnum
@@ -16,6 +22,7 @@ from core.exceptions.client import (
     ClientError,
     ClientProviderError,
     ClientRateLimitError,
+    ClientServiceUnavailableError,
     ClientTimeoutError,
 )
 from tests.builders.adapters.clients.groq import (
@@ -443,3 +450,33 @@ async def test_stream_yields_multiple_chunks(
 
     assert chunks[-1].is_final is True
     assert chunks[-1].finish_reason == "stop"
+
+
+def _status_error(error_type, status: int):
+    response = MagicMock()
+    response.status_code = status
+    return error_type("Request failed", response=response, body={})
+
+
+@pytest.mark.asyncio
+async def test_a_5xx_is_reported_as_the_service_being_unavailable(
+    groq_client,
+    mock_chat_completion,
+    llm_request,
+) -> None:
+    """
+    A server-side failure maps to ClientServiceUnavailableError, which
+    agents fail over on; a 4xx stays a plain ClientProviderError.
+    """
+
+    mock_chat_completion.side_effect = _status_error(InternalServerError, 503)
+
+    with pytest.raises(ClientServiceUnavailableError):
+        await groq_client.generate(request=llm_request)
+
+    mock_chat_completion.side_effect = _status_error(BadRequestError, 400)
+
+    with pytest.raises(ClientProviderError) as rejected:
+        await groq_client.generate(request=llm_request)
+
+    assert not isinstance(rejected.value, ClientServiceUnavailableError)

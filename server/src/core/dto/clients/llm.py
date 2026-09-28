@@ -42,6 +42,13 @@ class LLMRequestDTO:
 
     response_format: dict[str, Any] | None = None
 
+    # The JSON Schema LLMClient.generate_structured() constrains the
+    # output to. None means the response model's own schema. Set when a
+    # request needs a narrower schema than the model class allows (e.g.
+    # an agent decision whose tool name must be one of the agent's own
+    # tools), while the response is still validated into the model class.
+    response_schema: dict[str, Any] | None = None
+
     def with_response_format(
         self,
         *,

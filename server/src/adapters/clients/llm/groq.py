@@ -13,6 +13,7 @@ from groq import (
     APITimeoutError,
     AsyncGroq,
     AuthenticationError,
+    InternalServerError,
     RateLimitError,
 )
 
@@ -31,6 +32,7 @@ from core.exceptions.client import (
     ClientConnectionError,
     ClientProviderError,
     ClientRateLimitError,
+    ClientServiceUnavailableError,
     ClientTimeoutError,
 )
 
@@ -134,6 +136,10 @@ class GroqClient(LLMClient):
                     RateLimitError: lambda _: ClientRateLimitError(),
                     APITimeoutError: lambda _: ClientTimeoutError(),
                     APIConnectionError: lambda _: ClientConnectionError(),
+                    # 5xx, before the APIStatusError catch-all (4xx).
+                    InternalServerError: lambda e: ClientServiceUnavailableError(
+                        message=str(e),
+                    ),
                     APIStatusError: lambda e: ClientProviderError(
                         message=str(e),
                     ),
@@ -274,6 +280,10 @@ class GroqClient(LLMClient):
                     RateLimitError: lambda _: ClientRateLimitError(),
                     APITimeoutError: lambda _: ClientTimeoutError(),
                     APIConnectionError: lambda _: ClientConnectionError(),
+                    # 5xx, before the APIStatusError catch-all (4xx).
+                    InternalServerError: lambda e: ClientServiceUnavailableError(
+                        message=str(e),
+                    ),
                     APIStatusError: lambda e: ClientProviderError(
                         message=str(e),
                     ),

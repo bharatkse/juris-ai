@@ -14,7 +14,7 @@ from typing import ClassVar
 from adapters.clients.llm.base import LLMClient
 from agentic.agents.prompts.base import BasePromptBuilder
 from agentic.agents.prompts.token_budget import DEFAULT_RESERVED_OUTPUT_TOKENS
-from agentic.decisions.schemas import AgentDecision
+from agentic.decisions.schemas import AgentDecision, decision_json_schema
 from core.dto.agent import (
     AgentMetadataDTO,
     AgentRequestDTO,
@@ -90,6 +90,15 @@ class BaseAgent:
             request=llm_request,
             task=LLMTask.STRUCTURED_DECISION,
             structured_output=True,
+        )
+
+        # The decision schema names only this agent's tools, so a
+        # provider that decodes against it can't produce any other tool.
+        llm_request = replace(
+            llm_request,
+            response_schema=decision_json_schema(
+                tool_names=[spec.name for spec in request.tool_catalog],
+            ),
         )
 
         return await self._llm.generate_structured(
