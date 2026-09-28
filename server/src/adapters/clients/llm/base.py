@@ -125,9 +125,10 @@ class LLMClient(ABC):
         """
         Generate and validate a structured response.
 
-        The output is constrained to request.response_schema when set (a
-        narrower schema for this request), otherwise to response_model's
-        own schema; either way it is validated into response_model.
+        The provider is asked for response_model's own schema. A client
+        that enforces the schema while decoding may use the narrower
+        request.response_schema instead (LocalLLMClient); either way the
+        output is validated into response_model.
         """
 
         log.debug(
@@ -144,7 +145,7 @@ class LLMClient(ABC):
                 "type": "json_schema",
                 "json_schema": {
                     "name": response_model.__name__,
-                    "schema": request.response_schema or response_model.model_json_schema(),
+                    "schema": response_model.model_json_schema(),
                 },
             },
         )

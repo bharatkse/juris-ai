@@ -4,13 +4,15 @@ Unit tests for FailoverLLMClient.
 
 from __future__ import annotations
 
-from dataclasses import replace
+import asyncio
+import time
 
 import pytest
 from pydantic import BaseModel
 
 from adapters.clients.llm.base import LLMClient
 from adapters.clients.llm.failover import FAILOVER_ERRORS, FailoverLLMClient
+from core.deadline import deadline_within
 from core.dto.clients.llm import (
     LLMMessageDTO,
     LLMRequestDTO,
@@ -83,8 +85,14 @@ def _failover(
     fallback: FakeClient,
     *,
     fits: bool = True,
+    min_seconds: float = 60.0,
 ) -> FailoverLLMClient:
-    return FailoverLLMClient(primary=primary, fallback=fallback, fits_fallback=lambda _r: fits)
+    return FailoverLLMClient(
+        primary=primary,
+        fallback=fallback,
+        fits_fallback=lambda _r: fits,
+        min_fallback_seconds=min_seconds,
+    )
 
 
 @pytest.mark.asyncio
@@ -183,8 +191,9 @@ async def test_structured_calls_fail_over_too() -> None:
     )
 
     assert result == Answer(text="from local")
-    # The request's own schema is what the fallback is held to.
-    assert fallback.requests[0].response_format["json_schema"]["schema"] == {"type": "object"}
+    # The narrower per-request schema travels with the request, for a
+    # client that decodes against it (LocalLLMClient).
+    assert fallback.requests[0].response_schema == {"type": "object"}
 
 
 def test_reports_the_primary_provider_and_model() -> None:
@@ -222,18 +231,63 @@ async def test_a_stream_that_fails_midway_is_not_failed_over() -> None:
 
 
 @pytest.mark.asyncio
-async def test_generate_structured_uses_the_request_schema_when_set() -> None:
+async def test_generate_structured_asks_the_provider_for_the_models_own_schema() -> None:
+    """The narrower response_schema never changes what Groq is sent."""
+
     class Answer(BaseModel):
         text: str
 
     client = FakeClient(provider="groq", content='{"text": "ok"}')
 
     await client.generate_structured(request=REQUEST, response_model=Answer)
-    await client.generate_structured(
-        request=replace(REQUEST, response_schema=None),
-        response_model=Answer,
-    )
 
-    narrowed, default = (r.response_format["json_schema"]["schema"] for r in client.requests)
-    assert narrowed == {"type": "object"}
-    assert default == Answer.model_json_schema()
+    (sent,) = client.requests
+    assert sent.response_format["json_schema"]["schema"] == Answer.model_json_schema()
+    assert sent.response_schema == REQUEST.response_schema
+
+
+class SlowClient(FakeClient):
+    def __init__(self, *, seconds: float) -> None:
+        super().__init__(provider="local")
+        self._seconds = seconds
+
+    async def _generate(self, *, request: LLMRequestDTO) -> LLMResponseDTO:
+        self.requests.append(request)
+        await asyncio.sleep(self._seconds)
+        return LLMResponseDTO(content="late", provider="local", model=self.model)
+
+
+@pytest.mark.asyncio
+async def test_no_failover_when_too_little_of_the_deadline_is_left() -> None:
+    primary = FakeClient(provider="groq", error=ClientRateLimitError())
+    fallback = FakeClient(provider="local")
+
+    with deadline_within(30), pytest.raises(ClientRateLimitError):
+        await _failover(primary, fallback, min_seconds=60).generate(request=REQUEST)
+
+    assert fallback.requests == []
+
+
+@pytest.mark.asyncio
+async def test_failover_proceeds_with_enough_of_the_deadline_left() -> None:
+    primary = FakeClient(provider="groq", error=ClientRateLimitError())
+    fallback = FakeClient(provider="local", content="local answer")
+
+    with deadline_within(120):
+        response = await _failover(primary, fallback, min_seconds=60).generate(request=REQUEST)
+
+    assert response.content == "local answer"
+
+
+@pytest.mark.asyncio
+async def test_a_fallback_call_still_running_at_the_deadline_is_cut_off() -> None:
+    primary = FakeClient(provider="groq", error=ClientTimeoutError())
+    fallback = SlowClient(seconds=5)
+    started = time.monotonic()
+
+    with deadline_within(0.2), pytest.raises(ClientTimeoutError):
+        await _failover(primary, fallback, min_seconds=0.1).generate(request=REQUEST)
+
+    # Failed fast with the primary's error, not after the slow call.
+    assert time.monotonic() - started < 2
+    assert len(fallback.requests) == 1

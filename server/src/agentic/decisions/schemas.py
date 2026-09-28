@@ -64,13 +64,15 @@ def decision_json_schema(*, tool_names: Sequence[str]) -> dict[str, Any]:
     ``tool_names`` (the agent's allowed tools), or with no tool call
     possible when there are none.
 
-    Sent as the structured-output schema (LLMRequestDTO.response_schema).
-    A provider that enforces the schema while decoding (Ollama's
-    ``format``, verified in review A19) then can't produce a tool the
-    agent may not use; one that treats it as best effort (Groq without
-    ``strict``) gets the list as guidance. The runtime's policy check
-    stays the authority either way. Only names are constrained:
-    parameters are validated by ToolExecutionService.
+    Carried as LLMRequestDTO.response_schema and used only by a client
+    that enforces the schema while decoding (Ollama's ``format``, verified
+    in review A19), which then can't produce a tool the agent may not use.
+    Groq is sent AgentDecision's own schema: with the enum attached, its
+    best-effort mode changed decisions (a no-evidence question got a
+    retriever call instead of an answer, 3/3 live), so its path stays as
+    it was until measured (review A19). The runtime's policy check stays
+    the authority either way. Only names are constrained: parameters are
+    validated by ToolExecutionService.
     """
 
     schema = copy.deepcopy(AgentDecision.model_json_schema())

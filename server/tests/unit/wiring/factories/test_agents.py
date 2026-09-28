@@ -24,7 +24,12 @@ def _build(*, failover: bool):
     settings = get_settings()
     resolver = build_llm_resolver(settings=settings)
     client = build_agent_llm_client(
-        settings=SimpleNamespace(llm=SimpleNamespace(agent_local_failover=failover)),
+        settings=SimpleNamespace(
+            llm=SimpleNamespace(
+                agent_local_failover=failover,
+                LLM_LOCAL_FAILOVER_MIN_SECONDS=45.0,
+            ),
+        ),
         clients=SimpleNamespace(llm_resolver=resolver),
     )
     return client, resolver
@@ -51,6 +56,7 @@ def test_with_local_failover_agents_use_groq_then_the_local_model() -> None:
     assert isinstance(client._fallback, LocalLLMClient)
     # Prompts are still budgeted for Groq.
     assert client.model == resolver.get(LLMProviderEnum.GROQ).model
+    assert client._min_fallback_seconds == 45.0
 
 
 def test_only_prompts_that_fit_the_local_window_are_failed_over() -> None:
@@ -73,6 +79,7 @@ def test_llm_local_decides_agent_failover(value: str, enabled: bool) -> None:
 
 def test_llm_local_defaults_to_no_failover_and_rejects_unknown_values() -> None:
     assert LLMSettings.model_fields["LLM_LOCAL"].default == "none"
+    assert LLMSettings.model_fields["LLM_LOCAL_FAILOVER_MIN_SECONDS"].default == 60.0
 
     with pytest.raises(ValidationError):
         LLMSettings(LLM_LOCAL="groq", SEARXNG_BASE_URL="http://searxng:8080")

@@ -51,7 +51,7 @@ class ApplicationMetrics:
             description=(
                 "Calls a primary LLM provider couldn't serve, labeled by "
                 "primary/fallback provider, reason (error type) and outcome "
-                "(attempted|skipped_context|failed)."
+                "(attempted|skipped_context|skipped_deadline|failed)."
             ),
             unit="1",
         )
@@ -134,13 +134,14 @@ class ApplicationMetrics:
         primary: str,
         fallback: str,
         reason: str,
-        outcome: Literal["attempted", "skipped_context", "failed"],
+        outcome: Literal["attempted", "skipped_context", "skipped_deadline", "failed"],
     ) -> None:
         """
         Record one call the primary LLM provider couldn't serve.
 
         "attempted" is recorded when the fallback call starts, so a
-        "failed" count is a subset of it, not in addition.
+        "failed" count (error or deadline reached) is a subset of it, not
+        in addition.
         """
 
         self.llm_failovers.add(

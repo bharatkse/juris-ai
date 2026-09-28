@@ -19,18 +19,28 @@ change: the request's model override is cleared (a Groq model name means
 nothing to Ollama, which uses its own configured model), and the call is
 skipped when the prompt doesn't fit the fallback's smaller context
 window (``fits_fallback``), because Ollama would otherwise silently cut
-the start of the prompt -- the system prompt -- instead of failing. When
-the fallback is skipped or also fails, the primary's error is raised.
+the start of the prompt -- the system prompt -- instead of failing.
+
+Time: a local model can be far slower than Groq (a realistic agent
+decision took ~450 s on a CPU-only host, review R2). The runtime sets a
+deadline for each call (core.deadline: the graph timeout and the agent
+turn's time budget). The fallback is skipped when less than
+``min_fallback_seconds`` remain, and a fallback call still running at the
+deadline is cancelled, so failover fails fast instead of overrunning the
+request. When the fallback is skipped, fails or runs out of time, the
+primary's error is raised.
 """
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Callable
 from dataclasses import replace
 
 from adapters.clients.llm.base import LLMClient
 from adapters.observability.logger import get_logger
 from adapters.observability.metrics import metrics
+from core.deadline import remaining_seconds
 from core.dto.clients.llm import LLMRequestDTO, LLMResponseDTO, LLMStreamChunkDTO
 from core.exceptions.client import (
     ClientConnectionError,
@@ -65,10 +75,12 @@ class FailoverLLMClient(LLMClient):
         primary: LLMClient,
         fallback: LLMClient,
         fits_fallback: Callable[[LLMRequestDTO], bool],
+        min_fallback_seconds: float,
     ) -> None:
         self._primary = primary
         self._fallback = fallback
         self._fits_fallback = fits_fallback
+        self._min_fallback_seconds = min_fallback_seconds
 
     @property
     def provider(
@@ -111,11 +123,14 @@ class FailoverLLMClient(LLMClient):
                 raise
 
             try:
-                return await self._fallback.generate(
-                    request=fallback_request,
+                return await asyncio.wait_for(
+                    self._fallback.generate(
+                        request=fallback_request,
+                    ),
+                    timeout=remaining_seconds(),
                 )
 
-            except ClientError as fallback_exc:
+            except (ClientError, TimeoutError) as fallback_exc:
                 metrics.record_llm_failover(
                     primary=self._primary.provider,
                     fallback=self._fallback.provider,
@@ -187,6 +202,25 @@ class FailoverLLMClient(LLMClient):
         """
 
         reason = type(error).__name__
+        remaining = remaining_seconds()
+
+        if remaining is not None and remaining < self._min_fallback_seconds:
+            metrics.record_llm_failover(
+                primary=self._primary.provider,
+                fallback=self._fallback.provider,
+                reason=reason,
+                outcome="skipped_deadline",
+            )
+            log.warning(
+                "Primary provider '%s' unavailable (%s), but only %.0f s remain "
+                "(minimum %.0f s for fallback provider '%s'); not failing over.",
+                self._primary.provider,
+                reason,
+                max(remaining, 0.0),
+                self._min_fallback_seconds,
+                self._fallback.provider,
+            )
+            return None
 
         if not self._fits_fallback(request):
             metrics.record_llm_failover(

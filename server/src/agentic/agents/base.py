@@ -92,8 +92,9 @@ class BaseAgent:
             structured_output=True,
         )
 
-        # The decision schema names only this agent's tools, so a
-        # provider that decodes against it can't produce any other tool.
+        # The decision schema names only this agent's tools. A provider
+        # that decodes against it (Ollama, e.g. on failover) can't produce
+        # any other tool; Groq is sent AgentDecision's own schema.
         llm_request = replace(
             llm_request,
             response_schema=decision_json_schema(

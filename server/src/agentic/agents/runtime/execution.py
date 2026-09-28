@@ -61,6 +61,7 @@ from agentic.policy.guard import AgentPolicyGuard
 from agentic.policy.schemas import AgentPolicy
 from agentic.registry.protocols import AgentRegistryProtocol, ToolRegistryProtocol
 from agentic.tools.constants import GATED_TOOLS
+from core.deadline import deadline_within
 from core.dto.agent import AgentRequestDTO
 from core.dto.agent_action import AgentActionRequestDTO
 from core.dto.tool import RetrievedContentDTO
@@ -425,11 +426,19 @@ class AgentExecutionHandle:
         # 3. Agent reasoning
         # --------------------------------------------------------------
 
+        # The turn's time budget is checked between steps; a reasoning
+        # call that outlives it is wasted (the next step is refused). Its
+        # deadline lets a slow fallback LLM call be skipped or cut short
+        # (core.deadline, FailoverLLMClient).
+        turn_elapsed = (datetime.now(UTC) - self.state.started_at).total_seconds()
+        turn_remaining = self.state.budget.max_execution_time_seconds - turn_elapsed
+
         try:
-            decision = await self._agent._reason(
-                request=self._request,
-                context=self._reasoning_context,
-            )
+            with deadline_within(max(turn_remaining, 0.0)):
+                decision = await self._agent._reason(
+                    request=self._request,
+                    context=self._reasoning_context,
+                )
         except Exception as exc:
             # Only failures originating from the actual agent/LLM reasoning
             # call are eligible for RetryClassifier evaluation.

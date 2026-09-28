@@ -125,7 +125,9 @@ def _agent_client(groq: UnavailableGroq, local: RecordingLocal) -> LLMClient:
     """The agent LLM client exactly as wiring builds it, with LLM_LOCAL=ollama."""
 
     client = build_agent_llm_client(
-        settings=SimpleNamespace(llm=SimpleNamespace(agent_local_failover=True)),
+        settings=SimpleNamespace(
+            llm=SimpleNamespace(agent_local_failover=True, LLM_LOCAL_FAILOVER_MIN_SECONDS=60.0),
+        ),
         clients=SimpleNamespace(
             llm_resolver=LLMResolver(
                 clients={LLMProviderEnum.GROQ: groq, LLMProviderEnum.LOCAL: local},

@@ -118,9 +118,7 @@ class LocalLLMClient(LLMClient):
             request_kwargs["options"] = options
 
         if request.response_format is not None:
-            request_kwargs["format"] = self._to_response_format(
-                request.response_format,
-            )
+            request_kwargs["format"] = self._format(request)
 
             log.debug(
                 "Using structured response format for provider '%s'.",
@@ -242,9 +240,7 @@ class LocalLLMClient(LLMClient):
             request_kwargs["options"] = options
 
         if request.response_format is not None:
-            request_kwargs["format"] = self._to_response_format(
-                request.response_format,
-            )
+            request_kwargs["format"] = self._format(request)
 
         try:
             stream = await self._client.chat(
@@ -308,6 +304,25 @@ class LocalLLMClient(LLMClient):
             }
             for message in messages
         ]
+
+    def _format(
+        self,
+        request: LLMRequestDTO,
+    ) -> dict[str, Any]:
+        """
+        Ollama's ``format`` for a structured request.
+
+        Ollama decodes against this schema (review A19), so a narrower
+        per-request schema (request.response_schema, e.g. an agent
+        decision limited to its own tools) is enforced when present.
+        """
+
+        if request.response_schema is not None:
+            return request.response_schema
+
+        return self._to_response_format(
+            request.response_format or {},
+        )
 
     @staticmethod
     def _to_response_format(

@@ -18,6 +18,7 @@ from adapters.observability.logger import get_logger
 from agentic.decisions.decision import AgentDecisionType
 from agentic.execution.graph.state import ExecutionGraphState
 from agentic.execution.schemas.result import ExecutionResultSchema
+from core.deadline import deadline_within
 from core.dto.action_workflow import ActionWorkflowResultDTO
 from core.dto.agent import AgentContextDTO
 from core.dto.agent_action import AgentActionRequestDTO
@@ -107,17 +108,19 @@ class ExecutionSession:
 
             initial_state = self._build_initial_state()
 
-            graph_state = await asyncio.wait_for(
-                graph.ainvoke(
-                    initial_state,
-                    config={
-                        "configurable": {
-                            "thread_id": self._context.thread_id,
+            # LLM calls inside the graph see this deadline (core.deadline).
+            with deadline_within(self._timeout_policy.timeout_seconds):
+                graph_state = await asyncio.wait_for(
+                    graph.ainvoke(
+                        initial_state,
+                        config={
+                            "configurable": {
+                                "thread_id": self._context.thread_id,
+                            },
                         },
-                    },
-                ),
-                timeout=self._timeout_policy.timeout_seconds,
-            )
+                    ),
+                    timeout=self._timeout_policy.timeout_seconds,
+                )
 
             return await self._finish(
                 graph_state=cast(ExecutionGraphState, graph_state),
@@ -194,17 +197,19 @@ class ExecutionSession:
                 plan=self._plan,
             )
 
-            graph_state = await asyncio.wait_for(
-                graph.ainvoke(
-                    Command(resume=resume_value),
-                    config={
-                        "configurable": {
-                            "thread_id": thread_id,
+            # LLM calls inside the graph see this deadline (core.deadline).
+            with deadline_within(self._timeout_policy.timeout_seconds):
+                graph_state = await asyncio.wait_for(
+                    graph.ainvoke(
+                        Command(resume=resume_value),
+                        config={
+                            "configurable": {
+                                "thread_id": thread_id,
+                            },
                         },
-                    },
-                ),
-                timeout=self._timeout_policy.timeout_seconds,
-            )
+                    ),
+                    timeout=self._timeout_policy.timeout_seconds,
+                )
 
             return await self._finish(
                 graph_state=cast(ExecutionGraphState, graph_state),

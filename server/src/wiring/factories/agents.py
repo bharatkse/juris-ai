@@ -92,11 +92,13 @@ def build_agent_llm_client(
 
     A failed-over call reuses the prompt as built: the messages are plain
     role/content, which Ollama renders with the local model's own chat
-    template, and the decision schema limits tool names in both
-    providers. Agents never send tools= (review A19: on Ollama that
-    output is unconstrained and out-of-list calls vanish). What differs is
-    the context window, so a prompt budgeted for Groq that doesn't fit
-    the local model's window is not failed over.
+    template. Agents never send tools= (review A19: on Ollama that output
+    is unconstrained and out-of-list calls vanish); the decision schema
+    limits tool names instead. What differs is the context window, so a
+    prompt budgeted for Groq that doesn't fit the local model's window is
+    not failed over, and speed: a call is failed over only with
+    LLM_LOCAL_FAILOVER_MIN_SECONDS of its deadline left, and cut off at
+    the deadline.
     """
 
     primary = clients.llm_resolver.get(LLMProviderEnum.GROQ)
@@ -117,4 +119,5 @@ def build_agent_llm_client(
         primary=primary,
         fallback=fallback,
         fits_fallback=fits_fallback,
+        min_fallback_seconds=settings.llm.LLM_LOCAL_FAILOVER_MIN_SECONDS,
     )
