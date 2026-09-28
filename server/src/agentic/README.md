@@ -10,7 +10,7 @@ Every component below has its own `README.md` (workflow diagram, verified 2026-0
 
 | Path | Responsibility | Docs |
 |---|---|---|
-| `planning/` | Intent analysis, `ExecutionPlan` generation (template-based or LLM-based) | [README](planning/README.md) |
+| `planning/` | Intent analysis, `ExecutionPlanDTO` generation (template-based or LLM-based) | [README](planning/README.md) |
 | `orchestration/` | `AIOrchestrator` — coordinates the request lifecycle; never executes agents/tools itself | [README](orchestration/README.md) |
 | `execution/` | `Executor`, LangGraph graph construction/compilation, execution state/memory, response aggregation | [README](execution/README.md) |
 | `agents/` | Domain reasoning (`LegalAgent`, `ContractAgent`), prompt building, token budgeting, agent runtime (lifecycle, continuation) | [README](agents/README.md), [runtime/](agents/runtime/README.md) |
@@ -51,7 +51,8 @@ flowchart TD
     TOOLREG --> CONT["AgentContinuationService<br/>(agents/runtime/continuation.py)<br/>feeds result back, re-reasons"]
     CONT --> AGENT
     DECISION -->|DELEGATE| BUS["CollaborationBus.send()<br/>(only if policy allows delegation)"]
-    BUS --> CONT
+    BUS --> RUNNER["DelegatedAgentRunner<br/>(agents/runtime/delegation.py)<br/>runs the target's whole turn"]
+    RUNNER --> CONT
     DECISION -->|FINAL| GATE["_gate_final()<br/>AnswerQualityPolicy check<br/>(see sequence diagram below)"]
     GATE --> MAPPER["AgentResponseMapper.map()<br/>(execution/aggregation/mapper.py)<br/>builds citations/sources from reasoning_context"]
     MAPPER --> EXECUTOR
@@ -107,9 +108,9 @@ sequenceDiagram
 ```
 
 Corrective retrieval (`CORRECTIVE_RETRIEVAL_TOP_K = 8`, broader than a
-normal `retriever` call's default `top_k=5`) was added this session —
-it is not part of the original design and does not appear in
-`docs/server/architecture/overview.md`'s diagrams.
+normal `retriever` call's default `top_k=5`) is not part of the original
+design and does not appear in `docs/server/architecture/overview.md`'s
+diagrams.
 
 ## Rate limiting and token quota
 
@@ -200,8 +201,8 @@ Off by default deliberately: it's a broad, open-internet capability
 with no production track record — the enforcement path that makes
 this grant meaningful (real `AgentPolicyGuard` checks) was only fixed
 this session. Flip it once `web_research` has been observed under real
-traffic, or grant it directly in `DEFAULT_AGENT_POLICIES` for a
-specific deployment.
+traffic, or grant it directly in `_build_default_agent_policies()`
+(`wiring/factories/agent_policies.py`) for a specific deployment.
 
 This is a first-cut seed, not derived from a specification — treat it
 as a starting point to adjust, not a settled design.
@@ -232,7 +233,10 @@ module's own test suite relies on.
 `_delegate()` is not wrapped in the same `@task` pattern: delegation is
 disabled by default (no agent policy grants `allow_delegation`), and
 `CollaborationBus.send()` returns a bare `object` with no serialization
-contract to checkpoint. Wrap it the same way if delegation is enabled.
+contract to checkpoint. The delegated target's own tool calls do run
+through `_execute_tool()`, so each is checkpointed individually, but its
+reasoning re-runs on a replay. Wrap `_delegate()` the same way if
+delegation is enabled.
 
 ### Approval decisions
 
@@ -281,14 +285,15 @@ a `user_id`.
 
 Every LLM call in this package resolves its sampling config through
 `core.dto.inference.InferencePolicy.resolve(task, ...)` rather than
-leaving a provider default in place — the one deliberate exception
-being agent-facing prose generation, which stays non-zero on purpose.
+leaving a provider default in place. (`LLMTask.FACTUAL_ANSWER`, 0.2, is
+still defined and still declared as the agents' `inference_task`, but no
+agent call uses it since the separate streamed answer generation was
+removed.)
 
 | Call site | `LLMTask` | Temperature | Why |
 |---|---|---|---|
-| Planning (`planning/llm_planner.py`) | `STRUCTURED_DECISION` | `0.0` | Produces a structured `ExecutionPlan` consumed programmatically — no reason for run-to-run variance. |
-| Agent tool-call/structured decisions (`agents/base.py._reason()`) | `STRUCTURED_DECISION` | `0.0` | Same reasoning — a `TOOL_CALL`/`FINAL` decision is a structured contract, not prose. |
-| Agent final-answer generation (`agents/base.py`, `legal.py`, `contract.py`) | `FACTUAL_ANSWER` | `0.2` | Deliberately non-zero: user-facing legal/contract prose, small variance tolerated. Confirmed deliberate this session, left unchanged. |
+| Planning (`planning/llm_planner.py`) | `STRUCTURED_DECISION` | `0.0` | Produces a structured `ExecutionPlanDTO` consumed programmatically — no reason for run-to-run variance. |
+| Agent decisions, including the FINAL answer text (`agents/base.py._reason()`) | `STRUCTURED_DECISION` | `0.0` | Same reasoning — a `TOOL_CALL`/`FINAL` decision is a structured contract. The FINAL answer is a field of that decision; there is no separate answer generation. |
 | Conversation summarization (`application/services/conversation_summarization.py`) | `SUMMARIZATION` | `0.3` | Low but non-zero; consistency matters more than creativity, but summarizing prose isn't a structured decision either. |
 | LLM-as-judge — faithfulness/relevancy/context precision-recall (`wiring/factories/evaluation.py::build_llm_judge`) | *(none — direct `LLMInferenceConfig`)* | `0.0` | **Fixed this session** — previously had no inference config at all, silently defaulting to an ambient `0.2`. Judge calls must be reproducible for `AnswerQualityPolicy`'s empirically calibrated thresholds (`agentic/evaluation/answer.py`) to keep meaning anything over time. |
 

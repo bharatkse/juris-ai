@@ -23,7 +23,7 @@ flowchart LR
         RT["register_tools()<br/>wiring/factories/tools.py"] --> TR[(ToolRegistry)]
     end
     subgraph PerRequest["Per request"]
-        N["AgentExecution.start()<br/>(agents/runtime/execution.py:958)"] -->|"resolve(agent_id)"| AR
+        N["AgentExecution.start()<br/>(agents/runtime/execution.py)"] -->|"resolve(agent_id)"| AR
         TES["ToolExecutionService.execute()<br/>(tools/runtime/invocation.py)"] -->|"resolve(tool_name) — after policy check"| TR
     end
 ```

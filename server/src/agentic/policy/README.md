@@ -1,6 +1,6 @@
 # src/agentic/policy/ — Per-Agent Tool and Delegation Policy
 
-Verified against the code on 2026-09-23. This is agent-level least
+Verified against the code on 2026-09-28. This is agent-level least
 privilege ("which tools may agent X call"). User-level authorization
 (RBAC, capability analysis, approvals) is separate, in
 `application/authorization/`.

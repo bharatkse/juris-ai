@@ -1,6 +1,6 @@
 # src/agentic/agents/ — Domain Agents and Prompt Construction
 
-Verified against the code on 2026-09-23. The per-turn loop that drives an
+Verified against the code on 2026-09-28. The per-turn loop that drives an
 agent lives in `runtime/` (its own README).
 
 ## Purpose
@@ -14,9 +14,9 @@ they propose a `TOOL_CALL` and the runtime executes it.
 
 | File | Class | Role |
 |---|---|---|
-| `base.py` | `BaseAgent` | `_reason()` (structured decision) |
-| `legal.py` | `LegalAgent` | name `legal`; `LegalPromptBuilder`; `inference_task = FACTUAL_ANSWER` |
-| `contract.py` | `ContractAgent` | name `contract`; `ContractPromptBuilder`; `inference_task = FACTUAL_ANSWER` |
+| `base.py` | `BaseAgent` | `_reason()`: the agent's one LLM call, a structured decision at `LLMTask.STRUCTURED_DECISION` |
+| `legal.py` | `LegalAgent` | name `legal`; `LegalPromptBuilder`; metadata (its `description` is the planner's routing text) |
+| `contract.py` | `ContractAgent` | name `contract`; `ContractPromptBuilder`; metadata |
 | `prompts/base.py` | `BasePromptBuilder` | Loads the template, budgets tokens, assembles messages, wraps evidence in `<retrieved_context>` after escaping any `<retrieved_context>`/`</retrieved_context>` tag inside the content (`core/utils/prompt_safety.escape_delimiter`), so evidence can't close the wrapper early |
 | `prompts/token_budget.py` | `fit_to_budget()` | tiktoken-based trimming: system prompt never truncated; oldest history, then lowest-scored context dropped first |
 | `prompts/tool_catalog.py` | `render_tool_catalog()` | "Available tools" block: each tool the agent's policy allows, with its parameter JSON Schema (`AgentRequestDTO.tool_catalog`, set by `AgentExecution.start()`); says so when there are none |

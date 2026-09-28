@@ -19,7 +19,8 @@ LangGraph graph whose nodes drive `agents/runtime/`.
 | `stream(request, action_workflow_service)` | `ChatService.stream_chat()` | Same lifecycle and `Executor.execute()`; nothing is sent until the guardrail verdict, then the reviewed text is streamed in slices |
 | `resume(...)` | `HitlResumeService` after an approval decision | `Executor.resume()`; single guardrail pass, no regenerate loop |
 
-Schemas: `schemas/request.py` (`OrchestratorRequest`, `Attachment`),
+Schemas: `schemas/request.py` (`OrchestratorRequest`; attachments are
+`ToolFileDTO`s; the `Attachment` model there is unused),
 `schemas/context.py` (`OrchestrationContext`), `schemas/response.py`
 (`OrchestratorResponse`, `OrchestratorStreamChunk`).
 

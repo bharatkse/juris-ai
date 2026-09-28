@@ -1,6 +1,6 @@
 # src/agentic/agents/runtime/ — The Agent Turn Loop
 
-Verified against the code on 2026-09-23. This is what runs inside each
+Verified against the code on 2026-09-28. This is what runs inside each
 LangGraph node (`execution/graph/nodes.py`, `AgentExecutionNode`). Added by
 JA-54 / PR #35; it sits **under** `execution/`, not in place of it.
 
@@ -14,10 +14,10 @@ JA-54 / PR #35; it sits **under** `execution/`, not in place of it.
 | `delegation.py` | `DelegatedAgentRunner` | `CollaborationBus` handler for each agent (registered in `wiring/factories/executor.py`): runs a delegated turn like a plan step (`start()` with the target's own policy → `seed_evidence()` → `reason()` → `execute()`) and returns its `AgentContinuationResult`; only a verified FINAL answer reaches the delegating agent. Delegation is disabled by policy |
 | `retry.py` | `RetryClassifier` | Which reasoning exceptions are retryable (configured in `wiring/factories/executor.py`) |
 | `lifecycle/lifecycle.py` | `AgentLifecycle` | Budget checks + state transitions (`complete`, `fail`, `partial`, `user_input_required`) |
-| `lifecycle/budget.py` | `AgentExecutionBudget` | Limits: 10 iterations, 20 tool calls, 5 hops, 30 steps, 120 s, repeated action 2, no-progress 2, validation 2, plus record-count and size caps |
+| `lifecycle/budget.py` | `AgentExecutionBudget` | Limits: 10 iterations, 20 tool calls, 5 hops, 30 steps, 120 s, repeated action 2, no-progress 2, rejected decisions 2 (`max_rejected_decisions`: invalid or policy-denied decisions the model may correct), plus record-count and size caps |
 | `lifecycle/guard.py` | `BudgetGuard` | Per-limit checks returning `BudgetCheckResult` |
 | `lifecycle/loop_breaker.py` | `LoopBreaker` | Repeated-action and no-progress detection |
-| `lifecycle/termination.py`, `state.py` | `TerminationReason`, `AgentExecutionStatus`, `AgentTerminator`, `AgentState` | Why and how a turn ended |
+| `lifecycle/termination.py`, `lifecycle/state.py` | `TerminationReason`, `AgentExecutionStatus`, `AgentTerminator`, `AgentState` | Why and how a turn ended |
 
 ## One reasoning attempt (`AgentExecutionHandle.reason()`)
 
@@ -25,7 +25,7 @@ JA-54 / PR #35; it sits **under** `execution/`, not in place of it.
 flowchart TD
     S[reason] --> B1{"begin_step / begin_iteration<br/>budget ok?"}
     B1 -->|no| PART[partial result]
-    B1 -->|yes| R["agent._reason(request, reasoning_context)<br/>structured AgentDecision"]
+    B1 -->|yes| R["agent._reason(request, reasoning_context)<br/>structured AgentDecision,<br/>under deadline_within(turn time left)"]
     R -->|exception| RC{"RetryClassifier.is_retryable?"}
     RC -->|yes, attempts left| R
     RC -->|no| FAILR[FAILED]
@@ -77,16 +77,32 @@ sequenceDiagram
         C->>E: evaluate(question, answer, evidence)
         alt sufficient
             C-->>N: accept + AnswerEvaluationSummary
+        else no evidence at all
+            C->>T: one corrective "retriever" call (policy-checked)
+            C-->>N: still none: answer replaced with NO_SOURCES_ANSWER_MESSAGE<br/>(NO_EVIDENCE, verified=False)
         else groundedness/relevance failed, budget ok
             C->>T: forced TOOL_CALL "retriever" (policy-checked)
             C->>H: reason() again
         else other failure, budget ok
             C->>H: add evaluator feedback to context, reason() again
-        else step budget exhausted
-            C-->>N: terminal_result()
+        else step budget exhausted, or the retry ended the execution
+            C-->>N: answer replaced with UNVERIFIED_ANSWER_MESSAGE<br/>(QUALITY_GATE_EXHAUSTED, verified=False); never re-gated
         end
     end
 ```
+
+Before the first `reason()`, `AgentExecutionNode` calls
+`AgentContinuationService.seed_evidence()`: a policy-checked `retriever`
+call for the user's latest question, added to `reasoning_context` next to
+any parsed attachments. A replaced answer surfaces as
+`answer_verified=False` in the response metadata.
+
+`reason()` runs `_reason()` inside `deadline_within()` (`core/deadline.py`)
+set to the turn's remaining `max_execution_time_seconds`; the graph
+timeout sets an outer deadline around the whole graph. The agent's LLM
+client reads it: when the agents' client is a `FailoverLLMClient`
+(`LLM_LOCAL=ollama`), a fallback call is skipped when too little time is
+left and cancelled at the deadline.
 
 ---
 
