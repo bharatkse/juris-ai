@@ -11,6 +11,9 @@ Claude Code here gets these hooks and permissions automatically.
 | `commands/phase-report.md` | yes | `/phase-report`: the standard end-of-phase report |
 | `scripts/phase-checks.py` | yes | Runs the checks for `/phase-report` |
 | `agents/docs-sync.md` | yes | Read-only subagent: doc claims a diff made stale |
+| `agents/screen-recorder.md` | yes | Subagent: screenshots/videos of a UI change, only on request (`agents/README.md`) |
+| `agents/README.md` | yes | Subagent index and `screen-recorder` request format |
+| `captures/` | no (gitignored) | `screen-recorder` output, may include test-user credentials |
 
 Requirements on your machine: `jq`, `python3` on `PATH`, and the repo-root
 venv (`make poetry-install`) for ruff and the test run.
