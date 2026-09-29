@@ -42,6 +42,7 @@ def build_approval_result() -> SimpleNamespace:
         requested_by="user-123",
         status=ApprovalStatusEnum.APPROVED,
         decision_type=ApprovalDecisionEnum.APPROVE,
+        edited_payload=None,
         created_at=datetime(2026, 1, 1, tzinfo=UTC),
         expires_at=datetime(2026, 1, 1, 0, 15, tzinfo=UTC),
     )
@@ -103,6 +104,7 @@ async def test_process_approval_returns_success_response() -> None:
         approval_id="approval-123",
         agent_action_id="action-123",
         decision_type=ApprovalDecisionEnum.APPROVE,
+        edited_payload=None,
     )
 
     call = service.process.await_args

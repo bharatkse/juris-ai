@@ -121,6 +121,7 @@ async def test_root_endpoint() -> None:
 @pytest.mark.asyncio
 @patch("main.check_redis")
 @patch("main.seed_default_agent_policies")
+@patch("main.seed_default_roles")
 @patch("main.create_memory_extraction_scheduler")
 @patch("main.create_clients")
 @patch("main.create_ai_orchestrator")
@@ -136,6 +137,7 @@ async def test_lifespan(
     mock_create_ai_orchestrator: MagicMock,
     mock_create_clients: MagicMock,
     mock_create_memory_extraction_scheduler: MagicMock,
+    mock_seed_default_roles: MagicMock,
     mock_seed_default_agent_policies: MagicMock,
     mock_check_redis: AsyncMock,
 ) -> None:
@@ -185,6 +187,7 @@ async def test_lifespan(
     mock_check_redis.assert_awaited_once_with()
 
     mock_seed_default_agent_policies.assert_awaited_once_with()
+    mock_seed_default_roles.assert_awaited_once_with()
 
     checkpointer.setup.assert_awaited_once_with()
 

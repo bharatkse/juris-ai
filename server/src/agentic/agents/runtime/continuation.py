@@ -439,9 +439,10 @@ class AgentContinuationService:
         for the same thread_id -- see Executor.resume()), interrupt()
         returns the resume payload instead of pausing, and this method
         returns normally with the tool result that was actually computed
-        outside the graph (the approved tool call is executed for real
-        by Executor.resume() BEFORE resuming, not replayed inside this
-        node -- see its docstring for why).
+        outside the graph (the approved call, with any human edits, is
+        executed by HitlResumeService through Executor.run_approved_tool()
+        and stored on the AgentAction BEFORE resuming, not replayed
+        inside this node -- see Executor.resume()'s docstring for why).
 
         LangGraph replays this WHOLE node function from the top on
         resume -- including any tool call that ran earlier in the SAME
@@ -458,6 +459,18 @@ class AgentContinuationService:
         """
 
         from langgraph.types import interrupt
+
+        # Validate before pausing, so a human is only asked to approve a
+        # well-formed draft; an invalid one is fed back to the model like
+        # any other rejected tool call. Deterministic, so safe to repeat
+        # when this node replays on resume.
+        invalid = self._tool_execution_service.check_parameters(
+            tool_name=action.tool_name or "",
+            parameters=dict(action.parameters),
+        )
+
+        if invalid is not None:
+            return invalid
 
         resume_payload = interrupt(
             {

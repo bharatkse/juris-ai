@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from unittest.mock import MagicMock, Mock
+from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
 
@@ -91,9 +91,17 @@ def mock_policy() -> Mock:
 
 
 @pytest.fixture
-def rbac_service(mock_policy: Mock) -> RBACService:
-    """Return an RBAC service using the mocked policy."""
-    return RBACService(policy=mock_policy)
+def mock_role_permissions() -> MagicMock:
+    """Return a mocked role permission provider (the user's DB role)."""
+    provider = MagicMock()
+    provider.permissions_for = AsyncMock(return_value=frozenset())
+    return provider
+
+
+@pytest.fixture
+def rbac_service(mock_policy: Mock, mock_role_permissions: MagicMock) -> RBACService:
+    """Return an RBAC service using the mocked policy and role provider."""
+    return RBACService(policy=mock_policy, role_permissions=mock_role_permissions)
 
 
 @pytest.fixture
@@ -111,7 +119,10 @@ def mock_rbac() -> MagicMock:
     Provide a mocked RBAC service.
     """
 
-    return MagicMock()
+    rbac = MagicMock()
+    rbac.check_intent = AsyncMock()
+    rbac.check_action = AsyncMock()
+    return rbac
 
 
 @pytest.fixture
@@ -120,7 +131,9 @@ def mock_execute_gate() -> MagicMock:
     Provide a mocked RBAC execute gate.
     """
 
-    return MagicMock()
+    gate = MagicMock()
+    gate.authorize = AsyncMock()
+    return gate
 
 
 @pytest.fixture

@@ -477,7 +477,7 @@ install-hooks: ## Install pre-commit git hooks
 # itself, never through DB_HOST.
 # ============================================================================
 
-.PHONY: alembic-upgrade alembic-downgrade alembic-current \
+.PHONY: alembic-upgrade alembic-downgrade alembic-current alembic-check \
         alembic-history alembic-heads alembic-stamp alembic-revision
 
 alembic-upgrade: ## Apply all pending Alembic migrations
@@ -496,6 +496,9 @@ alembic-history: ## Show Alembic migration history
 
 alembic-heads: ## Show current Alembic heads
 	@$(SERVER_COMPOSE) exec -T $(API_SERVICE) $(ALEMBIC) heads
+
+alembic-check: ## Show Alembic check
+	@$(SERVER_COMPOSE) exec -T $(API_SERVICE) $(ALEMBIC) check
 
 alembic-stamp: ## Stamp database to a revision [rev=<rev|head>]
 ifndef rev

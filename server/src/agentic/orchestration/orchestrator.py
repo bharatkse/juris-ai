@@ -48,9 +48,11 @@ if TYPE_CHECKING:
     # made this file's type hints unresolvable.
     from agentic.execution.aggregation.response import ResponseAggregator
     from agentic.execution.executor import Executor
+    from agentic.execution.schemas.result import ExecutionResultSchema
     from agentic.execution.validation.response import ResponseValidator
     from agentic.guardrails.service import OutputGuardrailService
     from agentic.planning.planner import ExecutionPlanner
+    from agentic.tools.result import ToolResult
     from application.authorization.service import AuthorizationService
     from application.services.action_workflow import ActionWorkflowService
     from application.services.compliance_log import StandaloneComplianceLogWriter
@@ -67,6 +69,28 @@ _GUARDRAIL_BLOCKED_MESSAGE = (
     "I'm not able to provide a response to this request. If you believe "
     "this is a mistake, please rephrase your question or contact support."
 )
+
+# Content for a turn that paused on a gated action (email_send/
+# slack_post) awaiting the user's approval. The approval itself is
+# attached to the same response; without this, a paused single-step plan
+# had no FINAL answer and fell through to the "something went wrong"
+# fallback next to a perfectly valid pending approval.
+_PENDING_APPROVAL_MESSAGE = (
+    "This needs your approval before I can continue. Review the pending "
+    "request to approve, edit or reject it."
+)
+
+_EXECUTION_FAILED_MESSAGE = (
+    "I wasn't able to complete this request -- something went wrong while "
+    "gathering the information needed to answer. Please try again."
+)
+
+
+def _awaiting_approval(execution_result: ExecutionResultSchema) -> bool:
+    return (
+        execution_result.state.status is ExecutionStatusEnum.WAITING_FOR_APPROVAL
+        or execution_result.approval is not None
+    )
 
 
 # Target size of each streamed slice of the reviewed answer. Slices end
@@ -280,6 +304,25 @@ class AIOrchestrator:
         self._compliance_log = compliance_log
         self._guardrail_max_regenerate_attempts = guardrail_max_regenerate_attempts
 
+    async def run_approved_tool(
+        self,
+        *,
+        tool_name: str,
+        parameters: dict[str, object],
+        approval_token: str,
+    ) -> ToolResult:
+        """
+        Run a human-approved gated tool call. Pure delegation to the
+        Executor, which owns tool execution (see its docstring); exposed
+        here so HitlResumeService depends on the orchestrator alone.
+        """
+
+        return await self._executor.run_approved_tool(
+            tool_name=tool_name,
+            parameters=parameters,
+            approval_token=approval_token,
+        )
+
     async def resume(
         self,
         *,
@@ -288,13 +331,13 @@ class AIOrchestrator:
         conversation_id: str,
         plan: ExecutionPlanDTO,
         approved: bool,
-        tool_name: str,
-        parameters: dict[str, object],
+        tool_result: ToolResult | None,
         action_workflow_service: ActionWorkflowService,
     ) -> OrchestratorResponse:
         """
         Resume an execution previously paused for human approval of a
-        gated (email/slack send) tool call.
+        gated (email_send/slack_post) tool call. An approved call has
+        already run (run_approved_tool()); tool_result is its result.
 
         Mirrors handle()'s tail (extract responses -> validate ->
         aggregate -> build response) exactly, since the paused/resumed
@@ -312,7 +355,7 @@ class AIOrchestrator:
                 "thread_id": thread_id,
                 "user_id": str(user_id),
                 "approved": approved,
-                "tool_name": tool_name,
+                "tool_name": tool_result.tool_name if tool_result else None,
             },
         )
 
@@ -322,8 +365,7 @@ class AIOrchestrator:
             plan=plan,
             action_workflow_service=action_workflow_service,
             approved=approved,
-            tool_name=tool_name,
-            parameters=parameters,
+            tool_result=tool_result,
         )
 
         agent_responses = self._extract_agent_responses(
@@ -357,12 +399,19 @@ class AIOrchestrator:
                 },
             )
 
-            fallback_content = (
-                "I wasn't able to complete this because the request was " "not approved."
-                if not approved
-                else "I wasn't able to complete this action -- it failed "
-                "after approval. Please try again or contact support."
-            )
+            if _awaiting_approval(execution_result):
+                # The resumed turn went on to propose another gated
+                # action, which now waits for its own approval.
+                fallback_content = _PENDING_APPROVAL_MESSAGE
+            elif not approved:
+                fallback_content = (
+                    "I wasn't able to complete this because the request was not approved."
+                )
+            else:
+                fallback_content = (
+                    "I wasn't able to complete this action -- it failed "
+                    "after approval. Please try again or contact support."
+                )
 
             return OrchestratorResponse(
                 conversation_id=conversation_id,
@@ -506,7 +555,7 @@ class AIOrchestrator:
                 # 1. Request-level authorization
                 # ---------------------------------------------------------
 
-                self._authorization.authorize_request(
+                await self._authorization.authorize_request(
                     user_id=request.user_id,
                     message=request.message,
                 )
@@ -701,7 +750,8 @@ class AIOrchestrator:
                             if step.error
                         )
 
-                        log.error(
+                        # A pause for approval is expected, not an error.
+                        (log.info if _awaiting_approval(execution_result) else log.error)(
                             "Execution ended without a mappable agent "
                             "response -- returning a graceful fallback "
                             "instead of raising EmptyAggregationError. "
@@ -721,10 +771,9 @@ class AIOrchestrator:
                         return OrchestratorResponse(
                             conversation_id=request.conversation_id,
                             content=(
-                                "I wasn't able to complete this request -- "
-                                "something went wrong while gathering the "
-                                "information needed to answer. Please try "
-                                "again."
+                                _PENDING_APPROVAL_MESSAGE
+                                if _awaiting_approval(execution_result)
+                                else _EXECUTION_FAILED_MESSAGE
                             ),
                             citations=[],
                             sources=[],
@@ -1006,7 +1055,7 @@ class AIOrchestrator:
                     request=request,
                 )
 
-                self._authorization.authorize_request(
+                await self._authorization.authorize_request(
                     user_id=request.user_id,
                     message=request.message,
                 )
@@ -1119,9 +1168,9 @@ class AIOrchestrator:
                     # ends the turn without ever reaching FINAL -- a
                     # fixed string needs no guardrail review.
                     if not agent_responses:
-                        log.error(
+                        (log.info if _awaiting_approval(execution_result) else log.error)(
                             "Execution ended without a FINAL response (a "
-                            "tool call failed) -- returning a graceful "
+                            "tool call failed or is awaiting approval) -- returning a graceful "
                             "fallback instead of raising EmptyAggregationError.",
                             extra={
                                 "operation": "orchestrate_stream",
@@ -1134,10 +1183,9 @@ class AIOrchestrator:
                         fallback_response = OrchestratorResponse(
                             conversation_id=request.conversation_id,
                             content=(
-                                "I wasn't able to complete this request -- "
-                                "something went wrong while gathering the "
-                                "information needed to answer. Please try "
-                                "again."
+                                _PENDING_APPROVAL_MESSAGE
+                                if _awaiting_approval(execution_result)
+                                else _EXECUTION_FAILED_MESSAGE
                             ),
                             citations=[],
                             sources=[],

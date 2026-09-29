@@ -11,7 +11,8 @@ Verified against the code on 2026-09-23. Offline RAG evaluation lives in
 | `answer.py` | `AnswerQualityPolicy` | Thresholds + `is_sufficient()`; empirically calibrated (see its docstring and `scripts/python/calibrate_answer_quality_thresholds.py`) |
 | `similarity.py` | `EmbeddingSimilarity` | Cosine similarity over the shared embedding provider |
 
-Wiring: `wiring/factories/executor.py:72-81`. Groundedness uses the
+Wiring: `create_executor()` in `wiring/factories/executor.py`
+(`AnswerQualityPolicy(require_evidence=True)`). Groundedness uses the
 `FaithfulnessBackend` selected by `settings.llm.faithfulness_backend`
 (`legacy` default, or `ragas`) from `rag/evaluation/faithfulness_backend.py`,
 an LLM-judge call. The other scores are local embedding similarity.
@@ -29,6 +30,13 @@ flowchart TD
     P -->|"groundedness ≥ 0.50<br/>and relevance ≥ 0.60<br/>and correctness ≥ 0.75 if present<br/>and citations ≥ 0.80 only if enforce_citations"| OK[accept FINAL]
     P -->|otherwise| RETRY["_gate_final: corrective retrieval<br/>or feedback re-ask, within budget"]
 ```
+
+With `require_evidence=True`, an answer with no evidence at all (groundedness
+not applicable) is insufficient: `_gate_final` runs one corrective retrieval
+and, if that finds nothing, replaces the answer with a fixed "no sources"
+message. An answer still insufficient when the budget runs out is replaced
+with a fixed "couldn't verify" message. Both are marked
+`AnswerEvaluationSummary.verified=False` (`answer_verified` in the response).
 
 Defaults: `min_groundedness=0.50`, `min_relevance=0.60`,
 `min_completeness=0.70` (logged, not blocking), `min_correctness=0.75`,

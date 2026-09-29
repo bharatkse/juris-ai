@@ -1,6 +1,6 @@
 # src/agentic/decisions/ — The Agent Decision Contract
 
-Verified against the code on 2026-09-23.
+Verified against the code on 2026-09-28.
 
 ## Purpose
 

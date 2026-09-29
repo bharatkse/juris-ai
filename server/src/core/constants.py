@@ -197,6 +197,11 @@ TEST_DB_URL = "sqlite+aiosqlite:///./pytests.db"
 # Default Auth Configuration
 DEFAULT_JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
+# RBAC role given to every user unless changed in the database (the
+# users.role column default). What a role grants is data, in the roles
+# table, not code.
+DEFAULT_USER_ROLE: str = "member"
+
 
 API_DESCRIPTION = """
 ## Juris-AI

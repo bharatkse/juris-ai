@@ -29,13 +29,21 @@ no prompt and `ToolExecutionService` refuses to run it for an agent.
 | `web_research` | `tools/search_engine/web_research.py` | Self-hosted **SearXNG** (`SearxngClient`) + `ContentFetcher` (httpx + trafilatura) | Public web | legal, only when enabled by settings (`wiring/factories/agent_policies.py`) |
 | `library_lookup` | `tools/library/file_lookup.py` (`LibraryLookupTool`) | `LibraryRepository` via a session factory | Per-user: reads `allowed_library_ids` from the request context at execute-time; fails closed if it was never resolved | contract |
 | `parser` | `tools/library/parser.py` | PDF/DOCX/text/Markdown parsing in a worker thread | Server-side only: the Executor parses files attached to a chat message into the agent's starting context (`execution/attachments.py`) | none (not agent-callable) |
-| `email` | `tools/messaging/email.py` | Gmail via MCP | — | none |
-| `slack` | `tools/messaging/slack.py` | Slack via MCP | — | none |
+| `email` | `tools/messaging/email.py` (`EmailTool`) | Gmail via MCP (`search_messages`), read only | — | none by default (`ENABLE_MESSAGING_TOOLS`) |
+| `email_send` | `tools/messaging/email.py` (`EmailSendTool`) | Gmail via MCP (`send_message`) | Gated: pauses for the user's approval; runs only with an approval token that covers the exact draft | none by default (`ENABLE_MESSAGING_TOOLS`) |
+| `slack` | `tools/messaging/slack.py` (`SlackTool`) | Slack via MCP (`conversations_history`), read only | — | none by default (`ENABLE_MESSAGING_TOOLS`) |
+| `slack_post` | `tools/messaging/slack.py` (`SlackPostTool`) | Slack via MCP (`chat_postMessage`) | Gated, as `email_send` | none by default (`ENABLE_MESSAGING_TOOLS`) |
 
 Notes:
-- **`email` / `slack`:** reads go through MCP; sending is designed to go
-  through `send()` / `post()` with an approval token. Every call to either
-  tool is routed through human approval (`GATED_TOOLS`).
+- **Messaging:** reading and sending are separate tools. Only the send
+  tools are in `GATED_TOOLS`: an agent's call pauses, the proposed
+  parameters are the draft the user approves or edits, and on approval
+  `HitlResumeService` runs the tool with the approval id as its token.
+  The tool sends only if `ApprovalRecordVerifier`
+  (`application/authorization/approval_lifecycle/verifier.py`) accepts
+  that token for the exact payload, once. The Gmail/Slack MCP servers
+  are registered only when `MCP_GMAIL_SERVER_URL` / `MCP_SLACK_SERVER_URL`
+  are set.
 - A `BraveClient` exists in `adapters/clients/search_engine/brave.py`
   but isn't wired in; `web_research` uses SearXNG.
 
@@ -68,9 +76,10 @@ sequenceDiagram
 
     RT->>RT: LLM decision = TOOL_CALL(tool_name, parameters)
     RT->>PG: check_tool(agent policy)
-    alt tool_name in GATED_TOOLS (email, slack)
+    alt tool_name in GATED_TOOLS (email_send, slack_post)
         RT->>CS: action_type = SEND
-        CS->>CS: interrupt() -> approval (decided only by the requesting user);<br/>on approve, Executor.resume() runs the tool
+        CS->>TES: check_parameters (a malformed draft is fed back, not sent for approval)
+        CS->>CS: interrupt() -> approval (decided only by the requesting user);<br/>on approve/edit, HitlResumeService runs the tool with the approval token
     else any other tool
         CS->>TES: execute(tool_name, parameters) inside a LangGraph @task (replay-safe)
         TES->>TES: validate parameters against the tool's params_model

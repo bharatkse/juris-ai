@@ -14,7 +14,7 @@ from agentic.collaboration.bus import CollaborationBus
 from agentic.execution.aggregation.response import ResponseAggregator
 from agentic.execution.validation.response import ResponseValidator
 from agentic.orchestration.orchestrator import AIOrchestrator
-from agentic.tools.messaging.base import DenyAllApprovalVerifier
+from application.authorization.approval_lifecycle.verifier import ApprovalRecordVerifier
 from application.services.compliance_log import StandaloneComplianceLogWriter
 from config.settings import get_settings
 from wiring.factories.agents import register_agents
@@ -57,7 +57,7 @@ def create_ai_orchestrator(
     register_tools(
         clients=clients,
         registries=registries,
-        approval_service=DenyAllApprovalVerifier(),
+        approval_service=ApprovalRecordVerifier(session_factory=session_factory),
     )
 
     register_agents(

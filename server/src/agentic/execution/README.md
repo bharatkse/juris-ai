@@ -1,5 +1,7 @@
 # src/agentic/execution/ — Executing a Validated Plan
 
+Verified against the code on 2026-09-28.
+
 ## Purpose
 
 `execution/` runs an already-validated `ExecutionPlanDTO` to completion.
@@ -59,7 +61,7 @@ flowchart TD
     ORCH[AIOrchestrator] --> EXEC["Executor.execute() /<br/>resume()"]
     EXEC --> SESSION["ExecutionSession<br/>(session.py, request-scoped)"]
     SESSION --> ASSEMBLE["ExecutionStateAssembler<br/>builds initial ExecutionGraphState"]
-    SESSION --> FACTORY["ExecutionGraphFactory.create()<br/>(graph/factory.py)"]
+    SESSION --> FACTORY["ExecutionGraphFactory.create()<br/>(graph/factory.py)<br/>run under wait_for + deadline_within(300 s)"]
     FACTORY --> BUILDER["ExecutionGraphBuilder.build()+compile()<br/>(graph/builder.py)<br/>topology = plan.steps[*].depends_on"]
     BUILDER --> GRAPH["Compiled LangGraph<br/>(Postgres checkpointer attached)"]
     GRAPH -->|per step, once dependencies COMPLETED| NODE["AgentExecutionNode.__call__()<br/>(graph/nodes.py)"]
@@ -119,12 +121,12 @@ return the update dicts `graph/nodes.py` builds):
   which resolves "latest" by walking this list in reverse rather than
   overwriting in place), `agent_decision_updates`, `memory_updates`,
   `reasoning_context`, `conversation`, `context`.
-- **`ExecutionMemory`** (`schemas/memory.py`) — step results, retrieved
+- **`ExecutionMemorySchema`** (`schemas/memory.py`) — step results, retrieved
   content, entities, and other intermediate artifacts a later step's
   agent may read via `reasoning_context`.
 - **`ExecutionStateAssembler`** (`state/assembler.py`) — builds the
   initial `ExecutionGraphState` for a fresh run (`assemble_state`) and
-  reads back `ExecutionMemory`/action state after the graph finishes
+  reads back `ExecutionMemorySchema`/action state after the graph finishes
   (`assemble_memory`, `assemble_action`).
 
 ## Validation and aggregation

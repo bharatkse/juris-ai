@@ -63,3 +63,13 @@ class ApprovalValidationError(ApprovalError):
     """
     Raised when an approval cannot be validated for execution.
     """
+
+
+class ApprovalResumeNotAllowedError(ApprovalError):
+    """
+    Raised when a resume is retried for an approval that is not decided,
+    or whose resume already finished.
+    """
+
+    status_code = HTTP_409_CONFLICT
+    error_code = "APPROVAL_RESUME_NOT_ALLOWED"

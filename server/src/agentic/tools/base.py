@@ -8,12 +8,12 @@ description, and a single async execute() — matching the project's
 framework.
 
 Read-only vs. side-effecting is NOT distinguished by the type system
-here on purpose: that distinction is enforced by RBACService
-(check_action) and, for side-effecting actions, by the approval
-lifecycle — not by the Tool class itself. See messaging/email.py and
-messaging/slack.py for how send/post methods sit outside execute()
-and require an approval_token, precisely so a plain agent tool-loop
-can't reach them unchecked.
+here on purpose. A side-effecting action is its own tool (e.g.
+messaging/email.py's EmailSendTool, separate from the read-only
+EmailTool), listed in GATED_TOOLS so an agent's call to it pauses for
+human approval, and it refuses to run without an approval token its
+verifier accepts for the exact payload (messaging/base.py, GatedMCPTool).
+RBACService (check_action) authorizes the resulting action.
 
 All tools in this package are process-lifetime singletons, built
 once at startup (see runtime/factories/tools.py). Any per-request
@@ -70,11 +70,9 @@ class Tool(ABC):
         **kwargs: Any` is the signature mypy accepts any override of.
         Tools are always invoked by keyword (ToolExecutionService).
 
-        Tools with additional gated methods (e.g. EmailTool.send,
-        SlackTool.post) intentionally do NOT route those through
-        execute() — execute() is the surface reachable from an
-        ordinary agent tool-loop; gated actions require an explicit,
-        separate call with an approval token.
+        A gated tool (GATED_TOOLS) also takes an ``approval_token``
+        keyword, which only the approval resume path supplies (never the
+        model: params_model forbids it); without a valid one it refuses.
         """
         raise NotImplementedError
 

@@ -19,3 +19,10 @@ class AgentPolicySettings(BaseAppSettings):
     # real traffic; flip to True (or grant per-agent directly in
     # DEFAULT_AGENT_POLICIES) once it has.
     ENABLE_WEB_RESEARCH_FOR_LEGAL: bool = False
+
+    # Grants the messaging tools (email, slack to read; email_send,
+    # slack_post to send) to the legal and contract agents. Default OFF:
+    # sending is a different class of capability from research, needs
+    # the Gmail/Slack MCP servers configured (config/llm.py), and every
+    # send still pauses for the user's own approval (GATED_TOOLS).
+    ENABLE_MESSAGING_TOOLS: bool = False

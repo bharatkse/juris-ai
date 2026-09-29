@@ -10,7 +10,7 @@ Every component below has its own `README.md` (workflow diagram, verified 2026-0
 
 | Path | Responsibility | Docs |
 |---|---|---|
-| `planning/` | Intent analysis, `ExecutionPlan` generation (template-based or LLM-based) | [README](planning/README.md) |
+| `planning/` | Intent analysis, `ExecutionPlanDTO` generation (template-based or LLM-based) | [README](planning/README.md) |
 | `orchestration/` | `AIOrchestrator` — coordinates the request lifecycle; never executes agents/tools itself | [README](orchestration/README.md) |
 | `execution/` | `Executor`, LangGraph graph construction/compilation, execution state/memory, response aggregation | [README](execution/README.md) |
 | `agents/` | Domain reasoning (`LegalAgent`, `ContractAgent`), prompt building, token budgeting, agent runtime (lifecycle, continuation) | [README](agents/README.md), [runtime/](agents/runtime/README.md) |
@@ -51,7 +51,8 @@ flowchart TD
     TOOLREG --> CONT["AgentContinuationService<br/>(agents/runtime/continuation.py)<br/>feeds result back, re-reasons"]
     CONT --> AGENT
     DECISION -->|DELEGATE| BUS["CollaborationBus.send()<br/>(only if policy allows delegation)"]
-    BUS --> CONT
+    BUS --> RUNNER["DelegatedAgentRunner<br/>(agents/runtime/delegation.py)<br/>runs the target's whole turn"]
+    RUNNER --> CONT
     DECISION -->|FINAL| GATE["_gate_final()<br/>AnswerQualityPolicy check<br/>(see sequence diagram below)"]
     GATE --> MAPPER["AgentResponseMapper.map()<br/>(execution/aggregation/mapper.py)<br/>builds citations/sources from reasoning_context"]
     MAPPER --> EXECUTOR
@@ -107,9 +108,9 @@ sequenceDiagram
 ```
 
 Corrective retrieval (`CORRECTIVE_RETRIEVAL_TOP_K = 8`, broader than a
-normal `retriever` call's default `top_k=5`) was added this session —
-it is not part of the original design and does not appear in
-`docs/server/architecture/overview.md`'s diagrams.
+normal `retriever` call's default `top_k=5`) is not part of the original
+design and does not appear in `docs/server/architecture/overview.md`'s
+diagrams.
 
 ## Rate limiting and token quota
 
@@ -200,8 +201,21 @@ Off by default deliberately: it's a broad, open-internet capability
 with no production track record — the enforcement path that makes
 this grant meaningful (real `AgentPolicyGuard` checks) was only fixed
 this session. Flip it once `web_research` has been observed under real
-traffic, or grant it directly in `DEFAULT_AGENT_POLICIES` for a
-specific deployment.
+traffic, or grant it directly in `_build_default_agent_policies()`
+(`wiring/factories/agent_policies.py`) for a specific deployment.
+
+**Messaging feature flag**: `settings.agent_policy
+.ENABLE_MESSAGING_TOOLS` (default `False`, env var
+`ENABLE_MESSAGING_TOOLS`, `config/agent_policy.py`) adds
+`MESSAGING_TOOLS` (`email`, `email_send`, `slack`, `slack_post`) to both
+the `legal` and `contract` default policies. The read tools (`email`,
+`slack`) run directly. The send tools (`email_send`, `slack_post`) are
+in `GATED_TOOLS`, so every call pauses for the user's approval. They
+also need a role that grants `send` (the default `member` role does;
+`reader` doesn't). The flag alone doesn't make the tools work:
+`MCP_GMAIL_SERVER_URL` / `MCP_SLACK_SERVER_URL` (`config/llm.py`) must
+point at the messaging MCP servers. Otherwise every call fails cleanly
+with "unknown MCP server".
 
 This is a first-cut seed, not derived from a specification — treat it
 as a starting point to adjust, not a settled design.
@@ -209,7 +223,7 @@ as a starting point to adjust, not a settled design.
 ### Gated-tool replay safety
 
 `AgentContinuationService._execute_gated_tool()` (`agents/runtime/
-continuation.py`) pauses a `GATED_TOOLS` (`email`, `slack`) `TOOL_CALL`
+continuation.py`) pauses a `GATED_TOOLS` (`email_send`, `slack_post`) `TOOL_CALL`
 via LangGraph's `interrupt()` instead of executing it. LangGraph
 replays the *whole* node function from the top on resume, including
 any tool call that ran earlier in the same turn — `_execute_tool()`'s
@@ -218,8 +232,16 @@ real invocation runs inside a `langgraph.func.task`
 result the first time it runs; a replay returns that cached result
 instead of re-invoking the tool. Verified live against the real
 Postgres checkpointer: an ungated tool (`retriever`) called before a
-gated one (`email`) in the same turn executes exactly once across a
-full pause/resume cycle, not twice.
+gated one in the same turn executes exactly once across a full
+pause/resume cycle, not twice.
+
+The approved call itself runs outside the graph, before it resumes:
+`HitlResumeService` runs it through `Executor.run_approved_tool()` with
+the approved (or edited) parameters and commits its result on the
+`AgentAction` first. A retried resume (`POST /approvals/{id}/resume`,
+below) reuses that stored result, so a send is never repeated; and a
+thread whose graph already finished returns its final state unchanged
+on resume.
 
 `@task` itself raises outside an active LangGraph runnable context, so
 `_call_replay_safe()` falls back to calling the task's plain underlying
@@ -232,7 +254,10 @@ module's own test suite relies on.
 `_delegate()` is not wrapped in the same `@task` pattern: delegation is
 disabled by default (no agent policy grants `allow_delegation`), and
 `CollaborationBus.send()` returns a bare `object` with no serialization
-contract to checkpoint. Wrap it the same way if delegation is enabled.
+contract to checkpoint. The delegated target's own tool calls do run
+through `_execute_tool()`, so each is checkpointed individually, but its
+reasoning re-runs on a replay. Wrap `_delegate()` the same way if
+delegation is enabled.
 
 ### Approval decisions
 
@@ -250,7 +275,7 @@ sequenceDiagram
     participant API as POST /api/v1/approvals/:approval_id
     participant ALSO as ApprovalLifecycleService
     participant HR as HitlResumeService
-    participant X as Executor.resume()
+    participant X as Executor
 
     C->>API: decision (approve / reject / edit)
     API->>ALSO: process(approval_id, request, user_id)
@@ -261,18 +286,45 @@ sequenceDiagram
     else requester
         ALSO->>ALSO: expired? (commit EXPIRED, 410) still WAITING? (else 409)<br/>then save the decision + compliance log and commit
         ALSO-->>API: ApprovalResponseDTO
-        API->>HR: resume_after_decision(approval_id, agent_action_id, decision_type)
-        HR->>X: on approve or reject, resume the paused graph<br/>(the tool runs once on approve); an edit does not resume
-        HR-->>API: resume_status (completed / failed / not_resumed)
+        API->>HR: resume_after_decision(approval_id, agent_action_id, decision_type, edited_payload)
+        HR->>X: approve/edit: run_approved_tool(approved draft, token=approval_id),<br/>result committed on the AgentAction; reject: nothing runs
+        HR->>X: resume(thread_id, tool_result) -> the paused graph continues
+        HR-->>API: resume_status (completed / failed)
         API-->>C: 200 + decision + resume_status
     end
+```
+
+A decided approval whose resume didn't finish (it failed, or the server
+stopped before it completed) is retried by its requester with
+`POST /api/v1/approvals/{approval_id}/resume`: 403 for anyone else, 409
+if it isn't decided or has already been resumed. The retry reuses a
+stored tool result instead of running the call again.
+
+Before a *fresh* approved call runs (on the first resume or a retry),
+`HitlResumeService` re-checks the user's current permission
+(`AuthorizationService.authorize_action`, roles are DB data and may have
+changed since the approval). If it's refused, nothing is sent: a failed
+`PermissionDenied` result is stored and handed to the agent, and a later
+retry is refused (409). Reusing a stored result isn't re-checked -- that
+call already ran.
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant HR as HitlResumeService
+    C->>HR: retry (owner only)
+    HR->>HR: action FAILED / PENDING_APPROVAL / EXECUTING? (else 409)
+    HR->>HR: resume_after_decision (stored tool result reused)
+    HR-->>C: 200 + resume_status
 ```
 
 The decision is committed before `HitlResumeService` runs, so nothing
 that happens during resume can undo it. A resume failure rolls back
 only the resume's own writes, marks the `AgentAction` `FAILED` (with
 the error type in `result`) in a separate commit, and is reported as
-`resume_status: failed`; nothing retries it automatically.
+`resume_status: failed`; nothing retries it automatically -- the
+requester retries it with the endpoint above. A failure after the
+approved call ran keeps its stored result on the `AgentAction`.
 
 `get()` and `validate()` apply the same ownership check when called with
 a `user_id`.
@@ -281,14 +333,15 @@ a `user_id`.
 
 Every LLM call in this package resolves its sampling config through
 `core.dto.inference.InferencePolicy.resolve(task, ...)` rather than
-leaving a provider default in place — the one deliberate exception
-being agent-facing prose generation, which stays non-zero on purpose.
+leaving a provider default in place. (`LLMTask.FACTUAL_ANSWER`, 0.2, is
+still defined and still declared as the agents' `inference_task`, but no
+agent call uses it since the separate streamed answer generation was
+removed.)
 
 | Call site | `LLMTask` | Temperature | Why |
 |---|---|---|---|
-| Planning (`planning/llm_planner.py`) | `STRUCTURED_DECISION` | `0.0` | Produces a structured `ExecutionPlan` consumed programmatically — no reason for run-to-run variance. |
-| Agent tool-call/structured decisions (`agents/base.py._reason()`) | `STRUCTURED_DECISION` | `0.0` | Same reasoning — a `TOOL_CALL`/`FINAL` decision is a structured contract, not prose. |
-| Agent final-answer generation (`agents/base.py`, `legal.py`, `contract.py`) | `FACTUAL_ANSWER` | `0.2` | Deliberately non-zero: user-facing legal/contract prose, small variance tolerated. Confirmed deliberate this session, left unchanged. |
+| Planning (`planning/llm_planner.py`) | `STRUCTURED_DECISION` | `0.0` | Produces a structured `ExecutionPlanDTO` consumed programmatically — no reason for run-to-run variance. |
+| Agent decisions, including the FINAL answer text (`agents/base.py._reason()`) | `STRUCTURED_DECISION` | `0.0` | Same reasoning — a `TOOL_CALL`/`FINAL` decision is a structured contract. The FINAL answer is a field of that decision; there is no separate answer generation. |
 | Conversation summarization (`application/services/conversation_summarization.py`) | `SUMMARIZATION` | `0.3` | Low but non-zero; consistency matters more than creativity, but summarizing prose isn't a structured decision either. |
 | LLM-as-judge — faithfulness/relevancy/context precision-recall (`wiring/factories/evaluation.py::build_llm_judge`) | *(none — direct `LLMInferenceConfig`)* | `0.0` | **Fixed this session** — previously had no inference config at all, silently defaulting to an ambient `0.2`. Judge calls must be reproducible for `AnswerQualityPolicy`'s empirically calibrated thresholds (`agentic/evaluation/answer.py`) to keep meaning anything over time. |
 

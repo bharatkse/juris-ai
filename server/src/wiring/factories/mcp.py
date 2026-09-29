@@ -18,12 +18,22 @@ if TYPE_CHECKING:
 
 
 def build_mcp_registry(*, settings: Settings) -> MCPServerRegistry:
+    urls = {
+        "rag-server": settings.llm.mcp_rag_server_url,
+        # Names must match GMAIL_SERVER_NAME / SLACK_SERVER_NAME in
+        # agentic/tools/messaging/. Registered only when configured.
+        "gmail": settings.llm.MCP_GMAIL_SERVER_URL,
+        "slack": settings.llm.MCP_SLACK_SERVER_URL,
+    }
+
     return MCPServerRegistry(
         servers={
-            "rag-server": MCPServerConfig(
-                name="rag-server",
+            name: MCPServerConfig(
+                name=name,
                 transport=MCPTransport.STREAMABLE_HTTP,
-                url=settings.llm.mcp_rag_server_url,
-            ),
+                url=url,
+            )
+            for name, url in urls.items()
+            if url
         }
     )

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from application.authorization.rbac.policy import RBACPolicy
 from application.authorization.rbac.protocols import RBACResolverProtocol
+from application.authorization.rbac.roles import RolePermissionProvider
 from core.dto.authorization import (
     ApplicationAuthorizationRequestDTO,
     AuthorizationRequestDTO,
@@ -17,7 +18,8 @@ class RBACService(RBACResolverProtocol):
     Resolves RBAC permissions for application requests
     and concrete actions.
 
-    All permission decisions are delegated to RBACPolicy.
+    A user's permissions come from their role in the database
+    (RolePermissionProvider); an agent's from RBACPolicy.
 
     This service does not:
     - analyze capabilities,
@@ -30,10 +32,12 @@ class RBACService(RBACResolverProtocol):
         self,
         *,
         policy: RBACPolicy,
+        role_permissions: RolePermissionProvider,
     ) -> None:
         self._policy = policy
+        self._role_permissions = role_permissions
 
-    def check_intent(
+    async def check_intent(
         self,
         request: ApplicationAuthorizationRequestDTO,
     ) -> bool:
@@ -42,15 +46,16 @@ class RBACService(RBACResolverProtocol):
         capabilities before planning.
         """
 
-        return all(
-            self._policy.capability_allowed(
-                user_id=request.user_id,
-                capability=capability,
-            )
-            for capability in request.capabilities
+        if not request.capabilities:
+            return True
+
+        granted = await self._role_permissions.permissions_for(
+            user_id=request.user_id,
         )
 
-    def check_action(
+        return all(capability in granted for capability in request.capabilities)
+
+    async def check_action(
         self,
         request: AuthorizationRequestDTO,
     ) -> bool:
@@ -61,10 +66,11 @@ class RBACService(RBACResolverProtocol):
         must have permission for the requested action.
         """
 
-        if not self._policy.user_action_allowed(
+        granted = await self._role_permissions.permissions_for(
             user_id=request.user_id,
-            action=request.action_type,
-        ):
+        )
+
+        if request.action_type not in granted:
             return False
 
         return self._policy.agent_action_allowed(

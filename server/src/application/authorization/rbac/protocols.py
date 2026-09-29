@@ -27,7 +27,7 @@ class RBACResolverProtocol(Protocol):
     - action execution.
     """
 
-    def check_intent(
+    async def check_intent(
         self,
         request: ApplicationAuthorizationRequestDTO,
     ) -> bool:
@@ -38,7 +38,7 @@ class RBACResolverProtocol(Protocol):
 
         ...
 
-    def check_action(
+    async def check_action(
         self,
         request: AuthorizationRequestDTO,
     ) -> bool:

@@ -1,39 +1,31 @@
 """
-Email tool.
+Email tools.
 
-Read is ungated (same treatment as search tools). Sending is
-side-effecting and follows the dry-run -> human approval -> execute
-triplet used elsewhere for side-effecting actions (e.g. day-two cloud
-operations): draft() builds the preview with no MCP call, send()
-only proceeds once an approval token for that exact draft is granted.
-
-execute() intentionally only surfaces read() — this is the entry
-point an ordinary agent tool-loop reaches; send() requires an
-explicit call with an approval_token and is not reachable through
-execute(), so a plain tool-calling loop can never send email
-unchecked.
+``email`` reads mail and is ungated (same treatment as search tools).
+``email_send`` sends one email and is gated: it is in GATED_TOOLS, so an
+agent's call pauses for human approval, and the parameters the agent
+proposed are the draft the human reviews (and may edit). After approval,
+the resume path runs the tool with the approval id as its token, and the
+tool sends only if the token covers this exact draft (see
+tools/messaging/base.py, GatedMCPTool).
 """
 
 from __future__ import annotations
-
-from dataclasses import dataclass
 
 from pydantic import Field
 
 from adapters.observability.logger import get_logger
 from agentic.tools.base import Tool, ToolParams
-from agentic.tools.messaging.base import GatedMCPTool
+from agentic.tools.messaging.base import GatedMCPTool, MCPMessagingTool
 
 log = get_logger(__name__)
 
 GMAIL_SERVER_NAME = "gmail"
 
-
-@dataclass(frozen=True, slots=True)
-class EmailDraft:
-    to: str
-    subject: str
-    body: str
+# Deliberately loose (one "@", a dot in the domain, no whitespace) and a
+# plain str, not EmailStr: the approved draft is compared to the sent one
+# field by field, so the address must not be normalized in between.
+_EMAIL_ADDRESS = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
 
 
 class EmailParams(ToolParams):
@@ -41,13 +33,23 @@ class EmailParams(ToolParams):
     limit: int = Field(default=10, ge=1, le=20, description="How many emails to return.")
 
 
-class EmailTool(Tool, GatedMCPTool):
+class EmailSendParams(ToolParams):
+    to: str = Field(
+        pattern=_EMAIL_ADDRESS,
+        max_length=254,
+        description="Recipient email address.",
+    )
+    subject: str = Field(min_length=1, max_length=200, description="Subject line.")
+    body: str = Field(min_length=1, max_length=10000, description="Plain-text message body.")
+
+
+class EmailTool(Tool, MCPMessagingTool):
     """
-    Read, draft, and send email via the Gmail MCP server.
+    Read email via the Gmail MCP server.
     """
 
     name = "email"
-    description = "Read email, and draft/send email (send requires approval)."
+    description = "Search and read the user's email. Does not send."
 
     params_model = EmailParams
 
@@ -61,35 +63,41 @@ class EmailTool(Tool, GatedMCPTool):
             failure_message="Email search failed.",
         )
 
-    def draft(self, *, to: str, subject: str, body: str) -> EmailDraft:
-        """
-        Dry run — builds the draft, makes no MCP call. This is what
-        gets shown to the human at the approval step.
-        """
+    async def execute(self, *, query: str, limit: int = 10) -> str:
+        return await self.read(query=query, limit=limit)
 
-        return EmailDraft(to=to, subject=subject, body=body)
 
-    async def send(self, *, draft: EmailDraft, approval_token: str) -> str:
-        """
-        Execute — only proceeds if the approval token is valid for
-        this exact draft. This is the step that must sit behind
-        interrupt() in the execution graph.
-        """
+class EmailSendTool(Tool, GatedMCPTool):
+    """
+    Send one email via the Gmail MCP server, only with a valid approval.
+    """
 
+    name = "email_send"
+    description = (
+        "Send an email. The user reviews and approves the exact message " "before it is sent."
+    )
+
+    params_model = EmailSendParams
+
+    async def execute(
+        self,
+        *,
+        to: str,
+        subject: str,
+        body: str,
+        approval_token: str = "",
+    ) -> str:
         await self._ensure_approved(
             approval_token=approval_token,
-            action="email.send",
-            payload={"to": draft.to, "subject": draft.subject, "body": draft.body},
+            action=self.name,
+            payload={"to": to, "subject": subject, "body": body},
         )
 
-        log.info("Sending approved email to=%s subject=%r.", draft.to, draft.subject)
+        log.info("Sending approved email to=%s.", to)
 
         return await self._call_mcp(
             server_name=GMAIL_SERVER_NAME,
             tool_name="send_message",
-            arguments={"to": draft.to, "subject": draft.subject, "body": draft.body},
+            arguments={"to": to, "subject": subject, "body": body},
             failure_message="Email send failed.",
         )
-
-    async def execute(self, *, query: str, limit: int = 10) -> str:
-        return await self.read(query=query, limit=limit)

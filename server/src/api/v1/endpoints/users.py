@@ -7,6 +7,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, status
 
 from adapters.observability.logger import get_logger
+from api.dependencies.auth import get_current_user
 from api.dependencies.user import get_user_service
 from api.schemas.user import (
     RegisterNewUserRequest,
@@ -15,6 +16,7 @@ from api.schemas.user import (
 )
 from api.utilities.api_response import ApiResponse
 from application.services.user import UserService
+from core.exceptions.httpx import ForbiddenError
 from core.types import UserId
 
 logger = get_logger(__name__)
@@ -23,6 +25,30 @@ router = APIRouter(
     prefix="/users",
     tags=["Users"],
 )
+
+
+def _ensure_self(
+    user_id: UserId,
+    current_user,
+) -> None:
+    """
+    A user may read or update only their own profile.
+
+    Checked before any lookup, so a 403 reveals nothing about whether
+    another user id exists.
+    """
+
+    if user_id != current_user.id:
+        logger.warning(
+            "User profile access denied: not the authenticated user.",
+            extra={
+                "user_id": str(user_id),
+                "current_user_id": str(current_user.id),
+            },
+        )
+        raise ForbiddenError(
+            message="Not permitted to access this user.",
+        )
 
 
 @router.post(
@@ -70,6 +96,7 @@ async def user_registration(
 )
 async def get_user_details(
     user_id: UserId,
+    current_user=Depends(get_current_user),
     service: UserService = Depends(
         get_user_service,
     ),
@@ -77,6 +104,8 @@ async def get_user_details(
     """
     Retrieve a user details.
     """
+
+    _ensure_self(user_id, current_user)
 
     logger.info(
         "Retrieving user details.",
@@ -87,7 +116,7 @@ async def get_user_details(
     )
 
     user = await service.get_or_raise(
-        user_id=user_id,
+        user_id=current_user.id,
     )
 
     return ApiResponse(
@@ -107,6 +136,7 @@ async def get_user_details(
 async def update_user_profile(
     user_id: UserId,
     request: UpdateUserProfileRequest,
+    current_user=Depends(get_current_user),
     service: UserService = Depends(
         get_user_service,
     ),
@@ -114,6 +144,8 @@ async def update_user_profile(
     """
     Update a user profile.
     """
+
+    _ensure_self(user_id, current_user)
 
     logger.info(
         "Updating user profile.",
@@ -124,7 +156,7 @@ async def update_user_profile(
     )
 
     user = await service.update(
-        user_id=user_id,
+        user_id=current_user.id,
         request=request,
     )
 
