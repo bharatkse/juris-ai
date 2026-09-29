@@ -17,7 +17,12 @@ LangGraph graph whose nodes drive `agents/runtime/`.
 |---|---|---|
 | `handle(request, action_workflow_service)` | `ChatService.chat()` | Non-streaming; returns one `OrchestratorResponse` |
 | `stream(request, action_workflow_service)` | `ChatService.stream_chat()` | Same lifecycle and `Executor.execute()`; nothing is sent until the guardrail verdict, then the reviewed text is streamed in slices |
-| `resume(...)` | `HitlResumeService` after an approval decision | `Executor.resume()`; single guardrail pass, no regenerate loop |
+| `resume(...)` | `HitlResumeService` after an approval decision | `Executor.resume()` with the already-run tool result; single guardrail pass, no regenerate loop |
+| `run_approved_tool(...)` | `HitlResumeService`, before `resume()` | Delegates to `Executor.run_approved_tool()` (runs the approved gated call with its approval token) |
+
+A turn that pauses for approval (no FINAL answer yet) returns the fixed
+text "This needs your approval before I can continue…" with the pending
+approval attached, from `handle()`, `stream()` and `resume()` alike.
 
 Schemas: `schemas/request.py` (`OrchestratorRequest`; attachments are
 `ToolFileDTO`s; the `Attachment` model there is unused),

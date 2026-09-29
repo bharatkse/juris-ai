@@ -99,7 +99,7 @@ class ActionWorkflowService(BaseService):
         # 2. Authorize concrete action
         # ---------------------------------------------------------
 
-        authorization_result = self._authorization_service.authorize_action(
+        authorization_result = await self._authorization_service.authorize_action(
             user_id=user_id,
             action=action_dto,
         )

@@ -28,8 +28,8 @@ from adapters.persistence.sqlalchemy.session import session_factory
 from agentic.tools.library.file_lookup import LibraryLookupTool
 from agentic.tools.library.parser import ParserTool
 from agentic.tools.messaging.base import ApprovalTokenVerifier
-from agentic.tools.messaging.email import EmailTool
-from agentic.tools.messaging.slack import SlackTool
+from agentic.tools.messaging.email import EmailSendTool, EmailTool
+from agentic.tools.messaging.slack import SlackPostTool, SlackTool
 from agentic.tools.retrieval import RetrieverTool
 from agentic.tools.search_engine.case_law_search import CaseLawSearchTool
 from agentic.tools.search_engine.web_research import WebResearchTool
@@ -57,11 +57,15 @@ def register_tools(
         session_factory=session_factory,
     )
 
-    email = EmailTool(
+    # Reading is ungated; sending is a separate, gated tool that runs only
+    # with a verified approval token (tools/messaging/base.py).
+    email = EmailTool(mcp_registry=clients.mcp_registry)
+    email_send = EmailSendTool(
         mcp_registry=clients.mcp_registry,
         approval_service=approval_service,
     )
-    slack = SlackTool(
+    slack = SlackTool(mcp_registry=clients.mcp_registry)
+    slack_post = SlackPostTool(
         mcp_registry=clients.mcp_registry,
         approval_service=approval_service,
     )
@@ -73,6 +77,8 @@ def register_tools(
         web_research,
         case_law_search,
         email,
+        email_send,
         slack,
+        slack_post,
     ):
         registries.tool_registry.register(component=tool)

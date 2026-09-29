@@ -13,12 +13,17 @@ _execute_gated_tool() for the pausing half this resumes.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from adapters.observability.logger import get_logger
 from adapters.persistence.sqlalchemy.repositories.agent_action import (
     AgentActionRepository,
+)
+from agentic.tools.result import ToolResult
+from application.authorization.approval_lifecycle.verifier import (
+    TOOL_RESULT_KEY,
+    approved_parameters,
 )
 from application.services.base import BaseService
 from core.dto.planning import deserialize_plan
@@ -29,16 +34,40 @@ from core.enums import (
     MessageRoleEnum,
 )
 from core.exceptions.agent_action import AgentActionError
+from core.exceptions.approval import ApprovalResumeNotAllowedError
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
+    from adapters.persistence.sqlalchemy.models.agent_action import AgentAction
     from agentic.orchestration.orchestrator import AIOrchestrator
+    from application.authorization.service import AuthorizationService
     from application.services.action_workflow import ActionWorkflowService
     from application.services.conversation_event import ConversationEventService
     from application.services.user_memory_extraction import MemoryExtractionScheduler
+    from core.dto.approval import ApprovalResponseDTO
 
 logger = get_logger(__name__)
+
+_RESUMABLE_DECISIONS = frozenset(
+    {
+        ApprovalDecisionEnum.APPROVE,
+        ApprovalDecisionEnum.REJECT,
+        ApprovalDecisionEnum.EDIT,
+    }
+)
+
+# A decided approval whose action is in one of these states never
+# finished resuming: FAILED (recorded failure), or PENDING_APPROVAL /
+# EXECUTING (the process stopped between the decision commit and the
+# resume commit).
+_RETRYABLE_ACTION_STATUSES = frozenset(
+    {
+        AgentActionStatusEnum.PENDING_APPROVAL,
+        AgentActionStatusEnum.EXECUTING,
+        AgentActionStatusEnum.FAILED,
+    }
+)
 
 
 class HitlResumeService(BaseService):
@@ -50,16 +79,20 @@ class HitlResumeService(BaseService):
 
     Responsibilities:
     - reconstruct the paused execution's plan,
-    - resume it via AIOrchestrator.resume(),
+    - run an approved (or edited) gated call once, with the approved
+      parameters, and store its result on the AgentAction before the
+      graph resumes, so a retry reuses it instead of sending twice,
+    - resume the graph via AIOrchestrator.resume(),
     - persist the resulting answer as a new ASSISTANT event,
     - record the outcome on the AgentAction row, including a failed
-      resume (status FAILED).
+      resume (status FAILED),
+    - retry a failed or interrupted resume on the owner's request
+      (retry()).
 
     It does not:
     - evaluate approval policy,
     - process the human decision itself (ApprovalLifecycleService
-      owns that; this runs AFTER the decision is committed),
-    - retry a failed resume.
+      owns that; this runs AFTER the decision is committed).
     """
 
     def __init__(
@@ -70,9 +103,11 @@ class HitlResumeService(BaseService):
         conversation_event_service: ConversationEventService,
         orchestrator: AIOrchestrator,
         action_workflow_service: ActionWorkflowService,
+        authorization_service: AuthorizationService,
         memory_extraction_scheduler: MemoryExtractionScheduler | None = None,
     ) -> None:
         super().__init__(session)
+        self._authorization_service = authorization_service
         self._agent_action_repository = agent_action_repository
         self._conversation_event_service = conversation_event_service
         self._orchestrator = orchestrator
@@ -87,12 +122,17 @@ class HitlResumeService(BaseService):
         approval_id: str,
         agent_action_id: str,
         decision_type: ApprovalDecisionEnum | None,
+        edited_payload: dict[str, Any] | None = None,
     ) -> HitlResumeStatusEnum:
         """
         Resume the execution paused by agent_action_id's gated tool
         call, using the decision ApprovalLifecycleService has already
         committed (this runs strictly after that -- see
         api/v1/endpoints/approval.py).
+
+        APPROVE runs the call as proposed; EDIT runs it with
+        edited_payload applied over the proposal (the edit is the
+        reviewer's approval of the changed draft); REJECT runs nothing.
 
         Never raises: the decision is already committed, so a failure
         here must not make it appear to have failed. Any failure rolls
@@ -101,20 +141,23 @@ class HitlResumeService(BaseService):
         "approval_id": ...}) in a separate transaction, and is reported
         to the caller as FAILED. Nothing retries it automatically.
 
-        decision_type other than APPROVE/REJECT (e.g. an EDIT, or None
-        for a still-pending approval) is not resumed -- EDIT changes
-        the proposed payload and needs its own review pass before
-        anything executes, which isn't implemented. Returns
-        NOT_RESUMED without touching the session.
+        Replay safety: the approved call's result is committed on the
+        AgentAction before the graph resumes. A later failure (graph,
+        event write) leaves it there, so retry() reuses the stored result
+        instead of running the call again; and a thread whose graph
+        already finished returns its final state unchanged on resume.
+
+        decision_type None (a still-pending approval) is not resumed:
+        returns NOT_RESUMED without touching the session.
         """
 
-        if decision_type not in (
-            ApprovalDecisionEnum.APPROVE,
-            ApprovalDecisionEnum.REJECT,
-        ):
+        if decision_type not in _RESUMABLE_DECISIONS:
             return HitlResumeStatusEnum.NOT_RESUMED
 
-        approved = decision_type == ApprovalDecisionEnum.APPROVE
+        approved = decision_type in (
+            ApprovalDecisionEnum.APPROVE,
+            ApprovalDecisionEnum.EDIT,
+        )
 
         try:
             agent_action = await self._agent_action_repository.get(
@@ -156,6 +199,16 @@ class HitlResumeService(BaseService):
                     "Cannot resume: originating conversation event not found.",
                 )
 
+            tool_result = (
+                await self._approved_tool_result(
+                    agent_action=agent_action,
+                    approval_id=approval_id,
+                    edited_payload=edited_payload,
+                )
+                if approved
+                else None
+            )
+
             agent_action.status = AgentActionStatusEnum.EXECUTING
             await self.flush()
 
@@ -165,10 +218,17 @@ class HitlResumeService(BaseService):
                 conversation_id=conversation_event.conversation_id,
                 plan=plan,
                 approved=approved,
-                tool_name=agent_action.tool_name or "",
-                parameters=dict(agent_action.parameters),
+                tool_result=tool_result,
                 action_workflow_service=self._action_workflow_service,
             )
+
+            metadata: dict[str, Any] = {"resumed_agent_action_id": agent_action.id}
+
+            if response.approval is not None:
+                # The resumed turn proposed another gated action; its
+                # approval is recorded the same way ChatService records
+                # a turn's first one.
+                metadata["approval"] = response.approval.model_dump(mode="json")
 
             await self._conversation_event_service.create(
                 conversation_id=conversation_event.conversation_id,
@@ -193,13 +253,16 @@ class HitlResumeService(BaseService):
                 parent_event_id=conversation_event.id,
                 role=MessageRoleEnum.ASSISTANT,
                 content=response.content,
-                metadata={"resumed_agent_action_id": agent_action.id},
+                metadata=metadata,
             )
 
             agent_action.status = (
                 AgentActionStatusEnum.COMPLETED if approved else AgentActionStatusEnum.REJECTED
             )
-            agent_action.result = {"content": response.content}
+            agent_action.result = {
+                **(agent_action.result or {}),
+                "content": response.content,
+            }
             agent_action.executed_at = datetime.now(UTC)
 
             user_id = agent_action.user_id
@@ -260,6 +323,134 @@ class HitlResumeService(BaseService):
 
             return HitlResumeStatusEnum.COMPLETED
 
+    async def retry(
+        self,
+        *,
+        approval: ApprovalResponseDTO,
+    ) -> HitlResumeStatusEnum:
+        """
+        Re-run the resume for a decided approval whose conversation is
+        stuck: the resume failed (AgentAction FAILED), or the process
+        stopped between committing the decision and finishing the resume
+        (AgentAction still PENDING_APPROVAL or EXECUTING).
+
+        The caller has already checked the approval belongs to the user
+        (ApprovalLifecycleService.get(user_id=...)). Raises
+        ApprovalResumeNotAllowedError (409) for an approval that is not
+        decided or whose resume already finished. Replay-safe: see
+        resume_after_decision().
+        """
+
+        if approval.decision_type not in _RESUMABLE_DECISIONS:
+            raise ApprovalResumeNotAllowedError(
+                "Approval has not been decided, so there is nothing to resume.",
+            )
+
+        agent_action = await self._agent_action_repository.get(
+            approval.agent_action_id,
+        )
+
+        if agent_action is None or agent_action.status not in _RETRYABLE_ACTION_STATUSES:
+            raise ApprovalResumeNotAllowedError(
+                "This approval's action has already been resumed.",
+            )
+
+        logger.info(
+            "Retrying resume after HITL decision.",
+            extra={
+                "operation": "retry_resume",
+                "approval_id": approval.approval_id,
+                "agent_action_id": approval.agent_action_id,
+                "action_status": agent_action.status.value,
+            },
+        )
+
+        return await self.resume_after_decision(
+            approval_id=approval.approval_id,
+            agent_action_id=approval.agent_action_id,
+            decision_type=approval.decision_type,
+            edited_payload=approval.edited_payload,
+        )
+
+    async def _approved_tool_result(
+        self,
+        *,
+        agent_action: AgentAction,
+        approval_id: str,
+        edited_payload: dict[str, Any] | None,
+    ) -> ToolResult:
+        """
+        The result of the approved gated call: the stored one when an
+        earlier attempt already ran it, otherwise run it now and commit
+        the result before anything else can fail.
+        """
+
+        stored = (agent_action.result or {}).get(TOOL_RESULT_KEY)
+
+        if stored is not None:
+            logger.info(
+                "Reusing the stored result of an approved call; not running it again.",
+                extra={
+                    "operation": "resume_after_decision",
+                    "approval_id": approval_id,
+                    "agent_action_id": agent_action.id,
+                },
+            )
+            return ToolResult.from_dict(stored)
+
+        # Re-check the user's CURRENT permission before a fresh call: the
+        # action was authorized when it was prepared, but the user's role
+        # may have changed since (roles are data). A stored result above
+        # is not re-checked -- it is the output of a call that already ran.
+        authorization = await self._authorization_service.authorize_action(
+            user_id=agent_action.user_id,
+            action=agent_action.to_dto(),
+        )
+
+        if authorization.is_allowed:
+            tool_result = await self._orchestrator.run_approved_tool(
+                tool_name=agent_action.tool_name or "",
+                parameters=approved_parameters(
+                    proposed=agent_action.parameters,
+                    edited_payload=edited_payload,
+                ),
+                approval_token=approval_id,
+            )
+        else:
+            logger.warning(
+                "Approved action no longer authorized for the user; not running it.",
+                extra={
+                    "operation": "resume_after_decision",
+                    "approval_id": approval_id,
+                    "agent_action_id": agent_action.id,
+                    "reason": authorization.reason,
+                },
+            )
+            tool_result = ToolResult(
+                tool_name=agent_action.tool_name or "",
+                success=False,
+                content="",
+                evidence=(),
+                execution_metadata={"error_type": "PermissionDenied"},
+                error="You are no longer permitted to perform this action, so it was not carried out.",
+            )
+
+        # Committed now, in its own transaction: from here on the call
+        # has happened (or was refused), whatever fails next. Stored even
+        # when the call failed -- an external send may have gone out
+        # before the error, so it is never repeated automatically (at
+        # most once) -- and when it was refused, so a retry doesn't
+        # re-decide it.
+        agent_action.status = AgentActionStatusEnum.EXECUTING
+        agent_action.result = {
+            TOOL_RESULT_KEY: tool_result.to_dict(),
+            "approval_id": approval_id,
+        }
+        agent_action.executed_at = datetime.now(UTC)
+        await self.commit()
+
+        return tool_result
+
     async def _record_failure(
         self,
         *,
@@ -284,7 +475,13 @@ class HitlResumeService(BaseService):
                 return
 
             agent_action.status = AgentActionStatusEnum.FAILED
-            agent_action.result = {"error": error, "approval_id": approval_id}
+            # Keep a stored tool result: it records that the approved
+            # call already ran, which is what makes retry() safe.
+            agent_action.result = {
+                **(agent_action.result or {}),
+                "error": error,
+                "approval_id": approval_id,
+            }
 
             await self.commit()
 

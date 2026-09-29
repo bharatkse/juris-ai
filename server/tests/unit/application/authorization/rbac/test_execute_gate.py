@@ -4,7 +4,7 @@ Unit tests for execute-time RBAC authorization gate.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from application.authorization.rbac.execute_gate import RBACExecuteGate
 from core.dto.authorization import AuthorizationResultDTO
@@ -12,7 +12,7 @@ from core.enums import ActionTypeEnum, AuthorizationDecisionEnum
 from tests.builders.application.authorization import build_authorization_request
 
 
-def test_authorize_returns_allow_when_rbac_allows_action() -> None:
+async def test_authorize_returns_allow_when_rbac_allows_action() -> None:
     """
     It should return ALLOW when RBAC permits the action.
     """
@@ -20,13 +20,14 @@ def test_authorize_returns_allow_when_rbac_allows_action() -> None:
     request = build_authorization_request()
 
     rbac = MagicMock()
+    rbac.check_action = AsyncMock()
     rbac.check_action.return_value = True
 
     gate = RBACExecuteGate(
         rbac=rbac,
     )
 
-    result = gate.authorize(
+    result = await gate.authorize(
         request,
     )
 
@@ -43,7 +44,7 @@ def test_authorize_returns_allow_when_rbac_allows_action() -> None:
     )
 
 
-def test_authorize_returns_deny_when_rbac_denies_action() -> None:
+async def test_authorize_returns_deny_when_rbac_denies_action() -> None:
     """
     It should return DENY when RBAC rejects the action.
     """
@@ -51,13 +52,14 @@ def test_authorize_returns_deny_when_rbac_denies_action() -> None:
     request = build_authorization_request()
 
     rbac = MagicMock()
+    rbac.check_action = AsyncMock()
     rbac.check_action.return_value = False
 
     gate = RBACExecuteGate(
         rbac=rbac,
     )
 
-    result = gate.authorize(
+    result = await gate.authorize(
         request,
     )
 
@@ -74,7 +76,7 @@ def test_authorize_returns_deny_when_rbac_denies_action() -> None:
     )
 
 
-def test_authorize_passes_exact_request_to_rbac() -> None:
+async def test_authorize_passes_exact_request_to_rbac() -> None:
     """
     It should pass the exact authorization request to RBAC.
     """
@@ -82,13 +84,14 @@ def test_authorize_passes_exact_request_to_rbac() -> None:
     request = build_authorization_request()
 
     rbac = MagicMock()
+    rbac.check_action = AsyncMock()
     rbac.check_action.return_value = True
 
     gate = RBACExecuteGate(
         rbac=rbac,
     )
 
-    gate.authorize(
+    await gate.authorize(
         request,
     )
 
@@ -97,7 +100,7 @@ def test_authorize_passes_exact_request_to_rbac() -> None:
     assert called_request is request
 
 
-def test_authorize_calls_rbac_only_once() -> None:
+async def test_authorize_calls_rbac_only_once() -> None:
     """
     It should evaluate RBAC exactly once per authorization request.
     """
@@ -105,20 +108,21 @@ def test_authorize_calls_rbac_only_once() -> None:
     request = build_authorization_request()
 
     rbac = MagicMock()
+    rbac.check_action = AsyncMock()
     rbac.check_action.return_value = True
 
     gate = RBACExecuteGate(
         rbac=rbac,
     )
 
-    gate.authorize(
+    await gate.authorize(
         request,
     )
 
     rbac.check_action.assert_called_once()
 
 
-def test_authorize_returns_allow_without_modifying_request() -> None:
+async def test_authorize_returns_allow_without_modifying_request() -> None:
     """
     It should not modify the authorization request when access is allowed.
     """
@@ -126,13 +130,14 @@ def test_authorize_returns_allow_without_modifying_request() -> None:
     request = build_authorization_request()
 
     rbac = MagicMock()
+    rbac.check_action = AsyncMock()
     rbac.check_action.return_value = True
 
     gate = RBACExecuteGate(
         rbac=rbac,
     )
 
-    gate.authorize(
+    await gate.authorize(
         request,
     )
 
@@ -143,7 +148,7 @@ def test_authorize_returns_allow_without_modifying_request() -> None:
     assert request.resource_id == "resource_" + "c" * 32
 
 
-def test_authorize_returns_deny_without_modifying_request() -> None:
+async def test_authorize_returns_deny_without_modifying_request() -> None:
     """
     It should not modify the authorization request when access is denied.
     """
@@ -151,13 +156,14 @@ def test_authorize_returns_deny_without_modifying_request() -> None:
     request = build_authorization_request()
 
     rbac = MagicMock()
+    rbac.check_action = AsyncMock()
     rbac.check_action.return_value = False
 
     gate = RBACExecuteGate(
         rbac=rbac,
     )
 
-    gate.authorize(
+    await gate.authorize(
         request,
     )
 

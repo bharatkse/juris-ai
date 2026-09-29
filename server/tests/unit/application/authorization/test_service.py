@@ -16,7 +16,7 @@ from core.exceptions.authorization import AuthorizationError
 from tests.builders.core.dto import build_agent_action_response_dto
 
 
-def test_authorize_request_returns_analysis_when_no_capabilities_detected(
+async def test_authorize_request_returns_analysis_when_no_capabilities_detected(
     authorization_service: AuthorizationService,
     mock_capability_analyzer: MagicMock,
     mock_rbac: MagicMock,
@@ -33,7 +33,7 @@ def test_authorize_request_returns_analysis_when_no_capabilities_detected(
 
     mock_capability_analyzer.analyze.return_value = analysis
 
-    result = authorization_service.authorize_request(
+    result = await authorization_service.authorize_request(
         user_id="user_123",
         message="Hello, how are you?",
     )
@@ -49,7 +49,7 @@ def test_authorize_request_returns_analysis_when_no_capabilities_detected(
     mock_rbac.check_intent.assert_not_called()
 
 
-def test_authorize_request_returns_analysis_when_user_is_authorized(
+async def test_authorize_request_returns_analysis_when_user_is_authorized(
     authorization_service: AuthorizationService,
     mock_capability_analyzer: MagicMock,
     mock_rbac: MagicMock,
@@ -67,7 +67,7 @@ def test_authorize_request_returns_analysis_when_user_is_authorized(
     mock_capability_analyzer.analyze.return_value = analysis
     mock_rbac.check_intent.return_value = True
 
-    result = authorization_service.authorize_request(
+    result = await authorization_service.authorize_request(
         user_id="user_123",
         message="Send the document.",
     )
@@ -84,7 +84,7 @@ def test_authorize_request_returns_analysis_when_user_is_authorized(
     assert request.capabilities == (ActionTypeEnum.SEND,)
 
 
-def test_authorize_request_raises_when_user_is_not_authorized(
+async def test_authorize_request_raises_when_user_is_not_authorized(
     authorization_service: AuthorizationService,
     mock_capability_analyzer: MagicMock,
     mock_rbac: MagicMock,
@@ -106,7 +106,7 @@ def test_authorize_request_raises_when_user_is_not_authorized(
         AuthorizationError,
         match="User is not authorized for the requested capabilities.",
     ):
-        authorization_service.authorize_request(
+        await authorization_service.authorize_request(
             user_id="user_123",
             message="Send the document.",
         )
@@ -118,7 +118,7 @@ def test_authorize_request_raises_when_user_is_not_authorized(
     mock_rbac.check_intent.assert_called_once()
 
 
-def test_authorize_request_preserves_multiple_capabilities(
+async def test_authorize_request_preserves_multiple_capabilities(
     authorization_service: AuthorizationService,
     mock_capability_analyzer: MagicMock,
     mock_rbac: MagicMock,
@@ -141,7 +141,7 @@ def test_authorize_request_preserves_multiple_capabilities(
     mock_capability_analyzer.analyze.return_value = analysis
     mock_rbac.check_intent.return_value = True
 
-    result = authorization_service.authorize_request(
+    result = await authorization_service.authorize_request(
         user_id="user_123",
         message="Read and send the document.",
     )
@@ -154,7 +154,7 @@ def test_authorize_request_preserves_multiple_capabilities(
     assert request.capabilities == action_types
 
 
-def test_authorize_action_returns_execute_gate_result(
+async def test_authorize_action_returns_execute_gate_result(
     authorization_service: AuthorizationService,
     mock_execute_gate: MagicMock,
 ) -> None:
@@ -171,7 +171,7 @@ def test_authorize_action_returns_execute_gate_result(
 
     mock_execute_gate.authorize.return_value = expected_result
 
-    result = authorization_service.authorize_action(
+    result = await authorization_service.authorize_action(
         user_id="user_123",
         action=action,
     )
@@ -189,7 +189,7 @@ def test_authorize_action_returns_execute_gate_result(
     assert request.resource_id == action.resource_id
 
 
-def test_authorize_action_builds_authorization_request_from_action(
+async def test_authorize_action_builds_authorization_request_from_action(
     authorization_service: AuthorizationService,
     mock_execute_gate: MagicMock,
 ) -> None:
@@ -210,7 +210,7 @@ def test_authorize_action_builds_authorization_request_from_action(
         spec=AuthorizationResultDTO,
     )
 
-    authorization_service.authorize_action(
+    await authorization_service.authorize_action(
         user_id="user_123",
         action=action,
     )
@@ -224,7 +224,7 @@ def test_authorize_action_builds_authorization_request_from_action(
     assert request.resource_id == "resource_123"
 
 
-def test_authorize_action_propagates_execute_gate_result(
+async def test_authorize_action_propagates_execute_gate_result(
     authorization_service: AuthorizationService,
     mock_execute_gate: MagicMock,
 ) -> None:
@@ -240,7 +240,7 @@ def test_authorize_action_propagates_execute_gate_result(
 
     mock_execute_gate.authorize.return_value = expected_result
 
-    result = authorization_service.authorize_action(
+    result = await authorization_service.authorize_action(
         user_id="user_123",
         action=action,
     )
@@ -248,7 +248,7 @@ def test_authorize_action_propagates_execute_gate_result(
     assert result is expected_result
 
 
-def test_authorize_action_does_not_invoke_capability_analyzer(
+async def test_authorize_action_does_not_invoke_capability_analyzer(
     authorization_service: AuthorizationService,
     mock_capability_analyzer: MagicMock,
     mock_execute_gate: MagicMock,
@@ -263,7 +263,7 @@ def test_authorize_action_does_not_invoke_capability_analyzer(
         spec=AuthorizationResultDTO,
     )
 
-    authorization_service.authorize_action(
+    await authorization_service.authorize_action(
         user_id="user_123",
         action=action,
     )
@@ -271,7 +271,7 @@ def test_authorize_action_does_not_invoke_capability_analyzer(
     mock_capability_analyzer.analyze.assert_not_called()
 
 
-def test_authorize_request_does_not_invoke_execute_gate(
+async def test_authorize_request_does_not_invoke_execute_gate(
     authorization_service: AuthorizationService,
     mock_capability_analyzer: MagicMock,
     mock_rbac: MagicMock,
@@ -290,7 +290,7 @@ def test_authorize_request_does_not_invoke_execute_gate(
     mock_capability_analyzer.analyze.return_value = analysis
     mock_rbac.check_intent.return_value = True
 
-    authorization_service.authorize_request(
+    await authorization_service.authorize_request(
         user_id="user_123",
         message="Send the document.",
     )

@@ -210,7 +210,7 @@ as a starting point to adjust, not a settled design.
 ### Gated-tool replay safety
 
 `AgentContinuationService._execute_gated_tool()` (`agents/runtime/
-continuation.py`) pauses a `GATED_TOOLS` (`email`, `slack`) `TOOL_CALL`
+continuation.py`) pauses a `GATED_TOOLS` (`email_send`, `slack_post`) `TOOL_CALL`
 via LangGraph's `interrupt()` instead of executing it. LangGraph
 replays the *whole* node function from the top on resume, including
 any tool call that ran earlier in the same turn — `_execute_tool()`'s
@@ -219,8 +219,16 @@ real invocation runs inside a `langgraph.func.task`
 result the first time it runs; a replay returns that cached result
 instead of re-invoking the tool. Verified live against the real
 Postgres checkpointer: an ungated tool (`retriever`) called before a
-gated one (`email`) in the same turn executes exactly once across a
-full pause/resume cycle, not twice.
+gated one in the same turn executes exactly once across a full
+pause/resume cycle, not twice.
+
+The approved call itself runs outside the graph, before it resumes:
+`HitlResumeService` runs it through `Executor.run_approved_tool()` with
+the approved (or edited) parameters and commits its result on the
+`AgentAction` first. A retried resume (`POST /approvals/{id}/resume`,
+below) reuses that stored result, so a send is never repeated; and a
+thread whose graph already finished returns its final state unchanged
+on resume.
 
 `@task` itself raises outside an active LangGraph runnable context, so
 `_call_replay_safe()` falls back to calling the task's plain underlying
@@ -254,7 +262,7 @@ sequenceDiagram
     participant API as POST /api/v1/approvals/:approval_id
     participant ALSO as ApprovalLifecycleService
     participant HR as HitlResumeService
-    participant X as Executor.resume()
+    participant X as Executor
 
     C->>API: decision (approve / reject / edit)
     API->>ALSO: process(approval_id, request, user_id)
@@ -265,18 +273,45 @@ sequenceDiagram
     else requester
         ALSO->>ALSO: expired? (commit EXPIRED, 410) still WAITING? (else 409)<br/>then save the decision + compliance log and commit
         ALSO-->>API: ApprovalResponseDTO
-        API->>HR: resume_after_decision(approval_id, agent_action_id, decision_type)
-        HR->>X: on approve or reject, resume the paused graph<br/>(the tool runs once on approve); an edit does not resume
-        HR-->>API: resume_status (completed / failed / not_resumed)
+        API->>HR: resume_after_decision(approval_id, agent_action_id, decision_type, edited_payload)
+        HR->>X: approve/edit: run_approved_tool(approved draft, token=approval_id),<br/>result committed on the AgentAction; reject: nothing runs
+        HR->>X: resume(thread_id, tool_result) -> the paused graph continues
+        HR-->>API: resume_status (completed / failed)
         API-->>C: 200 + decision + resume_status
     end
+```
+
+A decided approval whose resume didn't finish (it failed, or the server
+stopped before it completed) is retried by its requester with
+`POST /api/v1/approvals/{approval_id}/resume`: 403 for anyone else, 409
+if it isn't decided or has already been resumed. The retry reuses a
+stored tool result instead of running the call again.
+
+Before a *fresh* approved call runs (on the first resume or a retry),
+`HitlResumeService` re-checks the user's current permission
+(`AuthorizationService.authorize_action`, roles are DB data and may have
+changed since the approval). If it's refused, nothing is sent: a failed
+`PermissionDenied` result is stored and handed to the agent, and a later
+retry is refused (409). Reusing a stored result isn't re-checked -- that
+call already ran.
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant HR as HitlResumeService
+    C->>HR: retry (owner only)
+    HR->>HR: action FAILED / PENDING_APPROVAL / EXECUTING? (else 409)
+    HR->>HR: resume_after_decision (stored tool result reused)
+    HR-->>C: 200 + resume_status
 ```
 
 The decision is committed before `HitlResumeService` runs, so nothing
 that happens during resume can undo it. A resume failure rolls back
 only the resume's own writes, marks the `AgentAction` `FAILED` (with
 the error type in `result`) in a separate commit, and is reported as
-`resume_status: failed`; nothing retries it automatically.
+`resume_status: failed`; nothing retries it automatically -- the
+requester retries it with the endpoint above. A failure after the
+approved call ran keeps its stored result on the `AgentAction`.
 
 `get()` and `validate()` apply the same ownership check when called with
 a `user_id`.

@@ -59,8 +59,8 @@ sequenceDiagram
     N->>H: reason()
     N->>C: execute(handle, initial_result)
     loop while the decision is TOOL_CALL or DELEGATE
-        alt action SEND (email/slack)
-            C->>C: _execute_gated_tool → LangGraph interrupt()<br/>(graph pauses; Executor.resume() runs the tool later)
+        alt action SEND (email_send/slack_post)
+            C->>C: _execute_gated_tool → check_parameters, then LangGraph interrupt()<br/>(graph pauses; after approval HitlResumeService runs the tool,<br/>then the replayed node receives its result)
         else TOOL_CALL
             C->>T: execute(tool_name, parameters) inside @task (replay-safe)
             T-->>C: ToolResult

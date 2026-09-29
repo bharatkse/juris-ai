@@ -10,6 +10,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from adapters.persistence.sqlalchemy.base import Base
 from adapters.persistence.sqlalchemy.mixins import PrimaryKeyMixin, TimestampMixin
+from core.constants import DEFAULT_USER_ROLE
 from core.enums import GenderEnum
 
 if TYPE_CHECKING:
@@ -37,6 +38,16 @@ class User(PrimaryKeyMixin, TimestampMixin, Base):
     date_of_birth: Mapped[date] = mapped_column(Date, nullable=True)
     phone_number: Mapped[str] = mapped_column(String(20), nullable=True)
     is_active: Mapped[Boolean] = mapped_column(Boolean, default=True)
+
+    # The user's RBAC role: a name in the roles table, which holds what
+    # the role grants (application/authorization/rbac/roles.py). Existing
+    # and new users are "member". Not settable through the API.
+    role: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default=DEFAULT_USER_ROLE,
+        server_default=DEFAULT_USER_ROLE,
+    )
 
     # Opt-in consent to persisting durable facts across conversations
     # (see UserMemory). Default OFF: nothing is extracted or injected

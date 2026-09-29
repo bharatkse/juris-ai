@@ -45,6 +45,23 @@ config.set_main_option("sqlalchemy.url", settings.database_url)
 target_metadata = Base.metadata
 
 
+# Tables created at runtime by LangGraph's AsyncPostgresSaver.setup(), not by
+# our models. Without this, autogenerate proposes dropping them (and with them
+# every paused HITL conversation).
+_EXTERNALLY_MANAGED_TABLES = frozenset(
+    {"checkpoints", "checkpoint_writes", "checkpoint_blobs", "checkpoint_migrations"}
+)
+
+
+def include_object(object_, name, type_, reflected, compare_to):
+    """Keep externally managed tables (and their indexes) out of autogenerate."""
+
+    table_name = (
+        name if type_ == "table" else getattr(getattr(object_, "table", None), "name", None)
+    )
+    return not (reflected and table_name in _EXTERNALLY_MANAGED_TABLES)
+
+
 def get_engine():
     """Create SQLAlchemy engine for Alembic."""
 
@@ -64,6 +81,7 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
+        include_object=include_object,
     )
 
     with context.begin_transaction():
@@ -80,6 +98,7 @@ def run_migrations_online() -> None:
             connection=connection,
             target_metadata=target_metadata,
             compare_type=True,
+            include_object=include_object,
         )
 
         with context.begin_transaction():

@@ -1,10 +1,12 @@
 """
 Shared base for gated messaging tools.
 
-EmailTool and SlackTool were near-identical: same approval-check
-logic, same MCP-call-with-error-handling wrapper, same
-read-is-ungated/write-is-gated split. Extracted the common parts here
-so each tool file only contains what's actually specific to it.
+Reading and sending are separate tools: ``email``/``slack`` only read
+(ungated, MCPMessagingTool), ``email_send``/``slack_post`` only send
+(GatedMCPTool, listed in GATED_TOOLS). A send tool runs only with an
+approval token that an ApprovalTokenVerifier accepts for that exact
+payload, so reaching its execute() through an ordinary tool call can
+never send anything.
 """
 
 from __future__ import annotations
@@ -35,13 +37,11 @@ class ApprovalTokenVerifier(Protocol):
 
 class DenyAllApprovalVerifier:
     """
-    Fail-closed ApprovalTokenVerifier.
+    Fail-closed ApprovalTokenVerifier: every gated action is denied.
 
-    Nothing implements approval-token verification yet (see
-    docs/architecture-review.md S4: gated send()/post() have no caller),
-    so every gated action is denied. Replaces wiring that passed
-    AuthorizationService here, which has no is_approved() at all -- the
-    gate would have raised AttributeError instead of denying.
+    For tests and for wiring without a database. The application uses
+    ApprovalRecordVerifier (application/authorization/approval_lifecycle/
+    verifier.py), which checks the token against the Approval row.
     """
 
     async def is_approved(
@@ -54,15 +54,13 @@ class DenyAllApprovalVerifier:
         return False
 
 
-class GatedMCPTool:
+class MCPMessagingTool:
     """
-    Mixin providing the dry-run -> approval -> execute triplet for
-    tools backed by a side-effecting MCP server (Gmail, Slack, and
-    any future messaging/write-capable integration).
+    Mixin for tools backed by a messaging MCP server (Gmail, Slack).
 
-    Not itself a Tool subclass — mix in alongside Tool:
+    Not itself a Tool subclass -- mix in alongside Tool:
 
-        class EmailTool(Tool, GatedMCPTool):
+        class EmailTool(Tool, MCPMessagingTool):
             ...
     """
 
@@ -70,10 +68,8 @@ class GatedMCPTool:
         self,
         *,
         mcp_registry: MCPServerRegistry,
-        approval_service: ApprovalTokenVerifier,
     ) -> None:
         self._mcp_registry = mcp_registry
-        self._approval_service = approval_service
 
     async def _call_mcp(
         self,
@@ -85,7 +81,7 @@ class GatedMCPTool:
     ) -> str:
         """
         Call an MCP tool with consistent logging and error handling.
-        Used for both ungated reads and (post-approval) gated writes.
+        Used for both ungated reads and (post-approval) gated sends.
         """
 
         try:
@@ -108,6 +104,24 @@ class GatedMCPTool:
             return failure_message
 
         return result.as_text()
+
+
+class GatedMCPTool(MCPMessagingTool):
+    """
+    Mixin for a side-effecting messaging tool: it runs only once
+    _ensure_approved() accepts its approval token for the exact payload
+    it is about to send. List the tool's name in GATED_TOOLS so an agent's
+    call to it pauses for human approval instead of executing.
+    """
+
+    def __init__(
+        self,
+        *,
+        mcp_registry: MCPServerRegistry,
+        approval_service: ApprovalTokenVerifier,
+    ) -> None:
+        super().__init__(mcp_registry=mcp_registry)
+        self._approval_service = approval_service
 
     async def _ensure_approved(
         self,

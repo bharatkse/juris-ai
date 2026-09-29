@@ -74,7 +74,7 @@ class AuthorizationService:
     # Request-level authorization
     # ------------------------------------------------------------------
 
-    def authorize_request(
+    async def authorize_request(
         self,
         *,
         user_id: str,
@@ -104,7 +104,7 @@ class AuthorizationService:
             capabilities=analysis.action_types,
         )
 
-        if not self._rbac.check_intent(
+        if not await self._rbac.check_intent(
             request,
         ):
             raise AuthorizationError(
@@ -117,7 +117,7 @@ class AuthorizationService:
     # Concrete action authorization
     # ------------------------------------------------------------------
 
-    def authorize_action(
+    async def authorize_action(
         self,
         *,
         user_id: str,
@@ -140,7 +140,7 @@ class AuthorizationService:
             user_id=user_id,
         )
 
-        return self._execute_gate.authorize(
+        return await self._execute_gate.authorize(
             request,
         )
 

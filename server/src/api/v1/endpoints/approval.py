@@ -77,6 +77,7 @@ async def process_approval(
             approval_id=result.approval_id,
             agent_action_id=result.agent_action_id,
             decision_type=result.decision_type,
+            edited_payload=result.edited_payload,
         )
 
         return ApiResponse(
@@ -114,3 +115,60 @@ async def process_approval(
             },
         )
         raise
+
+
+@router.post(
+    "/{approval_id}/resume",
+    response_model=None,
+    summary="Retry resuming a decided approval",
+    status_code=status.HTTP_200_OK,
+)
+async def retry_approval_resume(
+    approval_id: str,
+    current_user=Depends(get_current_user),
+    service: ApprovalLifecycleService = Depends(
+        get_approval_lifecycle_service,
+    ),
+    hitl_resume_service: HitlResumeService = Depends(
+        get_hitl_resume_service,
+    ),
+) -> ApiResponse:
+    """
+    Retry the resume of an approval that was decided but whose
+    conversation never continued (the resume failed, or the server
+    stopped before it finished).
+
+    Only the approval's requester may retry (403 otherwise, 404 for an
+    unknown id). 409 when the approval isn't decided or its resume
+    already finished. An approved call that already ran is not run
+    again: its stored result is reused.
+    """
+
+    logger.info(
+        "Retrying approval resume.",
+        extra={
+            "operation": "retry_approval_resume",
+            "approval_id": approval_id,
+            "user_id": str(current_user.id),
+        },
+    )
+
+    approval = await service.get(
+        approval_id,
+        user_id=current_user.id,
+    )
+
+    resume_status = await hitl_resume_service.retry(
+        approval=approval,
+    )
+
+    return ApiResponse(
+        success=True,
+        status_code=status.HTTP_200_OK,
+        data=ApprovalResponse.model_validate(
+            approval,
+            from_attributes=True,
+        ).model_copy(
+            update={"resume_status": resume_status},
+        ),
+    )

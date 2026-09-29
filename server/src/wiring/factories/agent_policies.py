@@ -34,9 +34,11 @@ logger = get_logger(__name__)
 #   case_law_search   .../search_engine/case_law_search.py case-law-specific search
 #   parser            agentic/tools/library/parser.py   parse an uploaded document
 #   library_lookup    agentic/tools/library/file_lookup.py look up a library document
-#   slack, email      agentic/tools/messaging/*         send a message/notification
+#   email, slack      agentic/tools/messaging/*         read mail / a channel
+#   email_send, slack_post  agentic/tools/messaging/*   send (gated: needs approval)
 #
-# slack/email are deliberately NOT granted to either agent by default:
+# The messaging tools are deliberately NOT granted to either agent by
+# default (settings.agent_policy.ENABLE_MESSAGING_TOOLS turns them on):
 # sending a message is a different class of capability from read-only
 # research/retrieval, and granting it should be a deliberate product
 # decision, not a side effect of unblocking the empty-policy crash.
@@ -52,6 +54,11 @@ logger = get_logger(__name__)
 #
 # FLAGGED FOR REVIEW: this is a real, first-cut guess at what each
 # agent needs, not derived from any specification. Change freely.
+# Read and send tools for email and Slack; the send tools are gated
+# (agentic/tools/constants.py GATED_TOOLS).
+MESSAGING_TOOLS = ("email", "email_send", "slack", "slack_post")
+
+
 def _build_default_agent_policies() -> dict[str, list[str]]:
     settings = get_settings()
 
@@ -59,12 +66,17 @@ def _build_default_agent_policies() -> dict[str, list[str]]:
     if settings.agent_policy.ENABLE_WEB_RESEARCH_FOR_LEGAL:
         legal_tools.append("web_research")
 
+    # No "parser": attachments are parsed server-side before the agent
+    # runs (agentic/execution/attachments.py), and the model can't call it.
+    contract_tools = ["retriever", "library_lookup"]
+
+    if settings.agent_policy.ENABLE_MESSAGING_TOOLS:
+        for tools in (legal_tools, contract_tools):
+            tools.extend(MESSAGING_TOOLS)
+
     return {
         "legal": legal_tools,
-        # No "parser": attachments are parsed server-side before the
-        # agent runs (agentic/execution/attachments.py), and the model
-        # can't call it.
-        "contract": ["retriever", "library_lookup"],
+        "contract": contract_tools,
     }
 
 

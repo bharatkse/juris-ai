@@ -37,10 +37,11 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from adapters.observability.logger import get_logger
 from agentic.registry.protocols import ToolRegistryProtocol
+from agentic.tools.base import Tool
 from agentic.tools.result import ToolEvidence, ToolResult
 
 logger = get_logger(__name__)
@@ -102,9 +103,16 @@ class ToolExecutionService:
         *,
         tool_name: str,
         parameters: dict[str, Any],
+        approval_token: str | None = None,
     ) -> ToolResult:
         """
         Resolve and execute one tool invocation.
+
+        approval_token is passed through to a gated tool (GATED_TOOLS) as
+        its ``approval_token`` argument; the tool verifies it. It never
+        comes from the model: params_model forbids unknown parameters,
+        and only the approval resume path (Executor.run_approved_tool())
+        sets it.
 
         Tool resolution failures are intentionally allowed to propagate
         because they indicate that the requested tool is unavailable
@@ -119,6 +127,77 @@ class ToolExecutionService:
             key=tool_name,
         )
 
+        params_or_error = self._validate(tool=tool, tool_name=tool_name, parameters=parameters)
+
+        if isinstance(params_or_error, ToolResult):
+            return params_or_error
+
+        arguments = params_or_error.model_dump(exclude_unset=True)
+
+        if approval_token is not None:
+            arguments["approval_token"] = approval_token
+
+        try:
+            # exclude_unset: the tool's own execute() defaults apply to
+            # anything the model didn't pass.
+            content = await tool.execute(**arguments)
+
+        except Exception as exc:
+            logger.exception(
+                "Tool execution failed: tool=%s.",
+                tool_name,
+            )
+
+            return self._failed(
+                tool_name=tool_name,
+                error=f"Tool '{tool_name}' failed while running.",
+                error_type=type(exc).__name__,
+            )
+
+        return ToolResult(
+            tool_name=tool_name,
+            success=True,
+            content=content,
+            evidence=(
+                ToolEvidence(
+                    content=content,
+                    source=self._SOURCE_BY_TOOL.get(tool_name),
+                ),
+            ),
+            execution_metadata={},
+            error=None,
+        )
+
+    def check_parameters(
+        self,
+        *,
+        tool_name: str,
+        parameters: dict[str, Any],
+    ) -> ToolResult | None:
+        """
+        Validate a call's parameters without running the tool.
+
+        Returns None when they are valid, or the same failed ToolResult
+        execute() would return. Used before a gated call pauses for
+        approval, so a human is only ever asked to approve a well-formed
+        draft and the model gets the usual correction message otherwise.
+        """
+
+        tool = self._tool_registry.resolve(
+            key=tool_name,
+        )
+
+        result = self._validate(tool=tool, tool_name=tool_name, parameters=parameters)
+
+        return result if isinstance(result, ToolResult) else None
+
+    def _validate(
+        self,
+        *,
+        tool: Tool,
+        tool_name: str,
+        parameters: dict[str, Any],
+    ) -> BaseModel | ToolResult:
         if tool.params_model is None:
             logger.warning(
                 "Refused a call to a tool agents can't call: tool=%s.",
@@ -147,38 +226,7 @@ class ToolExecutionService:
                 error_type="InvalidParameters",
             )
 
-        try:
-            # exclude_unset: the tool's own execute() defaults apply to
-            # anything the model didn't pass.
-            content = await tool.execute(
-                **params.model_dump(exclude_unset=True),
-            )
-
-        except Exception as exc:
-            logger.exception(
-                "Tool execution failed: tool=%s.",
-                tool_name,
-            )
-
-            return self._failed(
-                tool_name=tool_name,
-                error=f"Tool '{tool_name}' failed while running.",
-                error_type=type(exc).__name__,
-            )
-
-        return ToolResult(
-            tool_name=tool_name,
-            success=True,
-            content=content,
-            evidence=(
-                ToolEvidence(
-                    content=content,
-                    source=self._SOURCE_BY_TOOL.get(tool_name),
-                ),
-            ),
-            execution_metadata={},
-            error=None,
-        )
+        return params
 
     @staticmethod
     def _failed(

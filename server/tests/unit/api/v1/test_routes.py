@@ -5,7 +5,7 @@ Unit tests for the API router.
 from __future__ import annotations
 
 from fastapi import APIRouter
-from fastapi.dependencies.models import Dependent
+from fastapi.dependencies.models import Dependant
 from fastapi.routing import APIRoute, iter_route_contexts
 
 from api.dependencies.auth import get_current_user
@@ -21,10 +21,10 @@ PUBLIC_ROUTES = {
 }
 
 
-def _requires_current_user(dependent: Dependent) -> bool:
+def _requires_current_user(dependant: Dependant) -> bool:
     return any(
         dependency.call is get_current_user or _requires_current_user(dependency)
-        for dependency in dependent.dependencies
+        for dependency in dependant.dependencies
     )
 
 
@@ -88,7 +88,7 @@ def test_every_non_public_route_requires_an_authenticated_user() -> None:
         for method in route.methods:
             key = (method, context.path)
             seen.add(key)
-            if key not in PUBLIC_ROUTES and not _requires_current_user(route.dependent):
+            if key not in PUBLIC_ROUTES and not _requires_current_user(route.dependant):
                 unauthenticated.append(key)
 
     assert unauthenticated == []

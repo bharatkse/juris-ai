@@ -12,6 +12,7 @@ from .knowledge_chunk import KnowledgeChunk
 from .knowledge_embedding import KnowledgeEmbedding
 from .knowledge_sources import KnowledgeSource
 from .library import Library
+from .role import PermissionModel, RoleModel
 from .usage_record import UsageRecord
 from .user import User
 from .user_memory import UserMemory
@@ -28,6 +29,8 @@ __all__ = [
     "Approval",
     "UsageRecord",
     "AgentPolicyModel",
+    "RoleModel",
+    "PermissionModel",
     "ComplianceLog",
     "UserMemory",
 ]

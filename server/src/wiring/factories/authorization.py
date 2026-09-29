@@ -13,6 +13,7 @@ from application.authorization.capability.analyzer import DefaultCapabilityAnaly
 from application.authorization.rbac.execute_gate import RBACExecuteGate
 from application.authorization.rbac.policy import RBACPolicy
 from application.authorization.rbac.resolver import RBACService
+from application.authorization.rbac.roles import DatabaseRolePermissionProvider
 from application.authorization.service import AuthorizationService
 
 
@@ -26,6 +27,9 @@ def create_authorization() -> AuthorizationService:
 
     rbac = RBACService(
         policy=rbac_policy,
+        role_permissions=DatabaseRolePermissionProvider(
+            session_factory=session_factory,
+        ),
     )
 
     execute_gate = RBACExecuteGate(

@@ -76,6 +76,9 @@ repos:
           - --check-filenames
           - --check-hidden
           - --skip=*.lock,*.svg,*.png,*.jpg,*.jpeg,node_modules,.venv,dist,build,.aws-sam
+          # Real identifiers, not typos: SQLAlchemy's lazy="selectin" loader,
+          # and FastAPI's Dependant class / route.dependant attribute.
+          - --ignore-words-list=selectin,dependant
 
   # ----------------------------------------
   # CloudFormation / SAM linting

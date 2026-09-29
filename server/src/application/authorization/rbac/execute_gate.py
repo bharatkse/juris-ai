@@ -30,7 +30,7 @@ class RBACExecuteGate:
     ) -> None:
         self._rbac = rbac
 
-    def authorize(
+    async def authorize(
         self,
         request: AuthorizationRequestDTO,
     ) -> AuthorizationResultDTO:
@@ -41,7 +41,7 @@ class RBACExecuteGate:
         RBAC resolver.
         """
 
-        allowed = self._rbac.check_action(
+        allowed = await self._rbac.check_action(
             request,
         )
 

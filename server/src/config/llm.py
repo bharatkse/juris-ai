@@ -34,6 +34,13 @@ class LLMSettings(BaseAppSettings):
     # Search & RAG
     SEARXNG_BASE_URL: str
     mcp_rag_server_url: str = "http://searxng:8080"
+    # Messaging MCP servers behind the email/email_send and slack/
+    # slack_post tools. Unset (the default) registers no server: the
+    # tools stay registered, but every call to them fails cleanly with
+    # "unknown MCP server". No agent is granted them unless
+    # ENABLE_MESSAGING_TOOLS is on (config/agent_policy.py).
+    MCP_GMAIL_SERVER_URL: str | None = None
+    MCP_SLACK_SERVER_URL: str | None = None
     web_research_max_concurrency: int = 10
     web_research_fetch_timeout_seconds: int = 10
     web_research_max_chars_per_page: int = 2000

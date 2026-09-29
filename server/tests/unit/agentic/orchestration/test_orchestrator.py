@@ -4,6 +4,7 @@ Unit tests for AIOrchestrator.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
@@ -18,9 +19,10 @@ from agentic.guardrails.schemas import GuardrailActionEnum, GuardrailReviewResul
 from agentic.orchestration.orchestrator import AIOrchestrator, _stream_slices
 from agentic.orchestration.schemas.response import OrchestratorResponse
 from core.dto.agent import AgentResponseDTO
+from core.dto.approval import ApprovalResponseDTO
 from core.dto.planning import ExecutionPlanDTO
 from core.dto.response import CitationDTO, SourceDTO, UsageDTO
-from core.enums import ExecutionModeEnum, ExecutionStatusEnum, IntentEnum
+from core.enums import ApprovalStatusEnum, ExecutionModeEnum, ExecutionStatusEnum, IntentEnum
 from tests.builders.agentic.orchestrator import build_orchestrator_request
 
 
@@ -97,7 +99,7 @@ def orchestrator() -> AIOrchestrator:
     )
 
     authorization = MagicMock()
-    authorization.authorize_request = MagicMock()
+    authorization.authorize_request = AsyncMock()
 
     # Never reached by either test below: both exercise paths that
     # return (the no-agent-responses fallback) or raise (the planner
@@ -329,7 +331,7 @@ def _build_orchestrator_for_guardrail_tests(
     executor.execute = AsyncMock(side_effect=execution_results)
 
     authorization = MagicMock()
-    authorization.authorize_request = MagicMock()
+    authorization.authorize_request = AsyncMock()
 
     guardrails = MagicMock()
     guardrails.review = AsyncMock(side_effect=guardrail_results)
@@ -923,3 +925,127 @@ async def test_handle_refuses_when_harmful_content_check_cannot_run() -> None:
     assert response.guardrail is not None
     assert response.guardrail.action == GuardrailActionEnum.BLOCKED
     assert orchestrator._executor.execute.await_count == 2
+
+
+# ---------------------------------------------------------------------------
+# A turn paused for approval (A6): the user is told it's waiting for their
+# approval, not that "something went wrong".
+# ---------------------------------------------------------------------------
+
+
+def build_paused_execution_result() -> ExecutionResultSchema:
+    """
+    A single-step turn paused on a gated call: no FINAL artifact, status
+    WAITING_FOR_APPROVAL, and the pending approval attached.
+    """
+
+    now = datetime.now(UTC)
+
+    return ExecutionResultSchema(
+        state=ExecutionStateSchema(
+            request_id=uuid4(),
+            status=ExecutionStatusEnum.WAITING_FOR_APPROVAL,
+        ),
+        artifacts={},
+        action=None,
+        approval=ApprovalResponseDTO(
+            approval_id="appr_" + "a" * 32,
+            agent_action_id="actn_" + "b" * 32,
+            requested_by="user_" + "c" * 32,
+            approved_by=None,
+            status=ApprovalStatusEnum.WAITING,
+            decision_type=None,
+            decision_reason=None,
+            edited_payload=None,
+            edited_fingerprint=None,
+            expires_at=now + timedelta(minutes=15),
+            created_at=now,
+            decided_at=None,
+        ),
+    )
+
+
+PENDING_APPROVAL_TEXT = "needs your approval"
+
+
+@pytest.mark.asyncio
+async def test_handle_reports_a_pending_approval_not_an_error(
+    orchestrator: AIOrchestrator,
+) -> None:
+    orchestrator._executor.execute = AsyncMock(return_value=build_paused_execution_result())
+
+    response = await orchestrator.handle(
+        request=build_orchestrator_request(),
+        action_workflow_service=MagicMock(),
+    )
+
+    assert PENDING_APPROVAL_TEXT in response.content
+    assert "went wrong" not in response.content
+    assert response.approval is not None
+    assert response.approval.approval_id == "appr_" + "a" * 32
+
+
+@pytest.mark.asyncio
+async def test_stream_reports_a_pending_approval_not_an_error(
+    orchestrator: AIOrchestrator,
+) -> None:
+    orchestrator._executor.execute = AsyncMock(return_value=build_paused_execution_result())
+
+    items = [
+        item
+        async for item in orchestrator.stream(
+            request=build_orchestrator_request(),
+            action_workflow_service=MagicMock(),
+        )
+    ]
+
+    final = items[-1]
+    assert final.is_final is True
+    assert PENDING_APPROVAL_TEXT in final.response.content
+    assert "went wrong" not in final.response.content
+    assert final.response.approval is not None
+
+
+@pytest.mark.asyncio
+async def test_resume_that_pauses_again_reports_the_new_pending_approval(
+    orchestrator: AIOrchestrator,
+) -> None:
+    """
+    An approved call whose resumed turn proposes another gated call used
+    to be reported as "it failed after approval".
+    """
+
+    orchestrator._executor.resume = AsyncMock(return_value=build_paused_execution_result())
+
+    response = await orchestrator.resume(
+        thread_id="thread-1",
+        user_id="user_" + "c" * 32,
+        conversation_id="conv_" + "d" * 32,
+        plan=MagicMock(),
+        approved=True,
+        tool_result=None,
+        action_workflow_service=MagicMock(),
+    )
+
+    assert PENDING_APPROVAL_TEXT in response.content
+    assert "failed" not in response.content
+    assert response.approval is not None
+
+
+@pytest.mark.asyncio
+async def test_resume_after_rejection_still_says_not_approved(
+    orchestrator: AIOrchestrator,
+) -> None:
+    orchestrator._executor.resume = AsyncMock(return_value=build_failed_execution_result())
+
+    response = await orchestrator.resume(
+        thread_id="thread-1",
+        user_id="user_" + "c" * 32,
+        conversation_id="conv_" + "d" * 32,
+        plan=MagicMock(),
+        approved=False,
+        tool_result=None,
+        action_workflow_service=MagicMock(),
+    )
+
+    assert "not approved" in response.content
