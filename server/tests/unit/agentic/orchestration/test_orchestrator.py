@@ -1153,6 +1153,173 @@ async def test_each_turn_counts_only_its_own_calls() -> None:
 
 
 # ---------------------------------------------------------------------------
+# R3: the per-request token quota ends the request, whoever caught it
+# ---------------------------------------------------------------------------
+
+
+def _refused_and_swallowed(result):
+    """
+    A stage whose LLM call the quota refuses, and which turns the refusal
+    into a normal result -- as the agent runtime turns any LLM failure
+    into a FAILED step.
+    """
+
+    from core.exceptions.rate_limit import RequestTokenQuotaExceededError
+    from core.usage import check_request_token_quota
+
+    async def stage(*_args, **_kwargs):
+        try:
+            check_request_token_quota(["word " * 2_000])
+        except RequestTokenQuotaExceededError:
+            return result
+        raise AssertionError("the quota should have refused this call")
+
+    return stage
+
+
+def _quota_orchestrator() -> AIOrchestrator:
+    orchestrator = _usage_orchestrator()
+    orchestrator._executor.execute = _refused_and_swallowed(build_failed_execution_result())
+    return orchestrator
+
+
+@pytest.mark.asyncio
+async def test_handle_raises_the_quota_refusal_even_if_a_stage_swallowed_it() -> None:
+    from core.exceptions.rate_limit import RequestTokenQuotaExceededError
+    from core.usage import request_token_quota
+
+    with request_token_quota(500), pytest.raises(RequestTokenQuotaExceededError) as raised:
+        await _quota_orchestrator().handle(
+            request=build_orchestrator_request(),
+            action_workflow_service=MagicMock(),
+        )
+
+    error = raised.value
+    assert error.quota == 500
+    # The planner's call (100 + 20) was made before the refusal and is
+    # carried, so it can still be recorded.
+    assert error.used == 120
+    assert error.prompt_tokens >= 100
+    assert error.completion_tokens >= 20
+
+
+@pytest.mark.asyncio
+async def test_stream_raises_the_quota_refusal_before_sending_an_answer() -> None:
+    from core.exceptions.rate_limit import RequestTokenQuotaExceededError
+    from core.usage import request_token_quota
+
+    sent = []
+
+    with request_token_quota(500), pytest.raises(RequestTokenQuotaExceededError):
+        async for chunk in _quota_orchestrator().stream(
+            request=build_orchestrator_request(),
+            action_workflow_service=MagicMock(),
+        ):
+            sent.append(chunk)
+
+    assert sent == []
+
+
+def _checks_then_calls_llm(prompt_tokens: int, completion_tokens: int, result=None):
+    """A stage whose one LLM call is checked against the quota first, as
+    LLMClient.generate() does."""
+
+    from core.usage import check_request_token_quota
+
+    record = _calls_llm(prompt_tokens, completion_tokens, result)
+
+    async def stage(*args, **kwargs):
+        check_request_token_quota(["x" * prompt_tokens])
+        return await record(*args, **kwargs)
+
+    return stage
+
+
+def _checked_usage_orchestrator(monkeypatch: pytest.MonkeyPatch) -> AIOrchestrator:
+    """
+    _usage_orchestrator(), each call checked first, one token per prompt
+    character. Before each call: planner 0 + 100, executor 120 + 300,
+    judge 470 + 10; the turn uses 481.
+    """
+
+    monkeypatch.setattr("agentic.orchestration.orchestrator.estimate_tokens", len)
+
+    orchestrator = _usage_orchestrator()
+    orchestrator._planner.create_plan = _checks_then_calls_llm(
+        100,
+        20,
+        ExecutionPlanDTO(intent=IntentEnum.GENERAL, mode=ExecutionModeEnum.SEQUENTIAL, steps=()),
+    )
+    orchestrator._executor.execute = _checks_then_calls_llm(
+        300, 50, build_success_execution_result(content="Answer.")
+    )
+    orchestrator._guardrails.review = _checks_then_calls_llm(
+        10, 1, GuardrailReviewResult(content="Answer.", action=GuardrailActionEnum.NONE)
+    )
+    return orchestrator
+
+
+@pytest.mark.asyncio
+async def test_a_turn_whose_every_call_fits_the_quota_is_answered(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from core.usage import request_token_quota
+
+    with request_token_quota(480):  # the judge's call: 470 + 10 = 480
+        response = await _checked_usage_orchestrator(monkeypatch).handle(
+            request=build_orchestrator_request(),
+            action_workflow_service=MagicMock(),
+        )
+
+    assert response.content == "Answer."
+    # The last call's output may take the total past the quota (only the
+    # prompt is known before a call), as with the daily quota.
+    assert response.usage.total_tokens == 481
+
+
+@pytest.mark.asyncio
+async def test_one_token_less_refuses_the_last_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    from core.exceptions.rate_limit import RequestTokenQuotaExceededError
+    from core.usage import request_token_quota
+
+    orchestrator = _checked_usage_orchestrator(monkeypatch)
+
+    with request_token_quota(479), pytest.raises(RequestTokenQuotaExceededError) as raised:
+        await orchestrator.handle(
+            request=build_orchestrator_request(),
+            action_workflow_service=MagicMock(),
+        )
+
+    assert (raised.value.used, raised.value.requested) == (470, 10)
+    assert (raised.value.prompt_tokens, raised.value.completion_tokens) == (400, 70)
+
+
+@pytest.mark.asyncio
+async def test_a_resumed_turn_is_not_capped(orchestrator: AIOrchestrator) -> None:
+    """Only ChatService sets a quota; HitlResumeService doesn't."""
+
+    from core.usage import check_request_token_quota
+
+    async def resume(*_args, **_kwargs):
+        check_request_token_quota(["word " * 50_000])
+        return build_failed_execution_result()
+
+    orchestrator._executor.resume = resume
+
+    response = await orchestrator.resume(
+        thread_id="thread-1",
+        user_id="user_" + "c" * 32,
+        conversation_id="conv_" + "d" * 32,
+        plan=MagicMock(),
+        approved=False,
+        tool_result=None,
+        action_workflow_service=MagicMock(),
+    )
+
+    assert "not approved" in response.content
+
+
+# ---------------------------------------------------------------------------
 # A7: a plan over the step limit gets a reply, not an error or a cut plan
 # ---------------------------------------------------------------------------
 

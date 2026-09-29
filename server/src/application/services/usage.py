@@ -25,7 +25,8 @@ logger = get_logger(__name__)
 class UsageService(BaseService):
     """
     Enforces the per-user request-rate limit and daily token quota,
-    and records actual token usage once it's known.
+    provides the per-request token quota, and records actual token
+    usage once it's known.
 
     check_and_enforce() and record() are deliberately separate calls:
     the rate/quota check happens before dispatching to the
@@ -111,6 +112,24 @@ class UsageService(BaseService):
                 quota=settings.RATE_LIMIT_DAILY_TOKEN_QUOTA,
                 used=daily_usage,
             )
+
+    def request_token_quota(self) -> int | None:
+        """
+        The most tokens one request may use (RATE_LIMIT_REQUEST_TOKEN_QUOTA),
+        or None when rate limiting is off.
+
+        The per-request counterpart of check_and_enforce()'s daily quota,
+        and enforced the same way: before the tokens are spent. The daily
+        quota is checked once before a request starts; this one before
+        each of the request's LLM calls (core.usage, set by ChatService).
+        """
+
+        settings = get_settings().rate_limit
+
+        if not settings.RATE_LIMIT_ENABLED:
+            return None
+
+        return settings.RATE_LIMIT_REQUEST_TOKEN_QUOTA
 
     async def record(
         self,

@@ -7,11 +7,13 @@ Coordinates the AI request lifecycle.
 from __future__ import annotations
 
 import re
-from collections.abc import AsyncIterator, Iterator, Sequence
+from collections.abc import AsyncGenerator, AsyncIterator, Iterator, Sequence
+from contextlib import aclosing
 from typing import TYPE_CHECKING
 
 from adapters.observability.logger import get_logger
 from adapters.observability.tracing import span
+from agentic.agents.prompts.token_budget import estimate_tokens
 from agentic.execution.aggregation.schemas import AggregationMetadata
 from agentic.guardrails.schemas import GuardrailActionEnum, GuardrailReviewResult
 from agentic.orchestration.schemas.context import (
@@ -135,6 +137,20 @@ def _awaiting_approval(execution_result: ExecutionResultSchema) -> bool:
 _STREAM_SLICE_CHARS = 48
 
 _STREAM_TOKEN = re.compile(r"\s*\S+\s*|\s+")
+
+
+def _raise_if_refused(meter: UsageMeter) -> None:
+    """
+    End the request if the request token quota refused an LLM call.
+
+    The refusal is raised from inside the LLM call, where a caller may
+    turn it into a failed step or a fallback answer (an agent's failed
+    turn, a judge failing closed). Whatever happened after it, the
+    request stops with the refusal, carrying the tokens used so far.
+    """
+
+    if meter.refused is not None:
+        raise meter.quota_error()
 
 
 def _with_usage(response: OrchestratorResponse, meter: UsageMeter) -> OrchestratorResponse:
@@ -416,11 +432,18 @@ class AIOrchestrator:
         guardrail judge.
         """
 
-        with usage_scope() as meter:
-            response = await self._handle(
-                request=request,
-                action_workflow_service=action_workflow_service,
-            )
+        with usage_scope(estimate_tokens=estimate_tokens) as meter:
+            try:
+                response = await self._handle(
+                    request=request,
+                    action_workflow_service=action_workflow_service,
+                )
+            except Exception as exc:
+                if meter.refused is not None:
+                    raise meter.quota_error() from exc
+                raise
+
+        _raise_if_refused(meter)
 
         return _with_usage(response, meter)
 
@@ -436,17 +459,33 @@ class AIOrchestrator:
         handle().
         """
 
-        with usage_scope() as meter:
-            async for chunk in self._stream(
-                request=request,
-                action_workflow_service=action_workflow_service,
-            ):
-                if chunk.is_final and chunk.response is not None:
-                    chunk = chunk.model_copy(
-                        update={"response": _with_usage(chunk.response, meter)},
+        with usage_scope(estimate_tokens=estimate_tokens) as meter:
+            try:
+                # aclosing: when this generator stops early (a refusal),
+                # _stream() is closed here, in this context, so its
+                # tracing span exits normally.
+                async with aclosing(
+                    self._stream(
+                        request=request,
+                        action_workflow_service=action_workflow_service,
                     )
+                ) as chunks:
+                    async for chunk in chunks:
+                        # Every chunk follows the LLM calls it depends on (the
+                        # answer is streamed once reviewed), so a refused
+                        # call is caught before any text is sent.
+                        _raise_if_refused(meter)
 
-                yield chunk
+                        if chunk.is_final and chunk.response is not None:
+                            chunk = chunk.model_copy(
+                                update={"response": _with_usage(chunk.response, meter)},
+                            )
+
+                        yield chunk
+            except Exception as exc:
+                if meter.refused is not None:
+                    raise meter.quota_error() from exc
+                raise
 
     async def _resume(
         self,
@@ -1121,7 +1160,7 @@ class AIOrchestrator:
         *,
         request: OrchestratorRequest,
         action_workflow_service: ActionWorkflowService,
-    ) -> AsyncIterator[OrchestratorStreamChunk]:
+    ) -> AsyncGenerator[OrchestratorStreamChunk, None]:
         """
         Streaming counterpart to handle() above.
 

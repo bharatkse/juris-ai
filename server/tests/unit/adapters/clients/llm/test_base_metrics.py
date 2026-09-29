@@ -161,3 +161,65 @@ async def test_invalid_structured_output_raises_the_retryable_invalid_response_e
         await client.generate_structured(request=build_llm_request(), response_model=Decision)
 
     assert isinstance(raised.value, ClientProviderError)
+
+
+# ---------------------------------------------------------------------------
+# Per-request token quota (review R3)
+# ---------------------------------------------------------------------------
+
+
+class _CountingClient(_StubClient):
+    def __init__(self, *, response: LLMResponseDTO) -> None:
+        super().__init__(response=response)
+        self.provider_calls = 0
+
+    async def _generate(self, *, request: LLMRequestDTO) -> LLMResponseDTO:
+        self.provider_calls += 1
+        return await super()._generate(request=request)
+
+
+def _prompt_request(text: str) -> LLMRequestDTO:
+    from core.dto.clients.llm import LLMMessageDTO
+    from core.enums import MessageRoleEnum
+
+    return build_llm_request(messages=(LLMMessageDTO(role=MessageRoleEnum.USER, content=text),))
+
+
+async def test_a_call_over_the_request_token_quota_never_reaches_the_provider() -> None:
+    from core.exceptions.rate_limit import RequestTokenQuotaExceededError
+    from core.usage import request_token_quota, usage_scope
+
+    client = _CountingClient(
+        response=build_llm_response(
+            usage=build_llm_token_usage(prompt_tokens=10, completion_tokens=5, total_tokens=15),
+        ),
+    )
+
+    with request_token_quota(20), usage_scope(estimate_tokens=len) as meter:
+        with pytest.raises(RequestTokenQuotaExceededError):
+            await client.generate(request=_prompt_request("x" * 21))
+
+    assert client.provider_calls == 0
+    assert meter.calls == 0
+
+
+async def test_calls_within_the_request_token_quota_go_through_and_count() -> None:
+    from core.exceptions.rate_limit import RequestTokenQuotaExceededError
+    from core.usage import request_token_quota, usage_scope
+
+    client = _CountingClient(
+        response=build_llm_response(
+            usage=build_llm_token_usage(prompt_tokens=10, completion_tokens=5, total_tokens=15),
+        ),
+    )
+
+    with request_token_quota(40), usage_scope(estimate_tokens=len) as meter:
+        await client.generate(request=_prompt_request("x" * 20))  # 0 + 20 <= 40
+        await client.generate(request=_prompt_request("x" * 25))  # 15 + 25 <= 40
+
+        # 30 used by the two calls: a third 11-token prompt would cross 40.
+        with pytest.raises(RequestTokenQuotaExceededError):
+            await client.generate(request=_prompt_request("x" * 11))
+
+    assert client.provider_calls == 2
+    assert meter.total_tokens == 30

@@ -85,3 +85,109 @@ def test_the_scope_is_closed_when_the_block_raises() -> None:
     _record(5, 5)
 
     assert meter.calls == 0
+
+
+# ---------------------------------------------------------------------------
+# Per-request token quota (review R3): checked before each call
+# ---------------------------------------------------------------------------
+
+
+def _one_token_per_char(text: str) -> int:
+    return len(text)
+
+
+def test_without_a_quota_every_call_is_allowed() -> None:
+    from core.usage import check_request_token_quota
+
+    check_request_token_quota(["x" * 10_000])  # outside a scope
+
+    with usage_scope(estimate_tokens=_one_token_per_char) as meter:
+        check_request_token_quota(["x" * 10_000])
+
+    assert meter.quota is None
+    assert meter.refused is None
+
+
+def test_a_call_within_the_quota_is_allowed() -> None:
+    from core.usage import check_request_token_quota, request_token_quota
+
+    with request_token_quota(100), usage_scope(estimate_tokens=_one_token_per_char) as meter:
+        _record(40, 10)
+        check_request_token_quota(["x" * 30, "y" * 20])  # 50 used + 50 = 100
+
+    assert meter.quota == 100
+    assert meter.refused is None
+
+
+def test_a_call_that_would_cross_the_quota_is_refused_before_it_is_made() -> None:
+    from core.exceptions.rate_limit import RequestTokenQuotaExceededError
+    from core.usage import check_request_token_quota, request_token_quota
+
+    with request_token_quota(100), usage_scope(estimate_tokens=_one_token_per_char) as meter:
+        _record(40, 10)
+
+        with pytest.raises(RequestTokenQuotaExceededError) as raised:
+            check_request_token_quota(["x" * 51])
+
+    error = raised.value
+    assert (error.quota, error.used, error.requested) == (100, 50, 51)
+    assert (error.prompt_tokens, error.completion_tokens) == (40, 10)
+    assert error.status_code == 413
+    assert error.error_code == "REQUEST_TOKEN_QUOTA_EXCEEDED"
+    assert meter.refused is not None
+    # Nothing was recorded for the refused call.
+    assert meter.calls == 1
+
+
+def test_after_one_refusal_every_later_call_is_refused() -> None:
+    from core.exceptions.rate_limit import RequestTokenQuotaExceededError
+    from core.usage import check_request_token_quota, request_token_quota
+
+    with request_token_quota(10), usage_scope(estimate_tokens=_one_token_per_char):
+        with pytest.raises(RequestTokenQuotaExceededError):
+            check_request_token_quota(["x" * 11])
+
+        with pytest.raises(RequestTokenQuotaExceededError):
+            check_request_token_quota(["x"])
+
+
+def test_the_quota_error_carries_usage_recorded_after_the_refusal() -> None:
+    """A parallel call already in flight may finish after the refusal."""
+
+    from core.exceptions.rate_limit import RequestTokenQuotaExceededError
+    from core.usage import check_request_token_quota, request_token_quota
+
+    with request_token_quota(10), usage_scope(estimate_tokens=_one_token_per_char) as meter:
+        with pytest.raises(RequestTokenQuotaExceededError):
+            check_request_token_quota(["x" * 11])
+        _record(7, 3)
+
+    assert (meter.quota_error().prompt_tokens, meter.quota_error().completion_tokens) == (7, 3)
+
+
+def test_the_quota_applies_only_to_scopes_opened_inside_it() -> None:
+    from core.usage import request_token_quota
+
+    with request_token_quota(100):
+        with usage_scope() as capped:
+            pass
+        with request_token_quota(None), usage_scope() as uncapped_inside:
+            pass
+
+    with usage_scope() as after:
+        pass
+
+    assert capped.quota == 100
+    assert uncapped_inside.quota is None
+    assert after.quota is None
+
+
+def test_without_an_estimator_prompts_are_sized_at_four_characters_per_token() -> None:
+    from core.exceptions.rate_limit import RequestTokenQuotaExceededError
+    from core.usage import check_request_token_quota, request_token_quota
+
+    with request_token_quota(10), usage_scope():
+        check_request_token_quota(["x" * 40])  # 10 tokens
+
+        with pytest.raises(RequestTokenQuotaExceededError):
+            check_request_token_quota(["x" * 41])

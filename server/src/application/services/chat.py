@@ -21,8 +21,10 @@ from application.services.conversation_summarization import (
 from application.services.internal_dto.chat import ChatResultDTO
 from application.services.internal_dto.stream import ChatStreamChunkDTO
 from core.enums import MessageRoleEnum
+from core.exceptions.rate_limit import RequestTokenQuotaExceededError
 from core.models.conversation import ConversationMessageSchema
 from core.types import ConversationEventId, ConversationId, UserId
+from core.usage import request_token_quota
 
 if TYPE_CHECKING:
     from adapters.persistence.sqlalchemy.models.conversation import (
@@ -142,10 +144,11 @@ class ChatService(BaseService):
                 files=files,
             )
 
-            result = await self._orchestrator.handle(
-                request=orchestration_request,
-                action_workflow_service=self._action_workflow_service,
-            )
+            with request_token_quota(self._usage_service.request_token_quota()):
+                result = await self._orchestrator.handle(
+                    request=orchestration_request,
+                    action_workflow_service=self._action_workflow_service,
+                )
 
             # The assistant event is also persisted when HITL approval
             # is required so the approval state is available in
@@ -180,8 +183,9 @@ class ChatService(BaseService):
                 approval=result.approval,
             )
 
-        except Exception:
+        except Exception as exc:
             await self.rollback()
+            await self._record_refused_request_usage(user_id=user_id, error=exc)
 
             logger.exception(
                 "Chat request failed.",
@@ -256,11 +260,12 @@ class ChatService(BaseService):
 
             final_response: OrchestratorResponse | None = None
 
-            async for chunk in stream:
-                if chunk.is_final:
-                    final_response = chunk.response
+            with request_token_quota(self._usage_service.request_token_quota()):
+                async for chunk in stream:
+                    if chunk.is_final:
+                        final_response = chunk.response
 
-                yield chunk
+                    yield chunk
 
             if final_response is None:
                 raise RuntimeError(
@@ -304,8 +309,9 @@ class ChatService(BaseService):
 
             raise
 
-        except Exception:
+        except Exception as exc:
             await self.rollback()
+            await self._record_refused_request_usage(user_id=user_id, error=exc)
 
             logger.exception(
                 "Chat stream failed.",
@@ -356,6 +362,29 @@ class ChatService(BaseService):
         )
 
         return user_event
+
+    async def _record_refused_request_usage(
+        self,
+        *,
+        user_id: UserId,
+        error: Exception,
+    ) -> None:
+        """
+        Record the tokens a request used before the request token quota
+        refused its next LLM call. The request fails, but those calls
+        were made: without this, requests that stop at the quota would
+        spend tokens the daily quota never counts. After the rollback:
+        record() commits its own write and never raises.
+        """
+
+        if not isinstance(error, RequestTokenQuotaExceededError):
+            return
+
+        await self._usage_service.record(
+            user_id=user_id,
+            input_tokens=error.prompt_tokens,
+            output_tokens=error.completion_tokens,
+        )
 
     async def _persist_assistant_response(
         self,

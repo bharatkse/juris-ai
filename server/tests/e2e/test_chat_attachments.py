@@ -243,3 +243,74 @@ async def test_the_default_limits_allow_several_files(
         )
 
     assert response.status_code == 200, response.text
+
+
+# ---------------------------------------------------------------------------
+# Upload types (review R15): only what the parser reads, refused before
+# anything is read or planned
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("endpoint", ["/api/v1/chat", "/api/v1/chat/stream"])
+async def test_a_file_of_an_unsupported_type_is_refused(
+    e2e_client, registered_user, conversation_id, endpoint: str
+) -> None:
+    planned: list[object] = []
+
+    async def fake_plan_generate(self, *, request):
+        planned.append(request)
+        return _plan()
+
+    with patch.object(LLMPlanGenerator, "generate", fake_plan_generate):
+        response = await e2e_client.post(
+            endpoint,
+            data={"conversation_id": conversation_id, "message": QUESTION},
+            files=[
+                ("files", ("lease.pdf", minimal_pdf(CLAUSE), "application/pdf")),
+                ("files", ("photo.png", b"\x89PNG\r\n\x1a\n", "image/png")),
+            ],
+            headers=registered_user["headers"],
+        )
+
+    assert response.status_code == 422, response.text
+    error = response.json()["error"]
+    assert error["code"] == "UPLOAD_UNSUPPORTED_TYPE"
+    assert "photo.png" in error["message"]
+    assert "image/png" in error["message"]
+    assert planned == []
+
+
+async def test_supported_types_with_type_parameters_reach_the_agent(
+    e2e_client, registered_user, conversation_id, hermetic_llm
+) -> None:
+    """
+    A declared "text/plain; charset=utf-8" is read as text/plain. Before,
+    the parser matched the whole header value and told the model the file
+    couldn't be read.
+    """
+
+    response, prompts = await _chat_with_upload(
+        e2e_client,
+        registered_user,
+        conversation_id,
+        ("lease.txt", CLAUSE.encode(), "text/plain; charset=utf-8"),
+    )
+
+    evidence = _evidence_message(prompts[0])
+    assert "[Uploaded file: lease.txt]" in evidence
+    assert CLAUSE in evidence
+    assert response["content"] == ANSWER
+
+
+async def test_a_markdown_file_reaches_the_agent(
+    e2e_client, registered_user, conversation_id, hermetic_llm
+) -> None:
+    response, prompts = await _chat_with_upload(
+        e2e_client,
+        registered_user,
+        conversation_id,
+        ("lease.md", f"# Lease\n\n{CLAUSE}".encode(), "text/markdown"),
+    )
+
+    assert CLAUSE in _evidence_message(prompts[0])
+    assert response["content"] == ANSWER

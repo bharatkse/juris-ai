@@ -9,7 +9,7 @@ class RateLimitSettings(BaseAppSettings):
     """
     Per-user request-rate and token-quota configuration.
 
-    Both defaults are placeholders, not derived from real traffic/cost
+    The defaults are placeholders, not derived from real traffic/cost
     data -- tune via env vars once real usage numbers exist.
     """
 
@@ -22,8 +22,18 @@ class RateLimitSettings(BaseAppSettings):
     # calendar day.
     RATE_LIMIT_DAILY_TOKEN_QUOTA: int = 200_000
 
+    # (b2) cost control per request: max total tokens one chat request's
+    # LLM calls may use. Checked before each call (core/usage.py), so a
+    # call that would cross it is never made; the request fails with 413
+    # REQUEST_TOKEN_QUOTA_EXCEEDED and the tokens already used still
+    # count toward the daily quota. Not applied to a turn resumed after
+    # an approval (that turn was admitted before the approval).
+    RATE_LIMIT_REQUEST_TOKEN_QUOTA: int = 100_000
+
     # (c) chat attachments (api/helpers/files.py): checked before a file
-    # is read into memory. Each file's parsed text is also capped at
+    # is read into memory, along with its type (only the types the parser
+    # reads, core.constants.SUPPORTED_UPLOAD_CONTENT_TYPES; not a setting,
+    # since another type couldn't be used). Each file's parsed text is also capped at
     # 20,000 characters before it reaches the model
     # (agentic/execution/attachments.py); that bounds the prompt, not
     # memory, parsing time or the number of files.
@@ -33,6 +43,7 @@ class RateLimitSettings(BaseAppSettings):
     @field_validator(
         "RATE_LIMIT_REQUESTS_PER_MINUTE",
         "RATE_LIMIT_DAILY_TOKEN_QUOTA",
+        "RATE_LIMIT_REQUEST_TOKEN_QUOTA",
         "UPLOAD_MAX_FILES",
         "UPLOAD_MAX_FILE_BYTES",
     )

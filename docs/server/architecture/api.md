@@ -292,12 +292,16 @@ Requires a bearer token. Both endpoints take `multipart/form-data`.
 #### Chat Limits
 
 - **Uploads:** at most 5 files per message (`UPLOAD_MAX_FILES`) and
-  10 MB per file (`UPLOAD_MAX_FILE_BYTES`). Over either limit, the request
-  fails before any file is read: `422` `TOO_MANY_UPLOADS`, or `413`
-  `UPLOAD_TOO_LARGE` naming the file. Each file's extracted text is
-  also cut to 20,000 characters before the model sees it. A file of an
-  unsupported type (not PDF, DOCX, text or Markdown) is accepted, but the
-  model is only told it couldn't be read.
+  10 MB per file (`UPLOAD_MAX_FILE_BYTES`), each of a type the server can
+  read: PDF (`application/pdf`), DOCX
+  (`application/vnd.openxmlformats-officedocument.wordprocessingml.document`),
+  plain text (`text/plain`) or Markdown (`text/markdown`), as declared in
+  the part's `Content-Type` (parameters such as `; charset=utf-8` are
+  ignored). Otherwise the request fails before any file is read: `422`
+  `TOO_MANY_UPLOADS`, `422` `UPLOAD_UNSUPPORTED_TYPE` naming the file and
+  its type, or `413` `UPLOAD_TOO_LARGE` naming the file. Each file's
+  extracted text is also cut to 20,000 characters before the model sees
+  it.
 - **Requests and tokens:** `429` `RATE_LIMIT_EXCEEDED` past
   `RATE_LIMIT_REQUESTS_PER_MINUTE`, and `429` `TOKEN_QUOTA_EXCEEDED` once
   the day's tokens reach `RATE_LIMIT_DAILY_TOKEN_QUOTA` (resets at
@@ -305,6 +309,16 @@ Requires a bearer token. Both endpoints take `multipart/form-data`.
   answer checks and guardrail judge, including a turn resumed after an
   approval. The quota is checked before a turn, so the turn that crosses
   it still completes.
+- **Tokens per request:** one request may use at most
+  `RATE_LIMIT_REQUEST_TOKEN_QUOTA` tokens (default 100,000). Each LLM call
+  is checked before it is made, against the tokens the request has used
+  so far plus the call's estimated prompt; a call that would cross the
+  limit isn't made and the request fails with `413`
+  `REQUEST_TOKEN_QUOTA_EXCEEDED` (on `/chat/stream`, a final `error`
+  event; see below). Nothing from the request is saved, but the tokens
+  its earlier calls used count toward the daily quota. The last call's
+  output can take the total slightly past the limit. Not applied to a
+  turn resumed after an approval.
 - **Plan size:** a request whose plan needs more than 6 steps
   (`PLAN_MAX_STEPS`) isn't run. The answer (`200`) says how many steps it
   would need and asks the user to split it into smaller questions.
@@ -325,6 +339,18 @@ curl -N \
 The `/chat/stream` endpoint returns a `text/event-stream` response. Each
 event is named `message`, except the last, which is named `complete`
 (`is_final: true`).
+
+Errors found before the stream starts (authentication, rate limits, the
+daily quota, upload limits) are normal error responses. An application
+error raised after it has started, such as `REQUEST_TOKEN_QUOTA_EXCEEDED`,
+ends the stream with a single `error` event instead of `complete`; its
+`data` is the same `code` and `message` as an error response's `error`
+object:
+
+```text
+event: error
+data: {"code":"REQUEST_TOKEN_QUOTA_EXCEEDED","message":"This request needs more than the 100000 tokens one request may use (99100 used, about 2013 more needed). Try a shorter message or fewer attachments."}
+```
 
 Each event's `data` has the following structure:
 
@@ -622,8 +648,8 @@ facts already saved from earlier messages in it.
 | `404`  | Resource not found             |
 | `409`  | Conflict with the resource's current state (e.g. an approval already decided) |
 | `410`  | Resource no longer available (e.g. an expired approval) |
-| `413`  | An uploaded file is over the size limit (`UPLOAD_TOO_LARGE`) |
-| `422`  | Request validation failed, or too many files uploaded (`TOO_MANY_UPLOADS`) |
+| `413`  | An uploaded file is over the size limit (`UPLOAD_TOO_LARGE`), or the request would use more tokens than one request may (`REQUEST_TOKEN_QUOTA_EXCEEDED`) |
+| `422`  | Request validation failed, too many files uploaded (`TOO_MANY_UPLOADS`), or a file of an unsupported type (`UPLOAD_UNSUPPORTED_TYPE`) |
 | `429`  | Request rate limit or daily token quota exceeded |
 | `500`  | Internal server error          |
 | `502`  | LLM provider error             |

@@ -1260,3 +1260,146 @@ async def test_stream_chat_raises_when_the_stream_never_yields_a_final_chunk(
 
     chat_service.rollback.assert_awaited_once()
     chat_service.commit.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# Per-request token quota (review R3)
+# ---------------------------------------------------------------------------
+
+
+def _quota_refusal():
+    from core.exceptions.rate_limit import RequestTokenQuotaExceededError
+
+    return RequestTokenQuotaExceededError(
+        quota=1000,
+        used=900,
+        requested=400,
+        prompt_tokens=700,
+        completion_tokens=200,
+    )
+
+
+def _arrange_chat(mock_conversation_service, mock_conversation_event_service):
+    conversation = ConversationFactory.build()
+    mock_conversation_service.get_or_raise = AsyncMock(return_value=conversation)
+    mock_conversation_event_service.create = AsyncMock(
+        return_value=ConversationEventFactory.build(
+            conversation_id=conversation.id,
+            role=MessageRoleEnum.USER,
+            content=TEST_MESSAGE,
+        ),
+    )
+    mock_conversation_event_service.list = AsyncMock(return_value=[])
+    return conversation
+
+
+@pytest.mark.asyncio
+async def test_chat_runs_the_orchestrator_under_the_request_token_quota(
+    chat_service: ChatService,
+    mock_conversation_service: MagicMock,
+    mock_conversation_event_service: MagicMock,
+    mock_orchestrator: MagicMock,
+    mock_usage_service: MagicMock,
+) -> None:
+    from core.usage import usage_scope
+
+    conversation = _arrange_chat(mock_conversation_service, mock_conversation_event_service)
+    mock_usage_service.request_token_quota = MagicMock(return_value=4321)
+    quotas: list[int | None] = []
+
+    async def handle(**_kwargs):
+        with usage_scope() as meter:
+            quotas.append(meter.quota)
+        raise SQLAlchemyError("stop here")
+
+    mock_orchestrator.handle = handle
+    chat_service.rollback = AsyncMock()
+
+    with pytest.raises(SQLAlchemyError):
+        await chat_service.chat(
+            user_id=conversation.user_id,
+            conversation_id=conversation.id,
+            message=TEST_MESSAGE,
+            request_id=_request_id(),
+        )
+
+    assert quotas == [4321]
+    # Not a quota refusal: nothing extra recorded.
+    mock_usage_service.record.assert_not_awaited()
+
+    with usage_scope() as after:
+        pass
+    assert after.quota is None
+
+
+@pytest.mark.asyncio
+async def test_chat_records_the_usage_of_a_request_the_quota_refused(
+    chat_service: ChatService,
+    mock_conversation_service: MagicMock,
+    mock_conversation_event_service: MagicMock,
+    mock_orchestrator: MagicMock,
+    mock_usage_service: MagicMock,
+) -> None:
+    from core.exceptions.rate_limit import RequestTokenQuotaExceededError
+
+    conversation = _arrange_chat(mock_conversation_service, mock_conversation_event_service)
+    mock_orchestrator.handle = AsyncMock(side_effect=_quota_refusal())
+    chat_service.commit = AsyncMock()
+    chat_service.rollback = AsyncMock()
+
+    with pytest.raises(RequestTokenQuotaExceededError):
+        await chat_service.chat(
+            user_id=conversation.user_id,
+            conversation_id=conversation.id,
+            message=TEST_MESSAGE,
+            request_id=_request_id(),
+        )
+
+    chat_service.rollback.assert_awaited_once()
+    chat_service.commit.assert_not_awaited()
+    mock_usage_service.record.assert_awaited_once_with(
+        user_id=conversation.user_id,
+        input_tokens=700,
+        output_tokens=200,
+    )
+
+
+@pytest.mark.asyncio
+async def test_stream_chat_records_the_usage_of_a_request_the_quota_refused(
+    chat_service: ChatService,
+    mock_conversation_service: MagicMock,
+    mock_conversation_event_service: MagicMock,
+    mock_orchestrator: MagicMock,
+    mock_usage_service: MagicMock,
+) -> None:
+    from core.exceptions.rate_limit import RequestTokenQuotaExceededError
+    from core.usage import usage_scope
+
+    conversation = _arrange_chat(mock_conversation_service, mock_conversation_event_service)
+    mock_usage_service.request_token_quota = MagicMock(return_value=1000)
+    quotas: list[int | None] = []
+
+    async def stream(**_kwargs):
+        with usage_scope() as meter:
+            quotas.append(meter.quota)
+        raise _quota_refusal()
+        yield  # pragma: no cover -- makes this an async generator
+
+    mock_orchestrator.stream = stream
+    chat_service.rollback = AsyncMock()
+
+    with pytest.raises(RequestTokenQuotaExceededError):
+        async for _ in chat_service.stream_chat(
+            user_id=conversation.user_id,
+            conversation_id=conversation.id,
+            message=TEST_MESSAGE,
+            request_id=_request_id(),
+        ):
+            pass
+
+    assert quotas == [1000]
+    mock_usage_service.record.assert_awaited_once_with(
+        user_id=conversation.user_id,
+        input_tokens=700,
+        output_tokens=200,
+    )

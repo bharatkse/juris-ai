@@ -42,6 +42,7 @@ ERROR_COLLABORATION = "COLLABORATION_ERROR"
 # Rate limiting / usage quota errors
 ERROR_RATE_LIMIT_EXCEEDED = "RATE_LIMIT_EXCEEDED"
 ERROR_TOKEN_QUOTA_EXCEEDED = "TOKEN_QUOTA_EXCEEDED"
+ERROR_REQUEST_TOKEN_QUOTA_EXCEEDED = "REQUEST_TOKEN_QUOTA_EXCEEDED"
 
 # Registry and agent/tool errors
 ERROR_REGISTRY = "REGISTRY_ERROR"
@@ -93,6 +94,20 @@ HTTP_401_UNAUTHORIZED = HTTPStatus.UNAUTHORIZED
 HTTP_403_FORBIDDEN = HTTPStatus.FORBIDDEN
 HTTP_413_CONTENT_TOO_LARGE = HTTPStatus.REQUEST_ENTITY_TOO_LARGE
 HTTP_429_TOO_MANY_REQUESTS = HTTPStatus.TOO_MANY_REQUESTS
+
+# ------------------------------------------------------------------
+# Chat attachments
+# ------------------------------------------------------------------
+# The content types ParserTool (agentic/tools/library/parser.py) can
+# read. Uploads of any other type are refused (api/helpers/files.py).
+PDF_CONTENT_TYPE = "application/pdf"
+DOCX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+TEXT_CONTENT_TYPE = "text/plain"
+MARKDOWN_CONTENT_TYPE = "text/markdown"
+
+SUPPORTED_UPLOAD_CONTENT_TYPES: frozenset[str] = frozenset(
+    {PDF_CONTENT_TYPE, DOCX_CONTENT_TYPE, TEXT_CONTENT_TYPE, MARKDOWN_CONTENT_TYPE},
+)
 
 # ------------------------------------------------------------------
 # API

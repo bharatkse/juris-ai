@@ -1,10 +1,19 @@
-PDF_CONTENT_TYPE = "application/pdf"
+# Defined in core: the upload allowlist (api/helpers/files.py) is the
+# same set ParserTool reads.
+from core.constants import (
+    DOCX_CONTENT_TYPE,
+    MARKDOWN_CONTENT_TYPE,
+    PDF_CONTENT_TYPE,
+    TEXT_CONTENT_TYPE,
+)
 
-DOCX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument." "wordprocessingml.document"
-
-TEXT_CONTENT_TYPE = "text/plain"
-
-MARKDOWN_CONTENT_TYPE = "text/markdown"
+__all__ = [
+    "DOCX_CONTENT_TYPE",
+    "GATED_TOOLS",
+    "MARKDOWN_CONTENT_TYPE",
+    "PDF_CONTENT_TYPE",
+    "TEXT_CONTENT_TYPE",
+]
 
 # Tools whose TOOL_CALL must never execute immediately -- a human must
 # approve first. Both are side-effecting, externally visible sends; the

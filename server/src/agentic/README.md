@@ -178,7 +178,20 @@ under the fallback's provider), answer evaluation and the guardrail
 judge. It isn't summed from agent responses. `HitlResumeService` records a
 resumed turn's usage the same way, after its commit. Not counted: the
 background memory-extraction call, and a turn that raises before
-returning a response.
+returning a response (except the refusal below).
+
+**Per-request token quota** (`RATE_LIMIT_REQUEST_TOKEN_QUOTA`): the same
+meter caps one request. `ChatService` sets the quota from
+`UsageService.request_token_quota()` (`core.usage.request_token_quota()`)
+around `handle()`/`stream()`; the scope opened inside picks it up, with
+the tokenizer estimate (`agents/prompts/token_budget.py`
+`estimate_tokens`). `LLMClient.generate()` checks each call before it is
+made: tokens used so far plus the estimated prompt must fit, or the call
+raises `RequestTokenQuotaExceededError` and never reaches the provider.
+Wherever it is caught (the agent runtime turns it into a failed step),
+the orchestrator re-raises it at the end of the turn, before any answer
+is sent, carrying the tokens used; `ChatService` records those and
+re-raises (413). A resumed turn has no quota (nothing sets one).
 
 ## `agent_policies` and tool authorization
 
