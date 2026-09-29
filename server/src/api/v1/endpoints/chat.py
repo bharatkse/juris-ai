@@ -26,6 +26,8 @@ from api.schemas.chat import (
 from api.utilities.api_response import ApiResponse
 from api.utilities.streaming import encode_sse_event
 from application.services.chat import ChatService
+from core.exceptions.base import AppError
+from core.models.response import ErrorDetailModel
 
 logger = get_logger(__name__)
 
@@ -118,11 +120,11 @@ async def stream_chat(
     """
     Stream a chat response.
 
-    NOTE: streaming itself is currently broken independent of rate
-    limiting (AIOrchestrator has no stream() method; see the chat
-    service). This dependency still runs and enforces the same
-    limits before that failure, so a rate-limited/quota-exhausted
-    user is rejected here rather than reaching the broken code path.
+    Rate limits, the daily quota and the upload limits are checked
+    before the stream starts, so they fail with a normal error
+    response. An application error raised once the stream has started
+    (e.g. the request token quota refusing a later LLM call) is sent as
+    a final `error` event with the same code and message.
     """
 
     logger.info(
@@ -138,10 +140,15 @@ async def stream_chat(
         chat_request.files,
     )
 
+    # Read before streaming: ChatService rolls back on failure, which
+    # expires current_user, and reading an expired attribute there would
+    # lazy-load outside the async context (MissingGreenlet).
+    user_id = current_user.id
+
     async def event_generator() -> AsyncIterator[str]:
         try:
             async for chunk in service.stream_chat(
-                user_id=current_user.id,
+                user_id=user_id,
                 conversation_id=chat_request.conversation_id,
                 message=chat_request.message,
                 request_id=http_request.state.context.request_id,
@@ -156,6 +163,26 @@ async def stream_chat(
                     event_name=("complete" if chunk.is_final else "message"),
                 )
 
+        except AppError as exc:
+            logger.warning(
+                "Chat stream ended with an application error.",
+                extra={
+                    "operation": "stream_chat",
+                    "conversation_id": str(
+                        chat_request.conversation_id,
+                    ),
+                    "user_id": str(user_id),
+                    "error_code": exc.error_code,
+                },
+            )
+            yield encode_sse_event(
+                ErrorDetailModel(
+                    code=exc.error_code,
+                    message=exc.message,
+                ),
+                event_name="error",
+            )
+
         except asyncio.CancelledError:
             logger.info(
                 "Client disconnected from chat stream.",
@@ -164,7 +191,7 @@ async def stream_chat(
                     "conversation_id": str(
                         chat_request.conversation_id,
                     ),
-                    "user_id": str(current_user.id),
+                    "user_id": str(user_id),
                 },
             )
             raise
@@ -177,7 +204,7 @@ async def stream_chat(
                     "conversation_id": str(
                         chat_request.conversation_id,
                     ),
-                    "user_id": str(current_user.id),
+                    "user_id": str(user_id),
                 },
             )
             raise

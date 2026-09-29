@@ -18,7 +18,7 @@ from adapters.observability.logger import get_logger
 from adapters.observability.metrics import metrics
 from core.dto.clients.llm import LLMRequestDTO, LLMResponseDTO, LLMStreamChunkDTO
 from core.exceptions.client import ClientInvalidResponseError
-from core.usage import record_llm_usage
+from core.usage import check_request_token_quota, record_llm_usage
 
 log = get_logger(__name__)
 
@@ -74,7 +74,14 @@ class LLMClient(ABC):
         something different for a stream (time to first chunk vs.
         total time), so it's left out rather than given a
         half-meaningful number.
+
+        Before the provider is called, the request's token quota is
+        checked (core.usage): a call that would take the request past
+        RATE_LIMIT_REQUEST_TOKEN_QUOTA raises
+        RequestTokenQuotaExceededError and is never made.
         """
+
+        check_request_token_quota(message.content for message in request.messages)
 
         start = time.perf_counter()
         response: LLMResponseDTO | None = None

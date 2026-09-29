@@ -62,6 +62,7 @@ def mock_usage_service() -> MagicMock:
     service = MagicMock()
 
     service.record = AsyncMock()
+    service.request_token_quota = MagicMock(return_value=None)
 
     return service
 

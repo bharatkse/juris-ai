@@ -190,3 +190,88 @@ async def test_a_file_of_unknown_size_is_read_only_just_past_the_limit(limits) -
         await build_tool_files([upload])
 
     assert upload.file.bytes_read == 11
+
+
+# ---------------------------------------------------------------------------
+# Upload type allowlist (review R15)
+# ---------------------------------------------------------------------------
+
+
+def _typed_upload(name: str, content_type: str | None) -> UploadFile:
+    headers = {"content-type": content_type} if content_type is not None else {}
+    return UploadFile(filename=name, file=_TrackedFile(b"data"), size=4, headers=headers)
+
+
+def test_the_allowlist_is_exactly_what_the_parser_reads() -> None:
+    from agentic.tools.library.parser import ParserTool
+    from core.constants import SUPPORTED_UPLOAD_CONTENT_TYPES
+
+    assert set(ParserTool()._parsers) == SUPPORTED_UPLOAD_CONTENT_TYPES
+
+
+@pytest.mark.parametrize(
+    "content_type",
+    [
+        "application/pdf",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "text/plain",
+        "text/markdown",
+    ],
+)
+@pytest.mark.asyncio
+async def test_every_supported_type_is_accepted(content_type: str) -> None:
+    (result,) = await build_tool_files([_typed_upload("file", content_type)])
+
+    assert result.content_type == content_type
+    assert result.content == b"data"
+
+
+@pytest.mark.asyncio
+async def test_a_declared_type_is_reduced_to_its_bare_media_type() -> None:
+    """The parser matches "text/plain" exactly; before, this file was
+    accepted but the parser called it unsupported."""
+
+    (result,) = await build_tool_files([_typed_upload("notes.txt", "Text/Plain; charset=utf-8")])
+
+    assert result.content_type == "text/plain"
+
+
+@pytest.mark.parametrize(
+    ("content_type", "reported"),
+    [
+        ("image/png", "image/png"),
+        ("application/zip", "application/zip"),
+        ("application/msword", "application/msword"),
+        ("application/octet-stream", "application/octet-stream"),
+        (None, "none"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_an_unsupported_type_is_refused_before_any_file_is_read(
+    content_type: str | None, reported: str
+) -> None:
+    from core.exceptions.rate_limit import UnsupportedUploadTypeError
+
+    supported = _typed_upload("contract.pdf", "application/pdf")
+    unsupported = _typed_upload("scan.bin", content_type)
+
+    with pytest.raises(UnsupportedUploadTypeError) as raised:
+        await build_tool_files([supported, unsupported])
+
+    assert raised.value.status_code == 422
+    assert raised.value.error_code == "UPLOAD_UNSUPPORTED_TYPE"
+    assert "scan.bin" in raised.value.message
+    assert f"'{reported}'" in raised.value.message
+    assert "application/pdf" in raised.value.message
+    assert supported.file.bytes_read == 0
+    assert unsupported.file.bytes_read == 0
+
+
+@pytest.mark.asyncio
+async def test_the_count_limit_is_checked_before_the_type(limits) -> None:
+    from core.exceptions.rate_limit import TooManyUploadsError
+
+    uploads = [_typed_upload(f"{index}.png", "image/png") for index in range(3)]
+
+    with pytest.raises(TooManyUploadsError):
+        await build_tool_files(uploads)

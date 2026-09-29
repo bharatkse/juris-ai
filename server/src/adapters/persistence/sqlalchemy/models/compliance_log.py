@@ -44,13 +44,14 @@ class ComplianceLog(
     purge_older_than() -- never called automatically anywhere).
 
     DB-level backstop for the same guarantee: migration
-    9338dbb3a96f_restrict_compliance_log_to_insert_.py revokes
-    UPDATE/DELETE on this table from the application's configured DB
-    role, leaving INSERT/SELECT untouched -- see that migration's
-    docstring for a confirmed caveat about table ownership/superuser
-    roles bypassing REVOKE, and scripts/python/
-    verify_compliance_log_privileges.py for a repeatable, automated
-    proof the REVOKE itself is correct against a properly-scoped role.
+    dd110a14caf1_restrict_compliance_log_to_insert_.py revokes
+    UPDATE/DELETE on this table from the restricted runtime role
+    (APP_DB_USER), leaving INSERT/SELECT untouched. It corrects the
+    earlier 9338dbb3a96f, whose REVOKE targets the owner/superuser
+    DB_USER and so restricts nothing -- see both migrations'
+    docstrings, and scripts/python/verify_compliance_log_privileges.py
+    for a repeatable, automated proof the REVOKE is correct against a
+    properly-scoped role.
     """
 
     __tablename__ = "compliance_log"
