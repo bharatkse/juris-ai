@@ -204,6 +204,19 @@ this session. Flip it once `web_research` has been observed under real
 traffic, or grant it directly in `_build_default_agent_policies()`
 (`wiring/factories/agent_policies.py`) for a specific deployment.
 
+**Messaging feature flag**: `settings.agent_policy
+.ENABLE_MESSAGING_TOOLS` (default `False`, env var
+`ENABLE_MESSAGING_TOOLS`, `config/agent_policy.py`) adds
+`MESSAGING_TOOLS` (`email`, `email_send`, `slack`, `slack_post`) to both
+the `legal` and `contract` default policies. The read tools (`email`,
+`slack`) run directly. The send tools (`email_send`, `slack_post`) are
+in `GATED_TOOLS`, so every call pauses for the user's approval. They
+also need a role that grants `send` (the default `member` role does;
+`reader` doesn't). The flag alone doesn't make the tools work:
+`MCP_GMAIL_SERVER_URL` / `MCP_SLACK_SERVER_URL` (`config/llm.py`) must
+point at the messaging MCP servers. Otherwise every call fails cleanly
+with "unknown MCP server".
+
 This is a first-cut seed, not derived from a specification — treat it
 as a starting point to adjust, not a settled design.
 

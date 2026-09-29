@@ -13,7 +13,7 @@ Ask a question about Indian law and the system retrieves from a corpus of actual
 
 - **Retrieval-backed legal research** — hybrid vector + keyword retrieval over the legal corpus, reranked for relevance, with an answer-quality gate that scores answers against the retrieved evidence
 - **Contract review** — a dedicated contract agent analyzes contract text for risks, ambiguities, and obligations
-- **Human-in-the-loop design for outbound actions** — calls to the email and Slack tools pause execution for a human approval decision (LangGraph interrupt/resume); only the user who made the request can approve, reject or edit it
+- **Human-in-the-loop approval for outbound messages** — sending an email or Slack message pauses execution for a human approval decision (LangGraph interrupt/resume); reading mail or a channel doesn't pause. Only the user who made the request can approve, reject or edit the draft, and it is sent at most once. Messaging is off by default: set `ENABLE_MESSAGING_TOOLS=true` and point `MCP_GMAIL_SERVER_URL` / `MCP_SLACK_SERVER_URL` at your messaging MCP servers
 - **PII redaction stage** — a Presidio-based output review with custom Indian ID recognizers (PAN, Aadhaar)
 - **Tamper-proof audit trail** — every request and decision is logged in a way that can't be edited or deleted afterward, independent of your chat history
 - **Usage controls** — per-user request rate limiting and a daily token-quota check

@@ -90,9 +90,18 @@ replaced with the refusal; the request itself doesn't fail.
 
 - `authorize_request` runs a TF-IDF capability analysis of the message and,
   when capabilities are found, an RBAC intent check
-  (`application/authorization/`, policy from
-  `application/authorization/rbac/policy.py`).
-- When execution returns no FINAL/NEED_INPUT agent response, `handle()`
-  returns a fixed fallback message together with any pending
-  action/approval.
+  (`application/authorization/`). The user's permissions come from the
+  database: `users.role` → `roles` → `role_permissions` → `permissions`,
+  read by `DatabaseRolePermissionProvider`
+  (`application/authorization/rbac/roles.py`). A missing or disabled role
+  grants nothing. `rbac/policy.py` holds only the agent → tool → action
+  permissions. A refused request raises `AuthorizationError` (400) before
+  planning; for example, a `reader` asking for a send.
+- When execution returns no FINAL/NEED_INPUT agent response, `handle()`,
+  `stream()` and `resume()` fall back to a fixed message. If execution
+  paused for an approval, that message is the pending-approval text
+  ("This needs your approval before I can continue. Review the pending
+  request to approve, edit or reject it."), returned together with the
+  pending action and approval. Otherwise it is the generic failure
+  message.
 - The compliance log's `tenant_id` is set to the user id.

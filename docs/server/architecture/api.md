@@ -278,13 +278,15 @@ umem_3a2c9e8f1b7d4a5c9e0f2b8d6a4c1e7d
 
 ### Approvals
 
-Human decisions on agent actions that paused for approval (calls to the
-`email` and `slack` tools). Requires a bearer token. Only the user who
-made the request that produced an approval can decide it.
+Human decisions on agent actions that paused for approval: calls to the
+send tools `email_send` and `slack_post`. The read tools `email` and
+`slack` never pause. Requires a bearer token. Only the user who made
+the request that produced an approval can decide it or retry its resume.
 
-| Method | Endpoint                   | Description                                 |
-| :----: | -------------------------- | ------------------------------------------- |
-| `POST` | `/approvals/{approval_id}` | Approve, reject or edit a pending approval |
+| Method | Endpoint                          | Description                                          |
+| :----: | --------------------------------- | ---------------------------------------------------- |
+| `POST` | `/approvals/{approval_id}`        | Approve, reject or edit a pending approval           |
+| `POST` | `/approvals/{approval_id}/resume` | Retry resuming a decided approval that didn't finish |
 
 #### Approval ID Format
 
@@ -296,23 +298,32 @@ appr_474554ac1f5d410aaf7ca7da84a9f9a5
 ```
 
 The ID is returned in the assistant event's metadata (`approval.approval_id`)
-of the chat response that paused.
+of the chat response that paused. That response's text is: "This needs
+your approval before I can continue. Review the pending request to
+approve, edit or reject it."
 
 #### Behaviour
 
 - The decision is saved before anything acts on it, and it stands
   whatever happens next.
-- `approve` / `reject`: the paused conversation then resumes; on
-  `approve` the approved tool runs once. The resumed answer is added to
-  the conversation as a new assistant message (fetch it with
-  `GET /conversations/{conversation_id}`); it is not part of this
-  response. `resume_status` reports how resuming went: `completed`, or
-  `failed` if the conversation could not be resumed. A failed resume
-  still returns `200` with the decision's status; it is not retried
-  automatically, and the approval can't be decided again.
-- `edit`: the status becomes `edited` and `edited_payload` is stored;
-  the paused conversation does not resume (`resume_status` is
-  `not_resumed`).
+- Every decision resumes the paused conversation:
+  - `approve`: the proposed call runs once, with the proposed
+    parameters.
+  - `edit`: the call runs once, with `edited_payload` merged over the
+    proposed parameters (fields you leave out keep their proposed
+    values). The status becomes `edited`.
+  - `reject`: nothing runs; the agent is told the request was refused.
+- Before an approved or edited call runs, the user's current role is
+  checked again. If the role no longer allows the action, for example
+  because the user was moved from `member` to `reader` after the request,
+  the call doesn't run and the agent is told it was refused.
+- The resumed answer is added to the conversation as a new assistant
+  message (fetch it with `GET /conversations/{conversation_id}`); it is
+  not part of this response. `resume_status` reports how resuming went:
+  `completed`, or `failed` if the conversation could not be resumed. A
+  failed resume still returns `200` with the decision's status. The
+  approval can't be decided again; retry the resume with
+  `POST /approvals/{approval_id}/resume`.
 - An approval can be decided only while its status is `waiting` and
   before `expires_at` (15 minutes after creation). Otherwise the request
   fails with `410` (expired) or `409` (already decided).
@@ -338,7 +349,9 @@ of the chat response that paused.
 ```
 
 `status` is one of `waiting`, `approved`, `rejected`, `edited`, `expired`.
-`resume_status` is one of `completed`, `failed`, `not_resumed`.
+`resume_status` is `completed` or `failed`. (The enum also has
+`not_resumed`, which these endpoints no longer return, since every
+decision now resumes.)
 
 #### Approval Status Codes
 
@@ -354,6 +367,30 @@ of the chat response that paused.
 
 Ownership is checked first: a caller who isn't the requester receives
 `403` whatever the approval's state.
+
+#### Retry a Resume
+
+`POST /approvals/{approval_id}/resume` (no body) retries the resume of an
+approval that was decided but whose conversation never continued: the
+resume failed (`resume_status` was `failed`), or the server stopped
+before it finished. It is never retried automatically.
+
+- Only the approval's requester may call it.
+- The call is sent at most once. If an earlier attempt already ran the
+  approved call, successfully or not, its stored result is reused and
+  nothing is sent again. The permission check described above applies
+  only when the call hasn't run yet.
+- It works after `expires_at`; the expiry applies only to deciding.
+- The response has the same shape as the decision response, with the
+  approval's current `status` and the retry's `resume_status`.
+
+| Status | Description |
+| :----: | ----------- |
+| `200`  | Resume retried; `resume_status` gives the outcome |
+| `401`  | Missing, invalid or expired bearer token (`{"detail": ...}`) |
+| `403`  | The caller is not the user who requested this approval (error code `FORBIDDEN`), or the caller's account is inactive |
+| `404`  | No approval with this ID (error code `APPROVAL_NOT_FOUND`) |
+| `409`  | The approval hasn't been decided yet, or its resume already finished (error code `APPROVAL_RESUME_NOT_ALLOWED`) |
 
 Error responses from the application use the standard envelope:
 
