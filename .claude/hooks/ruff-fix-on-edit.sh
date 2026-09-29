@@ -10,7 +10,7 @@ file_path=$(echo "$input" | jq -r '.tool_input.file_path // empty')
 
 RUFF="${CLAUDE_PROJECT_DIR}/.venv/bin/ruff"
 if [[ ! -x "$RUFF" ]]; then
-  echo "lint-fix hook: ruff not found at $RUFF (run make poetry-install)" >&2
+  echo "ruff-fix-on-edit hook: ruff not found at $RUFF (run make poetry-install)" >&2
   exit 1   # non-blocking error, shown to the user
 fi
 

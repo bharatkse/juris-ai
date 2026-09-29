@@ -1,11 +1,44 @@
 {
   "permissions": {
+    "allow": [
+      "Bash(grep:*)",
+      "Bash(sed -n:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(make lint)",
+      "Bash(make lint-imports)",
+      "Bash(make type-check)",
+      "Bash(make test-unit:*)",
+      "Bash(make test-smoke:*)",
+      "Bash(make test-e2e:*)",
+      "Bash(make test-integration:*)",
+      "Bash(make test-root:*)",
+      "Bash(make -s floci-env)",
+      "Bash(.claude/hooks/report-staged-changes.py --report)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr checks:*)",
+      "Bash(gh pr list:*)",
+      "Bash(gh run view:*)",
+      "Bash(gh run list:*)",
+      "Bash(make db-query:*)",
+      "Bash(make alembic-current)"
+    ],
+    "ask": [
+      "Bash(git mv:*)",
+      "Bash(git stash pop:*)",
+      "Bash(git stash apply:*)",
+      "Bash(gh pr create:*)",
+      "Bash(gh pr merge:*)"
+    ],
     "deny": [
       "Bash(git commit:*)",
       "Bash(git add:*)",
       "Bash(git push:*)",
       "Bash(git reset:*)",
-      "Bash(git merge:*)"
+      "Bash(git merge:*)",
+      "Bash(git -C * add *)"
     ]
   },
   "hooks": {
@@ -15,7 +48,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/lint-fix.sh"
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/ruff-fix-on-edit.sh"
           }
         ]
       }
@@ -26,7 +59,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/block-sensitive-edit.sh"
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/block-env-and-revision-edits.sh"
           }
         ]
       },
@@ -38,6 +71,15 @@
             "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/block-rm.py"
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/guard-git-index.py"
+          }
+        ]
       }
     ],
     "Stop": [
@@ -45,17 +87,25 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/run-tests.sh"
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/check-types-and-tests-on-stop.sh"
           }
         ]
-      }
-    ],
-    "Notification": [
+      },
       {
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/notify.sh"
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/report-staged-changes.py --event stop"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/report-staged-changes.py --event user-prompt"
           }
         ]
       }
