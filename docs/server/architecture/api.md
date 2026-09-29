@@ -140,6 +140,7 @@ conversations.
 |  `POST`  | `/conversations`                          | Create a new conversation (`201`)                              |
 |  `GET`   | `/conversations`                          | List the caller's conversations (paginated)                    |
 |  `GET`   | `/conversations/{conversation_id}`        | Retrieve a conversation                                        |
+|  `GET`   | `/conversations/{conversation_id}/messages` | List the conversation's stored messages, oldest first (paginated) |
 | `DELETE` | `/conversations/{conversation_id}`        | Archive a conversation (`204`)                                  |
 |  `PUT`   | `/conversations/{conversation_id}/memory` | Turn "don't remember this" on or off for this conversation (see [Memory](#memory)) |
 
@@ -184,6 +185,90 @@ default `20`); a non-integer value returns `422`.
   }
 }
 ```
+
+#### Conversation Messages
+
+`GET /conversations/{conversation_id}/messages` returns the messages
+stored in a conversation, oldest first: each user message and each
+assistant answer, including an answer saved after an approval was
+decided (see [Approvals](#approvals)).
+
+Query parameters: `offset` (integer, default `0`, at least `0`) and
+`limit` (integer, default `20`, `1` to `100`); a value outside these
+returns `422`. The same ownership check as
+`GET /conversations/{conversation_id}` applies: another user's
+conversation returns `404`, and an archived one fails the same way it
+does there.
+
+Each item:
+
+| Field             | Description |
+| ----------------- | ----------- |
+| `id`              | Message ID (`evnt_...`) |
+| `conversation_id` | The conversation |
+| `parent_event_id` | The user message an answer replies to. An answer saved after an approval points to the same user message as the reply that asked for the approval. Absent for a user message |
+| `role`            | `user` or `assistant` |
+| `content`         | The message text |
+| `metadata`        | What was stored with the message: `{}` for a user message. An answer carries the turn's `agents`, `workflow`, `termination_reason`, `groundedness` and `relevance`, plus `approval` when it asked for one and `guardrail` when a guardrail acted. An answer saved after an approval carries `resumed_agent_action_id` instead, plus `approval` if it asked for another one |
+| `citations`       | Citations stored with an answer (same shape as in the chat response); `[]` when none |
+| `sources`         | Sources stored with an answer (same shape as in the chat response); `[]` when none |
+| `created_at`      | When the message was saved |
+
+As in every response, a field with no value is left out rather than sent
+as `null`.
+
+```json
+{
+  "success": true,
+  "data": {
+    "items": [
+      {
+        "id": "evnt_3f1c0d8e2b8a4a57b0c2a1e9d4f6b7c8",
+        "conversation_id": "conv_8d097a58c1c9440e981312e7b58d7f61",
+        "role": "user",
+        "content": "What is an FIR?",
+        "metadata": {},
+        "citations": [],
+        "sources": [],
+        "created_at": "2026-09-29T10:02:11.402117Z"
+      },
+      {
+        "id": "evnt_9a4e2c7d1f0b4c3e8d5a6b7c8d9e0f1a",
+        "conversation_id": "conv_8d097a58c1c9440e981312e7b58d7f61",
+        "parent_event_id": "evnt_3f1c0d8e2b8a4a57b0c2a1e9d4f6b7c8",
+        "role": "assistant",
+        "content": "An FIR (First Information Report) is ...",
+        "metadata": {
+          "agents": ["legal"],
+          "termination_reason": "completed"
+        },
+        "citations": [
+          {
+            "title": "Code of Criminal Procedure, 1973",
+            "source": "retriever",
+            "reference": "Section 154",
+            "snippet": "Every information relating to the commission of a cognizable offence ..."
+          }
+        ],
+        "sources": [],
+        "created_at": "2026-09-29T10:02:15.918554Z"
+      }
+    ],
+    "pagination": {
+      "total": 2,
+      "offset": 0,
+      "limit": 20,
+      "has_more": false
+    }
+  },
+  "metadata": {
+    "timestamp": "2026-09-29T10:04:02.117308Z"
+  }
+}
+```
+
+Messages don't carry token usage or `resume_status`: usage is recorded
+per user per day, and `resume_status` belongs to the approval.
 
 ---
 
@@ -338,10 +423,10 @@ approve, edit or reject it."
   because the user was moved from `member` to `reader` after the request,
   the call doesn't run and the agent is told it was refused.
 - The resumed answer is saved to the conversation as a new assistant
-  message; it is not part of this response. No endpoint currently
-  returns a conversation's stored messages
-  (`GET /conversations/{conversation_id}` returns only the conversation's
-  details). `resume_status` reports how resuming went:
+  message; it is not part of this response. Fetch it with
+  `GET /conversations/{conversation_id}/messages` (see
+  [Conversation Messages](#conversation-messages)). `resume_status`
+  reports how resuming went:
   `completed`, or `failed` if the conversation could not be resumed. A
   failed resume still returns `200` with the decision's status. The
   approval can't be decided again; retry the resume with

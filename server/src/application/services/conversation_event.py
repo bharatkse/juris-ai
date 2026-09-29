@@ -4,6 +4,7 @@ Conversation event service.
 
 from __future__ import annotations
 
+import builtins
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
@@ -118,6 +119,24 @@ class ConversationEventService(BaseService):
 
         return await self._repository.list(
             conversation_id=conversation_id,
+            limit=limit,
+        )
+
+    async def list_page(
+        self,
+        *,
+        conversation_id: ConversationId,
+        offset: int,
+        limit: int,
+    ) -> tuple[builtins.list[ConversationEvent], int]:
+        """
+        One page of a conversation's stored messages, oldest first, and
+        the total. The caller checks the user owns the conversation.
+        """
+
+        return await self._repository.list_page(
+            conversation_id=conversation_id,
+            offset=offset,
             limit=limit,
         )
 

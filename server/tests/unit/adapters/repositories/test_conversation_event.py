@@ -4,11 +4,13 @@ Unit tests for ConversationEventRepository.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
 
 from core.enums import MessageRoleEnum
+from tests.unit.factories.conversation import ConversationFactory
 from tests.unit.factories.conversation_event import ConversationEventFactory
 from tests.unit.helpers.identifiers import unknown_conversation_event_id
 
@@ -310,3 +312,116 @@ async def test_list_returns_recent_events_in_chronological_order(
     assert events[0].content == "Message 2"
     assert events[1].content == "Message 3"
     assert events[2].content == "Message 4"
+
+
+@pytest.mark.asyncio
+async def test_list_page_returns_a_page_oldest_first_with_the_total(
+    conversation_event_repository,
+    conversation,
+) -> None:
+    """
+    It should return one page, oldest first, and count every event.
+    """
+
+    for index in range(5):
+        await conversation_event_repository.create(
+            ConversationEventFactory.build(
+                conversation=conversation,
+                request_id=uuid4(),
+                user_message=True,
+                content=f"Message {index}",
+            ),
+        )
+
+    events, total = await conversation_event_repository.list_page(
+        conversation_id=conversation.id,
+        offset=1,
+        limit=2,
+    )
+
+    assert total == 5
+    assert [event.content for event in events] == ["Message 1", "Message 2"]
+
+
+@pytest.mark.asyncio
+async def test_list_page_breaks_created_at_ties_by_id(
+    conversation_event_repository,
+    conversation,
+) -> None:
+    """
+    Events with the same created_at should come back in a stable order,
+    so consecutive pages neither repeat nor skip one.
+    """
+
+    created_at = datetime(2026, 1, 1, tzinfo=UTC)
+
+    for index in range(4):
+        await conversation_event_repository.create(
+            ConversationEventFactory.build(
+                conversation=conversation,
+                request_id=uuid4(),
+                user_message=True,
+                content=f"Message {index}",
+                created_at=created_at,
+            ),
+        )
+
+    first, _ = await conversation_event_repository.list_page(
+        conversation_id=conversation.id,
+        offset=0,
+        limit=2,
+    )
+    second, _ = await conversation_event_repository.list_page(
+        conversation_id=conversation.id,
+        offset=2,
+        limit=2,
+    )
+
+    ids = [event.id for event in first + second]
+
+    assert ids == sorted(ids)
+    assert len(set(ids)) == 4
+
+
+@pytest.mark.asyncio
+async def test_list_page_only_returns_the_conversations_own_events(
+    conversation_event_repository,
+    conversation_repository,
+    conversation,
+) -> None:
+    """
+    It should never return another conversation's events.
+    """
+
+    other = await conversation_repository.create(
+        ConversationFactory.build(
+            user=conversation.user,
+        ),
+    )
+
+    await conversation_event_repository.create(
+        ConversationEventFactory.build(
+            conversation=conversation,
+            request_id=uuid4(),
+            user_message=True,
+            content="Mine",
+        ),
+    )
+
+    await conversation_event_repository.create(
+        ConversationEventFactory.build(
+            conversation=other,
+            request_id=uuid4(),
+            user_message=True,
+            content="Other",
+        ),
+    )
+
+    events, total = await conversation_event_repository.list_page(
+        conversation_id=conversation.id,
+        offset=0,
+        limit=20,
+    )
+
+    assert total == 1
+    assert [event.content for event in events] == ["Mine"]

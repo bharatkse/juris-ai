@@ -7,6 +7,8 @@ from __future__ import annotations
 import builtins
 from typing import TYPE_CHECKING
 
+from sqlalchemy import func, select
+
 from adapters.persistence.sqlalchemy.models.conversation_event import ConversationEvent
 from adapters.persistence.sqlalchemy.repositories.base import BaseRepository
 
@@ -124,6 +126,51 @@ class ConversationEventRepository(
             events.reverse()
 
         return events
+
+    async def list_page(
+        self,
+        *,
+        conversation_id: ConversationId,
+        offset: int,
+        limit: int,
+    ) -> tuple[builtins.list[ConversationEvent], int]:
+        """
+        One page of a conversation's events, oldest first, and the total.
+
+        ``id`` breaks ties between events with the same ``created_at``,
+        so pages never overlap or skip an event.
+        """
+
+        statement = (
+            self.select()
+            .where(
+                self._model.conversation_id == conversation_id,
+            )
+            .order_by(
+                self._model.created_at.asc(),
+                self._model.id.asc(),
+            )
+            .offset(offset)
+            .limit(limit)
+        )
+
+        result = await self._session.execute(
+            statement,
+        )
+
+        events = list(
+            result.scalars().all(),
+        )
+
+        total = await self._session.scalar(
+            select(func.count())
+            .select_from(self._model)
+            .where(
+                self._model.conversation_id == conversation_id,
+            ),
+        )
+
+        return events, total or 0
 
     async def list_by_role_since(
         self,
