@@ -60,8 +60,8 @@ async def legal_agent_send_policy() -> AsyncIterator[None]:
 
 
 async def _resumed_events(conversation_id: str) -> list:
-    # There is no "get conversation events" HTTP endpoint yet, so this
-    # reads the rows HitlResumeService just wrote.
+    # Reads the rows HitlResumeService just wrote. Fetching them over
+    # HTTP is covered by test_conversation_messages.py.
     async with session_factory() as session:
         events = await ConversationEventService(
             session=session,
