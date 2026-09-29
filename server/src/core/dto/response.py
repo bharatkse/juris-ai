@@ -35,22 +35,3 @@ class SourceDTO:
     uri: str | None = None
 
     type: str | None = None
-
-
-@dataclass(slots=True, frozen=True)
-class UsageDTO:
-    """
-    LLM usage associated with an agent response.
-    """
-
-    provider: str | None = None
-
-    model: str | None = None
-
-    prompt_tokens: int = 0
-
-    completion_tokens: int = 0
-
-    total_tokens: int = 0
-
-    latency_ms: float | None = None

@@ -112,8 +112,21 @@ def repository(loaded_action: _Action, refetched_action: SimpleNamespace) -> Mag
 def orchestrator() -> MagicMock:
     orchestrator = MagicMock()
     orchestrator.run_approved_tool = AsyncMock(return_value=SENT)
-    orchestrator.resume = AsyncMock(return_value=SimpleNamespace(content="done", approval=None))
+    orchestrator.resume = AsyncMock(
+        return_value=SimpleNamespace(
+            content="done",
+            approval=None,
+            usage=SimpleNamespace(prompt_tokens=1200, completion_tokens=300),
+        )
+    )
     return orchestrator
+
+
+@pytest.fixture
+def usage_service() -> MagicMock:
+    usage_service = MagicMock()
+    usage_service.record = AsyncMock()
+    return usage_service
 
 
 @pytest.fixture
@@ -131,6 +144,7 @@ def service(
     repository: MagicMock,
     orchestrator: MagicMock,
     authorization: MagicMock,
+    usage_service: MagicMock,
 ) -> HitlResumeService:
     events = MagicMock()
     events.get_by_id = AsyncMock(return_value=SimpleNamespace(id="evt-1", conversation_id="conv-1"))
@@ -142,6 +156,7 @@ def service(
         orchestrator=orchestrator,
         action_workflow_service=MagicMock(),
         authorization_service=authorization,
+        usage_service=usage_service,
         memory_extraction_scheduler=MagicMock(),
     )
 
@@ -178,6 +193,42 @@ async def test_successful_resume_commits_and_reports_completed(
     assert loaded_action.status is AgentActionStatusEnum.COMPLETED
     assert loaded_action.result["tool_result"] == SENT.to_dict()
     assert loaded_action.result["content"] == "done"
+
+
+@pytest.mark.asyncio
+async def test_resumed_turn_usage_counts_toward_the_users_quota(
+    service: HitlResumeService, session: MagicMock, usage_service: MagicMock
+) -> None:
+    """
+    The resumed turn's LLM calls are recorded for the requesting user,
+    like a chat turn's (ChatService). Before, they were never recorded.
+    """
+
+    order: list[str] = []
+    session.commit.side_effect = lambda: order.append("commit")
+    usage_service.record.side_effect = lambda **_: order.append("record")
+
+    await _resume(service)
+
+    usage_service.record.assert_awaited_once_with(
+        user_id="user-1",
+        input_tokens=1200,
+        output_tokens=300,
+    )
+    # Recorded after the finished turn is committed: record() commits its
+    # own write, and must not commit a half-written turn with it.
+    assert order == ["commit", "commit", "record"]
+
+
+@pytest.mark.asyncio
+async def test_a_failed_resume_records_no_usage(
+    service: HitlResumeService, orchestrator: MagicMock, usage_service: MagicMock
+) -> None:
+    orchestrator.resume.side_effect = RuntimeError("resume failed")
+
+    await _resume(service)
+
+    usage_service.record.assert_not_awaited()
 
 
 @pytest.mark.asyncio

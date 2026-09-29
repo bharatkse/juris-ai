@@ -24,6 +24,7 @@ from agentic.planning.prompts.planning import PlanningPromptBuilder
 from agentic.planning.templates import PlanTemplateRegistry
 from agentic.planning.validator import ExecutionPlanValidator
 from agentic.policy.agent_policy import DatabaseAgentPolicyProvider
+from config.settings import get_settings
 from core.enums import LLMProviderEnum
 from wiring.containers import ClientContainer, RegistryContainer
 
@@ -36,6 +37,8 @@ def create_planner(
     # The planner reads the same registries and agent_policies table as
     # the executor's AgentExecution (wiring/factories/executor.py), so the
     # agents and tools it plans with are the ones the runtime allows.
+    max_steps = get_settings().agent_policy.PLAN_MAX_STEPS
+
     capability_catalog = AgentCapabilityCatalog(
         agent_registry=registries.agent_registry,
         tool_registry=registries.tool_registry,
@@ -48,8 +51,8 @@ def create_planner(
         template_registry=PlanTemplateRegistry(),
         llm_planner=LLMPlanGenerator(
             llm_client=clients.llm_resolver.get(LLMProviderEnum.LOCAL),
-            prompt_builder=PlanningPromptBuilder(),
+            prompt_builder=PlanningPromptBuilder(max_steps=max_steps),
             capability_catalog=capability_catalog,
         ),
-        validator=ExecutionPlanValidator(),
+        validator=ExecutionPlanValidator(max_steps=max_steps),
     )

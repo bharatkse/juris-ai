@@ -41,9 +41,12 @@ flowchart TD
 non-empty instruction, `stage >= 1`, dependencies that exist, aren't
 duplicated, self-referencing or cyclic, and no unsafe concurrency (two steps for
 the same agent that could run in parallel, `_validate_agent_concurrency`;
-see #56), plus mode consistency. An invalid plan raises; there is
-deliberately no fallback plan, since a generic plan could change the
-request's meaning. Saved user memory is rendered into the planner prompt
+see #56), plus mode consistency. Then the step cap: more than
+`max_steps` steps (`PLAN_MAX_STEPS`, default 6; the planner prompt states
+it too) raises `PlanTooLargeError`, which `AIOrchestrator` answers with a
+reply asking the user to split the request, without running anything.
+Any other invalid plan raises; there is deliberately no fallback plan
+and no truncation, since either could change the request's meaning. Saved user memory is rendered into the planner prompt
 as a dedicated block, never as a history message.
 
 ---

@@ -61,7 +61,7 @@ from agentic.policy.guard import AgentPolicyGuard
 from agentic.policy.schemas import AgentPolicy
 from agentic.registry.protocols import AgentRegistryProtocol, ToolRegistryProtocol
 from agentic.tools.constants import GATED_TOOLS
-from core.deadline import deadline_within
+from core.deadline import deadline_within, remaining_seconds
 from core.dto.agent import AgentRequestDTO
 from core.dto.agent_action import AgentActionRequestDTO
 from core.dto.tool import RetrievedContentDTO
@@ -297,12 +297,41 @@ class AgentExecutionHandle:
                 error=exc,
             )
 
-            if retryable and self._attempt_count < self._max_attempts:
-                retry_count = self._attempt_count - 1
-                retry_delay = self._retry_policy.delay_seconds(
-                    retry_count=retry_count,
-                )
+            # The retry being scheduled is number attempt_count: after the
+            # first attempt fails, this is retry 1.
+            retry_count = self._attempt_count
+            retry_delay = (
+                self._retry_policy.delay_seconds(retry_count=retry_count)
+                if retryable and self._attempt_count < self._max_attempts
+                else 0.0
+            )
+            time_left = self._retry_time_left()
 
+            if (
+                retryable
+                and self._attempt_count < self._max_attempts
+                and time_left < retry_delay + self._retry_policy.min_attempt_seconds
+            ):
+                # Not enough time for the backoff and a whole attempt: the
+                # deadline doesn't cancel an LLM call, so a late retry
+                # would overrun the turn and the graph timeout.
+                logger.warning(
+                    "Agent reasoning attempt failed; not retrying, too little time left.",
+                    extra={
+                        "operation": "agent_execution_retry_skipped_deadline",
+                        "execution_id": self._request.context.execution_id,
+                        "thread_id": self._request.context.thread_id,
+                        "agent_id": self._agent_id,
+                        "attempt": self._attempt_count,
+                        "time_left_seconds": round(time_left, 1),
+                        "retry_delay_seconds": retry_delay,
+                        "min_attempt_seconds": self._retry_policy.min_attempt_seconds,
+                        "error_type": type(exc).__name__,
+                    },
+                )
+                retryable = False
+
+            if retryable and self._attempt_count < self._max_attempts:
                 logger.warning(
                     "Agent reasoning attempt failed; retrying.",
                     extra={
@@ -392,6 +421,19 @@ class AgentExecutionHandle:
                 started_at=self._started_at,
                 completed_at=datetime.now(UTC),
             )
+
+    def _retry_time_left(self) -> float:
+        """
+        Seconds a retry could still use: the lesser of what remains of
+        this turn's time budget and of the enclosing deadline (the graph
+        timeout, core.deadline).
+        """
+
+        turn_elapsed = (datetime.now(UTC) - self.state.started_at).total_seconds()
+        turn_left = self.state.budget.max_execution_time_seconds - turn_elapsed
+        deadline_left = remaining_seconds()
+
+        return turn_left if deadline_left is None else min(turn_left, deadline_left)
 
     async def _execute_reasoning_attempt(
         self,

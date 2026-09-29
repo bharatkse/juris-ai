@@ -44,6 +44,7 @@ if TYPE_CHECKING:
     from application.authorization.service import AuthorizationService
     from application.services.action_workflow import ActionWorkflowService
     from application.services.conversation_event import ConversationEventService
+    from application.services.usage import UsageService
     from application.services.user_memory_extraction import MemoryExtractionScheduler
     from core.dto.approval import ApprovalResponseDTO
 
@@ -104,10 +105,12 @@ class HitlResumeService(BaseService):
         orchestrator: AIOrchestrator,
         action_workflow_service: ActionWorkflowService,
         authorization_service: AuthorizationService,
+        usage_service: UsageService,
         memory_extraction_scheduler: MemoryExtractionScheduler | None = None,
     ) -> None:
         super().__init__(session)
         self._authorization_service = authorization_service
+        self._usage_service = usage_service
         self._agent_action_repository = agent_action_repository
         self._conversation_event_service = conversation_event_service
         self._orchestrator = orchestrator
@@ -267,6 +270,7 @@ class HitlResumeService(BaseService):
 
             user_id = agent_action.user_id
             conversation_id = conversation_event.conversation_id
+            usage = response.usage
 
             await self.commit()
 
@@ -298,6 +302,15 @@ class HitlResumeService(BaseService):
             return HitlResumeStatusEnum.FAILED
 
         else:
+            # The resumed turn's LLM calls count toward the user's daily
+            # token quota, like any chat turn's. After the commit: record()
+            # commits its own write and never raises.
+            await self._usage_service.record(
+                user_id=user_id,
+                input_tokens=usage.prompt_tokens,
+                output_tokens=usage.completion_tokens,
+            )
+
             # After the commit, like ChatService: the extractor only ever
             # sees a finished turn. A resume adds no new USER message, so
             # this usually finds nothing new and does nothing; it matters

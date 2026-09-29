@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from pydantic import Field
+
 from config.base import BaseAppSettings
 
 
 class AgentPolicySettings(BaseAppSettings):
     """
-    Feature flags gating what DEFAULT_AGENT_POLICIES grants by default.
+    Feature flags gating what DEFAULT_AGENT_POLICIES grants by default,
+    and the plan size limit.
 
     Kept separate from the seed data itself (wiring/factories/
     agent_policies.py) so a capability can be toggled via env var
@@ -26,3 +29,9 @@ class AgentPolicySettings(BaseAppSettings):
     # the Gmail/Slack MCP servers configured (config/llm.py), and every
     # send still pauses for the user's own approval (GATED_TOOLS).
     ENABLE_MESSAGING_TOOLS: bool = False
+
+    # Most steps one execution plan may have (review A7). Each step is a
+    # full agent turn, so this bounds one request's LLM calls. A plan over
+    # the limit isn't run; the user is asked to split the request.
+    # Default: agentic/planning/validator.py::DEFAULT_MAX_PLAN_STEPS.
+    PLAN_MAX_STEPS: int = Field(default=6, ge=1)

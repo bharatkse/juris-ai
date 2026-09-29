@@ -27,12 +27,30 @@ from agentic.policy.guard import AgentPolicyGuard
 from agentic.policy.tool_permission import ToolPermissionGuard
 from agentic.tools.library.parser import ParserTool
 from agentic.tools.runtime.invocation import ToolExecutionService
+from core.exceptions.client import ClientInvalidResponseError
 from wiring.containers import ClientContainer, RegistryContainer
 from wiring.factories.evaluation import build_faithfulness_backend
 
 if TYPE_CHECKING:
     from application.services.compliance_log import StandaloneComplianceLogWriter
     from config.settings import Settings
+
+
+def build_retry_classifier() -> RetryClassifier:
+    """
+    What an agent's reasoning call is retried for (review R1).
+
+    Only unusable model output (empty, or not the requested schema): the
+    model's output varies from call to call. 429s, 5xx, timeouts and
+    connection errors are already retried by the provider SDK and then
+    failed over (FailoverLLMClient); retrying them again here would
+    multiply calls against a provider that is already down. Each retry
+    also has to fit the remaining deadline (AgentExecutionHandle.reason()).
+    """
+
+    return RetryClassifier(
+        retryable_exceptions=(ClientInvalidResponseError,),
+    )
 
 
 def create_executor(
@@ -56,7 +74,7 @@ def create_executor(
     )
 
     retry_policy = ExecutionRetryPolicy()
-    retry_classifier = RetryClassifier()
+    retry_classifier = build_retry_classifier()
     timeout_policy = ExecutionTimeoutPolicy()
 
     graph_builder = ExecutionGraphBuilder()

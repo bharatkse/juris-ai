@@ -8,7 +8,13 @@ from itertools import combinations
 
 from core.dto.planning import ExecutionPlanDTO, ExecutionStepDTO
 from core.enums import ExecutionModeEnum
-from core.exceptions.planning import PlanValidationError
+from core.exceptions.planning import PlanTooLargeError, PlanValidationError
+
+# Every step is a full agent turn (its own iteration, tool and time
+# budget), all inside one graph timeout, so the number of steps bounds a
+# request's LLM calls and cost. The planner prompt states the same limit
+# (PlanningPromptBuilder). Configured by settings.agent_policy.PLAN_MAX_STEPS.
+DEFAULT_MAX_PLAN_STEPS = 6
 
 
 class ExecutionPlanValidator:
@@ -26,6 +32,16 @@ class ExecutionPlanValidator:
         - maintain runtime state.
     """
 
+    def __init__(
+        self,
+        *,
+        max_steps: int = DEFAULT_MAX_PLAN_STEPS,
+    ) -> None:
+        if max_steps < 1:
+            raise ValueError("max_steps must be at least 1.")
+
+        self._max_steps = max_steps
+
     def validate(
         self,
         plan: ExecutionPlanDTO,
@@ -36,11 +52,21 @@ class ExecutionPlanValidator:
         Raises:
             PlanValidationError:
                 If the execution plan is invalid.
+            PlanTooLargeError:
+                If a valid plan has more than max_steps steps (checked
+                last, so a malformed plan still reports what's wrong
+                with it).
         """
 
         self._validate_plan(
             plan=plan,
         )
+
+        if len(plan.steps) > self._max_steps:
+            raise PlanTooLargeError(
+                step_count=len(plan.steps),
+                max_steps=self._max_steps,
+            )
 
         return plan
 

@@ -30,6 +30,7 @@ from core.dto.clients.llm import (
 from core.exceptions.client import (
     ClientAuthenticationError,
     ClientConnectionError,
+    ClientInvalidResponseError,
     ClientProviderError,
     ClientRateLimitError,
     ClientServiceUnavailableError,
@@ -155,7 +156,7 @@ class GroqClient(LLMClient):
                 self.provider,
             )
 
-            raise ClientProviderError(
+            raise ClientInvalidResponseError(
                 message="Groq returned no completion choices.",
             )
 
@@ -174,7 +175,7 @@ class GroqClient(LLMClient):
                 },
             )
 
-            raise ClientProviderError(
+            raise ClientInvalidResponseError(
                 message=(f"Provider '{self.provider}' returned an empty completion."),
             )
 

@@ -18,6 +18,7 @@ from core.dto.clients.llm import (
     LLMRequestDTO,
     LLMResponseDTO,
     LLMStreamChunkDTO,
+    LLMTokenUsageDTO,
 )
 from core.dto.inference import LLMInferenceConfig
 from core.enums import MessageRoleEnum
@@ -48,7 +49,9 @@ class FakeClient(LLMClient):
         content: str = "answer",
         chunks: tuple[str, ...] = (),
         fail_after_chunks: bool = False,
+        usage: LLMTokenUsageDTO | None = None,
     ) -> None:
+        self._usage = usage
         self._provider = provider
         self._error = error
         self._content = content
@@ -68,7 +71,9 @@ class FakeClient(LLMClient):
         self.requests.append(request)
         if self._error is not None:
             raise self._error
-        return LLMResponseDTO(content=self._content, provider=self._provider, model=self.model)
+        return LLMResponseDTO(
+            content=self._content, provider=self._provider, model=self.model, usage=self._usage
+        )
 
     async def stream(self, *, request: LLMRequestDTO):
         self.requests.append(request)
@@ -291,3 +296,25 @@ async def test_a_fallback_call_still_running_at_the_deadline_is_cut_off() -> Non
     # Failed fast with the primary's error, not after the slow call.
     assert time.monotonic() - started < 2
     assert len(fallback.requests) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_failed_over_call_counts_the_fallbacks_usage_once() -> None:
+    """
+    FailoverLLMClient adds no usage of its own; each client's generate()
+    records its own call, so the fallback's tokens are counted exactly
+    once, under its own provider (R3).
+    """
+
+    from core.usage import usage_scope
+
+    primary = FakeClient(provider="groq", error=ClientRateLimitError(message="429"))
+    fallback = FakeClient(
+        provider="ollama",
+        usage=LLMTokenUsageDTO(prompt_tokens=40, completion_tokens=10, total_tokens=50),
+    )
+
+    with usage_scope() as meter:
+        await _failover(primary, fallback).generate(request=REQUEST)
+
+    assert (meter.calls, meter.total_tokens, meter.provider) == (1, 50, "ollama")

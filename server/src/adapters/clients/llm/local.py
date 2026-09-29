@@ -24,6 +24,7 @@ from core.dto.clients.llm import (
 )
 from core.exceptions.client import (
     ClientConnectionError,
+    ClientInvalidResponseError,
     ClientProviderError,
     ClientTimeoutError,
 )
@@ -170,7 +171,7 @@ class LocalLLMClient(LLMClient):
                 },
             )
 
-            raise ClientProviderError(
+            raise ClientInvalidResponseError(
                 message=(f"Provider '{self.provider}' " "returned an empty completion."),
             )
 

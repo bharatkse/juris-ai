@@ -107,3 +107,57 @@ async def test_generate_records_duration_using_client_identity_when_it_raises(
     assert kwargs["provider"] == "stub-provider"
     assert kwargs["model"] == "stub-default-model"
     assert kwargs["usage"] is None
+
+
+async def test_generate_adds_the_calls_usage_to_the_request_meter() -> None:
+    """The per-request total the user's token quota is fed from (R3)."""
+
+    from core.usage import usage_scope
+
+    client = _StubClient(
+        response=build_llm_response(
+            provider="groq",
+            model="gpt-oss",
+            usage=build_llm_token_usage(prompt_tokens=7, completion_tokens=3),
+        )
+    )
+
+    with usage_scope() as meter:
+        await client.generate(request=build_llm_request())
+        await client.generate(request=build_llm_request())
+
+    assert (meter.prompt_tokens, meter.completion_tokens, meter.calls) == (14, 6, 2)
+    assert (meter.provider, meter.model) == ("groq", "gpt-oss")
+
+
+async def test_a_failed_generate_adds_nothing_to_the_meter() -> None:
+    from core.usage import usage_scope
+
+    client = _StubClient(error=ClientProviderError(message="boom"))
+
+    with usage_scope() as meter:
+        with pytest.raises(ClientProviderError):
+            await client.generate(request=build_llm_request())
+
+    assert meter.calls == 0
+
+
+async def test_invalid_structured_output_raises_the_retryable_invalid_response_error() -> None:
+    """
+    R1 retries exactly this error; it stays a ClientProviderError so
+    existing handlers are unaffected.
+    """
+
+    from pydantic import BaseModel
+
+    from core.exceptions.client import ClientInvalidResponseError
+
+    class Decision(BaseModel):
+        answer: str
+
+    client = _StubClient(response=build_llm_response(content="not json"))
+
+    with pytest.raises(ClientInvalidResponseError) as raised:
+        await client.generate_structured(request=build_llm_request(), response_model=Decision)
+
+    assert isinstance(raised.value, ClientProviderError)

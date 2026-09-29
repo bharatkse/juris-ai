@@ -486,3 +486,65 @@ def test_validate_rejects_same_agent_on_unordered_siblings_sharing_an_ancestor(
         match="no dependency relationship between them",
     ):
         plan_validator.validate(plan)
+
+
+def _chain(length: int):
+    """A valid sequential plan of ``length`` steps, each depending on the last."""
+
+    return build_plan(
+        steps=tuple(
+            build_step(
+                f"step-{index}",
+                depends_on=(f"step-{index - 1}",) if index else (),
+                stage=index + 1,
+            )
+            for index in range(length)
+        ),
+    )
+
+
+def test_a_plan_at_the_step_limit_is_accepted() -> None:
+    plan = _chain(6)
+
+    assert ExecutionPlanValidator(max_steps=6).validate(plan) is plan
+
+
+@pytest.mark.parametrize("length", [7, 60])
+def test_a_plan_over_the_step_limit_is_refused_with_its_size(length: int) -> None:
+    """A7: the 60-step repro plan was accepted before."""
+
+    from core.exceptions.planning import PlanTooLargeError
+
+    with pytest.raises(PlanTooLargeError) as raised:
+        ExecutionPlanValidator(max_steps=6).validate(_chain(length))
+
+    assert (raised.value.step_count, raised.value.max_steps) == (length, 6)
+    assert isinstance(raised.value, PlanValidationError)
+
+
+def test_the_default_step_limit_is_six() -> None:
+    from agentic.planning.validator import DEFAULT_MAX_PLAN_STEPS
+    from core.exceptions.planning import PlanTooLargeError
+
+    assert DEFAULT_MAX_PLAN_STEPS == 6
+    ExecutionPlanValidator().validate(_chain(6))
+    with pytest.raises(PlanTooLargeError):
+        ExecutionPlanValidator().validate(_chain(7))
+
+
+def test_a_malformed_plan_reports_its_own_error_not_its_size() -> None:
+    from core.exceptions.planning import PlanTooLargeError
+
+    plan = build_plan(
+        steps=tuple(build_step(f"step-{index}", depends_on=("missing",)) for index in range(9)),
+    )
+
+    with pytest.raises(PlanValidationError) as raised:
+        ExecutionPlanValidator(max_steps=6).validate(plan)
+
+    assert not isinstance(raised.value, PlanTooLargeError)
+
+
+def test_the_step_limit_must_be_positive() -> None:
+    with pytest.raises(ValueError):
+        ExecutionPlanValidator(max_steps=0)

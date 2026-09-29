@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from agentic.agents.prompts.user_memory import render_user_memory_block
 from agentic.planning.prompts.agent_capabilities import render_agent_capabilities
+from agentic.planning.validator import DEFAULT_MAX_PLAN_STEPS
 from core.dto.clients.llm import LLMMessageDTO, LLMRequestDTO
 from core.dto.planning import PlanningRequestDTO
 from core.enums import MessageRoleEnum
@@ -28,9 +29,16 @@ class PlanningPromptBuilder(
 
     def __init__(
         self,
+        *,
+        max_steps: int = DEFAULT_MAX_PLAN_STEPS,
     ) -> None:
-        self._system_prompt = self.load_template(
-            self.template_name,
+        # The same limit ExecutionPlanValidator enforces, so the model
+        # plans within it instead of having its plan refused.
+        self._system_prompt = (
+            self.load_template(self.template_name)
+            + "\n\n## Step Limit\n\n"
+            + f"A plan may have at most {max_steps} steps. Combine related work "
+            + "into fewer steps rather than exceed this limit."
         )
 
     def build(

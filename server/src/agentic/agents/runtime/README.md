@@ -12,7 +12,7 @@ JA-54 / PR #35; it sits **under** `execution/`, not in place of it.
 | `execution.py` | `AgentExecutionHandle` | `reason()`: one bounded reasoning attempt (budgets → `_reason()` → decision validation → decision handling); owns `reasoning_context` |
 | `continuation.py` | `AgentContinuationService` | `execute()`: loops TOOL_CALL / DELEGATE → re-reason, gates FINAL through `_gate_final`, pauses gated tools via `interrupt()` |
 | `delegation.py` | `DelegatedAgentRunner` | `CollaborationBus` handler for each agent (registered in `wiring/factories/executor.py`): runs a delegated turn like a plan step (`start()` with the target's own policy → `seed_evidence()` → `reason()` → `execute()`) and returns its `AgentContinuationResult`; only a verified FINAL answer reaches the delegating agent. Delegation is disabled by policy |
-| `retry.py` | `RetryClassifier` | Which reasoning exceptions are retryable (configured in `wiring/factories/executor.py`) |
+| `retry.py` | `RetryClassifier` | Which reasoning exceptions are retryable: only `ClientInvalidResponseError` (empty or schema-invalid model output), from `build_retry_classifier()` in `wiring/factories/executor.py` |
 | `lifecycle/lifecycle.py` | `AgentLifecycle` | Budget checks + state transitions (`complete`, `fail`, `partial`, `user_input_required`) |
 | `lifecycle/budget.py` | `AgentExecutionBudget` | Limits: 10 iterations, 20 tool calls, 5 hops, 30 steps, 120 s, repeated action 2, no-progress 2, rejected decisions 2 (`max_rejected_decisions`: invalid or policy-denied decisions the model may correct), plus record-count and size caps |
 | `lifecycle/guard.py` | `BudgetGuard` | Per-limit checks returning `BudgetCheckResult` |
@@ -26,8 +26,8 @@ flowchart TD
     S[reason] --> B1{"begin_step / begin_iteration<br/>budget ok?"}
     B1 -->|no| PART[partial result]
     B1 -->|yes| R["agent._reason(request, reasoning_context)<br/>structured AgentDecision,<br/>under deadline_within(turn time left)"]
-    R -->|exception| RC{"RetryClassifier.is_retryable?"}
-    RC -->|yes, attempts left| R
+    R -->|exception| RC{"RetryClassifier.is_retryable?<br/>(unusable output only)"}
+    RC -->|"yes, attempts left, and backoff +<br/>min_attempt_seconds fit the time left"| BO["sleep(backoff)"] --> R
     RC -->|no| FAILR[FAILED]
     R --> V{"AgentDecisionValidator.validate()"}
     V -->|invalid| CV{"correction budget left?<br/>(max_rejected_decisions)"}

@@ -161,7 +161,6 @@ def test_agent_response_accepts_citations_and_sources() -> None:
     assert response.agent_name == "legal"
     assert response.citations == ()
     assert response.sources == ()
-    assert response.usage is None
 
 
 def test_agent_metadata_accepts_values() -> None:
