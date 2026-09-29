@@ -39,6 +39,8 @@ from core.dto.approval import ApprovalResponseDTO
 from core.dto.conversation import ConversationDTO
 from core.dto.message import MessageDTO
 from core.enums import ExecutionStatusEnum, MessageRoleEnum
+from core.exceptions.planning import PlanTooLargeError
+from core.usage import UsageMeter, usage_scope
 
 if TYPE_CHECKING:
     # NOTE: fixed from stale pre-layer-reorg paths (authorization.service /
@@ -86,6 +88,41 @@ _EXECUTION_FAILED_MESSAGE = (
 )
 
 
+def _plan_too_large_response(
+    *,
+    request: OrchestratorRequest,
+    error: PlanTooLargeError,
+) -> OrchestratorResponse:
+    """
+    The reply to a request whose plan has more steps than one turn may
+    run (review A7): nothing was executed, and the user is told why and
+    what to do, rather than getting an error or a silently cut-down plan.
+    """
+
+    log.warning(
+        "Execution plan exceeds the step limit; not executing it.",
+        extra={
+            "operation": "create_plan",
+            "request_id": str(request.request_id),
+            "conversation_id": str(request.conversation_id),
+            "step_count": error.step_count,
+            "max_steps": error.max_steps,
+        },
+    )
+
+    return OrchestratorResponse(
+        conversation_id=request.conversation_id,
+        content=(
+            f"This request would need {error.step_count} steps, but I can run at "
+            f"most {error.max_steps} in one turn. Please split it into smaller "
+            "questions."
+        ),
+        citations=[],
+        sources=[],
+        usage=Usage(),
+    )
+
+
 def _awaiting_approval(execution_result: ExecutionResultSchema) -> bool:
     return (
         execution_result.state.status is ExecutionStatusEnum.WAITING_FOR_APPROVAL
@@ -98,6 +135,22 @@ def _awaiting_approval(execution_result: ExecutionResultSchema) -> bool:
 _STREAM_SLICE_CHARS = 48
 
 _STREAM_TOKEN = re.compile(r"\s*\S+\s*|\s+")
+
+
+def _with_usage(response: OrchestratorResponse, meter: UsageMeter) -> OrchestratorResponse:
+    """The response with its usage set to the LLM calls counted by meter."""
+
+    return response.model_copy(
+        update={
+            "usage": Usage(
+                provider=meter.provider,
+                model=meter.model,
+                prompt_tokens=meter.prompt_tokens,
+                completion_tokens=meter.completion_tokens,
+                total_tokens=meter.total_tokens,
+            ),
+        },
+    )
 
 
 def _stream_slices(text: str) -> Iterator[str]:
@@ -186,10 +239,9 @@ def _to_response_metadata(
     OrchestratorResponse.metadata. Every OrchestratorResponse(...)
     construction below used to omit metadata= entirely, so this data
     -- present on AgentResponseDTO.metadata since AgentResponseMapper
-    builds it -- never survived past aggregation. usage is carried
-    separately at each call site
-    (aggregation_result.response.metadata.usage), not duplicated
-    here.
+    builds it -- never survived past aggregation. usage is not
+    aggregated from agent responses: handle()/stream()/resume() set it
+    from every LLM call the turn made (core.usage).
     """
 
     return ResponseMetadata(
@@ -324,6 +376,79 @@ class AIOrchestrator:
         )
 
     async def resume(
+        self,
+        *,
+        thread_id: str,
+        user_id: str,
+        conversation_id: str,
+        plan: ExecutionPlanDTO,
+        approved: bool,
+        tool_result: ToolResult | None,
+        action_workflow_service: ActionWorkflowService,
+    ) -> OrchestratorResponse:
+        """
+        Resume an execution paused for approval (see _resume()). The
+        response's usage is every LLM call the resumed turn made.
+        """
+
+        with usage_scope() as meter:
+            response = await self._resume(
+                thread_id=thread_id,
+                user_id=user_id,
+                conversation_id=conversation_id,
+                plan=plan,
+                approved=approved,
+                tool_result=tool_result,
+                action_workflow_service=action_workflow_service,
+            )
+
+        return _with_usage(response, meter)
+
+    async def handle(
+        self,
+        *,
+        request: OrchestratorRequest,
+        action_workflow_service: ActionWorkflowService,
+    ) -> OrchestratorResponse:
+        """
+        Run one chat turn (see _handle()). The response's usage is every
+        LLM call the turn made: planner, agents, answer evaluation and
+        guardrail judge.
+        """
+
+        with usage_scope() as meter:
+            response = await self._handle(
+                request=request,
+                action_workflow_service=action_workflow_service,
+            )
+
+        return _with_usage(response, meter)
+
+    async def stream(
+        self,
+        *,
+        request: OrchestratorRequest,
+        action_workflow_service: ActionWorkflowService,
+    ) -> AsyncIterator[OrchestratorStreamChunk]:
+        """
+        Streaming counterpart to handle() (see _stream()). The final
+        chunk's response carries the turn's usage, counted as in
+        handle().
+        """
+
+        with usage_scope() as meter:
+            async for chunk in self._stream(
+                request=request,
+                action_workflow_service=action_workflow_service,
+            ):
+                if chunk.is_final and chunk.response is not None:
+                    chunk = chunk.model_copy(
+                        update={"response": _with_usage(chunk.response, meter)},
+                    )
+
+                yield chunk
+
+    async def _resume(
         self,
         *,
         thread_id: str,
@@ -476,14 +601,14 @@ class AIOrchestrator:
             content=guardrail_result.content,
             citations=aggregation_result.response.citations,
             sources=aggregation_result.response.sources,
-            usage=aggregation_result.response.metadata.usage,
+            usage=Usage(),
             metadata=_to_response_metadata(aggregation_result.response.metadata),
             action=_to_action_request(execution_result.action),
             approval=_to_approval_response(execution_result.approval),
             guardrail=_build_guardrail_info(guardrail_result),
         )
 
-    async def handle(
+    async def _handle(
         self,
         *,
         request: OrchestratorRequest,
@@ -574,9 +699,15 @@ class AIOrchestrator:
                 # 2. Planning
                 # ---------------------------------------------------------
 
-                execution_plan = await self._planner.create_plan(
-                    context=orchestration_context,
-                )
+                try:
+                    execution_plan = await self._planner.create_plan(
+                        context=orchestration_context,
+                    )
+                except PlanTooLargeError as exc:
+                    return _plan_too_large_response(
+                        request=request,
+                        error=exc,
+                    )
 
                 current_span.set_attribute(
                     "execution.intent",
@@ -937,7 +1068,7 @@ class AIOrchestrator:
                     content=guardrail_result.content,
                     citations=aggregation_result.response.citations,
                     sources=aggregation_result.response.sources,
-                    usage=aggregation_result.response.metadata.usage,
+                    usage=Usage(),
                     metadata=_to_response_metadata(aggregation_result.response.metadata),
                     action=action_request,
                     approval=_to_approval_response(execution_result.approval),
@@ -985,7 +1116,7 @@ class AIOrchestrator:
 
                 raise
 
-    async def stream(
+    async def _stream(
         self,
         *,
         request: OrchestratorRequest,
@@ -1025,10 +1156,10 @@ class AIOrchestrator:
         aggregate()/validate() are the exact same calls handle() makes
         (reusing agent_responses extracted from the same
         ExecutionResultSchema shape execute_streaming() and execute()
-        both produce via the same underlying _finish()) -- usage and
-        citations on the terminal chunk are therefore built identically
-        to handle()'s, not a second, parallel computation that could
-        drift from it.
+        both produce via the same underlying _finish()) -- citations on
+        the terminal chunk are therefore built identically to handle()'s,
+        not a second, parallel computation that could drift from it;
+        usage is counted the same way by both wrappers (core.usage).
         """
 
         log.info(
@@ -1060,9 +1191,21 @@ class AIOrchestrator:
                     message=request.message,
                 )
 
-                execution_plan = await self._planner.create_plan(
-                    context=orchestration_context,
-                )
+                try:
+                    execution_plan = await self._planner.create_plan(
+                        context=orchestration_context,
+                    )
+                except PlanTooLargeError as exc:
+                    plan_too_large = _plan_too_large_response(
+                        request=request,
+                        error=exc,
+                    )
+                    yield OrchestratorStreamChunk(
+                        content=plan_too_large.content,
+                        is_final=True,
+                        response=plan_too_large,
+                    )
+                    return
 
                 current_span.set_attribute(
                     "execution.intent",
@@ -1320,7 +1463,7 @@ class AIOrchestrator:
                     content=guardrail_result.content,
                     citations=aggregation_result.response.citations,
                     sources=aggregation_result.response.sources,
-                    usage=aggregation_result.response.metadata.usage,
+                    usage=Usage(),
                     metadata=_to_response_metadata(aggregation_result.response.metadata),
                     action=action_request,
                     approval=_to_approval_response(execution_result.approval),

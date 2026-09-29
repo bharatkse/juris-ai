@@ -21,7 +21,7 @@ from agentic.orchestration.schemas.response import OrchestratorResponse
 from core.dto.agent import AgentResponseDTO
 from core.dto.approval import ApprovalResponseDTO
 from core.dto.planning import ExecutionPlanDTO
-from core.dto.response import CitationDTO, SourceDTO, UsageDTO
+from core.dto.response import CitationDTO, SourceDTO
 from core.enums import ApprovalStatusEnum, ExecutionModeEnum, ExecutionStatusEnum, IntentEnum
 from tests.builders.agentic.orchestrator import build_orchestrator_request
 
@@ -821,7 +821,8 @@ async def test_stream_terminal_chunk_matches_handle_for_the_same_inputs() -> Non
     (d) Parity: usage/citations/sources/content on stream()'s terminal
     chunk must exactly match what handle() produces for equivalent
     agent responses -- both call the exact same aggregate() with the
-    same inputs, not a second, parallel computation.
+    same inputs, not a second, parallel computation. (Usage comes from
+    the LLM calls made, none here; see the usage tests.)
     """
 
     def _agent_response() -> AgentResponseDTO:
@@ -831,13 +832,6 @@ async def test_stream_terminal_chunk_matches_handle_for_the_same_inputs() -> Non
             citations=(CitationDTO(title="IT Act 2000", source="it-act-2000", reference="s.43"),),
             sources=(
                 SourceDTO(title="Information Technology Act, 2000", uri="https://example.test"),
-            ),
-            usage=UsageDTO(
-                provider="groq",
-                model="llama-3.3-70b",
-                prompt_tokens=120,
-                completion_tokens=45,
-                total_tokens=165,
             ),
         )
 
@@ -1049,3 +1043,172 @@ async def test_resume_after_rejection_still_says_not_approved(
     )
 
     assert "not approved" in response.content
+
+
+# ---------------------------------------------------------------------------
+# R3: a turn's usage is every LLM call it made
+# ---------------------------------------------------------------------------
+
+
+def _calls_llm(prompt_tokens: int, completion_tokens: int, result=None):
+    """An async stand-in for a stage that makes one LLM call."""
+
+    from core.usage import record_llm_usage
+
+    async def stage(*_args, **_kwargs):
+        record_llm_usage(
+            provider="groq",
+            model="gpt-oss",
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=prompt_tokens + completion_tokens,
+        )
+        return result
+
+    return stage
+
+
+def _usage_orchestrator() -> AIOrchestrator:
+    """Planner, executor and guardrail judge each make one LLM call."""
+
+    orchestrator = _build_streaming_orchestrator_for_guardrail_tests(
+        execution_results=[],
+        guardrail_results=[],
+    )
+    orchestrator._planner.create_plan = _calls_llm(
+        100,
+        20,
+        ExecutionPlanDTO(intent=IntentEnum.GENERAL, mode=ExecutionModeEnum.SEQUENTIAL, steps=()),
+    )
+    orchestrator._executor.execute = _calls_llm(
+        300, 50, build_success_execution_result(content="Answer.")
+    )
+    orchestrator._guardrails.review = _calls_llm(
+        10, 1, GuardrailReviewResult(content="Answer.", action=GuardrailActionEnum.NONE)
+    )
+    return orchestrator
+
+
+@pytest.mark.asyncio
+async def test_handle_reports_the_usage_of_every_llm_call_in_the_turn() -> None:
+    """
+    Before R3 the response's usage was summed from AgentResponseDTO.usage,
+    which nothing set: always zero, so the daily token quota never moved.
+    """
+
+    response = await _usage_orchestrator().handle(
+        request=build_orchestrator_request(),
+        action_workflow_service=MagicMock(),
+    )
+
+    assert response.usage.prompt_tokens == 410
+    assert response.usage.completion_tokens == 71
+    assert response.usage.total_tokens == 481
+    assert (response.usage.provider, response.usage.model) == ("groq", "gpt-oss")
+
+
+@pytest.mark.asyncio
+async def test_stream_reports_the_same_usage_on_its_final_chunk() -> None:
+    items = await _collect_stream(_usage_orchestrator())
+
+    final = items[-1]
+    assert final.is_final is True
+    assert final.response.usage.total_tokens == 481
+    assert all(item.response is None for item in items[:-1])
+
+
+@pytest.mark.asyncio
+async def test_resume_reports_the_usage_of_the_resumed_turn(
+    orchestrator: AIOrchestrator,
+) -> None:
+    orchestrator._executor.resume = _calls_llm(200, 40, build_failed_execution_result())
+
+    response = await orchestrator.resume(
+        thread_id="thread-1",
+        user_id="user_" + "c" * 32,
+        conversation_id="conv_" + "d" * 32,
+        plan=MagicMock(),
+        approved=False,
+        tool_result=None,
+        action_workflow_service=MagicMock(),
+    )
+
+    assert response.usage.total_tokens == 240
+
+
+@pytest.mark.asyncio
+async def test_each_turn_counts_only_its_own_calls() -> None:
+    orchestrator = _usage_orchestrator()
+
+    first = await orchestrator.handle(
+        request=build_orchestrator_request(),
+        action_workflow_service=MagicMock(),
+    )
+    second = await orchestrator.handle(
+        request=build_orchestrator_request(),
+        action_workflow_service=MagicMock(),
+    )
+
+    assert first.usage.total_tokens == second.usage.total_tokens == 481
+
+
+# ---------------------------------------------------------------------------
+# A7: a plan over the step limit gets a reply, not an error or a cut plan
+# ---------------------------------------------------------------------------
+
+
+def _plan_too_large_orchestrator() -> AIOrchestrator:
+    from core.exceptions.planning import PlanTooLargeError
+
+    orchestrator = _build_streaming_orchestrator_for_guardrail_tests(
+        execution_results=[],
+        guardrail_results=[],
+    )
+    orchestrator._planner.create_plan = AsyncMock(
+        side_effect=PlanTooLargeError(step_count=9, max_steps=6)
+    )
+    return orchestrator
+
+
+@pytest.mark.asyncio
+async def test_handle_answers_a_plan_over_the_step_limit_without_running_it() -> None:
+    orchestrator = _plan_too_large_orchestrator()
+
+    response = await orchestrator.handle(
+        request=build_orchestrator_request(),
+        action_workflow_service=MagicMock(),
+    )
+
+    assert response.content == (
+        "This request would need 9 steps, but I can run at most 6 in one turn. "
+        "Please split it into smaller questions."
+    )
+    assert response.approval is None
+    orchestrator._executor.execute.assert_not_awaited()
+    orchestrator._guardrails.review.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_stream_answers_a_plan_over_the_step_limit_in_one_final_chunk() -> None:
+    orchestrator = _plan_too_large_orchestrator()
+
+    items = await _collect_stream(orchestrator)
+
+    assert len(items) == 1
+    assert items[0].is_final is True
+    assert "at most 6 in one turn" in items[0].response.content
+    orchestrator._executor.execute.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_other_plan_validation_errors_still_fail_the_request() -> None:
+    from core.exceptions.planning import PlanValidationError
+
+    orchestrator = _plan_too_large_orchestrator()
+    orchestrator._planner.create_plan = AsyncMock(side_effect=PlanValidationError("cycle"))
+
+    with pytest.raises(PlanValidationError):
+        await orchestrator.handle(
+            request=build_orchestrator_request(),
+            action_workflow_service=MagicMock(),
+        )

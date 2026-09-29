@@ -9,7 +9,7 @@ from typing import Any
 
 from core.dto.agent_action import AgentActionRequestDTO
 from core.dto.conversation import ConversationDTO
-from core.dto.response import CitationDTO, SourceDTO, UsageDTO
+from core.dto.response import CitationDTO, SourceDTO
 from core.dto.tool import ToolFileDTO, ToolSpecDTO
 
 
@@ -83,7 +83,6 @@ class AgentResponseDTO:
     citations: tuple[CitationDTO, ...] = ()
 
     sources: tuple[SourceDTO, ...] = ()
-    usage: UsageDTO | None = None
     metadata: dict[str, Any] = field(
         default_factory=dict,
     )

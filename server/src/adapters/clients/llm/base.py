@@ -17,7 +17,8 @@ from pydantic import BaseModel, ValidationError
 from adapters.observability.logger import get_logger
 from adapters.observability.metrics import metrics
 from core.dto.clients.llm import LLMRequestDTO, LLMResponseDTO, LLMStreamChunkDTO
-from core.exceptions.client import ClientProviderError
+from core.exceptions.client import ClientInvalidResponseError
+from core.usage import record_llm_usage
 
 log = get_logger(__name__)
 
@@ -101,6 +102,17 @@ class LLMClient(ABC):
                 usage=response.usage if response is not None else None,
             )
 
+            # The request's total, for the user's token quota
+            # (core.usage; read by AIOrchestrator).
+            if response is not None and response.usage is not None:
+                record_llm_usage(
+                    provider=response.provider,
+                    model=response.model,
+                    prompt_tokens=response.usage.prompt_tokens,
+                    completion_tokens=response.usage.completion_tokens,
+                    total_tokens=response.usage.total_tokens,
+                )
+
     @abstractmethod
     async def _generate(
         self,
@@ -167,7 +179,7 @@ class LLMClient(ABC):
                 self.model,
             )
 
-            raise ClientProviderError(
+            raise ClientInvalidResponseError(
                 message="LLM returned an invalid structured response.",
             ) from exc
 

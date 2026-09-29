@@ -204,6 +204,26 @@ Requires a bearer token. Both endpoints take `multipart/form-data`.
 | message         | string                      |    ✅    |
 | files           | file (repeat for several)   |    ❌    |
 
+#### Chat Limits
+
+- **Uploads:** at most 5 files per message (`UPLOAD_MAX_FILES`) and
+  10 MB per file (`UPLOAD_MAX_FILE_BYTES`). Over either limit, the request
+  fails before any file is read: `422` `TOO_MANY_UPLOADS`, or `413`
+  `UPLOAD_TOO_LARGE` naming the file. Each file's extracted text is
+  also cut to 20,000 characters before the model sees it. A file of an
+  unsupported type (not PDF, DOCX, text or Markdown) is accepted, but the
+  model is only told it couldn't be read.
+- **Requests and tokens:** `429` `RATE_LIMIT_EXCEEDED` past
+  `RATE_LIMIT_REQUESTS_PER_MINUTE`, and `429` `TOKEN_QUOTA_EXCEEDED` once
+  the day's tokens reach `RATE_LIMIT_DAILY_TOKEN_QUOTA` (resets at
+  midnight UTC). Every LLM call a turn makes counts: planner, agents,
+  answer checks and guardrail judge, including a turn resumed after an
+  approval. The quota is checked before a turn, so the turn that crosses
+  it still completes.
+- **Plan size:** a request whose plan needs more than 6 steps
+  (`PLAN_MAX_STEPS`) isn't run. The answer (`200`) says how many steps it
+  would need and asks the user to split it into smaller questions.
+
 ### Streaming CURL Request
 
 ```
@@ -317,9 +337,11 @@ approve, edit or reject it."
   checked again. If the role no longer allows the action, for example
   because the user was moved from `member` to `reader` after the request,
   the call doesn't run and the agent is told it was refused.
-- The resumed answer is added to the conversation as a new assistant
-  message (fetch it with `GET /conversations/{conversation_id}`); it is
-  not part of this response. `resume_status` reports how resuming went:
+- The resumed answer is saved to the conversation as a new assistant
+  message; it is not part of this response. No endpoint currently
+  returns a conversation's stored messages
+  (`GET /conversations/{conversation_id}` returns only the conversation's
+  details). `resume_status` reports how resuming went:
   `completed`, or `failed` if the conversation could not be resumed. A
   failed resume still returns `200` with the decision's status. The
   approval can't be decided again; retry the resume with
@@ -515,8 +537,9 @@ facts already saved from earlier messages in it.
 | `404`  | Resource not found             |
 | `409`  | Conflict with the resource's current state (e.g. an approval already decided) |
 | `410`  | Resource no longer available (e.g. an expired approval) |
-| `422`  | Request validation failed      |
-| `429`  | Rate limit exceeded            |
+| `413`  | An uploaded file is over the size limit (`UPLOAD_TOO_LARGE`) |
+| `422`  | Request validation failed, or too many files uploaded (`TOO_MANY_UPLOADS`) |
+| `429`  | Request rate limit or daily token quota exceeded |
 | `500`  | Internal server error          |
 | `502`  | LLM provider error             |
 | `504`  | LLM provider timeout           |

@@ -172,3 +172,22 @@ def test_build_inserts_the_agent_capabilities_after_the_instructions_and_before_
     assert messages[1].content.startswith("## Available Agents")
     assert "### `legal`\nLegal questions." in messages[1].content
     assert "<user_memory>" in messages[2].content
+
+
+def test_the_system_prompt_states_the_step_limit() -> None:
+    """A7: the planner is told the limit the validator enforces."""
+
+    llm_request = PlanningPromptBuilder(max_steps=4).build(
+        request=PlanningRequestDTO(message="Compare three acts."),
+    )
+
+    system_prompt = llm_request.messages[0].content
+    assert "at most 4 steps" in system_prompt
+
+
+def test_the_default_prompt_states_the_default_limit() -> None:
+    llm_request = PlanningPromptBuilder().build(
+        request=PlanningRequestDTO(message="Compare three acts."),
+    )
+
+    assert "at most 6 steps" in llm_request.messages[0].content

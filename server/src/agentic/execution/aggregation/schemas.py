@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from agentic.orchestration.schemas.response import Citation, Source, Usage
+from agentic.orchestration.schemas.response import Citation, Source
 
 
 class AggregationMetadata(BaseModel):
@@ -25,16 +25,9 @@ class AggregationMetadata(BaseModel):
 
     merged_responses: int = 0
 
-    usage: Usage = Field(
-        default_factory=Usage,
-    )
-
-    # First-non-None-wins across responses, same convention
-    # usage.provider/usage.model below already use for a scalar
-    # pulled out of a multi-response sequence -- these are per-
+    # First-non-None-wins across responses: these are per-
     # response values in AgentResponseDTO.metadata (a free-form dict
-    # AgentResponseMapper.map() builds), not naturally summable like
-    # token counts. Previously dropped entirely by
+    # AgentResponseMapper.map() builds), not summable. Previously dropped entirely by
     # ResponseAggregator._aggregate_metadata(), so a NEED_INPUT
     # turn's "user_input_required" reason (and a FINAL turn's
     # groundedness/relevance score) never survived aggregation.

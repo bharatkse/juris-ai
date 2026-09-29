@@ -168,3 +168,78 @@ async def test_an_upload_with_an_injection_pattern_is_withheld(
     assert response["content"] == NO_SOURCES_ANSWER_MESSAGE
     assert response["citations"] == []
     assert empty_corpus == [QUESTION, QUESTION]
+
+
+# ---------------------------------------------------------------------------
+# Upload limits (review R15): refused before anything is read or planned
+# ---------------------------------------------------------------------------
+
+
+async def test_too_many_files_are_refused(
+    e2e_client, registered_user, conversation_id, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from config.settings import get_settings
+
+    monkeypatch.setattr(get_settings().rate_limit, "UPLOAD_MAX_FILES", 2)
+
+    response = await e2e_client.post(
+        "/api/v1/chat",
+        data={"conversation_id": conversation_id, "message": QUESTION},
+        files=[("files", (f"{index}.txt", b"notes", "text/plain")) for index in range(3)],
+        headers=registered_user["headers"],
+    )
+
+    assert response.status_code == 422, response.text
+    assert response.json()["error"]["code"] == "TOO_MANY_UPLOADS"
+    assert "At most 2 files" in response.json()["error"]["message"]
+
+
+@pytest.mark.parametrize("endpoint", ["/api/v1/chat", "/api/v1/chat/stream"])
+async def test_a_file_over_the_size_limit_is_refused(
+    e2e_client,
+    registered_user,
+    conversation_id,
+    monkeypatch: pytest.MonkeyPatch,
+    endpoint: str,
+) -> None:
+    from config.settings import get_settings
+
+    monkeypatch.setattr(get_settings().rate_limit, "UPLOAD_MAX_FILE_BYTES", 1024)
+
+    response = await e2e_client.post(
+        endpoint,
+        data={"conversation_id": conversation_id, "message": QUESTION},
+        files={"files": ("big.pdf", b"x" * 2048, "application/pdf")},
+        headers=registered_user["headers"],
+    )
+
+    assert response.status_code == 413, response.text
+    assert response.json()["error"]["code"] == "UPLOAD_TOO_LARGE"
+    assert "big.pdf" in response.json()["error"]["message"]
+
+
+async def test_the_default_limits_allow_several_files(
+    e2e_client, registered_user, conversation_id
+) -> None:
+    """Five small files (the default count limit) still go through."""
+
+    async def fake_plan_generate(self, *, request):
+        return _plan()
+
+    async def fake_generate_structured(self, *, request, response_model):
+        return AgentDecision(decision_type=AgentDecisionType.FINAL, final_response=ANSWER)
+
+    async with AsyncExitStack() as patches:
+        patches.enter_context(patch.object(LLMPlanGenerator, "generate", fake_plan_generate))
+        patches.enter_context(
+            patch.object(LLMClient, "generate_structured", fake_generate_structured)
+        )
+
+        response = await e2e_client.post(
+            "/api/v1/chat",
+            data={"conversation_id": conversation_id, "message": QUESTION},
+            files=[("files", (f"{index}.txt", b"notes", "text/plain")) for index in range(5)],
+            headers=registered_user["headers"],
+        )
+
+    assert response.status_code == 200, response.text

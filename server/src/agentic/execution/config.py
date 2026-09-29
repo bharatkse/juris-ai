@@ -19,6 +19,11 @@ class ExecutionRetryPolicy:
     max_attempts: int = 3
     base_delay_seconds: float = 0.5
     max_delay_seconds: float = 8.0
+    # A retry is started only if, after its backoff, at least this much
+    # remains of both the agent turn's time budget and the enclosing
+    # deadline (core.deadline, the graph timeout). An attempt started
+    # later would run past them: the deadline doesn't cancel the call.
+    min_attempt_seconds: float = 15.0
 
     def __post_init__(self) -> None:
         if self.max_attempts < 1:
@@ -34,6 +39,11 @@ class ExecutionRetryPolicy:
         if self.max_delay_seconds < 0:
             raise ValueError(
                 "Execution retry max_delay_seconds must not be negative.",
+            )
+
+        if self.min_attempt_seconds < 0:
+            raise ValueError(
+                "Execution retry min_attempt_seconds must not be negative.",
             )
 
         if self.max_delay_seconds < self.base_delay_seconds:

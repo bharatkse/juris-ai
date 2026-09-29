@@ -168,6 +168,18 @@ docstring for why this parity is deliberate: it's what stops the two
 paths from silently drifting apart the way they once did, back when
 `AIOrchestrator.stream()` didn't exist yet.
 
+**Where `result.usage` comes from**: every `LLMClient.generate()` call
+adds its provider-reported token counts to a per-request meter
+(`core/usage.py`, a `ContextVar` like `core/deadline.py`; asyncio tasks
+and LangGraph nodes share the scope's meter). `AIOrchestrator.handle()`,
+`stream()` and `resume()` each open one scope and set the response's
+`usage` from it: planner, agents (including a failover call, counted once
+under the fallback's provider), answer evaluation and the guardrail
+judge. It isn't summed from agent responses. `HitlResumeService` records a
+resumed turn's usage the same way, after its commit. Not counted: the
+background memory-extraction call, and a turn that raises before
+returning a response.
+
 ## `agent_policies` and tool authorization
 
 Real DB table (`agent_policies`: `agent_id` unique, `allowed_tools`

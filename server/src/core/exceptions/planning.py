@@ -67,3 +67,25 @@ class PlanValidationError(PlanningError):
 
     error_code = ERROR_PLAN_VALIDATION
     default_message = "Execution plan validation failed."
+
+
+class PlanTooLargeError(PlanValidationError):
+    """
+    Raised when a plan has more steps than one turn may run.
+
+    The orchestrator answers it with a normal reply asking the user to
+    split the request, instead of an error.
+    """
+
+    def __init__(
+        self,
+        *,
+        step_count: int,
+        max_steps: int,
+    ) -> None:
+        self.step_count = step_count
+        self.max_steps = max_steps
+
+        super().__init__(
+            f"Execution plan has {step_count} steps; at most {max_steps} are allowed.",
+        )

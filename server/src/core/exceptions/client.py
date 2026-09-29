@@ -111,3 +111,21 @@ class ClientServiceUnavailableError(ClientProviderError):
     status_code = HTTPStatus.BAD_GATEWAY
     error_code = "CLIENT_SERVICE_UNAVAILABLE"
     default_message = "The external service is temporarily unavailable."
+
+
+class ClientInvalidResponseError(ClientProviderError):
+    """
+    The provider answered, but the output can't be used: an empty
+    completion, or structured output that doesn't match the requested
+    schema.
+
+    A ClientProviderError, so existing handling is unchanged; separate
+    because it is the one provider failure worth retrying at the agent
+    level. The model's output varies from call to call, while transient
+    errors (429, 5xx, timeouts, connection) are already retried by the
+    provider SDK and then failed over (FailoverLLMClient).
+    """
+
+    status_code = HTTPStatus.BAD_GATEWAY
+    error_code = "CLIENT_INVALID_RESPONSE"
+    default_message = "The external service returned an unusable response."

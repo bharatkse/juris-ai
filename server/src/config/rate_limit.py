@@ -22,7 +22,20 @@ class RateLimitSettings(BaseAppSettings):
     # calendar day.
     RATE_LIMIT_DAILY_TOKEN_QUOTA: int = 200_000
 
-    @field_validator("RATE_LIMIT_REQUESTS_PER_MINUTE", "RATE_LIMIT_DAILY_TOKEN_QUOTA")
+    # (c) chat attachments (api/helpers/files.py): checked before a file
+    # is read into memory. Each file's parsed text is also capped at
+    # 20,000 characters before it reaches the model
+    # (agentic/execution/attachments.py); that bounds the prompt, not
+    # memory, parsing time or the number of files.
+    UPLOAD_MAX_FILES: int = 5
+    UPLOAD_MAX_FILE_BYTES: int = 10 * 1024 * 1024
+
+    @field_validator(
+        "RATE_LIMIT_REQUESTS_PER_MINUTE",
+        "RATE_LIMIT_DAILY_TOKEN_QUOTA",
+        "UPLOAD_MAX_FILES",
+        "UPLOAD_MAX_FILE_BYTES",
+    )
     @classmethod
     def validate_positive(cls, value: int) -> int:
         if value <= 0:
