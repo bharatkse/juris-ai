@@ -52,3 +52,9 @@ jobs:
       - name: Run Ruff Formatter Check (Python Only)
         working-directory: ${{ inputs.working-directory }}
         run: poetry run ruff format --check .
+
+      - name: Check Import Contracts (layer boundaries)
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          PYTHONPATH: src
+        run: poetry run lint-imports

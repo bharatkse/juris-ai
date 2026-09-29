@@ -291,6 +291,17 @@ exist, or it errors.
 
 Local dev only — this does not apply to any cloud/RDS deployment.
 
+To run a quick read-only query as that restricted role:
+
+```bash
+make db-query SQL="select count(*) from users"
+```
+
+It runs one read-only transaction and refuses psql meta-commands (anything
+with a backslash) and transaction or setting control (`BEGIN`, `SET`,
+`set_config`, `COPY`, ...). For writes or queries as another role, use
+`docker exec juris_ai_postgres psql ...` directly.
+
 ## Apply migrations
 
 Apply all pending migrations:
@@ -593,11 +604,16 @@ make test-e2e
 Smoke and E2E tests need the Postgres and Redis containers running
 (`./setup.sh --install --dependency postgres --dependency redis`). They run
 on the host, so `make` points them at `localhost` (the containers' published
-ports) instead of the `postgres`/`redis` hostnames in `server/.env`, which
-only resolve inside the compose network. If your services are somewhere
-else, set `TEST_SERVICES_HOST`, e.g. `make test-e2e TEST_SERVICES_HOST=db.local`.
-Running `pytest` directly (without `make`) needs
-`DB_HOST=localhost REDIS_HOST=localhost` for the same reason.
+ports) instead of the compose hostnames in `server/.env` (`postgres`,
+`redis`, `ollama`, `otel-collector`), which only resolve inside the compose
+network: `DB_HOST`, `REDIS_HOST`, `LLM_LOCAL_BASE_URL` and
+`OTEL_EXPORTER_OTLP_ENDPOINT` are all overridden (`TEST_ENV` in the
+Makefile). If your services are somewhere else, set `TEST_SERVICES_HOST`,
+e.g. `make test-e2e TEST_SERVICES_HOST=db.local`. Running `pytest` directly
+(without `make`) needs the same four variables, so prefer the make targets.
+
+For ad-hoc `aws`, `terraform` or `sam` commands against Floci, load the
+dummy credentials and endpoint with `eval "$(make -s floci-env)"`.
 
 Run a specific E2E target:
 
@@ -651,6 +667,14 @@ Run mypy:
 make type-check
 ```
 
+Check the layer-boundary import contracts (import-linter, configured under
+`[tool.importlinter]` in `server/pyproject.toml`: `core` imports no other
+layer, and `api.v1` routes don't import `agentic` directly):
+
+```bash
+make lint-imports
+```
+
 Run pre-commit hooks:
 
 ```bash
@@ -673,6 +697,8 @@ The current CI target runs:
 
 ```text
 lint
+  ↓
+lint-imports
   ↓
 type-check
   ↓
@@ -1074,6 +1100,7 @@ make infra-logs MODE=dev
 | Observability | `infra-logs`        | Follow observability logs              |
 | Observability | `infra-ps`          | Show observability containers          |
 | Database      | `db-setup-role`     | Create restricted runtime DB role      |
+| Database      | `db-query`          | Read-only query as the app role        |
 | LLM           | `llm-pull`          | Pull the Ollama model                  |
 | Database      | `alembic-upgrade`   | Apply migrations                       |
 | Database      | `alembic-downgrade` | Roll back migration                    |
@@ -1086,6 +1113,7 @@ make infra-logs MODE=dev
 | Floci         | `ls-api`            | List APIs and keys                     |
 | Floci         | `ls-resources`      | List Floci resources                   |
 | Floci         | `ls-s3-objects`     | List S3 objects                        |
+| Floci         | `floci-env`         | Print Floci AWS env exports            |
 | SAM           | `cf-build`          | Build SAM application                  |
 | SAM           | `cf-deploy`         | Deploy CloudFormation                  |
 | SAM           | `cf-status`         | Show stack status                      |
@@ -1104,9 +1132,10 @@ make infra-logs MODE=dev
 | Tests         | `test-path`         | Run a specific test path               |
 | Quality       | `lint`              | Run Ruff                               |
 | Quality       | `format`            | Format code                            |
+| Quality       | `lint-imports`      | Check import contracts                 |
 | Quality       | `type-check`        | Run mypy                               |
 | Quality       | `pre-commit`        | Run pre-commit                         |
-| Quality       | `ci`                | Run lint, type-check, tests            |
+| Quality       | `ci`                | Run lint, import contracts, type-check, tests |
 | Poetry        | `poetry-install`    | Install dependencies                   |
 | Poetry        | `poetry-update`     | Update dependencies                    |
 | Poetry        | `poetry-lock`       | Regenerate lock                        |

@@ -418,7 +418,7 @@ poetry-export: ## Export main dependencies to requirements.txt
 # Code Quality
 # ============================================================================
 
-.PHONY: lint format type-check ci pre-commit install-hooks
+.PHONY: lint lint-imports format type-check ci pre-commit install-hooks
 
 lint: ## Run Ruff linter
 	@echo '$(CYAN)Running linter...$(RESET)'
@@ -432,14 +432,20 @@ format: ## Format code and run pre-commit hooks
 	@$(IN_SERVER) $(POETRY) run pre-commit run -c $(PROJECT_ROOT)/.pre-commit-config.yaml --all-files
 	@echo '$(GREEN)Auto-formatting complete$(RESET)'
 
+lint-imports: ## Check layer-boundary import contracts (import-linter)
+	@echo '$(CYAN)Checking import contracts...$(RESET)'
+	@$(IN_SERVER) $(POETRY) run lint-imports
+	@echo '$(GREEN)Import contracts kept$(RESET)'
+
 type-check: ## Run mypy type checker
 	@echo '$(CYAN)Running type checks...$(RESET)'
 	@$(IN_SERVER) $(POETRY) run mypy src/
 	@echo '$(GREEN)Type checking passed$(RESET)'
 
-ci: ## Run lint, type-check, and tests
+ci: ## Run lint, import contracts, type-check, and tests
 	@echo '$(CYAN)Running CI pipeline...$(RESET)'
 	@$(MAKE) lint
+	@$(MAKE) lint-imports
 	@$(MAKE) type-check
 	@$(MAKE) test
 	@echo '$(GREEN)CI pipeline passed$(RESET)'
@@ -518,17 +524,31 @@ endif
 # Local dev DB role separation
 # ============================================================================
 
-.PHONY: db-setup-role
+.PHONY: db-setup-role db-query
 
 db-setup-role: ## Create/sync the restricted local-dev runtime role (APP_DB_USER) -- safe to re-run, needed once per Postgres volume
 	@chmod +x $(SERVER_DIR)/scripts/bash/setup_app_role.sh
 	@$(IN_SERVER) ./scripts/bash/setup_app_role.sh
 
+# Read-only query as APP_DB_USER, safe to auto-allow for Claude Code: the
+# script refuses meta-commands and transaction/setting control, then runs
+# one read-only transaction (see its header). SQL goes through the
+# environment, not the command line, so quotes in it survive make.
+db-query: export DB_QUERY_SQL = $(value SQL)
+db-query: ## Run one read-only SQL query as the app role [SQL="select ..."]
+	@$(IN_SERVER) ./scripts/bash/db_query.sh "$$DB_QUERY_SQL"
+
 # ============================================================================
 # Floci Resource Inspection
 # ============================================================================
 
-.PHONY: ls-s3 ls-api-id ls-api-key ls-api ls-resources ls-s3-objects
+.PHONY: ls-s3 ls-api-id ls-api-key ls-api ls-resources ls-s3-objects floci-env
+
+# For ad-hoc aws/terraform/sam commands against Floci, instead of retyping
+# the dummy credentials: eval "$$(make -s floci-env)"
+floci-env: ## Print export lines for the Floci AWS env (eval "$$(make -s floci-env)")
+	@echo 'export AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_DEFAULT_REGION=$(AWS_REGION) AWS_ENDPOINT_URL=$(ENDPOINT)'
+
 
 ls-s3: _require-dev ## List Floci S3 buckets
 	@$(AWS_ENV) aws s3 ls
@@ -649,8 +669,15 @@ iac-destroy: ## Destroy Terraform-managed infrastructure [PROVIDER=aws]
 # so tests reach them via TEST_SERVICES_HOST instead. Env vars override
 # .env; unit tests use SQLite and are unaffected. Override if your
 # services are elsewhere: make test-e2e TEST_SERVICES_HOST=<host>
+# Ollama (LLM_LOCAL_BASE_URL=http://ollama:11434) and the OTel collector
+# (otel-collector:4317) have the same problem and also publish their ports,
+# so they get the same treatment.
 TEST_SERVICES_HOST ?= localhost
-PYTEST := DB_HOST=$(TEST_SERVICES_HOST) REDIS_HOST=$(TEST_SERVICES_HOST) $(POETRY) run pytest
+TEST_ENV := DB_HOST=$(TEST_SERVICES_HOST) \
+            REDIS_HOST=$(TEST_SERVICES_HOST) \
+            LLM_LOCAL_BASE_URL=http://$(TEST_SERVICES_HOST):11434 \
+            OTEL_EXPORTER_OTLP_ENDPOINT=http://$(TEST_SERVICES_HOST):4317
+PYTEST := $(TEST_ENV) $(POETRY) run pytest
 
 # Optional path/module selector
 TARGET ?=

@@ -219,6 +219,8 @@ pre-commit = "^4.0.0"
 # No types-redis: redis>=5 ships its own inline types (py.typed), and
 # the stale 4.x stubs shadowed them (e.g. hid Redis.aclose()).
 types-python-jose = "^3.5.0"
+# Layer-boundary contracts ([tool.importlinter] below; make lint-imports)
+import-linter = "^2.15"
 
 # Local AWS development tools
 aws-sam-cli = { version = "^1.148.0", python = ">=3.10,<3.14" }
@@ -381,3 +383,26 @@ changelog_file = "../CHANGELOG.md"
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+# -------------------------------------------------
+# Import Linter (layer boundaries; make lint-imports)
+# -------------------------------------------------
+# Static analysis only (grimp), nothing is imported. Run from server/ with
+# src/ on PYTHONPATH, like the rest of the tooling.
+[tool.importlinter]
+root_packages = ["core", "adapters", "agentic", "api", "application", "config", "rag", "wiring"]
+
+[[tool.importlinter.contracts]]
+name = "core imports nothing above it"
+type = "forbidden"
+source_modules = ["core"]
+forbidden_modules = ["adapters", "agentic", "api", "application", "config", "rag", "wiring"]
+
+# Routes stay thin: they reach agentic code only through api.dependencies
+# (DI) and api.schemas, never by importing it themselves.
+[[tool.importlinter.contracts]]
+name = "API routes don't import agentic directly"
+type = "forbidden"
+source_modules = ["api.v1"]
+forbidden_modules = ["agentic"]
+allow_indirect_imports = true

@@ -100,10 +100,11 @@ make test-smoke TARGET=<dir>   # smoke tests against real infra
 
 ```bash
 make pre-commit
+make lint-imports   # layer-boundary import contracts
 make test-cov
 ```
 
-Both also run in CI (`.github/workflows/ci-server.yml`) — running them
+All three also run in CI (`.github/workflows/ci-server.yml`) — running them
 locally first saves a round-trip.
 
 ## Splitting large scripts
