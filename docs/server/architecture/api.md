@@ -304,13 +304,13 @@ Requires a bearer token. Both endpoints take `multipart/form-data`.
   it.
 - **Requests and tokens:** `429` `RATE_LIMIT_EXCEEDED` past
   `RATE_LIMIT_REQUESTS_PER_MINUTE`, and `429` `TOKEN_QUOTA_EXCEEDED` once
-  the day's tokens reach `RATE_LIMIT_DAILY_TOKEN_QUOTA` (resets at
-  midnight UTC). Every LLM call a turn makes counts: planner, agents,
+  the day's tokens reach `TOKEN_QUOTA_DAILY` (default 2,000,000; resets
+  at midnight UTC). Every LLM call a turn makes counts: planner, agents,
   answer checks and guardrail judge, including a turn resumed after an
   approval. The quota is checked before a turn, so the turn that crosses
   it still completes.
 - **Tokens per request:** one request may use at most
-  `RATE_LIMIT_REQUEST_TOKEN_QUOTA` tokens (default 100,000). Each LLM call
+  `TOKEN_QUOTA_PER_REQUEST` tokens (default 100,000). Each LLM call
   is checked before it is made, against the tokens the request has used
   so far plus the call's estimated prompt; a call that would cross the
   limit isn't made and the request fails with `413`
