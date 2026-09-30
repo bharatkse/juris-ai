@@ -4,6 +4,7 @@ Unit tests for AIOrchestrator.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
@@ -1379,3 +1380,73 @@ async def test_other_plan_validation_errors_still_fail_the_request() -> None:
             request=build_orchestrator_request(),
             action_workflow_service=MagicMock(),
         )
+
+
+def _orchestrator_with_deadline_probes(seen: dict[str, float | None]) -> AIOrchestrator:
+    """Planning takes 0.2 s; both stages record the deadline they run under."""
+
+    from core.deadline import remaining_seconds
+
+    async def create_plan(**_kwargs):
+        seen["planning"] = remaining_seconds()
+        await asyncio.sleep(0.2)
+        return ExecutionPlanDTO(
+            intent=IntentEnum.GENERAL, mode=ExecutionModeEnum.SEQUENTIAL, steps=()
+        )
+
+    async def execute(**_kwargs):
+        seen["execution"] = remaining_seconds()
+        return build_failed_execution_result()
+
+    planner = MagicMock()
+    planner.create_plan = create_plan
+    executor = MagicMock()
+    executor.execute = execute
+    authorization = MagicMock()
+    authorization.authorize_request = AsyncMock()
+
+    return AIOrchestrator(
+        planner=planner,
+        executor=executor,
+        compliance_log=_mock_compliance_log(),
+        validator=ResponseValidator(),
+        aggregator=ResponseAggregator(),
+        authorization=authorization,
+        guardrails=MagicMock(),
+        request_timeout_seconds=5.0,
+    )
+
+
+@pytest.mark.asyncio
+async def test_the_request_deadline_covers_planning() -> None:
+    """
+    R18: the deadline starts before planning, so the planner's call sees it
+    (and FailoverLLMClient's check applies), and planning time is taken out
+    of what execution gets.
+    """
+
+    seen: dict[str, float | None] = {}
+    orchestrator = _orchestrator_with_deadline_probes(seen)
+
+    await orchestrator.handle(
+        request=build_orchestrator_request(),
+        action_workflow_service=MagicMock(),
+    )
+
+    assert seen["planning"] is not None and seen["planning"] <= 5.0
+    assert seen["execution"] is not None and seen["execution"] <= 5.0 - 0.2
+
+
+@pytest.mark.asyncio
+async def test_the_request_deadline_covers_planning_when_streaming() -> None:
+    seen: dict[str, float | None] = {}
+    orchestrator = _orchestrator_with_deadline_probes(seen)
+
+    async for _ in orchestrator.stream(
+        request=build_orchestrator_request(),
+        action_workflow_service=MagicMock(),
+    ):
+        pass
+
+    assert seen["planning"] is not None and seen["planning"] <= 5.0
+    assert seen["execution"] is not None and seen["execution"] <= 5.0 - 0.2
