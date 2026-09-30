@@ -51,17 +51,34 @@ class LocalLLMClient(LLMClient):
         *,
         base_url: str | None,
         model: str,
+        keep_alive: str | None = None,
     ) -> None:
         self._client = AsyncClient(
             host=base_url,
         )
         self._model = model
         self._think = False
+        # Ollama's keep_alive: how long the model stays loaded after each
+        # call (settings.llm.LLM_LOCAL_KEEP_ALIVE). None leaves Ollama's
+        # own default.
+        self._keep_alive = keep_alive
 
         log.info(
             "Initialized local LLM client with Ollama. " "Base URL: '%s', model: '%s'.",
             base_url,
             model,
+        )
+
+    async def warm_up(self) -> None:
+        """
+        Load the model now: a generate call with an empty prompt only
+        loads it (Ollama's documented preload), and keep_alive holds it.
+        """
+
+        await self._client.generate(
+            model=self._model,
+            prompt="",
+            keep_alive=self._keep_alive,
         )
 
     async def aclose(self) -> None:
@@ -108,6 +125,9 @@ class LocalLLMClient(LLMClient):
             ),
             "think": self._think,
         }
+
+        if self._keep_alive is not None:
+            request_kwargs["keep_alive"] = self._keep_alive
 
         options: dict[str, Any] = {
             "temperature": inference.temperature,
@@ -230,6 +250,9 @@ class LocalLLMClient(LLMClient):
             "stream": True,
             "think": self._think,
         }
+
+        if self._keep_alive is not None:
+            request_kwargs["keep_alive"] = self._keep_alive
 
         options: dict[str, Any] = {
             "temperature": inference.temperature,
