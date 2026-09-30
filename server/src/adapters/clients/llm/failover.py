@@ -49,6 +49,7 @@ from core.exceptions.client import (
     ClientServiceUnavailableError,
     ClientTimeoutError,
 )
+from core.usage import record_llm_fallback
 
 log = get_logger(__name__)
 
@@ -123,7 +124,7 @@ class FailoverLLMClient(LLMClient):
                 raise
 
             try:
-                return await asyncio.wait_for(
+                response = await asyncio.wait_for(
                     self._fallback.generate(
                         request=fallback_request,
                     ),
@@ -144,6 +145,12 @@ class FailoverLLMClient(LLMClient):
                     type(fallback_exc).__name__,
                 )
                 raise exc from None
+
+            # Marked on the request's meter: if a Groq-only judge can't run
+            # either, it discards this answer and says so (review R17).
+            record_llm_fallback()
+
+            return response
 
     async def _generate(
         self,
