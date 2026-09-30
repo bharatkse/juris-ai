@@ -3,8 +3,9 @@ The planner fails over from the local model to a second provider
 (PLANNER_FAILOVER_PROVIDER, Groq by default): when the local call times out
 (PLANNER_TIMEOUT_S) or fails, the plan is asked once of the failover client,
 within what is left of the request's deadline. No time left means no second
-call and 504 PLANNING_TIMEOUT; both failing is 504 too. With no failover
-client the planner behaves as before.
+call and 504 PLANNING_TIMEOUT, as does either call timing out. Both
+providers failing with an error before that is 503 PLANNING_UNAVAILABLE,
+with Retry-After. With no failover client the planner behaves as before.
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ from agentic.planning.llm_planner import LLMPlanGenerator
 from config.llm import LLMSettings
 from core.deadline import deadline_within
 from core.exceptions.client import ClientConnectionError, ClientProviderError
-from core.exceptions.planning import PlanningTimeoutError
+from core.exceptions.planning import PlanningTimeoutError, PlanningUnavailableError
 from core.exceptions.rate_limit import RequestTokenQuotaExceededError
 from tests.builders.agentic.planning import (
     build_execution_plan_response,
@@ -104,15 +105,51 @@ async def test_both_providers_failing_is_a_planning_timeout(
     groq.generate_structured.assert_awaited_once()
 
 
-async def test_a_failover_provider_error_is_a_planning_timeout_too(
+async def test_both_providers_erroring_is_planning_unavailable(
     mock_prompt_builder: Mock, mock_capability_catalog: Mock
 ) -> None:
     local = _client("local", side_effect=ClientConnectionError())
-    groq = _client("groq", side_effect=ClientConnectionError())
-    generator = _generator(local, groq, mock_prompt_builder, mock_capability_catalog)
+    groq = _client("groq", side_effect=ClientProviderError(message="503 from provider"))
+    generator = LLMPlanGenerator(
+        llm_client=local,
+        fallback_llm_client=groq,
+        prompt_builder=mock_prompt_builder,
+        capability_catalog=mock_capability_catalog,
+        min_fallback_seconds=0.1,
+        unavailable_retry_after_seconds=17,
+    )
 
-    with deadline_within(10), pytest.raises(PlanningTimeoutError):
+    with deadline_within(10), pytest.raises(PlanningUnavailableError) as caught:
         await generator.generate(request=build_planning_request())
+
+    assert caught.value.status_code == 503
+    assert caught.value.error_code == "PLANNING_UNAVAILABLE"
+    assert caught.value.headers == {"Retry-After": "17"}
+    assert caught.value.details == {"retry_after_seconds": 17}
+
+
+@pytest.mark.parametrize(
+    ("primary_failure", "fallback_failure"),
+    [
+        ({"side_effect": _hang}, {"side_effect": ClientConnectionError()}),
+        ({"side_effect": ClientConnectionError()}, {"side_effect": _hang}),
+    ],
+    ids=["local timed out, groq errored", "local errored, groq timed out"],
+)
+async def test_a_timeout_on_either_provider_is_still_a_planning_timeout(
+    mock_prompt_builder: Mock,
+    mock_capability_catalog: Mock,
+    primary_failure: dict,
+    fallback_failure: dict,
+) -> None:
+    local = _client("local", **primary_failure)
+    groq = _client("groq", **fallback_failure)
+    generator = _generator(local, groq, mock_prompt_builder, mock_capability_catalog, timeout=0.2)
+
+    with deadline_within(0.6), pytest.raises(PlanningTimeoutError) as caught:
+        await generator.generate(request=build_planning_request())
+
+    assert caught.value.status_code == 504
 
 
 async def test_no_time_left_means_no_failover_call(
@@ -171,4 +208,5 @@ def test_planner_settings_defaults() -> None:
 
     assert settings.PLANNER_TIMEOUT_S == 45
     assert settings.PLANNER_FAILOVER_PROVIDER == "groq"
+    assert settings.PLANNER_UNAVAILABLE_RETRY_AFTER_S == 30
     assert LLMSettings(PLANNER_FAILOVER_PROVIDER="").PLANNER_FAILOVER_PROVIDER == ""
