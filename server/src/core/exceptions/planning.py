@@ -83,7 +83,8 @@ class PlanningTimeoutError(PlanningError):
 class PlanningUnavailableError(PlanningError):
     """
     Raised when every planner provider failed with an error (the local
-    model, then the failover provider) before any time limit was reached:
+    model, then the failover provider if one is set) before any time
+    limit was reached:
     the providers are unavailable, not slow. Nothing has been executed.
     Sent with Retry-After (PLANNER_UNAVAILABLE_RETRY_AFTER_S).
     """
