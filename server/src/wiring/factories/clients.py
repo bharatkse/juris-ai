@@ -39,3 +39,13 @@ def create_clients(*, settings: Settings) -> ClientContainer:
         embedding_provider=rag_pipeline.embedding_provider,
         cache=cache,
     )
+
+
+async def close_clients(clients: ClientContainer) -> None:
+    """
+    Close the process-lifetime LLM clients at application shutdown
+    (main.py's lifespan; review R17). The judges share this resolver, so
+    this closes theirs too.
+    """
+
+    await clients.llm_resolver.aclose()
