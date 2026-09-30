@@ -16,6 +16,7 @@ from redis.exceptions import ConnectionError as RedisConnectionError
 
 import main
 from api.middleware.request_context import RequestContextMiddleware
+from config.rate_limit import DeprecatedSetting
 from core.enums import CacheBackendEnum
 
 
@@ -324,3 +325,47 @@ async def test_check_redis_skipped_for_memory_backend(
         await main.check_redis()
 
     mock_from_url.assert_not_called()
+
+
+def _settings_with(*deprecated: DeprecatedSetting) -> MagicMock:
+    settings = MagicMock()
+    settings.rate_limit.deprecated_names.return_value = deprecated
+    settings.rate_limit.TOKEN_QUOTA_DAILY = 300_000
+    settings.rate_limit.TOKEN_QUOTA_PER_REQUEST = 100_000
+    return settings
+
+
+@pytest.mark.parametrize("new_name_also_set", [False, True])
+def test_a_deprecated_quota_name_is_logged_once_with_its_replacement(
+    new_name_also_set: bool,
+) -> None:
+    deprecated = DeprecatedSetting(
+        old_name="RATE_LIMIT_DAILY_TOKEN_QUOTA",
+        new_name="TOKEN_QUOTA_DAILY",
+        new_name_also_set=new_name_also_set,
+    )
+
+    with (
+        patch.object(main, "settings", _settings_with(deprecated)),
+        patch.object(main, "logger") as log,
+    ):
+        main.log_deprecated_settings()
+
+    log.warning.assert_called_once()
+    message = log.warning.call_args.args[0]
+    extra = log.warning.call_args.kwargs["extra"]
+    assert "RATE_LIMIT_DAILY_TOKEN_QUOTA" in message
+    assert "TOKEN_QUOTA_DAILY" in message
+    assert extra["value_in_effect"] == 300_000
+    assert extra["new_name_also_set"] is new_name_also_set
+    assert ("both set" in message) is new_name_also_set
+
+
+def test_no_deprecated_names_logs_nothing() -> None:
+    with (
+        patch.object(main, "settings", _settings_with()),
+        patch.object(main, "logger") as log,
+    ):
+        main.log_deprecated_settings()
+
+    log.warning.assert_not_called()

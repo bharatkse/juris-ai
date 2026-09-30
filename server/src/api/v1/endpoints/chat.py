@@ -179,6 +179,7 @@ async def stream_chat(
                 ErrorDetailModel(
                     code=exc.error_code,
                     message=exc.message,
+                    details=exc.details,
                 ),
                 event_name="error",
             )

@@ -17,6 +17,7 @@ from dataclasses import dataclass
 
 from adapters.observability.logger import get_logger
 from adapters.observability.metrics import metrics
+from core.judge_availability import judge_availability_probe
 from core.usage import fallback_answered
 from rag.evaluation.faithfulness_backend import FaithfulnessBackend
 
@@ -233,10 +234,15 @@ class GroundednessResult:
     ``applicable`` is False when there was no evidence to check the answer
     against. That is a missing basis for judgment, not a failed check --
     see AnswerQualityPolicy.is_sufficient.
+
+    ``judge_unavailable`` is True when the judge couldn't score the answer
+    because its provider was down (not because its verdict was unusable).
+    The score is still 0.0; the answer gate skips its retry on it.
     """
 
     score: float
     applicable: bool
+    judge_unavailable: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -385,11 +391,12 @@ class AnswerEvaluator:
             # signal rather than treating it as a failed check.
             return GroundednessResult(score=0.0, applicable=False)
 
-        score = await self._faithfulness_backend.evaluate(
-            query=question,
-            answer=answer,
-            contexts=list(evidence),
-        )
+        with judge_availability_probe() as judge_probe:
+            score = await self._faithfulness_backend.evaluate(
+                query=question,
+                answer=answer,
+                contexts=list(evidence),
+            )
 
         if score is None:
             # Judge evaluation unavailable is a real failure to establish
@@ -405,7 +412,11 @@ class AnswerEvaluator:
                     extra={"operation": "evaluate_groundedness", "judge": "groundedness"},
                 )
                 metrics.record_failover_answer_discarded(judge="groundedness")
-            return GroundednessResult(score=0.0, applicable=True)
+            return GroundednessResult(
+                score=0.0,
+                applicable=True,
+                judge_unavailable=judge_probe.provider_unavailable,
+            )
 
         return GroundednessResult(score=score, applicable=True)
 

@@ -75,6 +75,16 @@ class ApplicationMetrics:
             unit="1",
         )
 
+        self.answer_retries_skipped: Counter = meter.create_counter(
+            name="juris_ai_answer_retries_skipped_total",
+            description=(
+                "Answers the quality gate rejected without its usual retry "
+                "(corrective retrieval and re-ask), labeled by reason "
+                "(judge_provider_unavailable)."
+            ),
+            unit="1",
+        )
+
     def increment_health_checks(
         self,
         *,
@@ -193,6 +203,19 @@ class ApplicationMetrics:
         """
 
         self.failover_answers_discarded.add(1, attributes={"judge": judge})
+
+    def record_answer_retry_skipped(
+        self,
+        *,
+        reason: Literal["judge_provider_unavailable"],
+    ) -> None:
+        """
+        Record an answer the quality gate rejected without retrying: the
+        groundedness judge's provider was down, so a re-asked answer
+        couldn't be checked either (review R17).
+        """
+
+        self.answer_retries_skipped.add(1, attributes={"reason": reason})
 
 
 metrics = ApplicationMetrics()

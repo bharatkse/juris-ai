@@ -54,6 +54,27 @@ def test_app_exception_handler_returns_the_errors_details(
 
 
 @patch("api.exception_handlers.logger")
+def test_app_exception_handler_sends_the_errors_headers(
+    mock_logger: MagicMock,
+) -> None:
+    """
+    Headers an application error carries (e.g. Retry-After) are sent.
+    """
+
+    exception = AppError(
+        message="Try again shortly.",
+        status_code=503,
+        error_code="CUSTOM_UNAVAILABLE",
+        headers={"Retry-After": "30"},
+    )
+
+    response = app_exception_handler(build_request(), exception)
+
+    assert response.status_code == 503
+    assert response.headers["retry-after"] == "30"
+
+
+@patch("api.exception_handlers.logger")
 def test_app_exception_handler(
     mock_logger: MagicMock,
 ) -> None:

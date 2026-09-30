@@ -22,6 +22,8 @@ from uuid import UUID
 from langgraph.config import var_child_runnable_config
 from langgraph.func import task as langgraph_task
 
+from adapters.observability.logger import get_logger
+from adapters.observability.metrics import metrics
 from agentic.agents.runtime.execution import (
     AgentExecutionHandle,
     AgentExecutionResult,
@@ -69,6 +71,8 @@ if TYPE_CHECKING:
     # reverse -- application.services.chat already imports from
     # agentic.orchestration.orchestrator).
     from application.services.compliance_log import StandaloneComplianceLogWriter
+
+logger = get_logger(__name__)
 
 
 async def _call_replay_safe(task_fn, /, **kwargs):
@@ -783,6 +787,23 @@ class AgentContinuationService:
             return None, AnswerEvaluationSummary(
                 groundedness=evaluation.groundedness,
                 relevance=evaluation.relevance,
+            )
+
+        if evaluation.groundedness_detail.judge_unavailable:
+            # The groundedness judge's provider is down: a corrective
+            # retrieval and re-ask would cost more calls for an answer
+            # the same judge couldn't check either (review R17).
+            logger.warning(
+                "Answer not retried: the groundedness judge provider is unavailable.",
+                extra={
+                    "operation": "gate_final",
+                    "reason": "judge_provider_unavailable",
+                },
+            )
+            metrics.record_answer_retry_skipped(reason="judge_provider_unavailable")
+            return self._reject_unverified(
+                handle=handle,
+                evaluation=evaluation,
             )
 
         step_budget = handle.lifecycle.begin_step()

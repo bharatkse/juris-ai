@@ -127,6 +127,42 @@ async def check_redis() -> None:
     )
 
 
+def log_deprecated_settings() -> None:
+    """
+    Warn once per deprecated token quota variable that is set (renamed in
+    #84): its new name, and the value in effect. A new name set as well
+    wins over the old one.
+    """
+
+    rate_limit = settings.rate_limit
+
+    for deprecated in rate_limit.deprecated_names():
+        value = getattr(rate_limit, deprecated.new_name)
+
+        if deprecated.new_name_also_set:
+            message = (
+                f"{deprecated.old_name} and {deprecated.new_name} are both set; "
+                f"{deprecated.new_name} ({value}) is used. Remove the deprecated "
+                f"{deprecated.old_name}."
+            )
+        else:
+            message = (
+                f"{deprecated.old_name} is deprecated; rename it to "
+                f"{deprecated.new_name} (value in effect: {value})."
+            )
+
+        logger.warning(
+            message,
+            extra={
+                "operation": "startup",
+                "deprecated_setting": deprecated.old_name,
+                "replacement": deprecated.new_name,
+                "value_in_effect": value,
+                "new_name_also_set": deprecated.new_name_also_set,
+            },
+        )
+
+
 async def startup() -> None:
     """
     Perform application startup tasks.
@@ -142,6 +178,8 @@ async def startup() -> None:
             "environment": settings.app.ENVIRONMENT,
         },
     )
+
+    log_deprecated_settings()
 
     initialize_storage()
     initialize_observability()

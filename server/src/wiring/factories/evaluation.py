@@ -22,10 +22,12 @@ from __future__ import annotations
 import hashlib
 from typing import TYPE_CHECKING
 
+from adapters.clients.llm.failover import FAILOVER_ERRORS
 from adapters.observability.metrics import metrics
 from core.dto.clients.llm import LLMMessageDTO, LLMRequestDTO
 from core.dto.inference import LLMInferenceConfig
 from core.enums import MessageRoleEnum
+from core.judge_availability import record_judge_provider_unavailable
 from rag.evaluation.evaluator import Judge, RAGEvaluator
 from rag.evaluation.faithfulness_backend import (
     FaithfulnessBackend,
@@ -102,31 +104,38 @@ def build_llm_judge(
 
         metrics.record_cache_request(result="miss", cache="judge")
 
-        response = await client.generate(
-            request=LLMRequestDTO(
-                messages=(
-                    LLMMessageDTO(
-                        role=MessageRoleEnum.USER,
-                        content=prompt,
+        try:
+            response = await client.generate(
+                request=LLMRequestDTO(
+                    messages=(
+                        LLMMessageDTO(
+                            role=MessageRoleEnum.USER,
+                            content=prompt,
+                        ),
                     ),
+                    # Every caller of this judge (faithfulness, answer
+                    # relevancy, context precision/recall -- legacy and
+                    # ragas-backed alike, see ragas_llm_adapter.py) is a
+                    # scoring call, not a generative one. Previously this
+                    # request carried no inference config, silently
+                    # defaulting to LLMInferenceConfig's bare 0.2 -- an
+                    # ambient, undeliberate temperature for a judge whose
+                    # output is supposed to be a reproducible score.
+                    # Pinned to 0.0 (as close to deterministic as providers
+                    # allow) so repeated judge calls on the same input are
+                    # stable -- required for the empirical threshold
+                    # calibration in AnswerQualityPolicy to remain
+                    # meaningful over time (scripts/python/
+                    # calibrate_answer_quality_thresholds.py).
+                    inference=LLMInferenceConfig(temperature=0.0, model=judge_model),
                 ),
-                # Every caller of this judge (faithfulness, answer
-                # relevancy, context precision/recall -- legacy and
-                # ragas-backed alike, see ragas_llm_adapter.py) is a
-                # scoring call, not a generative one. Previously this
-                # request carried no inference config, silently
-                # defaulting to LLMInferenceConfig's bare 0.2 -- an
-                # ambient, undeliberate temperature for a judge whose
-                # output is supposed to be a reproducible score.
-                # Pinned to 0.0 (as close to deterministic as providers
-                # allow) so repeated judge calls on the same input are
-                # stable -- required for the empirical threshold
-                # calibration in AnswerQualityPolicy to remain
-                # meaningful over time (scripts/python/
-                # calibrate_answer_quality_thresholds.py).
-                inference=LLMInferenceConfig(temperature=0.0, model=judge_model),
-            ),
-        )
+            )
+        except FAILOVER_ERRORS:
+            # The provider couldn't answer at all (the errors a failover
+            # would act on). The answer gate reads this to skip a retry
+            # the same judge couldn't check either (review R17).
+            record_judge_provider_unavailable()
+            raise
 
         await cache.set(
             cache_key,

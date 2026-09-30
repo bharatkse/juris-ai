@@ -19,7 +19,7 @@ from core.dto.clients.llm import LLMRequestDTO
 from core.dto.inference import InferencePolicy, LLMTask
 from core.dto.planning import ExecutionPlanDTO, ExecutionStepDTO, PlanningRequestDTO
 from core.exceptions.client import ClientError
-from core.exceptions.planning import PlanningTimeoutError
+from core.exceptions.planning import PlanningTimeoutError, PlanningUnavailableError
 from core.models.planning import ExecutionPlanResponseSchema
 
 log = get_logger(__name__)
@@ -31,6 +31,9 @@ DEFAULT_PLANNER_TIMEOUT_SECONDS = 45.0
 # deadline: Groq answers a plan in ~1 s, 12-14 s when its per-minute token
 # limit is reached (scripts/bench_planner.py, 2026-09-30).
 DEFAULT_MIN_FALLBACK_SECONDS = 5.0
+
+# Default for settings.llm.PLANNER_UNAVAILABLE_RETRY_AFTER_S.
+DEFAULT_UNAVAILABLE_RETRY_AFTER_SECONDS = 30
 
 
 class LLMPlanGenerator:
@@ -58,6 +61,7 @@ class LLMPlanGenerator:
         timeout_seconds: float = DEFAULT_PLANNER_TIMEOUT_SECONDS,
         fallback_llm_client: LLMClient | None = None,
         min_fallback_seconds: float = DEFAULT_MIN_FALLBACK_SECONDS,
+        unavailable_retry_after_seconds: int = DEFAULT_UNAVAILABLE_RETRY_AFTER_SECONDS,
     ) -> None:
         if timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be greater than zero.")
@@ -67,6 +71,9 @@ class LLMPlanGenerator:
         # (settings.llm.PLANNER_FAILOVER_PROVIDER); None: no failover.
         self._fallback_llm = fallback_llm_client
         self._min_fallback_seconds = min_fallback_seconds
+        # Retry-After for PlanningUnavailableError (503): every provider
+        # errored before any time limit was reached.
+        self._unavailable_retry_after_seconds = unavailable_retry_after_seconds
         # Bound on the planner's LLM call (settings.llm.PLANNER_TIMEOUT_S,
         # review R18): a hung or very slow local model must not hold the
         # request open indefinitely.
@@ -142,8 +149,11 @@ class LLMPlanGenerator:
         with a client error is asked once of the failover client, bounded
         by what is left of the request's deadline (the planner timeout
         when there is none). Less than min_fallback_seconds left: no
-        second call. Either way, a plan neither provider produced is
-        PlanningTimeoutError (504).
+        second call. A plan neither provider produced is
+        PlanningUnavailableError (503) when both calls failed with a
+        client error, and PlanningTimeoutError (504) when either call
+        timed out or there was no time left for the second. Without a
+        failover client: a timeout is 504, a client error 503.
         """
 
         timeout = self._bounded(self._timeout_seconds)
@@ -158,13 +168,18 @@ class LLMPlanGenerator:
                         extra={"operation": "generate_plan", "timeout_seconds": round(timeout, 1)},
                     )
                     raise PlanningTimeoutError(timeout_seconds=timeout) from exc
-                raise
+                # The only provider errored: unavailable, as when both
+                # providers error with failover on.
+                raise PlanningUnavailableError(
+                    retry_after_seconds=self._unavailable_retry_after_seconds
+                ) from exc
 
             return await self._generate_on_fallback(
                 self._fallback_llm,
                 llm_request,
                 reason=type(exc).__name__,
                 primary_timeout=timeout,
+                primary_timed_out=isinstance(exc, TimeoutError),
             )
 
     async def _generate_on_fallback(
@@ -174,6 +189,7 @@ class LLMPlanGenerator:
         *,
         reason: str,
         primary_timeout: float,
+        primary_timed_out: bool,
     ) -> ExecutionPlanResponseSchema:
         """The failover half of _generate_within_timeout()."""
 
@@ -231,6 +247,10 @@ class LLMPlanGenerator:
                     "error_type": type(exc).__name__,
                 },
             )
+            if not primary_timed_out and isinstance(exc, ClientError):
+                raise PlanningUnavailableError(
+                    retry_after_seconds=self._unavailable_retry_after_seconds
+                ) from exc
             raise PlanningTimeoutError(timeout_seconds=primary_timeout + budget) from exc
 
     def _bounded(self, seconds: float, *, request_deadline_only: bool = False) -> float:

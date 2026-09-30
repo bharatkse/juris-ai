@@ -247,3 +247,42 @@ async def test_a_failover_answer_the_groundedness_judge_cannot_check_is_reported
     assert result.groundedness_detail.score == 0.0
     discarded.assert_called_once_with(judge="groundedness")
     assert any("local failover" in record.message for record in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_a_groundedness_judge_whose_provider_is_down_is_reported_unavailable() -> None:
+    """R17: the gate skips the re-ask on this, rather than calling a provider that is down."""
+
+    from core.judge_availability import record_judge_provider_unavailable
+
+    async def evaluate(**_kwargs):
+        record_judge_provider_unavailable()
+        return None
+
+    faithfulness_backend = AsyncMock()
+    faithfulness_backend.evaluate = AsyncMock(side_effect=evaluate)
+    evaluator = AnswerEvaluator(
+        similarity=_similarity_stub({}),
+        faithfulness_backend=faithfulness_backend,
+    )
+
+    result = await evaluator.evaluate(question="q", answer="a", evidence=["chunk"])
+
+    assert result.groundedness_detail.judge_unavailable is True
+    assert result.groundedness_detail.score == 0.0
+    assert result.groundedness_detail.applicable is True
+
+
+@pytest.mark.asyncio
+async def test_a_groundedness_judge_that_answered_unusably_is_not_unavailable() -> None:
+    faithfulness_backend = AsyncMock()
+    faithfulness_backend.evaluate = AsyncMock(return_value=None)
+    evaluator = AnswerEvaluator(
+        similarity=_similarity_stub({}),
+        faithfulness_backend=faithfulness_backend,
+    )
+
+    result = await evaluator.evaluate(question="q", answer="a", evidence=["chunk"])
+
+    assert result.groundedness_detail.judge_unavailable is False
+    assert result.groundedness_detail.score == 0.0

@@ -34,9 +34,13 @@ class LLMSettings(BaseAppSettings):
     # startup warm-up and LLM_LOCAL_KEEP_ALIVE avoid.
     PLANNER_TIMEOUT_S: float = Field(default=45.0, gt=0)
     # Provider the planner fails over to when the local model times out or
-    # errors: "groq" (the default), or "" for no failover (the local
-    # model's error or 504 is returned as is).
+    # errors: "groq" (the default), or "" for no failover (a local timeout
+    # is then 504 PLANNING_TIMEOUT, a local error 503 PLANNING_UNAVAILABLE).
     PLANNER_FAILOVER_PROVIDER: Literal["groq", ""] = "groq"
+    # Retry-After (seconds) sent with 503 PLANNING_UNAVAILABLE: the local
+    # model (and the failover provider, if set) failed with an error, not
+    # a timeout (a timeout is still 504 PLANNING_TIMEOUT).
+    PLANNER_UNAVAILABLE_RETRY_AFTER_S: int = Field(default=30, gt=0)
     # How long Ollama keeps the model loaded after a call (Ollama's
     # keep_alive; its own default is 5m). Sent on every local call and by
     # the startup warm-up, so the planner rarely meets a cold load.

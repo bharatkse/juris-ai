@@ -62,7 +62,7 @@ class TokenQuotaExceededError(DomainError):
 class RequestTokenQuotaExceededError(DomainError):
     """
     Raised when one request would use more tokens than a single request
-    may (RATE_LIMIT_REQUEST_TOKEN_QUOTA).
+    may (TOKEN_QUOTA_PER_REQUEST).
 
     Raised before the LLM call that would cross the quota, never after
     it (core.usage). prompt_tokens/completion_tokens are what the

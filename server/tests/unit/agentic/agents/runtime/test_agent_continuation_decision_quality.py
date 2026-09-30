@@ -94,7 +94,7 @@ def _sufficient_answer_evaluator(
         groundedness=groundedness,
         relevance=relevance,
         completeness=0.9,
-        groundedness_detail=SimpleNamespace(applicable=True),
+        groundedness_detail=SimpleNamespace(applicable=True, judge_unavailable=False),
     )
 
     answer_quality_policy = MagicMock()
@@ -118,7 +118,7 @@ def _insufficient_answer_evaluator() -> tuple[AsyncMock, MagicMock]:
         groundedness=0.0,
         relevance=0.0,
         completeness=0.0,
-        groundedness_detail=SimpleNamespace(applicable=True),
+        groundedness_detail=SimpleNamespace(applicable=True, judge_unavailable=False),
     )
 
     answer_quality_policy = MagicMock()
@@ -1443,7 +1443,7 @@ def _no_evidence_evaluation(**_kwargs):
         correctness=None,
         citation_precision=0.0,
         citation_coverage=0.0,
-        groundedness_detail=SimpleNamespace(applicable=False),
+        groundedness_detail=SimpleNamespace(applicable=False, judge_unavailable=False),
     )
 
 
@@ -1455,7 +1455,7 @@ def _grounded_evaluation(**_kwargs):
         correctness=None,
         citation_precision=0.0,
         citation_coverage=0.0,
-        groundedness_detail=SimpleNamespace(applicable=True),
+        groundedness_detail=SimpleNamespace(applicable=True, judge_unavailable=False),
     )
 
 
@@ -1872,3 +1872,123 @@ async def test_final_arriving_on_an_ended_execution_is_never_accepted(
     assert result.evaluation_summary.verified is False
     assert handle.lifecycle.state.partial_response == UNVERIFIED_ANSWER_MESSAGE
     answer_evaluator.evaluate.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# R17: when the groundedness judge's provider is down, the gate doesn't
+# retry (a corrective retrieval and a re-ask the same judge would then
+# have to check): the "couldn't verify" answer comes back at once. Other
+# judge failures (an unusable verdict, a low score) are still retried.
+# ---------------------------------------------------------------------------
+
+
+def _unverifiable_evaluation(*, judge_unavailable: bool):
+    return SimpleNamespace(
+        groundedness=0.0,
+        relevance=0.0,
+        completeness=0.0,
+        groundedness_detail=SimpleNamespace(applicable=True, judge_unavailable=judge_unavailable),
+    )
+
+
+async def _gate_with_judge(
+    *,
+    judge_unavailable: bool,
+    execution: AgentExecution,
+    llm_client: object,
+    tool_execution_service: ToolExecutionService,
+    collaboration_bus,
+):
+    llm_client.generate_structured.return_value = _final_decision(REJECTED_ANSWER)
+    tool_execution_service.execute = AsyncMock(
+        return_value=_tool_result(content="Section 43 covers damage.", score=0.8),
+    )
+    answer_evaluator, answer_quality_policy = _yielding_insufficient_answer_evaluator()
+    answer_evaluator.evaluate.side_effect = None
+    answer_evaluator.evaluate.return_value = _unverifiable_evaluation(
+        judge_unavailable=judge_unavailable
+    )
+
+    handle = await _start_handle(
+        execution,
+        reasoning_context=(_evidence(content="Section 43 covers damage.", score=0.8),),
+    )
+    initial = await handle.reason()
+
+    continuation = AgentContinuationService(
+        tool_execution_service=tool_execution_service,
+        collaboration_bus=collaboration_bus,
+        answer_evaluator=answer_evaluator,
+        answer_quality_policy=answer_quality_policy,
+        agent_policy_guard=MagicMock(),
+        compliance_log=AsyncMock(),
+    )
+    result = await asyncio.wait_for(
+        continuation.execute(handle=handle, initial_result=initial),
+        timeout=5,
+    )
+    return handle, result, answer_evaluator
+
+
+@pytest.mark.asyncio
+async def test_no_retry_when_the_groundedness_judge_provider_is_down(
+    execution: AgentExecution,
+    llm_client: object,
+    tool_execution_service: ToolExecutionService,
+    collaboration_bus,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    import logging
+
+    from agentic.agents.runtime import continuation as continuation_module
+
+    skipped = MagicMock()
+    monkeypatch.setattr(continuation_module.metrics, "record_answer_retry_skipped", skipped)
+
+    with caplog.at_level(logging.WARNING):
+        handle, result, answer_evaluator = await _gate_with_judge(
+            judge_unavailable=True,
+            execution=execution,
+            llm_client=llm_client,
+            tool_execution_service=tool_execution_service,
+            collaboration_bus=collaboration_bus,
+        )
+
+    _assert_rejected_answer_replaced(handle, result)
+    # Only the first answer: no corrective retrieval, no re-ask, one judge run.
+    assert llm_client.generate_structured.await_count == 1
+    tool_execution_service.execute.assert_not_awaited()
+    assert answer_evaluator.evaluate.await_count == 1
+    skipped.assert_called_once_with(reason="judge_provider_unavailable")
+    assert any("judge provider is unavailable" in r.message for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_an_unusable_judge_verdict_is_still_retried(
+    execution: AgentExecution,
+    llm_client: object,
+    tool_execution_service: ToolExecutionService,
+    collaboration_bus,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from agentic.agents.runtime import continuation as continuation_module
+
+    skipped = MagicMock()
+    monkeypatch.setattr(continuation_module.metrics, "record_answer_retry_skipped", skipped)
+
+    handle, result, answer_evaluator = await _gate_with_judge(
+        judge_unavailable=False,
+        execution=execution,
+        llm_client=llm_client,
+        tool_execution_service=tool_execution_service,
+        collaboration_bus=collaboration_bus,
+    )
+
+    # The same user-facing answer in the end, but after a corrective
+    # retrieval and a re-ask that was judged again.
+    _assert_rejected_answer_replaced(handle, result)
+    tool_execution_service.execute.assert_awaited()
+    assert llm_client.generate_structured.await_count > 1
+    assert answer_evaluator.evaluate.await_count > 1
+    skipped.assert_not_called()

@@ -140,7 +140,7 @@ async def test_rate_limit_and_token_quota_are_enforced_with_real_429s(
         await repository.increment_tokens(
             user_id=quota_user["user_id"],
             window_start=day_window,
-            input_tokens=settings.RATE_LIMIT_DAILY_TOKEN_QUOTA,
+            input_tokens=settings.TOKEN_QUOTA_DAILY,
             output_tokens=0,
         )
         await session.commit()

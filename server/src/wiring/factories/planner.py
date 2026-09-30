@@ -64,6 +64,7 @@ def create_planner(
             prompt_builder=PlanningPromptBuilder(max_steps=max_steps),
             capability_catalog=capability_catalog,
             timeout_seconds=settings.llm.PLANNER_TIMEOUT_S,
+            unavailable_retry_after_seconds=settings.llm.PLANNER_UNAVAILABLE_RETRY_AFTER_S,
         ),
         validator=ExecutionPlanValidator(max_steps=max_steps),
     )

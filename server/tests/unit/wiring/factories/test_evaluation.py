@@ -8,6 +8,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from core.exceptions.client import (
+    ClientAuthenticationError,
+    ClientConnectionError,
+    ClientInvalidResponseError,
+    ClientRateLimitError,
+    ClientServiceUnavailableError,
+    ClientTimeoutError,
+)
+from core.judge_availability import judge_availability_probe
 from tests.builders.adapters.clients.llm import build_llm_response
 from wiring.factories.evaluation import build_llm_judge
 
@@ -120,3 +129,48 @@ async def test_the_judge_uses_the_apps_shared_resolver_when_given() -> None:
 
     build.assert_not_called()
     client.generate.assert_awaited_once()
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        ClientConnectionError("connection refused"),
+        ClientServiceUnavailableError("503"),
+        ClientTimeoutError("timed out"),
+        ClientRateLimitError("429"),
+    ],
+)
+async def test_a_judge_call_the_provider_couldnt_serve_is_recorded(error: Exception) -> None:
+    """R17: an unavailable judge provider is recorded, and the error still raised."""
+
+    judge = _judge_failing_with(error)
+
+    with judge_availability_probe() as probe, pytest.raises(type(error)):
+        await judge("a prompt")
+
+    assert probe.provider_unavailable is True
+
+
+@pytest.mark.parametrize(
+    "error",
+    [ClientAuthenticationError("bad key"), ClientInvalidResponseError("empty")],
+)
+async def test_other_judge_failures_are_not_an_outage(error: Exception) -> None:
+    judge = _judge_failing_with(error)
+
+    with judge_availability_probe() as probe, pytest.raises(type(error)):
+        await judge("a prompt")
+
+    assert probe.provider_unavailable is False
+
+
+def _judge_failing_with(error: Exception):
+    client = MagicMock()
+    client.provider = "groq"
+    client.generate = AsyncMock(side_effect=error)
+    resolver = MagicMock()
+    resolver.get.return_value = client
+    cache = MagicMock()
+    cache.get = AsyncMock(return_value=None)
+    cache.set = AsyncMock()
+    return build_llm_judge(settings=_settings(), cache=cache, llm_resolver=resolver)

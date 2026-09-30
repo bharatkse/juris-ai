@@ -94,7 +94,7 @@ class LLMClient(ABC):
 
         Before the provider is called, the request's token quota is
         checked (core.usage): a call that would take the request past
-        RATE_LIMIT_REQUEST_TOKEN_QUOTA raises
+        TOKEN_QUOTA_PER_REQUEST raises
         RequestTokenQuotaExceededError and is never made.
         """
 

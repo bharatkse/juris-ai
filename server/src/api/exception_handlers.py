@@ -46,6 +46,7 @@ def app_exception_handler(
             message=exc.message,
             details=exc.details,
         ),
+        headers=exc.headers,
     )
 
 

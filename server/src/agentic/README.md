@@ -185,7 +185,7 @@ day bucket grows only if that row is new. `HitlResumeService` records a
 resumed turn the same way, keyed by the resumed turn's own request id.
 Not counted: the background memory-extraction call.
 
-**Per-request token quota** (`RATE_LIMIT_REQUEST_TOKEN_QUOTA`): the same
+**Per-request token quota** (`TOKEN_QUOTA_PER_REQUEST`): the same
 meter caps one request. `ChatService` sets the quota from
 `UsageService.request_token_quota()` (`core.usage.request_token_quota()`)
 around `handle()`/`stream()`; the scope opened inside picks it up, with

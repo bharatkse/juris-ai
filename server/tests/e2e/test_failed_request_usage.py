@@ -197,7 +197,7 @@ async def test_a_quota_refusal_is_recorded_once(
 ) -> None:
     """Unchanged behaviour (413, the planner's tokens counted), now one ledger row."""
 
-    monkeypatch.setattr(get_settings().rate_limit, "RATE_LIMIT_REQUEST_TOKEN_QUOTA", 50_000)
+    monkeypatch.setattr(get_settings().rate_limit, "TOKEN_QUOTA_PER_REQUEST", 50_000)
     # The planner's call leaves 10 tokens, so the agent's call is refused.
     provider.planner_usage = LLMTokenUsageDTO(
         prompt_tokens=49_000, completion_tokens=990, total_tokens=49_990

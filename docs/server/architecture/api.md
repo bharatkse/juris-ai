@@ -304,13 +304,15 @@ Requires a bearer token. Both endpoints take `multipart/form-data`.
   it.
 - **Requests and tokens:** `429` `RATE_LIMIT_EXCEEDED` past
   `RATE_LIMIT_REQUESTS_PER_MINUTE`, and `429` `TOKEN_QUOTA_EXCEEDED` once
-  the day's tokens reach `RATE_LIMIT_DAILY_TOKEN_QUOTA` (resets at
-  midnight UTC). Every LLM call a turn makes counts: planner, agents,
+  the day's tokens reach `TOKEN_QUOTA_DAILY` (default 2,000,000; resets
+  at midnight UTC). The quota variables were renamed from
+  `RATE_LIMIT_DAILY_TOKEN_QUOTA` and `RATE_LIMIT_REQUEST_TOKEN_QUOTA`,
+  which are still read with a startup warning. Every LLM call a turn makes counts: planner, agents,
   answer checks and guardrail judge, including a turn resumed after an
   approval. The quota is checked before a turn, so the turn that crosses
   it still completes.
 - **Tokens per request:** one request may use at most
-  `RATE_LIMIT_REQUEST_TOKEN_QUOTA` tokens (default 100,000). Each LLM call
+  `TOKEN_QUOTA_PER_REQUEST` tokens (default 100,000). Each LLM call
   is checked before it is made, against the tokens the request has used
   so far plus the call's estimated prompt; a call that would cross the
   limit isn't made and the request fails with `413`
@@ -326,10 +328,15 @@ Requires a bearer token. Both endpoints take `multipart/form-data`.
 - **Planning time:** planning runs on the local model first. If it
   doesn't finish within `PLANNER_TIMEOUT_S` (default 45 s) or fails, the
   plan is asked once of `PLANNER_FAILOVER_PROVIDER` (default Groq) within
-  the rest of the request's time budget. If that fails too, or too little
-  time is left, the request fails with `504` `PLANNING_TIMEOUT` (on
-  `/chat/stream`, a final `error` event). Nothing is run. Planning time
-  counts toward the request's overall time budget.
+  the rest of the request's time budget. If either call runs out of time,
+  or too little time is left for the second, the request fails with `504`
+  `PLANNING_TIMEOUT`. If both calls fail with a provider error before
+  that (or, with failover off, the local call does), it fails with `503`
+  `PLANNING_UNAVAILABLE` and a `Retry-After`
+  header (`PLANNER_UNAVAILABLE_RETRY_AFTER_S`, default 30 s; also in
+  `error.details.retry_after_seconds`). On `/chat/stream` either is a
+  final `error` event. Nothing is run. Planning time counts toward the
+  request's overall time budget.
 - **Plan size:** a request whose plan needs more than 6 steps
   (`PLAN_MAX_STEPS`) isn't run. The answer (`200`) says how many steps it
   would need and asks the user to split it into smaller questions.
@@ -355,8 +362,9 @@ Errors found before the stream starts (authentication, rate limits, the
 daily quota, upload limits) are normal error responses. An application
 error raised after it has started, such as `REQUEST_TOKEN_QUOTA_EXCEEDED`,
 ends the stream with a single `error` event instead of `complete`; its
-`data` is the same `code` and `message` as an error response's `error`
-object:
+`data` is the same `code`, `message` and (when present) `details` as an
+error response's `error` object. A stream can't send headers, so a
+`Retry-After` value is read from `details.retry_after_seconds`:
 
 ```text
 event: error
@@ -687,6 +695,7 @@ facts already saved from earlier messages in it.
 | `429`  | Request rate limit or daily token quota exceeded |
 | `500`  | Internal server error          |
 | `502`  | LLM provider error             |
+| `503`  | Planning unavailable: every planner provider failed (`PLANNING_UNAVAILABLE`); retry after the `Retry-After` header |
 | `504`  | LLM provider timeout, or planning didn't finish in time (`PLANNING_TIMEOUT`) |
 
 ---
