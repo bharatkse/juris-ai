@@ -95,6 +95,13 @@ jobs:
       # Build once into the local daemon so the exact image can be scanned
       # before anything leaves the runner. The push build below reuses
       # every layer from the GHA cache.
+      #
+      # pull + no-cache-filters: always start from the newest base image and
+      # rebuild the shipped runtime stage (its `apt-get upgrade` included),
+      # so a cached layer can't pin stale Debian packages. The builder stage
+      # (dependency install, ~2 GB) still comes from cache. The push build
+      # deliberately gets neither: it must reuse the layers written here, so
+      # the pushed image is the one that was scanned.
       - name: Build image for scanning
         uses: docker/build-push-action@v6
         with:
@@ -103,6 +110,8 @@ jobs:
           platforms: linux/amd64
           load: true
           push: false
+          pull: true
+          no-cache-filters: runtime
           tags: ${{ steps.meta.outputs.scan_ref }}
           cache-from: type=gha,scope=server-image
           cache-to: type=gha,scope=server-image,mode=max

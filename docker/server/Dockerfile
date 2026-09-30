@@ -40,6 +40,14 @@ RUN poetry install --no-interaction --no-ansi --no-root
 # ==============================================================================
 FROM python:3.11-slim AS runtime
 
+# Apply Debian security updates the base tag doesn't carry yet (it can lag
+# trixie-security by days; e.g. openssl deb13u3). In the final stage so the
+# shipped image is patched; the publish workflow rebuilds this stage without
+# cache so the upgrade actually re-runs.
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
 ARG POETRY_VERSION=2.5.1
 
 ENV PYTHONDONTWRITEBYTECODE=1 \

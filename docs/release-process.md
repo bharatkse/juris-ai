@@ -293,6 +293,12 @@ release candidate is scanned **again** at promotion, with the same gate
 - **Doesn't block:** findings with no upstream fix yet. They're still listed
   in the Security tab and start blocking automatically once a fix is
   released.
+- **Debian packages:** the runtime stage runs `apt-get upgrade`, and the
+  scan build uses `pull: true` with `no-cache-filters: runtime`, so every
+  build ships the current Debian security updates even when the
+  `python:3.11-slim` tag lags them. The builder stage stays cached. A HIGH
+  OS-package finding with a fix therefore clears itself on the next build
+  once Debian publishes the fix; no ignore entry is needed.
 - **Suppressions:** `.trivyignore.yaml` at the repo root is honoured if it
   exists. There is none today. Only add an entry for a finding that has a
   fix you deliberately can't take yet, scoped to the exact package version,
@@ -309,7 +315,8 @@ or reported as a vulnerability.
 Locally (needs Docker):
 
 ```bash
-docker build -f docker/server/Dockerfile -t juris-ai-scan:local server
+# --pull / --no-cache-filter runtime match CI: fresh base, fresh apt upgrade
+docker build --pull --no-cache-filter runtime -f docker/server/Dockerfile -t juris-ai-scan:local server
 .github/scripts/trivy-gate.sh juris-ai-scan:local trivy-results   # exit 1 = gate fails
 ```
 
