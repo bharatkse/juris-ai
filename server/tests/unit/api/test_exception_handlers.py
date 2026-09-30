@@ -34,6 +34,26 @@ def build_request() -> Request:
 
 
 @patch("api.exception_handlers.logger")
+def test_app_exception_handler_returns_the_errors_details(
+    mock_logger: MagicMock,
+) -> None:
+    """
+    Structured details on an application error reach the response body.
+    """
+
+    exception = AppError(
+        message="Already decided.",
+        status_code=409,
+        error_code="CUSTOM_CONFLICT",
+        details={"current_status": "approved"},
+    )
+
+    response = app_exception_handler(build_request(), exception)
+
+    assert '"details":{"current_status":"approved"}' in response.body.decode()
+
+
+@patch("api.exception_handlers.logger")
 def test_app_exception_handler(
     mock_logger: MagicMock,
 ) -> None:
