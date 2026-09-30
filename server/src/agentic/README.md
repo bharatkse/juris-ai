@@ -147,10 +147,10 @@ sequenceDiagram
             Dep-->>Endpoint: continue
             Endpoint->>Chat: chat(...)
             Chat->>Orch: handle(...)
-            Orch-->>Chat: result (incl. result.usage)
-            Chat->>Usage: record(user_id, input_tokens, output_tokens)
-            Note over Usage: best-effort -- swallows its own<br/>errors, never fails an otherwise-<br/>successful response
-            Usage->>DB: increment_tokens(day window)
+            Orch-->>Chat: result, or raises (usage scopes close into the tally)
+            Chat->>Usage: finally: record(user_id, request_id, input, output)
+            Note over Usage: best-effort, own session, shielded from<br/>cancellation; once per request_id
+            Usage->>DB: usage_request_records row (ON CONFLICT DO NOTHING),<br/>then increment_tokens(day window) if new
             Chat-->>Endpoint: response
             Endpoint-->>Client: 200
         end
@@ -160,13 +160,8 @@ sequenceDiagram
 **`/chat/stream` note**: the rate-limit dependency runs identically for
 both endpoints, so a request that would be blocked is blocked before
 either path starts. The post-dispatch `record()` step above is drawn
-against `ChatService.chat()`, but `stream_chat()` reaches usage
-recording too — both call the same shared
-`_persist_assistant_response()` helper (`application/services/chat.py`),
-which is what calls `UsageService.record()`. See that method's own
-docstring for why this parity is deliberate: it's what stops the two
-paths from silently drifting apart the way they once did, back when
-`AIOrchestrator.stream()` didn't exist yet.
+against `ChatService.chat()`; `stream_chat()` records the same way, from
+its own `finally` (`_record_usage()`, `application/services/chat.py`).
 
 **Where `result.usage` comes from**: every `LLMClient.generate()` call
 adds its provider-reported token counts to a per-request meter
@@ -175,10 +170,20 @@ and LangGraph nodes share the scope's meter). `AIOrchestrator.handle()`,
 `stream()` and `resume()` each open one scope and set the response's
 `usage` from it: planner, agents (including a failover call, counted once
 under the fallback's provider), answer evaluation and the guardrail
-judge. It isn't summed from agent responses. `HitlResumeService` records a
-resumed turn's usage the same way, after its commit. Not counted: the
-background memory-extraction call, and a turn that raises before
-returning a response (except the refusal below).
+judge. It isn't summed from agent responses.
+
+**Recorded however the request ends** (review R19): `ChatService` opens a
+`usage_tally()` (`core/usage.py`) around each request; every usage scope
+adds its meter to it when it closes, whether the turn returned, raised or
+was cancelled. `ChatService` records the tally once, in a `finally`: after
+an answer, an error, a quota refusal, or a client disconnecting from
+`/chat/stream` (the orchestrator's stream is closed with `aclosing`, and the
+write runs shielded on its own session so the cancellation can't cut it
+off). `UsageService.record()` is idempotent per request id: a
+`usage_request_records` row (unique `request_id`) is inserted first and the
+day bucket grows only if that row is new. `HitlResumeService` records a
+resumed turn the same way, keyed by the resumed turn's own request id.
+Not counted: the background memory-extraction call.
 
 **Per-request token quota** (`RATE_LIMIT_REQUEST_TOKEN_QUOTA`): the same
 meter caps one request. `ChatService` sets the quota from
@@ -190,8 +195,8 @@ made: tokens used so far plus the estimated prompt must fit, or the call
 raises `RequestTokenQuotaExceededError` and never reaches the provider.
 Wherever it is caught (the agent runtime turns it into a failed step),
 the orchestrator re-raises it at the end of the turn, before any answer
-is sent, carrying the tokens used; `ChatService` records those and
-re-raises (413). A resumed turn has no quota (nothing sets one).
+is sent; `ChatService` records the tokens used (from its tally, like any
+failed request) and re-raises (413). A resumed turn has no quota (nothing sets one).
 
 ## `agent_policies` and tool authorization
 
@@ -314,7 +319,7 @@ sequenceDiagram
         API->>HR: resume_after_decision(approval_id, agent_action_id, decision_type, edited_payload)
         HR->>X: approve/edit: run_approved_tool(approved draft, token=approval_id),<br/>result committed on the AgentAction; reject: nothing runs
         HR->>X: resume(thread_id, tool_result) -> the paused graph continues
-        HR-->>API: resume_status (completed / failed)
+        HR-->>API: resume_status (completed / failed / in_progress)
         API-->>C: 200 + decision + resume_status
     end
 ```
@@ -322,8 +327,17 @@ sequenceDiagram
 A decided approval whose resume didn't finish (it failed, or the server
 stopped before it completed) is retried by its requester with
 `POST /api/v1/approvals/{approval_id}/resume`: 403 for anyone else, 409
-if it isn't decided or has already been resumed. The retry reuses a
-stored tool result instead of running the call again.
+if it isn't decided, has already been resumed, or another request is
+resuming it. The retry reuses a stored tool result instead of running the
+call again.
+
+Every resume (the decision's or a retry) first claims the `AgentAction`
+with one conditional `UPDATE` to `EXECUTING`, committed at once
+(`AgentActionRepository.claim()`). Only the request that wins runs the
+call and resumes the graph; an overlapping one gets `resume_status`
+`in_progress` (decision) or 409 (retry), in any worker. An action left
+`EXECUTING` by a worker that stopped can be claimed again after
+`HITL_RESUME_STALE_SECONDS` (default 600) without progress.
 
 Before a *fresh* approved call runs (on the first resume or a retry),
 `HitlResumeService` re-checks the user's current permission
@@ -339,7 +353,7 @@ sequenceDiagram
     participant HR as HitlResumeService
     C->>HR: retry (owner only)
     HR->>HR: action FAILED / PENDING_APPROVAL / EXECUTING? (else 409)
-    HR->>HR: resume_after_decision (stored tool result reused)
+    HR->>HR: resume_after_decision: claim (lost: 409), stored tool result reused
     HR-->>C: 200 + resume_status
 ```
 
