@@ -143,15 +143,21 @@ class ChatService(BaseService):
                     user_id=user_id,
                 )
 
-                orchestration_request = await self._build_chat_request(
-                    conversation=conversation,
-                    current_event_id=user_event.id,
-                    message=message,
-                    request_id=request_id,
-                    files=files,
-                )
+                # The request's token quota and deadline cover the
+                # conversation summarization _build_chat_request() may run
+                # (an LLM call, review G1) as well as the orchestration.
+                with (
+                    request_token_quota(self._usage_service.request_token_quota()),
+                    self._orchestrator.request_deadline(),
+                ):
+                    orchestration_request = await self._build_chat_request(
+                        conversation=conversation,
+                        current_event_id=user_event.id,
+                        message=message,
+                        request_id=request_id,
+                        files=files,
+                    )
 
-                with request_token_quota(self._usage_service.request_token_quota()):
                     try:
                         result = await self._orchestrator.handle(
                             request=orchestration_request,
@@ -263,26 +269,30 @@ class ChatService(BaseService):
                     user_id=user_id,
                 )
 
-                orchestration_request = await self._build_chat_request(
-                    conversation=conversation,
-                    current_event_id=user_event.id,
-                    message=message,
-                    request_id=request_id,
-                    files=files,
-                )
-
-                stream = self._orchestrator.stream(
-                    request=orchestration_request,
-                    action_workflow_service=self._action_workflow_service,
-                )
-
                 final_response: OrchestratorResponse | None = None
 
+                # As in chat(): the quota and deadline cover summarization.
                 # aclosing: on any exit (an error, or the client going away
                 # while this generator is suspended at a yield) the
                 # orchestrator's stream is closed here, so its usage scope
                 # has reached the tally before the finally below reads it.
-                with request_token_quota(self._usage_service.request_token_quota()):
+                with (
+                    request_token_quota(self._usage_service.request_token_quota()),
+                    self._orchestrator.request_deadline(),
+                ):
+                    orchestration_request = await self._build_chat_request(
+                        conversation=conversation,
+                        current_event_id=user_event.id,
+                        message=message,
+                        request_id=request_id,
+                        files=files,
+                    )
+
+                    stream = self._orchestrator.stream(
+                        request=orchestration_request,
+                        action_workflow_service=self._action_workflow_service,
+                    )
+
                     try:
                         async with aclosing(stream) as chunks:
                             async for chunk in chunks:
