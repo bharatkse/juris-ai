@@ -53,6 +53,7 @@ def create_planner(
             llm_client=clients.llm_resolver.get(LLMProviderEnum.LOCAL),
             prompt_builder=PlanningPromptBuilder(max_steps=max_steps),
             capability_catalog=capability_catalog,
+            timeout_seconds=get_settings().llm.PLANNER_TIMEOUT_S,
         ),
         validator=ExecutionPlanValidator(max_steps=max_steps),
     )
