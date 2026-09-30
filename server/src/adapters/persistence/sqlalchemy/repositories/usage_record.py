@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from adapters.persistence.sqlalchemy.mixins import generate_prefixed_uuid_pk
 from adapters.persistence.sqlalchemy.models.usage_record import UsageRecord
+from adapters.persistence.sqlalchemy.models.usage_request_record import UsageRequestRecord
 from adapters.persistence.sqlalchemy.repositories.base import BaseRepository
 from core.utils.datetime import utcnow
 
@@ -68,6 +69,53 @@ class UsageRecordRepository(BaseRepository[UsageRecord]):
             input_tokens_delta=input_tokens,
             output_tokens_delta=output_tokens,
         )
+
+    async def record_request_tokens(
+        self,
+        *,
+        request_id: str,
+        user_id: str,
+        window_start: datetime,
+        input_tokens: int,
+        output_tokens: int,
+    ) -> bool:
+        """
+        Record one request's tokens once: insert its usage_request_records
+        row (ON CONFLICT DO NOTHING on request_id) and, only if that row
+        is new, add the tokens to the "day" bucket. False when the request
+        was already recorded. The caller commits both together.
+        """
+
+        now = utcnow()
+
+        statement = (
+            pg_insert(UsageRequestRecord)
+            .values(
+                id=generate_prefixed_uuid_pk(UsageRequestRecord._id_prefix),
+                request_id=request_id,
+                user_id=user_id,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                created_at=now,
+                updated_at=now,
+            )
+            .on_conflict_do_nothing(index_elements=["request_id"])
+            .returning(UsageRequestRecord.id)
+        )
+
+        result = await self._session.execute(statement)
+
+        if result.scalar_one_or_none() is None:
+            return False
+
+        await self.increment_tokens(
+            user_id=user_id,
+            window_start=window_start,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+        )
+
+        return True
 
     async def get_daily_token_usage(
         self,
