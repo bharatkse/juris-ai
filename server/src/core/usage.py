@@ -12,7 +12,7 @@ created in, so LangGraph nodes and parallel plan steps add to the same
 meter as the call that opened the scope.
 
 The same meter enforces the per-request token quota
-(RATE_LIMIT_REQUEST_TOKEN_QUOTA), the per-request counterpart of the
+(TOKEN_QUOTA_PER_REQUEST), the per-request counterpart of the
 daily quota and enforced the same way: checked before tokens are spent,
 counted after. ChatService sets the quota (request_token_quota()); the
 scope opened inside it picks it up; every LLM call checks it before it
