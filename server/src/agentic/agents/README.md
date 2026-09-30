@@ -61,6 +61,15 @@ time budget or the graph timeout, `core/deadline.py`); a fallback call
 still running at the deadline is cancelled (`wiring/factories/agents.py`).
 A failed-over decision can only name the agent's own tools.
 
+Failover covers the agents only: the harmful-content and groundedness
+judges stay on Groq. When Groq is fully down, an answer the local model
+produced still can't be checked, so it is discarded (the refusal, or the
+"couldn't verify" reply). `FailoverLLMClient` marks the request's usage
+meter when the fallback answered (`core.usage.record_llm_fallback()`), and
+each judge's failure path then logs a warning and records
+`juris_ai_failover_answers_discarded_total{judge}`, so this shows up as
+failover that didn't help rather than as an ordinary judge outage.
+
 Before the first `_reason()` call, `context` holds any files attached to
 the chat message (parsed by the Executor) and the runtime seeds it with a
 retriever call for the user's question
