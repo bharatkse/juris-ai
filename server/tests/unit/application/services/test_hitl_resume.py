@@ -10,6 +10,7 @@ is committed before the graph resumes, so retry() never runs it twice.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -20,7 +21,10 @@ from agentic.tools.result import ToolResult
 from application.services import hitl_resume
 from application.services.hitl_resume import HitlResumeService
 from core.enums import AgentActionStatusEnum, ApprovalDecisionEnum, HitlResumeStatusEnum
-from core.exceptions.approval import ApprovalResumeNotAllowedError
+from core.exceptions.approval import (
+    ApprovalResumeNeedsConfirmationError,
+    ApprovalResumeNotAllowedError,
+)
 from core.usage import record_llm_usage, usage_scope
 
 APPROVAL_ID = "appr_" + "a" * 32
@@ -61,6 +65,7 @@ class _Action:
                 "status": AgentActionStatusEnum.PENDING_APPROVAL,
                 "result": None,
                 "executed_at": None,
+                "updated_at": datetime.now(UTC),
                 "to_dto": lambda: "action-dto",
             },
         )
@@ -567,3 +572,111 @@ async def test_a_retry_that_loses_the_claim_is_refused(
         await service.retry(approval=_approval(ApprovalDecisionEnum.APPROVE))
 
     orchestrator.run_approved_tool.assert_not_awaited()
+
+
+def _stuck(action: _Action) -> None:
+    """Claimed long ago by a worker that stopped: stale, no stored result."""
+
+    action.status = AgentActionStatusEnum.EXECUTING
+    action.updated_at = datetime.now(UTC) - timedelta(hours=1)
+
+
+@pytest.mark.asyncio
+async def test_a_stale_send_is_not_retried_without_confirmation(
+    service: HitlResumeService,
+    repository: MagicMock,
+    loaded_action: _Action,
+    orchestrator: MagicMock,
+) -> None:
+    _stuck(loaded_action)
+    repository.get.side_effect = [loaded_action]
+
+    with pytest.raises(ApprovalResumeNeedsConfirmationError) as exc_info:
+        await service.retry(approval=_approval())
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.details == {"possibly_sent": True}
+    repository.claim.assert_not_awaited()
+    orchestrator.run_approved_tool.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_confirmed_retry_of_a_stale_send_is_logged_and_sends_once(
+    service: HitlResumeService,
+    repository: MagicMock,
+    loaded_action: _Action,
+    orchestrator: MagicMock,
+) -> None:
+    _stuck(loaded_action)
+    repository.get.side_effect = [loaded_action, loaded_action]
+
+    with patch.object(hitl_resume, "logger") as logger:
+        result = await service.retry(approval=_approval(), force=True)
+
+    assert result is HitlResumeStatusEnum.COMPLETED
+    assert repository.claim.await_args.kwargs["stale_before"] is not None
+    orchestrator.run_approved_tool.assert_awaited_once()
+    logger.warning.assert_called_once()
+    extra = logger.warning.call_args.kwargs["extra"]
+    assert extra["agent_action_id"] == ACTION_ID
+    assert extra["user_id"] == "user-1"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("decision", "stored"),
+    [
+        # The outcome was stored: reused, nothing is sent again.
+        (ApprovalDecisionEnum.APPROVE, True),
+        # A rejection sends nothing.
+        (ApprovalDecisionEnum.REJECT, False),
+    ],
+)
+async def test_a_stale_resume_that_cannot_send_again_needs_no_confirmation(
+    service: HitlResumeService,
+    repository: MagicMock,
+    loaded_action: _Action,
+    orchestrator: MagicMock,
+    decision: ApprovalDecisionEnum,
+    stored: bool,
+) -> None:
+    _stuck(loaded_action)
+    if stored:
+        loaded_action.result = {"tool_result": SENT.to_dict(), "approval_id": APPROVAL_ID}
+    repository.get.side_effect = [loaded_action, loaded_action]
+
+    result = await service.retry(approval=_approval(decision))
+
+    assert result is HitlResumeStatusEnum.COMPLETED
+    assert repository.claim.await_args.kwargs["stale_before"] is not None
+    orchestrator.run_approved_tool.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("force", [False, True])
+async def test_a_recent_claim_is_never_taken_over(
+    service: HitlResumeService,
+    repository: MagicMock,
+    loaded_action: _Action,
+    orchestrator: MagicMock,
+    force: bool,
+) -> None:
+    """Not stale: may still be sending in another worker, force or not."""
+
+    loaded_action.status = AgentActionStatusEnum.EXECUTING
+    repository.get.side_effect = [loaded_action]
+    repository.claim.return_value = False
+
+    with pytest.raises(ApprovalResumeNotAllowedError):
+        await service.retry(approval=_approval(), force=force)
+
+    orchestrator.run_approved_tool.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_decision_never_takes_over_a_stale_claim(
+    service: HitlResumeService, repository: MagicMock
+) -> None:
+    await _resume(service)
+
+    assert repository.claim.await_args.kwargs["stale_before"] is None
