@@ -11,7 +11,7 @@ from adapters.persistence.sqlalchemy.models.user import User
 from adapters.persistence.sqlalchemy.repositories.usage_record import (
     UsageRecordRepository,
 )
-from adapters.persistence.sqlalchemy.session import get_db_session
+from adapters.persistence.sqlalchemy.session import get_db_session, session_factory
 from api.dependencies.auth import get_current_user
 from application.services.usage import UsageService
 
@@ -45,6 +45,9 @@ def get_usage_service(
     return UsageService(
         session=session,
         repository=repository,
+        # Usage is recorded on a session of its own, so the write can
+        # finish after a disconnected stream's request session is gone.
+        record_session_factory=session_factory,
     )
 
 
