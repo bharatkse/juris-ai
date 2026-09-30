@@ -681,11 +681,18 @@ Run pre-commit hooks:
 make pre-commit
 ```
 
-Install the Git pre-commit hooks:
+Install the Git hooks (`make bootstrap` also does this):
 
 ```bash
 make install-hooks
+# equivalent to:
+# pre-commit install --hook-type pre-commit --hook-type pre-push
 ```
+
+The pre-push hook runs `make type-check` (mypy over `server/src` and
+`server/scripts`, the same command CI runs), so a push with type errors is
+refused. For an emergency push, `git push --no-verify` skips it; CI still
+runs the same check.
 
 Run the complete CI workflow:
 
