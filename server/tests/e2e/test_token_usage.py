@@ -182,7 +182,9 @@ async def test_real_usage_exhausts_the_daily_quota(
 
     used = await _tokens_today(registered_user["user_id"])
     assert used > 0
-    monkeypatch.setattr(get_settings().rate_limit, "RATE_LIMIT_DAILY_TOKEN_QUOTA", used)
+    # The daily quota can't be below the per-request one, so lower that first.
+    monkeypatch.setattr(get_settings().rate_limit, "TOKEN_QUOTA_PER_REQUEST", used)
+    monkeypatch.setattr(get_settings().rate_limit, "TOKEN_QUOTA_DAILY", used)
 
     second = await e2e_client.post(
         "/api/v1/chat",
