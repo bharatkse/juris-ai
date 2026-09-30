@@ -11,8 +11,8 @@ from core.enums import GroqModelEnum, LLMMODELEnum
 class LLMSettings(BaseAppSettings):
     """AI Providers, Local Models, Search Engines, and Observability."""
 
-    # Local LLM (Ollama). The planner always uses it (wiring/factories/
-    # planner.py). LLM_LOCAL decides whether agents may fall back to it
+    # Local LLM (Ollama). The planner always tries it first (wiring/
+    # factories/planner.py). LLM_LOCAL decides whether agents may fall back to it
     # when Groq is unavailable (adapters/clients/llm/failover.py):
     # "ollama" (or "local") enables that; "none", the default, keeps agents
     # on Groq only, so a deployment without Ollama never tries it.
@@ -24,13 +24,23 @@ class LLMSettings(BaseAppSettings):
     # ~450 s (review R2), longer than the whole 300 s graph timeout.
     LLM_LOCAL_FAILOVER_MIN_SECONDS: float = Field(default=60.0, gt=0)
     LLM_LOCAL_BASE_URL: str | None = None
-    # Most seconds the planner's LLM call may take (review R18); a call
-    # still running is cancelled and the request fails with 504
-    # PLANNING_TIMEOUT. The request's own deadline (the 300 s graph
-    # timeout, started before planning) can cut it shorter. 120 s covers
-    # qwen3:8b on a CPU host, measured with scripts/bench_planner.py on
-    # 2026-09-30: ~20 s per plan warm, p95 38 s, 79 s on a cold model load.
-    PLANNER_TIMEOUT_S: float = Field(default=120.0, gt=0)
+    # Most seconds the planner's local-model call may take (review R18);
+    # a call still running is cancelled, then the plan is asked of
+    # PLANNER_FAILOVER_PROVIDER within what is left of the request's
+    # deadline (the 300 s graph timeout, started before planning), or the
+    # request fails with 504 PLANNING_TIMEOUT. 45 s covers qwen3:8b warm on
+    # a CPU host, measured with scripts/bench_planner.py on 2026-09-30
+    # (~20 s per plan, p95 38 s); a cold model load (~80 s) is what the
+    # startup warm-up and LLM_LOCAL_KEEP_ALIVE avoid.
+    PLANNER_TIMEOUT_S: float = Field(default=45.0, gt=0)
+    # Provider the planner fails over to when the local model times out or
+    # errors: "groq" (the default), or "" for no failover (the local
+    # model's error or 504 is returned as is).
+    PLANNER_FAILOVER_PROVIDER: Literal["groq", ""] = "groq"
+    # How long Ollama keeps the model loaded after a call (Ollama's
+    # keep_alive; its own default is 5m). Sent on every local call and by
+    # the startup warm-up, so the planner rarely meets a cold load.
+    LLM_LOCAL_KEEP_ALIVE: str = "30m"
     LLM_LOCAL_MODEL: str = LLMMODELEnum.QWEN3_8B
 
     # Provider-independent inference defaults
