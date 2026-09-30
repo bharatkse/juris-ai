@@ -124,7 +124,8 @@ With the embedding model down, the answer gate can't score relevance either
 (it uses the same model), so a chat turn still ends with the "couldn't
 verify" answer, not an error (`agentic/evaluation/README.md`).
 
-Golden-dataset retrieval in each mode (29 cases, top 5, 2026-09-30):
+Golden-dataset retrieval in each mode (29 cases, top 5, 2026-09-30;
+`evaluate_rag_retrieval.py --mode <mode>`):
 
 | Mode | Pass rate | recall@5 | precision@5 | MRR |
 |---|---|---|---|---|
@@ -139,7 +140,7 @@ sequenceDiagram
     participant Script as evaluate_rag_retrieval.py
     participant Loader as GoldenDatasetLoader
     participant Runner as RetrievalEvaluationRunner
-    participant Retriever as HybridRetriever
+    participant Retriever as ModeCheckedRetriever<br/>(HybridRetriever)
     participant Metrics as RecallAtK / PrecisionAtK / MRR / FaithfulnessMetric
     participant FB as FaithfulnessBackend
     participant Judge as LLM judge (Groq/local)
@@ -149,7 +150,7 @@ sequenceDiagram
     Script->>Runner: evaluate(dataset)
     loop each case
         Runner->>Retriever: retrieve(query, top_k=5)
-        Retriever-->>Runner: RetrievalResult[]
+        Retriever-->>Runner: RetrievalResult[]<br/>(or RetrievalModeError: stop, exit 2)
         Runner->>Metrics: evaluate(case, results)
         Metrics->>FB: evaluate(query, answer, contexts)
         Note over FB,Judge: only called if the case has a<br/>generated `answer` -- today's golden<br/>dataset has none, so this is a no-op<br/>("not applicable", passed=True) for<br/>every case (see script comment)
@@ -161,7 +162,25 @@ sequenceDiagram
     Runner-->>Script: RetrievalEvaluationReport
 ```
 
-Run it: `PYTHONPATH=src python scripts/python/evaluate_rag_retrieval.py`.
+Run it: `PYTHONPATH=src python scripts/python/evaluate_rag_retrieval.py
+[--mode full|keyword_only|no_rerank] [--min-pass-rate 65] [--summary FILE]`.
+
+- `--mode` (default `full`) is the retrieval mode every query must run
+  in. The eval wraps the retriever's components
+  (`evaluation/retrieval_mode.py`, `ModeCheckedRetriever`) and stops at
+  the first query that runs in another mode, printing the underlying
+  error (exit 2). So an unreachable embedding model, or the Redis cache
+  query embeddings go through, fails the run instead of silently
+  measuring keyword-only search. `keyword_only` and `no_rerank` disable
+  the embedding model or the reranker on purpose.
+- `--min-pass-rate` fails the run (exit 1) below that pass rate.
+- `--summary` appends a Markdown table (mode used, pass rate, mean
+  scores) to a file, e.g. `$GITHUB_STEP_SUMMARY`.
+
+CI (`.github/workflows/rag-eval.yaml`, daily and on demand) gates `full`
+at 65% with Postgres and Redis services and the same models as dev
+(cached between runs); `keyword_only` and `no_rerank` run as
+non-gating steps. All three appear in the job summary.
 Other entry points: `scripts/python/compare_rag_retrieval.py` (compare two
 configurations), `scripts/python/evaluate_rag_retrieval_comparison.py`.
 
