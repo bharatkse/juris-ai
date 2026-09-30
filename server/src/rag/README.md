@@ -102,6 +102,24 @@ scoring doesn't know about vector similarity or vice versa; RRF is
 what lets a chunk supported by both rankings outrank one supported by
 only one.
 
+### Degraded modes
+
+When one component fails, the search runs without it instead of failing
+(`HybridRetriever._search()`). Each failure is logged as a warning with
+the error type, never the query.
+
+| Failed component | Mode | What runs |
+|---|---|---|
+| none | `full` | vector + keyword, fused, reranked |
+| reranker | `no_rerank` | vector + keyword, fused; RRF scores divided by the best possible RRF score, so they stay in [0, 1] like the reranker's (they reach the agent's prompt as `relevance=`) |
+| embedding model or vector store | `keyword_only` | keyword search, reranked |
+| keyword store | `vector_only` | vector search, reranked |
+| any two, or both stores | `unavailable` | nothing: `RetrievalUnavailableError`, which `RetrieverTool` returns as a "retrieval is temporarily unavailable" result that doesn't count as evidence |
+
+The mode is recorded as the `retrieval.mode` attribute on the
+`rag.hybrid_retrieve` span and as the
+`juris_ai_retrieval_searches_total{mode}` metric.
+
 ## Evaluation
 
 ```mermaid
