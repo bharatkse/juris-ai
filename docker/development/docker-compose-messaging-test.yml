@@ -1,0 +1,43 @@
+# Live messaging test sandbox (docs/messaging-live-test.md).
+#
+# Every service is in the `messaging-test` profile, so nothing here starts
+# unless that profile is asked for, and setup.sh never starts this file:
+#
+#   docker compose -f docker/development/docker-compose-messaging-test.yml \
+#     --profile messaging-test up -d --build
+#
+# Test-only. Never add these services to the default or production stacks.
+name: juris-ai-messaging-test
+
+services:
+  # -----------------------------------------------------
+  # Mailpit: a local SMTP server that keeps every message.
+  # SMTP: localhost:1025 (mailpit:1025 inside this network)
+  # Web UI and HTTP API: http://localhost:8025
+  # -----------------------------------------------------
+  mailpit:
+    image: axllent/mailpit:v1.27
+    container_name: juris_ai_mailpit
+    profiles: ["messaging-test"]
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
+
+  # -----------------------------------------------------
+  # Sandbox messaging MCP server: send_message relays to Mailpit,
+  # chat_postMessage posts to Slack with SLACK_TEST_BOT_TOKEN (if set).
+  # MCP endpoint: http://localhost:8765/mcp
+  # -----------------------------------------------------
+  sandbox-mcp:
+    build:
+      context: ../../server/tools/sandbox_mcp
+    container_name: juris_ai_sandbox_mcp
+    profiles: ["messaging-test"]
+    depends_on:
+      - mailpit
+    environment:
+      SANDBOX_SMTP_HOST: mailpit
+      SANDBOX_SMTP_PORT: "1025"
+      SLACK_TEST_BOT_TOKEN: ${SLACK_TEST_BOT_TOKEN:-}
+    ports:
+      - "127.0.0.1:8765:8765"

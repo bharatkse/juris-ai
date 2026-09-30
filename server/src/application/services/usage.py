@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from adapters.observability.logger import get_logger
+from adapters.observability.metrics import metrics
 from adapters.persistence.sqlalchemy.repositories.usage_record import (
     UsageRecordRepository,
 )
@@ -20,6 +21,11 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = get_logger(__name__)
+
+# Share of the daily token quota at which a user's day is reported (an INFO
+# log and juris_ai_token_quota_threshold_crossings_total), to see how close
+# real traffic runs to the quota before anyone is refused.
+DAILY_QUOTA_REPORT_FRACTION = 0.8
 
 
 class UsageService(BaseService):
@@ -113,6 +119,8 @@ class UsageService(BaseService):
                 },
             )
 
+            metrics.record_token_quota_rejection(quota="daily")
+
             raise TokenQuotaExceededError(
                 quota=settings.TOKEN_QUOTA_DAILY,
                 used=daily_usage,
@@ -176,6 +184,7 @@ class UsageService(BaseService):
                     day_window=day_window,
                     input_tokens=input_tokens,
                     output_tokens=output_tokens,
+                    daily_quota=settings.TOKEN_QUOTA_DAILY,
                 )
             else:
                 async with self._record_session_factory() as session:
@@ -187,6 +196,7 @@ class UsageService(BaseService):
                         day_window=day_window,
                         input_tokens=input_tokens,
                         output_tokens=output_tokens,
+                        daily_quota=settings.TOKEN_QUOTA_DAILY,
                     )
 
         except Exception:
@@ -214,8 +224,9 @@ class UsageService(BaseService):
         day_window: datetime,
         input_tokens: int,
         output_tokens: int,
+        daily_quota: int,
     ) -> None:
-        recorded = await repository.record_request_tokens(
+        day_total = await repository.record_request_tokens(
             request_id=request_id,
             user_id=user_id,
             window_start=day_window,
@@ -224,8 +235,26 @@ class UsageService(BaseService):
         )
         await session.commit()
 
-        if not recorded:
+        if day_total is None:
             logger.info(
                 "Token usage already recorded for this request; not counted again.",
                 extra={"operation": "record_usage", "request_id": request_id},
+            )
+            return
+
+        # The day's total before and after this request, both from the one
+        # atomic write, so exactly one request reports the crossing.
+        threshold = DAILY_QUOTA_REPORT_FRACTION * daily_quota
+        before = day_total - input_tokens - output_tokens
+
+        if before < threshold <= day_total:
+            metrics.record_token_quota_threshold_crossed(threshold="0.8")
+            logger.info(
+                "User crossed 80% of the daily token quota.",
+                extra={
+                    "operation": "record_usage",
+                    "user_id": user_id,
+                    "daily_tokens": day_total,
+                    "quota": daily_quota,
+                },
             )

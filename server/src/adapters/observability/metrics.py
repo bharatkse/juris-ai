@@ -85,6 +85,23 @@ class ApplicationMetrics:
             unit="1",
         )
 
+        self.token_quota_rejections: Counter = meter.create_counter(
+            name="juris_ai_token_quota_rejections_total",
+            description=(
+                "Chat requests refused by a token quota, labeled by quota " "(per_request|daily)."
+            ),
+            unit="1",
+        )
+
+        self.token_quota_threshold_crossings: Counter = meter.create_counter(
+            name="juris_ai_token_quota_threshold_crossings_total",
+            description=(
+                "Users whose day's tokens crossed a fraction of the daily "
+                "quota, labeled by threshold (0.8)."
+            ),
+            unit="1",
+        )
+
     def increment_health_checks(
         self,
         *,
@@ -216,6 +233,24 @@ class ApplicationMetrics:
         """
 
         self.answer_retries_skipped.add(1, attributes={"reason": reason})
+
+    def record_token_quota_rejection(
+        self,
+        *,
+        quota: Literal["per_request", "daily"],
+    ) -> None:
+        """Record a chat request refused by a token quota."""
+
+        self.token_quota_rejections.add(1, attributes={"quota": quota})
+
+    def record_token_quota_threshold_crossed(
+        self,
+        *,
+        threshold: Literal["0.8"],
+    ) -> None:
+        """Record a user's day's tokens crossing a fraction of the daily quota."""
+
+        self.token_quota_threshold_crossings.add(1, attributes={"threshold": threshold})
 
 
 metrics = ApplicationMetrics()

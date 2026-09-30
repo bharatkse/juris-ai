@@ -316,6 +316,7 @@ markers = [
   "slow: Tests that take more than 5 seconds",
   "smoke: smoke tests for critical application workflows",
   "e2e: API-level end-to-end tests — real FastAPI app, real Postgres/Redis",
+  "live_messaging: real email/Slack delivery; only with RUN_LIVE_MESSAGING=1, never in CI",
 ]
 
 

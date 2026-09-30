@@ -11,7 +11,8 @@ boundary, not application logic:
     judge call. Always accepts.
   - MCPServerRegistry.call_tool(): the outbound Gmail MCP hop. Every call
     is recorded, so a test can assert exactly what was sent, and how many
-    times.
+    times. Not patched for the live messaging suite (tests/e2e/
+    live_messaging/), which sends for real.
 
 RBAC is real (the default "member" role): the former "user-1" stub had
 to be patched out for any of this to run.
@@ -20,7 +21,7 @@ to be patched out for any of this to run.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
-from contextlib import asynccontextmanager, contextmanager
+from contextlib import ExitStack, asynccontextmanager, contextmanager
 from typing import Any
 from unittest.mock import patch
 
@@ -83,10 +84,11 @@ def approve_then_final_script() -> list[AgentDecision]:
 
 
 @asynccontextmanager
-async def legal_agent_may_send() -> AsyncIterator[None]:
+async def legal_agent_may_send(tool_name: str = "email_send") -> AsyncIterator[None]:
     """
-    Temporarily grant the legal agent email_send (no agent has it by
-    default; ENABLE_MESSAGING_TOOLS grants it), restoring the policy after.
+    Temporarily grant the legal agent a send tool (email_send by default;
+    no agent has one by default, ENABLE_MESSAGING_TOOLS grants them),
+    restoring the policy after.
     """
 
     async with session_factory() as session:
@@ -95,7 +97,7 @@ async def legal_agent_may_send() -> AsyncIterator[None]:
         original_tools = (
             list(original.allowed_tools) if original else ["retriever", "case_law_search"]
         )
-        await repository.upsert(agent_id="legal", allowed_tools=[*original_tools, "email_send"])
+        await repository.upsert(agent_id="legal", allowed_tools=[*original_tools, tool_name])
         await session.commit()
 
     try:
@@ -110,12 +112,13 @@ async def legal_agent_may_send() -> AsyncIterator[None]:
 @contextmanager
 def scripted_boundaries(
     decisions: list[AgentDecision],
-    mcp_calls: list[dict[str, Any]],
+    mcp_calls: list[dict[str, Any]] | None,
 ) -> Iterator[None]:
     """
     Patch the LLM, judge and MCP boundaries. decisions is consumed in
     order; running out fails the test (an unexpected extra reasoning call,
-    e.g. a resume that re-ran a finished turn).
+    e.g. a resume that re-ran a finished turn). mcp_calls=None leaves the
+    MCP hop real (the live messaging suite).
     """
 
     plan = ExecutionPlanDTO(
@@ -145,6 +148,7 @@ def scripted_boundaries(
         return None, AnswerEvaluationSummary(groundedness=0.95, relevance=0.90)
 
     async def fake_call_tool(self, *, server_name, tool_name, arguments):
+        assert mcp_calls is not None
         mcp_calls.append(
             {"server_name": server_name, "tool_name": tool_name, "arguments": arguments}
         )
@@ -159,8 +163,10 @@ def scripted_boundaries(
         patch.object(LLMPlanGenerator, "generate", fake_plan_generate),
         patch.object(BaseAgent, "_reason", fake_reason),
         patch.object(AgentContinuationService, "_gate_final", fake_gate_final),
-        patch.object(MCPServerRegistry, "call_tool", fake_call_tool),
+        ExitStack() as mcp_patch,
     ):
+        if mcp_calls is not None:
+            mcp_patch.enter_context(patch.object(MCPServerRegistry, "call_tool", fake_call_tool))
         yield
 
 
