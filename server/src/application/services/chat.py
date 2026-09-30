@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator, Sequence
+from contextlib import aclosing
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
@@ -21,10 +22,9 @@ from application.services.conversation_summarization import (
 from application.services.internal_dto.chat import ChatResultDTO
 from application.services.internal_dto.stream import ChatStreamChunkDTO
 from core.enums import MessageRoleEnum
-from core.exceptions.rate_limit import RequestTokenQuotaExceededError
 from core.models.conversation import ConversationMessageSchema
 from core.types import ConversationEventId, ConversationId, UserId
-from core.usage import request_token_quota
+from core.usage import UsageMeter, request_token_quota, usage_tally
 
 if TYPE_CHECKING:
     from adapters.persistence.sqlalchemy.models.conversation import (
@@ -48,6 +48,10 @@ if TYPE_CHECKING:
     from core.dto.user_memory import UserMemoryContextItem
 
 logger = get_logger(__name__)
+
+# Usage writes still running after the request that started them was
+# cancelled (ChatService._record_usage()); held so they aren't collected.
+_usage_writes: set[asyncio.Future[None]] = set()
 
 
 class ChatService(BaseService):
@@ -128,76 +132,83 @@ class ChatService(BaseService):
             user_id=user_id,
         )
 
-        try:
-            user_event = await self._persist_user_message(
-                conversation=conversation,
-                request_id=request_id,
-                message=message,
-                user_id=user_id,
-            )
-
-            orchestration_request = await self._build_chat_request(
-                conversation=conversation,
-                current_event_id=user_event.id,
-                message=message,
-                request_id=request_id,
-                files=files,
-            )
-
-            with request_token_quota(self._usage_service.request_token_quota()):
-                result = await self._orchestrator.handle(
-                    request=orchestration_request,
-                    action_workflow_service=self._action_workflow_service,
+        with usage_tally() as tally:
+            try:
+                user_event = await self._persist_user_message(
+                    conversation=conversation,
+                    request_id=request_id,
+                    message=message,
+                    user_id=user_id,
                 )
 
-            # The assistant event is also persisted when HITL approval
-            # is required so the approval state is available in
-            # conversation history.
-            assistant_event = await self._persist_assistant_response(
-                user_id=user_id,
-                conversation=conversation,
-                request_id=request_id,
-                user_event=user_event,
-                response=result,
-            )
+                orchestration_request = await self._build_chat_request(
+                    conversation=conversation,
+                    current_event_id=user_event.id,
+                    message=message,
+                    request_id=request_id,
+                    files=files,
+                )
 
-            logger.info(
-                "Chat request completed.",
-                extra={
-                    "operation": "chat",
-                    "request_id": str(request_id),
-                    "conversation_id": str(conversation.id),
-                    "user_id": str(user_id),
-                    "user_event_id": str(user_event.id),
-                    "assistant_event_id": str(assistant_event.id),
-                    "action_required": result.action is not None,
-                    "approval_required": result.approval is not None,
-                },
-            )
+                with request_token_quota(self._usage_service.request_token_quota()):
+                    result = await self._orchestrator.handle(
+                        request=orchestration_request,
+                        action_workflow_service=self._action_workflow_service,
+                    )
 
-            return ChatResultDTO(
-                conversation=conversation,
-                user_event=user_event,
-                assistant_event=assistant_event,
-                response=result,
-                approval=result.approval,
-            )
+                # The assistant event is also persisted when HITL approval
+                # is required so the approval state is available in
+                # conversation history.
+                assistant_event = await self._persist_assistant_response(
+                    user_id=user_id,
+                    conversation=conversation,
+                    request_id=request_id,
+                    user_event=user_event,
+                    response=result,
+                )
 
-        except Exception as exc:
-            await self.rollback()
-            await self._record_refused_request_usage(user_id=user_id, error=exc)
+                logger.info(
+                    "Chat request completed.",
+                    extra={
+                        "operation": "chat",
+                        "request_id": str(request_id),
+                        "conversation_id": str(conversation.id),
+                        "user_id": str(user_id),
+                        "user_event_id": str(user_event.id),
+                        "assistant_event_id": str(assistant_event.id),
+                        "action_required": result.action is not None,
+                        "approval_required": result.approval is not None,
+                    },
+                )
 
-            logger.exception(
-                "Chat request failed.",
-                extra={
-                    "operation": "chat",
-                    "request_id": str(request_id),
-                    "conversation_id": str(conversation_id),
-                    "user_id": str(user_id),
-                },
-            )
+                return ChatResultDTO(
+                    conversation=conversation,
+                    user_event=user_event,
+                    assistant_event=assistant_event,
+                    response=result,
+                    approval=result.approval,
+                )
 
-            raise
+            except Exception:
+                await self.rollback()
+
+                logger.exception(
+                    "Chat request failed.",
+                    extra={
+                        "operation": "chat",
+                        "request_id": str(request_id),
+                        "conversation_id": str(conversation_id),
+                        "user_id": str(user_id),
+                    },
+                )
+
+                raise
+
+            finally:
+                await self._record_usage(
+                    user_id=user_id,
+                    request_id=request_id,
+                    tally=tally,
+                )
 
     async def stream_chat(
         self,
@@ -237,93 +248,105 @@ class ChatService(BaseService):
             user_id=user_id,
         )
 
-        try:
-            user_event = await self._persist_user_message(
-                conversation=conversation,
-                request_id=request_id,
-                message=message,
-                user_id=user_id,
-            )
-
-            orchestration_request = await self._build_chat_request(
-                conversation=conversation,
-                current_event_id=user_event.id,
-                message=message,
-                request_id=request_id,
-                files=files,
-            )
-
-            stream = self._orchestrator.stream(
-                request=orchestration_request,
-                action_workflow_service=self._action_workflow_service,
-            )
-
-            final_response: OrchestratorResponse | None = None
-
-            with request_token_quota(self._usage_service.request_token_quota()):
-                async for chunk in stream:
-                    if chunk.is_final:
-                        final_response = chunk.response
-
-                    yield chunk
-
-            if final_response is None:
-                raise RuntimeError(
-                    "Streaming completed without a final response.",
+        with usage_tally() as tally:
+            try:
+                user_event = await self._persist_user_message(
+                    conversation=conversation,
+                    request_id=request_id,
+                    message=message,
+                    user_id=user_id,
                 )
 
-            assistant_event = await self._persist_assistant_response(
-                user_id=user_id,
-                conversation=conversation,
-                request_id=request_id,
-                user_event=user_event,
-                response=final_response,
-            )
+                orchestration_request = await self._build_chat_request(
+                    conversation=conversation,
+                    current_event_id=user_event.id,
+                    message=message,
+                    request_id=request_id,
+                    files=files,
+                )
 
-            logger.info(
-                "Chat stream completed.",
-                extra={
-                    "operation": "stream_chat",
-                    "request_id": str(request_id),
-                    "conversation_id": str(conversation.id),
-                    "user_id": str(user_id),
-                    "user_event_id": str(user_event.id),
-                    "assistant_event_id": str(assistant_event.id),
-                    "action_required": final_response.action is not None,
-                    "approval_required": final_response.approval is not None,
-                },
-            )
+                stream = self._orchestrator.stream(
+                    request=orchestration_request,
+                    action_workflow_service=self._action_workflow_service,
+                )
 
-        except asyncio.CancelledError:
-            await self.rollback()
+                final_response: OrchestratorResponse | None = None
 
-            logger.info(
-                "Chat stream cancelled.",
-                extra={
-                    "operation": "stream_chat",
-                    "request_id": str(request_id),
-                    "conversation_id": str(conversation_id),
-                    "user_id": str(user_id),
-                },
-            )
+                # aclosing: on any exit (an error, or the client going away
+                # while this generator is suspended at a yield) the
+                # orchestrator's stream is closed here, so its usage scope
+                # has reached the tally before the finally below reads it.
+                with request_token_quota(self._usage_service.request_token_quota()):
+                    async with aclosing(stream) as chunks:
+                        async for chunk in chunks:
+                            if chunk.is_final:
+                                final_response = chunk.response
 
-            raise
+                            yield chunk
 
-        except Exception as exc:
-            await self.rollback()
-            await self._record_refused_request_usage(user_id=user_id, error=exc)
+                if final_response is None:
+                    raise RuntimeError(
+                        "Streaming completed without a final response.",
+                    )
 
-            logger.exception(
-                "Chat stream failed.",
-                extra={
-                    "operation": "stream_chat",
-                    "request_id": str(request_id),
-                    "conversation_id": str(conversation_id),
-                    "user_id": str(user_id),
-                },
-            )
+                assistant_event = await self._persist_assistant_response(
+                    user_id=user_id,
+                    conversation=conversation,
+                    request_id=request_id,
+                    user_event=user_event,
+                    response=final_response,
+                )
 
-            raise
+                logger.info(
+                    "Chat stream completed.",
+                    extra={
+                        "operation": "stream_chat",
+                        "request_id": str(request_id),
+                        "conversation_id": str(conversation.id),
+                        "user_id": str(user_id),
+                        "user_event_id": str(user_event.id),
+                        "assistant_event_id": str(assistant_event.id),
+                        "action_required": final_response.action is not None,
+                        "approval_required": final_response.approval is not None,
+                    },
+                )
+
+            except asyncio.CancelledError:
+                await self.rollback()
+
+                logger.info(
+                    "Chat stream cancelled.",
+                    extra={
+                        "operation": "stream_chat",
+                        "request_id": str(request_id),
+                        "conversation_id": str(conversation_id),
+                        "user_id": str(user_id),
+                    },
+                )
+
+                raise
+
+            except Exception:
+                await self.rollback()
+
+                logger.exception(
+                    "Chat stream failed.",
+                    extra={
+                        "operation": "stream_chat",
+                        "request_id": str(request_id),
+                        "conversation_id": str(conversation_id),
+                        "user_id": str(user_id),
+                    },
+                )
+
+                raise
+
+            finally:
+                await self._record_usage(
+                    user_id=user_id,
+                    request_id=request_id,
+                    tally=tally,
+                )
 
     async def _persist_user_message(
         self,
@@ -363,28 +386,39 @@ class ChatService(BaseService):
 
         return user_event
 
-    async def _record_refused_request_usage(
+    async def _record_usage(
         self,
         *,
         user_id: UserId,
-        error: Exception,
+        request_id: UUID,
+        tally: UsageMeter,
     ) -> None:
         """
-        Record the tokens a request used before the request token quota
-        refused its next LLM call. The request fails, but those calls
-        were made: without this, requests that stop at the quota would
-        spend tokens the daily quota never counts. After the rollback:
-        record() commits its own write and never raises.
+        Record the tokens the request's LLM calls used, however it ended
+        (review R19): answered, failed, refused by the request token
+        quota, or cancelled by a client disconnecting from the stream.
+        Called once, from a finally; UsageService.record() is idempotent
+        per request_id anyway, so a request is never counted twice.
+
+        Shielded: a disconnect cancels the request task and keeps
+        cancelling it, which would otherwise cut the write short. The
+        write runs in a task of its own, on its own session (the request's
+        may be closed once this re-raises), and finishes even if this
+        await is cancelled again.
         """
 
-        if not isinstance(error, RequestTokenQuotaExceededError):
-            return
-
-        await self._usage_service.record(
-            user_id=user_id,
-            input_tokens=error.prompt_tokens,
-            output_tokens=error.completion_tokens,
+        write = asyncio.ensure_future(
+            self._usage_service.record(
+                user_id=str(user_id),
+                request_id=str(request_id),
+                input_tokens=tally.prompt_tokens,
+                output_tokens=tally.completion_tokens,
+            )
         )
+        _usage_writes.add(write)
+        write.add_done_callback(_usage_writes.discard)
+
+        await asyncio.shield(write)
 
     async def _persist_assistant_response(
         self,
@@ -396,26 +430,15 @@ class ChatService(BaseService):
         response: OrchestratorResponse,
     ) -> ConversationEvent:
         """
-        Record usage, persist the ASSISTANT conversation event, log
+        Persist the ASSISTANT conversation event, log
         the matching compliance entry, and commit -- the "what the
         system decided/returned" half. Shared by chat() and
         stream_chat() for the same reason as _persist_user_message()
         above: this is exactly the logic that drifted out of sync
         between the two before this fix (stream_chat() previously
-        skipped both the compliance call and the usage-quota record
-        entirely).
+        skipped the compliance call entirely). Usage is recorded by the
+        caller's finally (_record_usage()), for failed requests too.
         """
-
-        # response.usage is the real, provider-reported token count
-        # aggregated across every LLM call made during this
-        # orchestration (agentic/execution/aggregation/response.py)
-        # -- not an estimate. Best-effort: never blocks or fails the
-        # response (see UsageService.record()).
-        await self._usage_service.record(
-            user_id=user_id,
-            input_tokens=response.usage.prompt_tokens,
-            output_tokens=response.usage.completion_tokens,
-        )
 
         metadata = response.metadata.model_dump(
             mode="json",
