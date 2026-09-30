@@ -165,11 +165,16 @@ async def test_lifespan(
 
     app = FastAPI()
 
-    async with main.lifespan(app):
-        # The scheduler is already on app.state DURING the yielded
-        # lifetime, not only after -- built once here, not per request.
-        assert app.state.memory_extraction_scheduler is scheduler
-        clients.llm_resolver.aclose.assert_not_awaited()
+    with patch.object(main, "warm_up_local_llm", AsyncMock()) as warm_up:
+        async with main.lifespan(app):
+            # The scheduler is already on app.state DURING the yielded
+            # lifetime, not only after -- built once here, not per request.
+            assert app.state.memory_extraction_scheduler is scheduler
+            clients.llm_resolver.aclose.assert_not_awaited()
+
+    # The planner's local model is warmed up in the background, from the
+    # shared clients, without holding up startup.
+    warm_up.assert_called_once_with(clients)
 
     # The shared LLM clients (the judges' too) are closed on shutdown (R17).
     clients.llm_resolver.aclose.assert_awaited_once()
