@@ -73,10 +73,18 @@ def load_variables(
 
 
 def _call(
-    client: httpx.Client, out: Out, *, step: str, method: str, **params: Any
+    client: httpx.Client,
+    out: Out,
+    *,
+    step: str,
+    method: str,
+    bot: str = "juris-ai-test-bot",
+    **params: Any,
 ) -> dict[str, Any]:
     try:
-        response = client.post(f"/{method}", json=params) if params else client.post(f"/{method}")
+        # Form-encoded: Slack's read methods (conversations.info) don't
+        # accept JSON bodies, only write methods do.
+        response = client.post(f"/{method}", data=params)
         body: dict[str, Any] = response.json()
     except (httpx.HTTPError, ValueError) as exc:
         out(f"❌ {step}: couldn't reach Slack ({type(exc).__name__}).")
@@ -89,6 +97,8 @@ def _call(
         hint = HINTS.get(error, f"See https://api.slack.com/methods/{method} ({error}).")
         if error == "missing_scope" and body.get("needed"):
             hint += f" Needed scope: {body['needed']}."
+        # Name the bot actually installed, not the guide's example name.
+        hint = hint.replace("@juris-ai-test-bot", f"@{bot}")
         out(f"   {hint}")
         raise _StepFailed
 
@@ -120,6 +130,7 @@ def run_check(*, env: Mapping[str, str | None], client: httpx.Client, out: Out =
             out,
             step="Post",
             method="chat.postMessage",
+            bot=str(auth.get("user") or "juris-ai-test-bot"),
             channel=channel_id,
             text=f"{TAG} {stamp}",
         )
