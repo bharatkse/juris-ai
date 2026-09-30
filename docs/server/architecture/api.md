@@ -319,6 +319,14 @@ Requires a bearer token. Both endpoints take `multipart/form-data`.
   its earlier calls used count toward the daily quota. The last call's
   output can take the total slightly past the limit. Not applied to a
   turn resumed after an approval.
+- **Tokens of a failed request** count too: a request that fails, is
+  refused, or is abandoned (a client disconnecting from `/chat/stream`)
+  still adds the tokens its LLM calls used to the daily quota, once per
+  request.
+- **Planning time:** if planning doesn't finish within
+  `PLANNER_TIMEOUT_S` (default 120 s), the request fails with `504`
+  `PLANNING_TIMEOUT` (on `/chat/stream`, a final `error` event). Nothing
+  is run. Planning time counts toward the request's overall time budget.
 - **Plan size:** a request whose plan needs more than 6 steps
   (`PLAN_MAX_STEPS`) isn't run. The answer (`200`) says how many steps it
   would need and asks the user to split it into smaller questions.
@@ -482,9 +490,10 @@ approve, edit or reject it."
 ```
 
 `status` is one of `waiting`, `approved`, `rejected`, `edited`, `expired`.
-`resume_status` is `completed` or `failed`. (The enum also has
-`not_resumed`, which these endpoints no longer return, since every
-decision now resumes.)
+`resume_status` is `completed`, `failed`, or `in_progress` when another
+request is already resuming the same approval (only one request ever
+runs the approved call). (The enum also has `not_resumed`, which these
+endpoints no longer return, since every decision now resumes.)
 
 #### Approval Status Codes
 
@@ -514,6 +523,12 @@ before it finished. It is never retried automatically.
   nothing is sent again. The permission check described above applies
   only when the call hasn't run yet.
 - It works after `expires_at`; the expiry applies only to deciding.
+- Only one request resumes an approval at a time. While another request
+  is resuming it, the retry is refused with `409`. A resume that stopped
+  without finishing (for example, the server restarted) can be retried
+  once `HITL_RESUME_STALE_SECONDS` (default 600) have passed without
+  progress. If the approved call's outcome was already stored, it is
+  reused; the call is repeated only if no outcome was recorded.
 - The response has the same shape as the decision response, with the
   approval's current `status` and the retry's `resume_status`.
 
@@ -523,7 +538,7 @@ before it finished. It is never retried automatically.
 | `401`  | Missing, invalid or expired bearer token (`{"detail": ...}`) |
 | `403`  | The caller is not the user who requested this approval (error code `FORBIDDEN`), or the caller's account is inactive |
 | `404`  | No approval with this ID (error code `APPROVAL_NOT_FOUND`) |
-| `409`  | The approval hasn't been decided yet, or its resume already finished (error code `APPROVAL_RESUME_NOT_ALLOWED`) |
+| `409`  | The approval hasn't been decided yet, its resume already finished, or another request is resuming it (error code `APPROVAL_RESUME_NOT_ALLOWED`) |
 
 Error responses from the application use the standard envelope:
 
@@ -653,7 +668,7 @@ facts already saved from earlier messages in it.
 | `429`  | Request rate limit or daily token quota exceeded |
 | `500`  | Internal server error          |
 | `502`  | LLM provider error             |
-| `504`  | LLM provider timeout           |
+| `504`  | LLM provider timeout, or planning didn't finish in time (`PLANNING_TIMEOUT`) |
 
 ---
 
