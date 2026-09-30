@@ -13,6 +13,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from adapters.observability.logger import get_logger
+from adapters.observability.metrics import metrics
 from agentic.orchestration.schemas.request import OrchestratorRequest
 from agentic.orchestration.schemas.response import Citation, OrchestratorResponse, Source
 from application.services.base import BaseService
@@ -22,6 +23,7 @@ from application.services.conversation_summarization import (
 from application.services.internal_dto.chat import ChatResultDTO
 from application.services.internal_dto.stream import ChatStreamChunkDTO
 from core.enums import MessageRoleEnum
+from core.exceptions.rate_limit import RequestTokenQuotaExceededError
 from core.models.conversation import ConversationMessageSchema
 from core.types import ConversationEventId, ConversationId, UserId
 from core.usage import UsageMeter, request_token_quota, usage_tally
@@ -150,10 +152,14 @@ class ChatService(BaseService):
                 )
 
                 with request_token_quota(self._usage_service.request_token_quota()):
-                    result = await self._orchestrator.handle(
-                        request=orchestration_request,
-                        action_workflow_service=self._action_workflow_service,
-                    )
+                    try:
+                        result = await self._orchestrator.handle(
+                            request=orchestration_request,
+                            action_workflow_service=self._action_workflow_service,
+                        )
+                    except RequestTokenQuotaExceededError:
+                        metrics.record_token_quota_rejection(quota="per_request")
+                        raise
 
                 # The assistant event is also persisted when HITL approval
                 # is required so the approval state is available in
@@ -277,12 +283,16 @@ class ChatService(BaseService):
                 # orchestrator's stream is closed here, so its usage scope
                 # has reached the tally before the finally below reads it.
                 with request_token_quota(self._usage_service.request_token_quota()):
-                    async with aclosing(stream) as chunks:
-                        async for chunk in chunks:
-                            if chunk.is_final:
-                                final_response = chunk.response
+                    try:
+                        async with aclosing(stream) as chunks:
+                            async for chunk in chunks:
+                                if chunk.is_final:
+                                    final_response = chunk.response
 
-                            yield chunk
+                                yield chunk
+                    except RequestTokenQuotaExceededError:
+                        metrics.record_token_quota_rejection(quota="per_request")
+                        raise
 
                 if final_response is None:
                     raise RuntimeError(
