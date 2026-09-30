@@ -5,7 +5,8 @@ The planner fails over from the local model to a second provider
 within what is left of the request's deadline. No time left means no second
 call and 504 PLANNING_TIMEOUT, as does either call timing out. Both
 providers failing with an error before that is 503 PLANNING_UNAVAILABLE,
-with Retry-After. With no failover client the planner behaves as before.
+with Retry-After. With no failover client, a local timeout is 504 and a
+local error 503, the same as with failover.
 """
 
 from __future__ import annotations
@@ -183,14 +184,32 @@ async def test_a_request_token_quota_refusal_is_not_failed_over(
     groq.generate_structured.assert_not_awaited()
 
 
-async def test_without_failover_a_local_error_is_raised_as_before(
-    mock_prompt_builder: Mock, mock_capability_catalog: Mock
+@pytest.mark.parametrize(
+    "error",
+    [ClientConnectionError(), ClientProviderError(message="model not found")],
+    ids=["connection error", "provider error"],
+)
+async def test_without_failover_a_local_error_is_planning_unavailable(
+    mock_prompt_builder: Mock, mock_capability_catalog: Mock, error: Exception
 ) -> None:
-    local = _client("local", side_effect=ClientConnectionError())
-    generator = _generator(local, None, mock_prompt_builder, mock_capability_catalog)
+    """The only provider errored: the same 503 as both providers erroring."""
 
-    with pytest.raises(ClientConnectionError):
+    local = _client("local", side_effect=error)
+    generator = LLMPlanGenerator(
+        llm_client=local,
+        fallback_llm_client=None,
+        prompt_builder=mock_prompt_builder,
+        capability_catalog=mock_capability_catalog,
+        unavailable_retry_after_seconds=17,
+    )
+
+    with pytest.raises(PlanningUnavailableError) as caught:
         await generator.generate(request=build_planning_request())
+
+    assert caught.value.status_code == 503
+    assert caught.value.headers == {"Retry-After": "17"}
+    assert caught.value.details == {"retry_after_seconds": 17}
+    assert caught.value.__cause__ is error
 
 
 async def test_without_failover_a_local_timeout_is_a_planning_timeout(
