@@ -37,7 +37,8 @@ def create_planner(
     # The planner reads the same registries and agent_policies table as
     # the executor's AgentExecution (wiring/factories/executor.py), so the
     # agents and tools it plans with are the ones the runtime allows.
-    max_steps = get_settings().agent_policy.PLAN_MAX_STEPS
+    settings = get_settings()
+    max_steps = settings.agent_policy.PLAN_MAX_STEPS
 
     capability_catalog = AgentCapabilityCatalog(
         agent_registry=registries.agent_registry,
@@ -50,10 +51,19 @@ def create_planner(
     return ExecutionPlanner(
         template_registry=PlanTemplateRegistry(),
         llm_planner=LLMPlanGenerator(
+            # Local first: planning costs no Groq quota, which the agents
+            # share (review R18, measured 2026-09-30). Groq is the failover
+            # when the local model is down, slow past PLANNER_TIMEOUT_S, or
+            # errors; PLANNER_FAILOVER_PROVIDER="" turns that off.
             llm_client=clients.llm_resolver.get(LLMProviderEnum.LOCAL),
+            fallback_llm_client=(
+                clients.llm_resolver.get(LLMProviderEnum(settings.llm.PLANNER_FAILOVER_PROVIDER))
+                if settings.llm.PLANNER_FAILOVER_PROVIDER
+                else None
+            ),
             prompt_builder=PlanningPromptBuilder(max_steps=max_steps),
             capability_catalog=capability_catalog,
-            timeout_seconds=get_settings().llm.PLANNER_TIMEOUT_S,
+            timeout_seconds=settings.llm.PLANNER_TIMEOUT_S,
         ),
         validator=ExecutionPlanValidator(max_steps=max_steps),
     )
