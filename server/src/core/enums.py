@@ -349,6 +349,8 @@ class HitlResumeStatusEnum(StrEnum):
     COMPLETED = "completed"
     FAILED = "failed"
     NOT_RESUMED = "not_resumed"
+    # Another request is already resuming this approval's action.
+    IN_PROGRESS = "in_progress"
 
 
 # ============================================================================
