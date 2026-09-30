@@ -1576,3 +1576,123 @@ async def test_a_stream_closed_between_chunks_records_its_usage(
         900,
         90,
     )
+
+
+def _summarizing(mock_conversation_summarization_service: MagicMock, seen: dict) -> None:
+    """
+    Summarization that spends 100 + 20 tokens, recording the quota and the
+    deadline in effect when it runs (review G1).
+    """
+
+    from core.deadline import remaining_seconds
+    from core.usage import usage_scope
+
+    async def ensure_summarized(*, conversation):
+        with usage_scope() as meter:
+            seen["quota"] = meter.quota
+        seen["remaining"] = remaining_seconds()
+        _spend(100, 20)
+        return conversation
+
+    mock_conversation_summarization_service.ensure_summarized = ensure_summarized
+
+
+@pytest.mark.asyncio
+async def test_chat_summarizes_under_the_request_quota_and_deadline_and_records_it(
+    chat_service: ChatService,
+    mock_conversation_service: MagicMock,
+    mock_conversation_event_service: MagicMock,
+    mock_conversation_summarization_service: MagicMock,
+    mock_orchestrator: MagicMock,
+    mock_usage_service: MagicMock,
+) -> None:
+    from core.deadline import deadline_within
+    from core.usage import usage_scope
+
+    conversation = _arrange_chat(mock_conversation_service, mock_conversation_event_service)
+    mock_usage_service.request_token_quota = MagicMock(return_value=1000)
+    mock_orchestrator.request_deadline = MagicMock(side_effect=lambda: deadline_within(300))
+    seen: dict = {}
+    _summarizing(mock_conversation_summarization_service, seen)
+    used_before_orchestration: list[int] = []
+
+    async def handle(**_kwargs):
+        from core.exceptions.rate_limit import RequestTokenQuotaExceededError
+        from core.usage import check_request_token_quota
+
+        with usage_scope(estimate_tokens=len):
+            try:
+                check_request_token_quota(["x" * 881])  # 120 + 881 > 1000
+            except RequestTokenQuotaExceededError as exc:
+                used_before_orchestration.append(exc.used)
+        _spend(300, 50)
+        raise SQLAlchemyError("stop here")
+
+    mock_orchestrator.handle = handle
+    chat_service.rollback = AsyncMock()
+    request_id = _request_id()
+
+    with pytest.raises(SQLAlchemyError):
+        await chat_service.chat(
+            user_id=conversation.user_id,
+            conversation_id=conversation.id,
+            message=TEST_MESSAGE,
+            request_id=request_id,
+        )
+
+    assert seen["quota"] == 1000
+    assert seen["remaining"] is not None and 0 < seen["remaining"] <= 300
+    # Summarization's tokens count toward the per-request quota ...
+    assert used_before_orchestration == [120]
+    # ... and are recorded with the rest of the request's usage.
+    assert _recorded(mock_usage_service) == (
+        str(conversation.user_id),
+        str(request_id),
+        400,
+        70,
+    )
+
+
+@pytest.mark.asyncio
+async def test_stream_chat_summarizes_under_the_request_quota_and_deadline_and_records_it(
+    chat_service: ChatService,
+    mock_conversation_service: MagicMock,
+    mock_conversation_event_service: MagicMock,
+    mock_conversation_summarization_service: MagicMock,
+    mock_orchestrator: MagicMock,
+    mock_usage_service: MagicMock,
+) -> None:
+    from core.deadline import deadline_within
+
+    conversation = _arrange_chat(mock_conversation_service, mock_conversation_event_service)
+    mock_usage_service.request_token_quota = MagicMock(return_value=1000)
+    mock_orchestrator.request_deadline = MagicMock(side_effect=lambda: deadline_within(300))
+    seen: dict = {}
+    _summarizing(mock_conversation_summarization_service, seen)
+
+    async def stream(**_kwargs):
+        _spend(300, 50)
+        raise SQLAlchemyError("stop here")
+        yield  # pragma: no cover -- makes this an async generator
+
+    mock_orchestrator.stream = stream
+    chat_service.rollback = AsyncMock()
+    request_id = _request_id()
+
+    with pytest.raises(SQLAlchemyError):
+        async for _ in chat_service.stream_chat(
+            user_id=conversation.user_id,
+            conversation_id=conversation.id,
+            message=TEST_MESSAGE,
+            request_id=request_id,
+        ):
+            pass
+
+    assert seen["quota"] == 1000
+    assert seen["remaining"] is not None and 0 < seen["remaining"] <= 300
+    assert _recorded(mock_usage_service) == (
+        str(conversation.user_id),
+        str(request_id),
+        400,
+        70,
+    )
