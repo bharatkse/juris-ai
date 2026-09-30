@@ -32,6 +32,8 @@ from core.constants import (
     ERROR_PLAN_VALIDATION,
     ERROR_PLANNING,
     ERROR_PLANNING_TIMEOUT,
+    ERROR_PLANNING_UNAVAILABLE,
+    HTTP_503_SERVICE_UNAVAILABLE,
     HTTP_504_GATEWAY_TIMEOUT,
 )
 from core.exceptions.base import AIError
@@ -75,6 +77,28 @@ class PlanningTimeoutError(PlanningError):
 
         super().__init__(
             f"Planning did not finish within {timeout_seconds:.0f} seconds. Please try again.",
+        )
+
+
+class PlanningUnavailableError(PlanningError):
+    """
+    Raised when every planner provider failed with an error (the local
+    model, then the failover provider) before any time limit was reached:
+    the providers are unavailable, not slow. Nothing has been executed.
+    Sent with Retry-After (PLANNER_UNAVAILABLE_RETRY_AFTER_S).
+    """
+
+    status_code = HTTP_503_SERVICE_UNAVAILABLE
+    error_code = ERROR_PLANNING_UNAVAILABLE
+
+    def __init__(self, *, retry_after_seconds: int) -> None:
+        self.retry_after_seconds = retry_after_seconds
+
+        super().__init__(
+            "Planning is unavailable right now. "
+            f"Please try again in {retry_after_seconds} seconds.",
+            details={"retry_after_seconds": retry_after_seconds},
+            headers={"Retry-After": str(retry_after_seconds)},
         )
 
 
