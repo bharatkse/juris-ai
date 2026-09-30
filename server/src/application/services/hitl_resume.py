@@ -35,7 +35,10 @@ from core.enums import (
     MessageRoleEnum,
 )
 from core.exceptions.agent_action import AgentActionError
-from core.exceptions.approval import ApprovalResumeNotAllowedError
+from core.exceptions.approval import (
+    ApprovalResumeNeedsConfirmationError,
+    ApprovalResumeNotAllowedError,
+)
 from core.usage import usage_tally
 
 if TYPE_CHECKING:
@@ -64,8 +67,9 @@ _RESUMABLE_DECISIONS = frozenset(
 # started resuming, or failed doing so: PENDING_APPROVAL (the process
 # stopped between the decision commit and the resume), FAILED (recorded
 # failure). A resume claims the action by moving it to EXECUTING; an
-# EXECUTING action is claimable again only once it is stale
-# (HITL_RESUME_STALE_SECONDS: the worker that claimed it stopped).
+# EXECUTING action is claimable again only by a retry, once it is stale
+# (HITL_RESUME_STALE_SECONDS: the worker that claimed it stopped), and
+# only with the user's confirmation if the send may already have run.
 _CLAIMABLE_ACTION_STATUSES = frozenset(
     {
         AgentActionStatusEnum.PENDING_APPROVAL,
@@ -136,6 +140,7 @@ class HitlResumeService(BaseService):
         agent_action_id: str,
         decision_type: ApprovalDecisionEnum | None,
         edited_payload: dict[str, Any] | None = None,
+        take_over_stale: bool = False,
     ) -> HitlResumeStatusEnum:
         """
         Resume the execution paused by agent_action_id's gated tool
@@ -168,7 +173,8 @@ class HitlResumeService(BaseService):
         overlapping resumes of the same action -- the decision and a
         retry, or two retries, in any workers -- only one runs the call
         and the graph. The other returns IN_PROGRESS without touching
-        anything.
+        anything. A claim left EXECUTING by a worker that stopped is taken
+        over only with take_over_stale, which retry() decides.
         """
 
         if decision_type not in _RESUMABLE_DECISIONS:
@@ -183,7 +189,7 @@ class HitlResumeService(BaseService):
             claimed = await self._agent_action_repository.claim(
                 agent_action_id,
                 from_statuses=_CLAIMABLE_ACTION_STATUSES,
-                stale_before=_stale_before(),
+                stale_before=_stale_before() if take_over_stale else None,
             )
             await self.commit()
         except Exception:
@@ -395,6 +401,7 @@ class HitlResumeService(BaseService):
         self,
         *,
         approval: ApprovalResponseDTO,
+        force: bool = False,
     ) -> HitlResumeStatusEnum:
         """
         Re-run the resume for a decided approval whose conversation is
@@ -402,6 +409,13 @@ class HitlResumeService(BaseService):
         stopped between committing the decision and finishing the resume
         (AgentAction still PENDING_APPROVAL, or EXECUTING with no
         progress for HITL_RESUME_STALE_SECONDS).
+
+        A stale EXECUTING action of an approved call with no stored result
+        may have sent before its worker stopped. Its retry raises
+        ApprovalResumeNeedsConfirmationError (409, possibly_sent) unless
+        force is set; a forced one is logged at WARNING and then sends
+        once. A stored result, or a rejection, can't send again, so it
+        needs no confirmation.
 
         The caller has already checked the approval belongs to the user
         (ApprovalLifecycleService.get(user_id=...)). Raises
@@ -427,6 +441,30 @@ class HitlResumeService(BaseService):
                 "This approval's action has already been resumed.",
             )
 
+        take_over_stale = (
+            agent_action.status is AgentActionStatusEnum.EXECUTING
+            and agent_action.updated_at < _stale_before()
+        )
+
+        if take_over_stale and self._may_have_sent(agent_action, approval):
+            if not force:
+                raise ApprovalResumeNeedsConfirmationError(
+                    "The approved message may already have been sent. "
+                    "Retry with force=true to send it anyway.",
+                    details={"possibly_sent": True},
+                )
+
+            logger.warning(
+                "Retrying a stale approved send without a recorded outcome, as "
+                "confirmed by the user: the message may be sent twice.",
+                extra={
+                    "operation": "retry_resume",
+                    "approval_id": approval.approval_id,
+                    "agent_action_id": agent_action.id,
+                    "user_id": agent_action.user_id,
+                },
+            )
+
         logger.info(
             "Retrying resume after HITL decision.",
             extra={
@@ -442,6 +480,7 @@ class HitlResumeService(BaseService):
             agent_action_id=approval.agent_action_id,
             decision_type=approval.decision_type,
             edited_payload=approval.edited_payload,
+            take_over_stale=take_over_stale,
         )
 
         if status is HitlResumeStatusEnum.IN_PROGRESS:
@@ -452,6 +491,21 @@ class HitlResumeService(BaseService):
             )
 
         return status
+
+    @staticmethod
+    def _may_have_sent(
+        agent_action: AgentAction,
+        approval: ApprovalResponseDTO,
+    ) -> bool:
+        """
+        Whether taking over this action could send a second time: an
+        approved (or edited) call whose outcome was never stored.
+        """
+
+        return (
+            approval.decision_type is not ApprovalDecisionEnum.REJECT
+            and (agent_action.result or {}).get(TOOL_RESULT_KEY) is None
+        )
 
     async def _approved_tool_result(
         self,
