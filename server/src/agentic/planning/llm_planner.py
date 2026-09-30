@@ -71,7 +71,7 @@ class LLMPlanGenerator:
         # (settings.llm.PLANNER_FAILOVER_PROVIDER); None: no failover.
         self._fallback_llm = fallback_llm_client
         self._min_fallback_seconds = min_fallback_seconds
-        # Retry-After for PlanningUnavailableError (503): both providers
+        # Retry-After for PlanningUnavailableError (503): every provider
         # errored before any time limit was reached.
         self._unavailable_retry_after_seconds = unavailable_retry_after_seconds
         # Bound on the planner's LLM call (settings.llm.PLANNER_TIMEOUT_S,
@@ -152,7 +152,8 @@ class LLMPlanGenerator:
         second call. A plan neither provider produced is
         PlanningUnavailableError (503) when both calls failed with a
         client error, and PlanningTimeoutError (504) when either call
-        timed out or there was no time left for the second.
+        timed out or there was no time left for the second. Without a
+        failover client: a timeout is 504, a client error 503.
         """
 
         timeout = self._bounded(self._timeout_seconds)
@@ -167,7 +168,11 @@ class LLMPlanGenerator:
                         extra={"operation": "generate_plan", "timeout_seconds": round(timeout, 1)},
                     )
                     raise PlanningTimeoutError(timeout_seconds=timeout) from exc
-                raise
+                # The only provider errored: unavailable, as when both
+                # providers error with failover on.
+                raise PlanningUnavailableError(
+                    retry_after_seconds=self._unavailable_retry_after_seconds
+                ) from exc
 
             return await self._generate_on_fallback(
                 self._fallback_llm,
