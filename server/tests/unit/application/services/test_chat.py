@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -20,6 +20,7 @@ from agentic.orchestration.schemas.response import (
     GuardrailInfo,
     Source,
 )
+from application.services import chat as chat_module
 from application.services.chat import ChatService
 from application.services.conversation_summarization import UNSUMMARIZED_EVENT_LIMIT
 from application.services.internal_dto.chat import ChatResultDTO
@@ -1396,7 +1397,10 @@ async def test_chat_records_the_usage_of_a_request_the_quota_refused(
     chat_service.rollback = AsyncMock()
     request_id = _request_id()
 
-    with pytest.raises(RequestTokenQuotaExceededError):
+    with (
+        patch.object(chat_module.metrics, "record_token_quota_rejection") as rejected,
+        pytest.raises(RequestTokenQuotaExceededError),
+    ):
         await chat_service.chat(
             user_id=conversation.user_id,
             conversation_id=conversation.id,
@@ -1404,6 +1408,7 @@ async def test_chat_records_the_usage_of_a_request_the_quota_refused(
             request_id=request_id,
         )
 
+    rejected.assert_called_once_with(quota="per_request")
     chat_service.rollback.assert_awaited_once()
     chat_service.commit.assert_not_awaited()
     assert _recorded(mock_usage_service) == (
@@ -1440,7 +1445,10 @@ async def test_stream_chat_records_the_usage_of_a_request_the_quota_refused(
     chat_service.rollback = AsyncMock()
     request_id = _request_id()
 
-    with pytest.raises(RequestTokenQuotaExceededError):
+    with (
+        patch.object(chat_module.metrics, "record_token_quota_rejection") as rejected,
+        pytest.raises(RequestTokenQuotaExceededError),
+    ):
         async for _ in chat_service.stream_chat(
             user_id=conversation.user_id,
             conversation_id=conversation.id,
@@ -1449,6 +1457,7 @@ async def test_stream_chat_records_the_usage_of_a_request_the_quota_refused(
         ):
             pass
 
+    rejected.assert_called_once_with(quota="per_request")
     assert quotas == [1000]
     assert _recorded(mock_usage_service) == (
         str(conversation.user_id),
