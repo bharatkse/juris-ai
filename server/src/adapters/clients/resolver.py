@@ -112,3 +112,16 @@ class LLMResolver:
         """
 
         return self._default_provider
+
+    async def aclose(self) -> None:
+        """
+        Close every client this resolver holds, once, at application
+        shutdown (review R17). A client that fails to close is logged and
+        the rest are still closed.
+        """
+
+        for provider, client in self._clients.items():
+            try:
+                await client.aclose()
+            except Exception:
+                log.exception("Failed to close LLM client '%s'.", provider.value)
