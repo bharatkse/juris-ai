@@ -73,3 +73,15 @@ class ApprovalResumeNotAllowedError(ApprovalError):
 
     status_code = HTTP_409_CONFLICT
     error_code = "APPROVAL_RESUME_NOT_ALLOWED"
+
+
+class ApprovalResumeNeedsConfirmationError(ApprovalError):
+    """
+    Raised when a retry would take over a resume that stopped mid-send
+    long ago (HITL_RESUME_STALE_SECONDS) with no recorded outcome: the
+    message may already have gone out. The retry runs only when the
+    requester confirms it (force); details carry possibly_sent.
+    """
+
+    status_code = HTTP_409_CONFLICT
+    error_code = "APPROVAL_RESUME_NEEDS_CONFIRMATION"
