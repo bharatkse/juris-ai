@@ -77,6 +77,8 @@ sequenceDiagram
         C->>E: evaluate(question, answer, evidence)
         alt sufficient
             C-->>N: accept + AnswerEvaluationSummary
+        else groundedness judge's provider down
+            C-->>N: no retry: answer replaced with UNVERIFIED_ANSWER_MESSAGE<br/>(QUALITY_GATE_EXHAUSTED, verified=False)
         else no evidence at all
             C->>T: one corrective "retriever" call (policy-checked)
             C-->>N: still none: answer replaced with NO_SOURCES_ANSWER_MESSAGE<br/>(NO_EVIDENCE, verified=False)
