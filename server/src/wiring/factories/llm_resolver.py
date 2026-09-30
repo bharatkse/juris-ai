@@ -30,6 +30,7 @@ def build_llm_resolver(*, settings: Settings) -> LLMResolver:
             LLMProviderEnum.LOCAL: LocalLLMClient(
                 base_url=settings.llm.LLM_LOCAL_BASE_URL,
                 model=settings.llm.LLM_LOCAL_MODEL,
+                keep_alive=settings.llm.LLM_LOCAL_KEEP_ALIVE,
             ),
         },
         default_provider=LLMProviderEnum.GROQ,
