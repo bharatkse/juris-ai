@@ -68,7 +68,10 @@ produced still can't be checked, so it is discarded (the refusal, or the
 meter when the fallback answered (`core.usage.record_llm_fallback()`), and
 each judge's failure path then logs a warning and records
 `juris_ai_failover_answers_discarded_total{judge}`, so this shows up as
-failover that didn't help rather than as an ordinary judge outage.
+failover that didn't help rather than as an ordinary judge outage. With the
+groundedness judge's provider down, the answer gate doesn't retry (no
+corrective retrieval or re-ask) and returns the "couldn't verify" reply at
+once (`agents/runtime/continuation.py`, `evaluation/README.md`).
 
 Before the first `_reason()` call, `context` holds any files attached to
 the chat message (parsed by the Executor) and the runtime seeds it with a
