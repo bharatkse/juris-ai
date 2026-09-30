@@ -24,6 +24,13 @@ class LLMSettings(BaseAppSettings):
     # ~450 s (review R2), longer than the whole 300 s graph timeout.
     LLM_LOCAL_FAILOVER_MIN_SECONDS: float = Field(default=60.0, gt=0)
     LLM_LOCAL_BASE_URL: str | None = None
+    # Most seconds the planner's LLM call may take (review R18); a call
+    # still running is cancelled and the request fails with 504
+    # PLANNING_TIMEOUT. The request's own deadline (the 300 s graph
+    # timeout, started before planning) can cut it shorter. 120 s covers
+    # qwen3:8b on a CPU host, measured with scripts/bench_planner.py on
+    # 2026-09-30: ~20 s per plan warm, p95 38 s, 79 s on a cold model load.
+    PLANNER_TIMEOUT_S: float = Field(default=120.0, gt=0)
     LLM_LOCAL_MODEL: str = LLMMODELEnum.QWEN3_8B
 
     # Provider-independent inference defaults
