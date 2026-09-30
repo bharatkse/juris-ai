@@ -79,3 +79,44 @@ async def test_judge_records_a_cache_miss_and_calls_the_llm(
     cache.set.assert_awaited_once()
 
     mock_record.assert_called_once_with(result="miss", cache="judge")
+
+
+async def test_the_judge_builds_its_client_once_and_reuses_it() -> None:
+    """R17: no new Groq/Ollama clients per judge call (they were never closed)."""
+
+    client = MagicMock()
+    client.provider = "groq"
+    client.generate = AsyncMock(return_value=build_llm_response(content="verdict"))
+    resolver = MagicMock()
+    resolver.get.return_value = client
+
+    cache = MagicMock()
+    cache.get = AsyncMock(return_value=None)
+    cache.set = AsyncMock()
+
+    with patch("wiring.factories.evaluation.build_llm_resolver", return_value=resolver) as build:
+        judge = build_llm_judge(settings=_settings(), cache=cache)
+        await judge("first prompt")
+        await judge("second prompt")
+
+    build.assert_called_once()
+    assert client.generate.await_count == 2
+
+
+async def test_the_judge_uses_the_apps_shared_resolver_when_given() -> None:
+    client = MagicMock()
+    client.provider = "groq"
+    client.generate = AsyncMock(return_value=build_llm_response(content="verdict"))
+    shared = MagicMock()
+    shared.get.return_value = client
+
+    cache = MagicMock()
+    cache.get = AsyncMock(return_value=None)
+    cache.set = AsyncMock()
+
+    with patch("wiring.factories.evaluation.build_llm_resolver") as build:
+        judge = build_llm_judge(settings=_settings(), cache=cache, llm_resolver=shared)
+        await judge("a prompt")
+
+    build.assert_not_called()
+    client.generate.assert_awaited_once()
