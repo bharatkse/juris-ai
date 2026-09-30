@@ -42,5 +42,6 @@ class AgentPolicySettings(BaseAppSettings):
     # this has passed the retry is refused, since the resume may still be
     # running in another worker. Longer than a whole resume can take (the
     # 300 s graph timeout plus the send). A stored send result is always
-    # reused, so only a send with no recorded outcome can be repeated.
+    # reused; a send with no recorded outcome is repeated only when the
+    # user confirms the retry (force=true), since it may already have run.
     HITL_RESUME_STALE_SECONDS: float = Field(default=600.0, gt=0)
