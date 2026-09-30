@@ -286,3 +286,45 @@ async def test_a_groundedness_judge_that_answered_unusably_is_not_unavailable() 
 
     assert result.groundedness_detail.judge_unavailable is False
     assert result.groundedness_detail.score == 0.0
+
+
+@pytest.mark.asyncio
+async def test_an_unavailable_similarity_is_reported_not_raised() -> None:
+    """
+    G2: with the embedding model down the checks can't be scored. The
+    result says so (the gate then gives the "couldn't verify" answer);
+    the groundedness judge still ran to completion, not left behind.
+    """
+
+    from core.exceptions.rag import SimilarityUnavailableError
+
+    async def similarity(a: str, b: str) -> float:
+        raise SimilarityUnavailableError("embeddings down")
+
+    faithfulness_backend = AsyncMock()
+    faithfulness_backend.evaluate = AsyncMock(return_value=0.9)
+    evaluator = AnswerEvaluator(
+        similarity=similarity,
+        faithfulness_backend=faithfulness_backend,
+    )
+
+    result = await evaluator.evaluate(question="q", answer="a", evidence=["chunk"])
+
+    assert result.relevance_unavailable is True
+    assert result.relevance == 0.0
+    assert result.completeness == 0.0
+    faithfulness_backend.evaluate.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_a_scored_evaluation_is_not_marked_unavailable() -> None:
+    faithfulness_backend = AsyncMock()
+    faithfulness_backend.evaluate = AsyncMock(return_value=0.9)
+    evaluator = AnswerEvaluator(
+        similarity=_similarity_stub({}),
+        faithfulness_backend=faithfulness_backend,
+    )
+
+    result = await evaluator.evaluate(question="q", answer="a", evidence=["chunk"])
+
+    assert result.relevance_unavailable is False
