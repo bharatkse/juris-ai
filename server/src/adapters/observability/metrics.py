@@ -46,12 +46,31 @@ class ApplicationMetrics:
             unit="1",
         )
 
+        self.retrieval_searches: Counter = meter.create_counter(
+            name="juris_ai_retrieval_searches_total",
+            description=(
+                "Hybrid retrieval searches, labeled by the mode they ran in "
+                "(full|no_rerank|keyword_only|vector_only|unavailable)."
+            ),
+            unit="1",
+        )
+
         self.llm_failovers: Counter = meter.create_counter(
             name="juris_ai_llm_failovers_total",
             description=(
                 "Calls a primary LLM provider couldn't serve, labeled by "
                 "primary/fallback provider, reason (error type) and outcome "
                 "(attempted|skipped_context|skipped_deadline|failed)."
+            ),
+            unit="1",
+        )
+
+        self.failover_answers_discarded: Counter = meter.create_counter(
+            name="juris_ai_failover_answers_discarded_total",
+            description=(
+                "Answers the local failover model produced that a Groq-only "
+                "judge couldn't check and so discarded, labeled by judge "
+                "(harmful_content|groundedness)."
             ),
             unit="1",
         )
@@ -153,6 +172,27 @@ class ApplicationMetrics:
                 "outcome": outcome,
             },
         )
+
+    def record_retrieval(self, *, mode: str) -> None:
+        """
+        Record one hybrid retrieval search and the mode it ran in: full,
+        or degraded because a component failed (review R4).
+        """
+
+        self.retrieval_searches.add(1, attributes={"mode": mode})
+
+    def record_failover_answer_discarded(
+        self,
+        *,
+        judge: Literal["harmful_content", "groundedness"],
+    ) -> None:
+        """
+        Record an answer from the local failover model that a Groq-only
+        judge couldn't check (Groq down), so it was refused or marked
+        unverified (review R17: judges deliberately don't fail over).
+        """
+
+        self.failover_answers_discarded.add(1, attributes={"judge": judge})
 
 
 metrics = ApplicationMetrics()
