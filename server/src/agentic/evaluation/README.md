@@ -40,7 +40,13 @@ couldn't score because its provider was unavailable (a rate limit, timeout,
 connection error or 5xx; `GroundednessResult.judge_unavailable`, set through
 `core/judge_availability.py`): there is no retry, since the same judge
 couldn't check a re-asked answer either. That skip is logged and counted in
-`juris_ai_answer_retries_skipped_total{reason}`. An unusable verdict or a low
+`juris_ai_answer_retries_skipped_total{reason}`. The same goes for an answer
+whose embedding checks (relevance, completeness, correctness, citations)
+couldn't be computed because the embedding model failed or took longer than
+`EmbeddingSimilarity`'s time limit (10 s): `SimilarityUnavailableError`
+scores those checks 0.0 and sets `AnswerEvaluationResult.relevance_unavailable`,
+and `_gate_final` never accepts such an answer, whatever the other scores
+(`reason="similarity_unavailable"`). An unusable verdict or a low
 score is still retried. Both are marked
 `AnswerEvaluationSummary.verified=False` (`answer_verified` in the response).
 
