@@ -16,7 +16,7 @@ steps, each naming one agent (`AgentTypeEnum`), an instruction and its
 |---|---|---|
 | `ExecutionPlanner` | `planner.py` | `create_plan(context)`: template first, else LLM; then validate |
 | `PlanTemplateRegistry` | `templates.py` | Deterministic plans for contract review, contract analysis, clause extraction, risk analysis, legal research |
-| `LLMPlanGenerator` | `llm_planner.py` | Fills `agent_capabilities`, then `generate_structured(response_model=ExecutionPlanResponseSchema)` at `LLMTask.STRUCTURED_DECISION` (temperature 0.0) |
+| `LLMPlanGenerator` | `llm_planner.py` | Fills `agent_capabilities`, then `generate_structured(response_model=ExecutionPlanResponseSchema)` at `LLMTask.STRUCTURED_DECISION` (temperature 0.0), bounded by `PLANNER_TIMEOUT_S` or the request's deadline if sooner (`PlanningTimeoutError`, 504) |
 | `AgentCapabilityCatalog` | `capabilities.py` | Each plannable agent (`AgentTypeEnum`, registered, with a policy): its metadata description and the tools its `agent_policies` row allows, via `ToolRegistry.describe()`, the same source as the agent's own tool catalog |
 | `PlanningPromptBuilder` | `prompts/planning.py` + `prompts/templates/planning.md` + `prompts/agent_capabilities.py` | Instructions, the generated "Available Agents" block (tool names and purposes, no parameter schemas), `<user_memory>` block, history |
 | `ExecutionPlanValidator` | `validator.py` | Structural checks; raises `PlanValidationError` |
