@@ -40,6 +40,7 @@ class AppError(Exception):
     error_code: str = ERROR_INTERNAL_SERVER_ERROR
     default_message: str = "An unexpected error occurred."
     details: dict[str, Any] | None = None
+    headers: dict[str, str] | None = None
 
     def __init__(
         self,
@@ -49,6 +50,7 @@ class AppError(Exception):
         status_code: int | None = None,
         error_code: str | None = None,
         details: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
     ) -> None:
         self.message = message or self.default_message
         self.detail = detail or self.message
@@ -56,6 +58,8 @@ class AppError(Exception):
         # Structured, client-safe fields returned as the error's "details"
         # (ErrorDetailModel.details), e.g. the state a 409 conflicted with.
         self.details = details
+        # HTTP headers sent with the error response, e.g. Retry-After.
+        self.headers = headers
 
         if error_code is not None:
             self.error_code = error_code
