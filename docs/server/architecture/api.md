@@ -323,10 +323,13 @@ Requires a bearer token. Both endpoints take `multipart/form-data`.
   refused, or is abandoned (a client disconnecting from `/chat/stream`)
   still adds the tokens its LLM calls used to the daily quota, once per
   request.
-- **Planning time:** if planning doesn't finish within
-  `PLANNER_TIMEOUT_S` (default 120 s), the request fails with `504`
-  `PLANNING_TIMEOUT` (on `/chat/stream`, a final `error` event). Nothing
-  is run. Planning time counts toward the request's overall time budget.
+- **Planning time:** planning runs on the local model first. If it
+  doesn't finish within `PLANNER_TIMEOUT_S` (default 45 s) or fails, the
+  plan is asked once of `PLANNER_FAILOVER_PROVIDER` (default Groq) within
+  the rest of the request's time budget. If that fails too, or too little
+  time is left, the request fails with `504` `PLANNING_TIMEOUT` (on
+  `/chat/stream`, a final `error` event). Nothing is run. Planning time
+  counts toward the request's overall time budget.
 - **Plan size:** a request whose plan needs more than 6 steps
   (`PLAN_MAX_STEPS`) isn't run. The answer (`200`) says how many steps it
   would need and asks the user to split it into smaller questions.
