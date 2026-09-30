@@ -724,6 +724,9 @@ test-e2e: ## Run e2e tests [TARGET=<path>]
 		$(PYTEST) "tests/e2e/$(TARGET)" -v; \
 	fi
 
+test-live-messaging: ## Live email/Slack send tests (sandbox up first; docs/messaging-live-test.md) [TARGET=<path>]
+	@$(IN_SERVER) RUN_LIVE_MESSAGING=1 $(PYTEST) $(if $(TARGET),"$(TARGET)",tests/e2e/live_messaging) -m live_messaging -v
+
 test-smoke: ## Run smoke tests [TARGET=<path>]
 	@$(IN_SERVER) if [ -z "$(TARGET)" ]; then \
 		$(PYTEST) tests/smoke -v -s; \
