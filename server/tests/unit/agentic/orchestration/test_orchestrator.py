@@ -1418,6 +1418,32 @@ def _orchestrator_with_deadline_probes(seen: dict[str, float | None]) -> AIOrche
 
 
 @pytest.mark.asyncio
+async def test_a_deadline_opened_by_the_caller_bounds_the_whole_turn() -> None:
+    """
+    G1: ChatService opens request_deadline() before summarizing; the
+    turn's own deadline inside it can't extend it (the earlier one wins).
+    """
+
+    import asyncio
+
+    from core.deadline import remaining_seconds
+
+    seen: dict[str, float | None] = {}
+    orchestrator = _orchestrator_with_deadline_probes(seen)
+
+    with orchestrator.request_deadline():
+        assert remaining_seconds() is not None
+        await asyncio.sleep(0.3)  # summarization
+        await orchestrator.handle(
+            request=build_orchestrator_request(),
+            action_workflow_service=MagicMock(),
+        )
+
+    assert seen["planning"] is not None and seen["planning"] <= 5.0 - 0.3
+    assert remaining_seconds() is None
+
+
+@pytest.mark.asyncio
 async def test_the_request_deadline_covers_planning() -> None:
     """
     R18: the deadline starts before planning, so the planner's call sees it
