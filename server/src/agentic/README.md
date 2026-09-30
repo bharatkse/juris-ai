@@ -314,7 +314,7 @@ sequenceDiagram
         ALSO-->>API: ApprovalForbiddenError
         API-->>C: 403
     else requester
-        ALSO->>ALSO: expired? (commit EXPIRED, 410) still WAITING? (else 409)<br/>then save the decision + compliance log and commit
+        ALSO->>ALSO: expired? (commit EXPIRED, 410) still WAITING? (else 409)<br/>then save the decision only if still WAITING (conditional UPDATE; lost: 409)<br/>+ compliance log and commit
         ALSO-->>API: ApprovalResponseDTO
         API->>HR: resume_after_decision(approval_id, agent_action_id, decision_type, edited_payload)
         HR->>X: approve/edit: run_approved_tool(approved draft, token=approval_id),<br/>result committed on the AgentAction; reject: nothing runs
@@ -367,6 +367,14 @@ approved call ran keeps its stored result on the `AgentAction`.
 
 `get()` and `validate()` apply the same ownership check when called with
 a `user_id`.
+
+Only one decision is ever recorded. `ApprovalRepository.save_decision()`
+writes it with one conditional `UPDATE ... WHERE status = 'waiting'
+RETURNING`, so of two concurrent decisions (approve and reject from two
+tabs, in any workers) the second finds no waiting row: it gets 409
+`APPROVAL_ALREADY_DECIDED` with `details.current_status`, writes no
+compliance record and resumes nothing. Only a recorded approve or edit
+runs the call.
 
 ## Temperature / determinism conventions
 
