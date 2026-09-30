@@ -43,12 +43,13 @@ class UsageRecordRepository(BaseRepository[UsageRecord]):
         return the resulting count.
         """
 
-        return await self._increment(
+        request_count, _ = await self._increment(
             user_id=user_id,
             period="minute",
             window_start=window_start,
             request_count_delta=1,
         )
+        return request_count
 
     async def increment_tokens(
         self,
@@ -57,18 +58,20 @@ class UsageRecordRepository(BaseRepository[UsageRecord]):
         window_start: datetime,
         input_tokens: int,
         output_tokens: int,
-    ) -> None:
+    ) -> int:
         """
-        Atomically add to the "day" token-usage bucket.
+        Atomically add to the "day" token-usage bucket; returns the
+        bucket's token total (input + output) after the addition.
         """
 
-        await self._increment(
+        _, tokens = await self._increment(
             user_id=user_id,
             period="day",
             window_start=window_start,
             input_tokens_delta=input_tokens,
             output_tokens_delta=output_tokens,
         )
+        return tokens
 
     async def record_request_tokens(
         self,
@@ -78,12 +81,13 @@ class UsageRecordRepository(BaseRepository[UsageRecord]):
         window_start: datetime,
         input_tokens: int,
         output_tokens: int,
-    ) -> bool:
+    ) -> int | None:
         """
         Record one request's tokens once: insert its usage_request_records
         row (ON CONFLICT DO NOTHING on request_id) and, only if that row
-        is new, add the tokens to the "day" bucket. False when the request
-        was already recorded. The caller commits both together.
+        is new, add the tokens to the "day" bucket. Returns the day's token
+        total after this request, or None when the request was already
+        recorded. The caller commits both together.
         """
 
         now = utcnow()
@@ -106,16 +110,14 @@ class UsageRecordRepository(BaseRepository[UsageRecord]):
         result = await self._session.execute(statement)
 
         if result.scalar_one_or_none() is None:
-            return False
+            return None
 
-        await self.increment_tokens(
+        return await self.increment_tokens(
             user_id=user_id,
             window_start=window_start,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
         )
-
-        return True
 
     async def get_daily_token_usage(
         self,
@@ -155,7 +157,9 @@ class UsageRecordRepository(BaseRepository[UsageRecord]):
         request_count_delta: int = 0,
         input_tokens_delta: int = 0,
         output_tokens_delta: int = 0,
-    ) -> int:
+    ) -> tuple[int, int]:
+        """The bucket's request count and token total after the upsert."""
+
         now = utcnow()
 
         statement = pg_insert(UsageRecord).values(
@@ -178,8 +182,11 @@ class UsageRecordRepository(BaseRepository[UsageRecord]):
                 "output_tokens": UsageRecord.output_tokens + output_tokens_delta,
                 "updated_at": now,
             },
-        ).returning(UsageRecord.request_count)
+        ).returning(
+            UsageRecord.request_count,
+            UsageRecord.input_tokens + UsageRecord.output_tokens,
+        )
 
-        result = await self._session.execute(upsert)
+        request_count, tokens = (await self._session.execute(upsert)).one()
 
-        return int(result.scalar_one())
+        return int(request_count), int(tokens)
