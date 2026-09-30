@@ -37,7 +37,7 @@ replaced with a fixed "no sources" / "couldn't verify" answer and marked
 flowchart TD
     REQ[ChatService] --> ORCH["AIOrchestrator.handle()<br/>(orchestration/orchestrator.py)"]
     ORCH -->|1. authorize| AUTH[AuthorizationService]
-    ORCH -->|2. plan| PLAN["ExecutionPlanner -> LLMPlanGenerator<br/>(planning/llm_planner.py)<br/>temperature=0.0 (STRUCTURED_DECISION)"]
+    ORCH -->|2. plan| PLAN["ExecutionPlanner -> LLMPlanGenerator<br/>(planning/llm_planner.py)<br/>temperature=0.0 (STRUCTURED_DECISION)<br/>local model, Groq failover"]
     PLAN --> EXECUTOR["Executor.execute()<br/>(execution/executor.py)"]
     EXECUTOR --> SESSION["ExecutionSession<br/>-> ExecutionGraphFactory.create()"]
     SESSION --> GRAPH["Compiled LangGraph<br/>(execution/graph/builder.py)<br/>topology derived from step.depends_on"]
