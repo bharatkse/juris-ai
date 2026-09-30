@@ -108,6 +108,11 @@ class LLMSettings(BaseAppSettings):
     # give a real signal if that happens without having built a full
     # harness today.
     SUMMARIZATION_MODEL: GroqModelEnum = GroqModelEnum.GPT_OSS_20B
+    # Most seconds the conversation-summarization call may take (review
+    # G1), and never more than is left of the request's deadline, which
+    # ChatService starts before summarizing. Summarization is best-effort:
+    # a call cut off here leaves the history unsummarized for this turn.
+    SUMMARIZATION_TIMEOUT_S: float = Field(default=20.0, gt=0)
     # Model for extracting durable user facts from conversations
     # (application/services/user_memory_extraction.py). UNVALIDATED for
     # this task: it defaults to the same cheaper model as summarization
