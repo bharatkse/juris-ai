@@ -75,7 +75,9 @@ sequenceDiagram
     end
     alt decision FINAL
         C->>E: evaluate(question, answer, evidence)
-        alt sufficient
+        alt embedding similarity unavailable (checked first)
+            C-->>N: no retry: answer replaced with UNVERIFIED_ANSWER_MESSAGE<br/>(QUALITY_GATE_EXHAUSTED, verified=False)
+        else sufficient
             C-->>N: accept + AnswerEvaluationSummary
         else groundedness judge's provider down
             C-->>N: no retry: answer replaced with UNVERIFIED_ANSWER_MESSAGE<br/>(QUALITY_GATE_EXHAUSTED, verified=False)
