@@ -120,6 +120,18 @@ The mode is recorded as the `retrieval.mode` attribute on the
 `rag.hybrid_retrieve` span and as the
 `juris_ai_retrieval_searches_total{mode}` metric.
 
+With the embedding model down, the answer gate can't score relevance either
+(it uses the same model), so a chat turn still ends with the "couldn't
+verify" answer, not an error (`agentic/evaluation/README.md`).
+
+Golden-dataset retrieval in each mode (29 cases, top 5, 2026-09-30):
+
+| Mode | Pass rate | recall@5 | precision@5 | MRR |
+|---|---|---|---|---|
+| `full` | 75.86% (22) | 0.7586 | 0.1517 | 0.6017 |
+| `keyword_only` (embeddings down) | 75.86% (22) | 0.7586 | 0.1586 | 0.5718 |
+| `no_rerank` (reranker down) | 68.97% (20) | 0.6897 | 0.1379 | 0.5345 |
+
 ## Evaluation
 
 ```mermaid
