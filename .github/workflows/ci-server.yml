@@ -38,6 +38,11 @@ on:
         required: false
         type: boolean
         default: true
+      force:
+        description: "Run the image/tag/release jobs even while ENABLE_RELEASE_PIPELINE is off"
+        required: false
+        type: boolean
+        default: false
 
 # One run per branch at a time. Only PR runs are cancelled by a newer push:
 # develop and main runs publish (a develop run cancelled between pushing an
@@ -296,6 +301,7 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
+  # Temporarily disabled (JA-100): re-enable with gh variable set ENABLE_RELEASE_PIPELINE --body true
   publish-image:
     name: Publish Image
     needs:
@@ -313,6 +319,7 @@ jobs:
     # (PRs) don't run integration tests and don't wait for them.
     if: >-
       always() &&
+      (vars.ENABLE_RELEASE_PIPELINE == 'true' || inputs.force) &&
       needs.publish-plan.outputs.mode == 'build' &&
       needs.rc-version.result == 'success' &&
       needs.actionlint.result == 'success' &&
@@ -333,6 +340,7 @@ jobs:
       security-events: write
       actions: read
 
+  # Temporarily disabled (JA-100): re-enable with gh variable set ENABLE_RELEASE_PIPELINE --body true
   rc-tag:
     name: Tag Release Candidate
     needs:
@@ -342,6 +350,7 @@ jobs:
     # After the image is pushed, signed and attested.
     if: >-
       always() &&
+      (vars.ENABLE_RELEASE_PIPELINE == 'true' || inputs.force) &&
       needs.publish-plan.outputs.push == 'true' &&
       needs.rc-version.outputs.rc != '' &&
       needs.publish-image.result == 'success'
@@ -407,6 +416,7 @@ jobs:
   # main: promote the release candidate. Never builds.
   # ---------------------------------------------------------------------------
 
+  # Temporarily disabled (JA-100): re-enable with gh variable set ENABLE_RELEASE_PIPELINE --body true
   promote:
     name: Promote Release Candidate
     needs:
@@ -418,6 +428,7 @@ jobs:
       - codecov-validation
     if: >-
       always() &&
+      (vars.ENABLE_RELEASE_PIPELINE == 'true' || inputs.force) &&
       needs.publish-plan.outputs.mode == 'promote' &&
       needs.actionlint.result == 'success' &&
       needs.code-quality.result == 'success' &&
@@ -620,6 +631,7 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
+  # Temporarily disabled (JA-100): re-enable with gh variable set ENABLE_RELEASE_PIPELINE --body true
   release:
     name: GitHub Release
     needs:
@@ -627,6 +639,7 @@ jobs:
       - promote
     if: >-
       always() &&
+      (vars.ENABLE_RELEASE_PIPELINE == 'true' || inputs.force) &&
       needs.publish-plan.outputs.push == 'true' &&
       needs.promote.result == 'success' &&
       needs.promote.outputs.released == 'true'

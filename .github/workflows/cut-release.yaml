@@ -20,6 +20,11 @@ on:
         required: false
         type: string
         default: ""
+      force:
+        description: "Open the release PR even while ENABLE_RELEASE_PIPELINE is off"
+        required: false
+        type: boolean
+        default: false
 
 # Never two cuts at once.
 concurrency:
@@ -34,8 +39,10 @@ env:
   SEMANTIC_RELEASE_VERSION: "10.7.0"
 
 jobs:
+  # Temporarily disabled (JA-100): re-enable with gh variable set ENABLE_RELEASE_PIPELINE --body true
   cut-release:
     name: Open Release PR
+    if: ${{ vars.ENABLE_RELEASE_PIPELINE == 'true' || inputs.force }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
 

@@ -13,6 +13,12 @@ Everything runs in GitHub Actions; nobody pushes images or tags by hand.
 - Scripts it runs (all runnable locally): [`.github/scripts/`](../.github/scripts/)
 - Image: `ghcr.io/bharatkse/juris-ai`
 
+> **Temporarily disabled (JA-100).** Every job below that builds, tags or
+> releases runs only while the repo variable `ENABLE_RELEASE_PIPELINE` is
+> `true`; merges to `develop` and `main` currently publish nothing.
+> Re-enable with `gh variable set ENABLE_RELEASE_PIPELINE --body true`.
+> Details: [docs/server/README.md, "Release pipeline"](server/README.md#release-pipeline).
+
 ## At a glance
 
 | Event | What happens | Image tags |
