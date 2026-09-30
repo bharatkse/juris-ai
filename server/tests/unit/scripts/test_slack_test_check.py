@@ -6,11 +6,11 @@ bot and channel the live messaging suite uses, with Slack's API mocked.
 from __future__ import annotations
 
 import importlib.util
-import json
 import sys
 from pathlib import Path
 from types import ModuleType
 from typing import Any
+from urllib.parse import parse_qsl
 
 import httpx
 import pytest
@@ -48,8 +48,11 @@ def _slack(fail: dict[str, str] | None = None, posted: list[dict] | None = None)
             if fail[method] == "missing_scope":
                 body["needed"] = "channels:read"
             return httpx.Response(200, json=body)
+        # Slack's read methods reject JSON bodies: every call is form-encoded.
+        if request.content:
+            assert request.headers["Content-Type"] == "application/x-www-form-urlencoded"
         if method == "chat.postMessage" and posted is not None:
-            posted.append(json.loads(request.content))
+            posted.append(dict(parse_qsl(request.content.decode())))
         return httpx.Response(200, json=_OK[method])
 
     return httpx.Client(transport=httpx.MockTransport(handler), base_url="https://slack.com/api")
@@ -160,3 +163,18 @@ def test_variables_fall_back_to_the_env_file(tmp_path: Path) -> None:
     assert settings["SLACK_TEST_BOT_TOKEN"] == TOKEN
     # The environment wins over the file.
     assert settings["SLACK_TEST_CHANNEL_ID"] == CHANNEL
+
+
+def test_the_invite_hint_names_the_installed_bot() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        method = request.url.path.rsplit("/", 1)[-1]
+        if method == "auth.test":
+            return httpx.Response(200, json={"ok": True, "user": "testbot", "team": "t"})
+        if method == "chat.postMessage":
+            return httpx.Response(200, json={"ok": False, "error": "not_in_channel"})
+        return httpx.Response(200, json=_OK[method])
+
+    client = httpx.Client(transport=httpx.MockTransport(handler), base_url="https://slack.com/api")
+    _, output = _run(client)
+
+    assert "/invite @testbot" in output
