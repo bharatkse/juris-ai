@@ -727,6 +727,9 @@ test-e2e: ## Run e2e tests [TARGET=<path>]
 test-live-messaging: ## Live email/Slack send tests (sandbox up first; docs/messaging-live-test.md) [TARGET=<path>]
 	@$(IN_SERVER) RUN_LIVE_MESSAGING=1 $(PYTEST) $(if $(TARGET),"$(TARGET)",tests/e2e/live_messaging) -m live_messaging -v
 
+slack-test-check: ## Check the Slack test bot, token and channel (docs/slack-test-workspace-setup.md)
+	@$(IN_SERVER) $(POETRY) run python scripts/slack_test_check.py
+
 test-smoke: ## Run smoke tests [TARGET=<path>]
 	@$(IN_SERVER) if [ -z "$(TARGET)" ]; then \
 		$(PYTEST) tests/smoke -v -s; \
