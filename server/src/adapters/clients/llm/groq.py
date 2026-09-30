@@ -56,6 +56,9 @@ class GroqClient(LLMClient):
         )
         self._model = model
 
+    async def aclose(self) -> None:
+        await self._client.close()
+
     @property
     def provider(
         self,
