@@ -1,5 +1,5 @@
 """
-E2E: one chat request can't use more than RATE_LIMIT_REQUEST_TOKEN_QUOTA
+E2E: one chat request can't use more than TOKEN_QUOTA_PER_REQUEST
 tokens (review R3). Before, only the daily quota existed: a single
 request's tokens were bounded by iterations, tools and time, not tokens.
 
@@ -109,7 +109,7 @@ def provider(monkeypatch: pytest.MonkeyPatch) -> _Provider:
 def quota(monkeypatch: pytest.MonkeyPatch) -> int:
     settings = get_settings().rate_limit
     assert settings.RATE_LIMIT_ENABLED, "these tests need RATE_LIMIT_ENABLED"
-    monkeypatch.setattr(settings, "RATE_LIMIT_REQUEST_TOKEN_QUOTA", QUOTA)
+    monkeypatch.setattr(settings, "TOKEN_QUOTA_PER_REQUEST", QUOTA)
     return QUOTA
 
 
@@ -165,7 +165,7 @@ async def test_a_request_whose_first_call_is_over_the_quota_makes_no_call(
 ) -> None:
     """The planner's prompt alone is over a 10-token quota."""
 
-    monkeypatch.setattr(get_settings().rate_limit, "RATE_LIMIT_REQUEST_TOKEN_QUOTA", 10)
+    monkeypatch.setattr(get_settings().rate_limit, "TOKEN_QUOTA_PER_REQUEST", 10)
 
     response = await e2e_client.post(
         "/api/v1/chat",
