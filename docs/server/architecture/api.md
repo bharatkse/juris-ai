@@ -468,6 +468,12 @@ approve, edit or reject it."
 - An approval can be decided only while its status is `waiting` and
   before `expires_at` (15 minutes after creation). Otherwise the request
   fails with `410` (expired) or `409` (already decided).
+- Only one decision is ever recorded. If two decisions arrive at once
+  (for example `approve` and `reject` from two tabs), the first one saved
+  wins; the other gets `409` and changes nothing. Its error `details`
+  give the status the approval now has, e.g.
+  `{"current_status": "rejected"}`. Only a recorded `approve` or `edit`
+  runs the call.
 
 #### Approval Response (`200`)
 
@@ -503,7 +509,7 @@ endpoints no longer return, since every decision now resumes.)
 | `401`  | Missing, invalid or expired bearer token (`{"detail": ...}`) |
 | `403`  | The caller is not the user who requested this approval (error code `FORBIDDEN`), or the caller's account is inactive (`{"detail": ...}`) |
 | `404`  | No approval with this ID (error code `APPROVAL_NOT_FOUND`) |
-| `409`  | The approval has already been decided (error code `APPROVAL_ALREADY_DECIDED`) |
+| `409`  | The approval has already been decided (error code `APPROVAL_ALREADY_DECIDED`; `details.current_status` gives its status) |
 | `410`  | The approval has expired (error code `APPROVAL_EXPIRED`) |
 | `422`  | Invalid body: unknown `decision` value or an unrecognized field |
 
@@ -554,6 +560,9 @@ Error responses from the application use the standard envelope:
   }
 }
 ```
+
+Some errors add a `details` object with structured fields, such as the
+approval's `current_status` on a `409`; it is omitted when there are none.
 
 ---
 
