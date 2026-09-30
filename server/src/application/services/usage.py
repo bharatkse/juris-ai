@@ -102,25 +102,25 @@ class UsageService(BaseService):
             window_start=day_window,
         )
 
-        if daily_usage >= settings.RATE_LIMIT_DAILY_TOKEN_QUOTA:
+        if daily_usage >= settings.TOKEN_QUOTA_DAILY:
             logger.warning(
                 "Daily token quota exceeded.",
                 extra={
                     "operation": "enforce_usage_limits",
                     "user_id": user_id,
                     "daily_usage": daily_usage,
-                    "quota": settings.RATE_LIMIT_DAILY_TOKEN_QUOTA,
+                    "quota": settings.TOKEN_QUOTA_DAILY,
                 },
             )
 
             raise TokenQuotaExceededError(
-                quota=settings.RATE_LIMIT_DAILY_TOKEN_QUOTA,
+                quota=settings.TOKEN_QUOTA_DAILY,
                 used=daily_usage,
             )
 
     def request_token_quota(self) -> int | None:
         """
-        The most tokens one request may use (RATE_LIMIT_REQUEST_TOKEN_QUOTA),
+        The most tokens one request may use (TOKEN_QUOTA_PER_REQUEST),
         or None when rate limiting is off.
 
         The per-request counterpart of check_and_enforce()'s daily quota,
@@ -134,7 +134,7 @@ class UsageService(BaseService):
         if not settings.RATE_LIMIT_ENABLED:
             return None
 
-        return settings.RATE_LIMIT_REQUEST_TOKEN_QUOTA
+        return settings.TOKEN_QUOTA_PER_REQUEST
 
     async def record(
         self,
