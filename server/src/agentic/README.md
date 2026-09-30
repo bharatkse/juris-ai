@@ -336,8 +336,12 @@ with one conditional `UPDATE` to `EXECUTING`, committed at once
 (`AgentActionRepository.claim()`). Only the request that wins runs the
 call and resumes the graph; an overlapping one gets `resume_status`
 `in_progress` (decision) or 409 (retry), in any worker. An action left
-`EXECUTING` by a worker that stopped can be claimed again after
-`HITL_RESUME_STALE_SECONDS` (default 600) without progress.
+`EXECUTING` by a worker that stopped can be claimed again, by a retry
+only, after `HITL_RESUME_STALE_SECONDS` (default 600) without progress.
+If it was an approved send with no stored result, the message may already
+have gone out: the retry gets 409 `APPROVAL_RESUME_NEEDS_CONFIRMATION`
+(`details.possibly_sent`) unless the user passes `force=true`, which is
+logged at WARNING (action id, user) and sends once.
 
 Before a *fresh* approved call runs (on the first resume or a retry),
 `HitlResumeService` re-checks the user's current permission
@@ -353,6 +357,7 @@ sequenceDiagram
     participant HR as HitlResumeService
     C->>HR: retry (owner only)
     HR->>HR: action FAILED / PENDING_APPROVAL / EXECUTING? (else 409)
+    HR->>HR: stale send, no stored result, no force? (409 possibly_sent)
     HR->>HR: resume_after_decision: claim (lost: 409), stored tool result reused
     HR-->>C: 200 + resume_status
 ```
