@@ -64,6 +64,11 @@ class LocalLLMClient(LLMClient):
             model,
         )
 
+    async def aclose(self) -> None:
+        # ollama's AsyncClient wraps an httpx.AsyncClient it never closes
+        # on its own.
+        await self._client._client.aclose()
+
     @property
     def provider(
         self,
