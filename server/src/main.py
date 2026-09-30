@@ -26,7 +26,7 @@ from core.enums import CacheBackendEnum
 from core.utils.file_system import ensure_dir
 from wiring.composition import create_ai_orchestrator
 from wiring.factories.agent_policies import seed_default_agent_policies
-from wiring.factories.clients import create_clients
+from wiring.factories.clients import close_clients, create_clients
 from wiring.factories.roles import seed_default_roles
 from wiring.factories.user_memory import create_memory_extraction_scheduler
 
@@ -213,6 +213,8 @@ async def lifespan(
                 await memory_extraction_scheduler.shutdown(
                     timeout_seconds=MEMORY_EXTRACTION_SHUTDOWN_TIMEOUT_SECONDS,
                 )
+                # After the extraction runs that may still use them.
+                await close_clients(clients)
 
     finally:
         await shutdown()
