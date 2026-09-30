@@ -5,7 +5,7 @@ E2E: the planner's local-model call is bounded, and fails over to Groq
 - Failover off: a hung local model ends the request with 504
   PLANNING_TIMEOUT within the planner timeout, instead of holding it open.
   Nothing is planned or run; the USER message is rolled back like any failed
-  request's.
+  request's. A local model that errors is 503 PLANNING_UNAVAILABLE.
 - Failover on: a local model that is down has the plan made by Groq; one
   that hangs, with Groq hanging too, still ends in 504 within the request's
   deadline; and with too little of the deadline left, Groq isn't called.
@@ -127,6 +127,31 @@ async def test_a_hung_planner_ends_a_stream_with_an_error_event(
 
     assert "event: error" in body
     assert ERROR_PLANNING_TIMEOUT in body
+
+
+async def test_without_failover_a_local_error_is_planning_unavailable(
+    e2e_client: AsyncClient,
+    registered_user: dict,
+    conversation_id: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def local_down(self, *, request):
+        raise ClientConnectionError()
+
+    monkeypatch.setattr(LLMClient, "generate", REAL_GENERATE)
+    monkeypatch.setattr(LocalLLMClient, "_generate", local_down)
+    monkeypatch.setattr(_llm_planner(), "_fallback_llm", None)
+
+    response = await e2e_client.post(
+        "/api/v1/chat",
+        data={"conversation_id": conversation_id, "message": MESSAGE},
+        headers=registered_user["headers"],
+    )
+
+    assert response.status_code == 503, response.text
+    assert response.json()["error"]["code"] == ERROR_PLANNING_UNAVAILABLE
+    assert response.json()["error"]["details"] == {"retry_after_seconds": 30}
+    assert response.headers["retry-after"] == "30"
 
 
 async def test_a_local_model_that_is_down_has_its_plan_made_by_groq(
