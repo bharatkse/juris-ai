@@ -103,9 +103,10 @@ async def _approve(e2e_client: AsyncClient, approval_id: str, user: dict):
     )
 
 
-async def _retry(e2e_client: AsyncClient, approval_id: str, user: dict):
+async def _retry(e2e_client: AsyncClient, approval_id: str, user: dict, *, force: bool = False):
     return await e2e_client.post(
         f"/api/v1/approvals/{approval_id}/resume",
+        params={"force": "true"} if force else None,
         headers=user["headers"],
     )
 
@@ -299,15 +300,17 @@ async def test_retry_after_sent_is_refused(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("force", [False, True])
 async def test_a_recent_unfinished_send_is_not_retried(
     e2e_client: AsyncClient,
     registered_user: dict,
     pending_approval: dict,
     mcp_calls: list[dict[str, Any]],
+    force: bool,
 ) -> None:
     """
     An action claimed moments ago (EXECUTING, no stored result) may still
-    be sending in another worker: a retry is refused.
+    be sending in another worker: a retry is refused, even with force.
     """
 
     approval_id = pending_approval["approval_id"]
@@ -318,37 +321,67 @@ async def test_a_recent_unfinished_send_is_not_retried(
         updated_at=datetime.now(UTC),
     )
 
-    retried = await _retry(e2e_client, approval_id, registered_user)
+    retried = await _retry(e2e_client, approval_id, registered_user, force=force)
 
     assert retried.status_code == 409, retried.text
+    assert retried.json()["error"]["code"] == "APPROVAL_RESUME_NOT_ALLOWED"
     assert _sends(mcp_calls) == []
 
 
-@pytest.mark.asyncio
-async def test_a_stuck_send_is_recovered_after_the_stale_timeout(
-    e2e_client: AsyncClient,
-    registered_user: dict,
-    pending_approval: dict,
-    mcp_calls: list[dict[str, Any]],
-) -> None:
+async def _stuck_send(approval_id: str, user_id: str) -> None:
     """
     The worker that claimed the action stopped before any result was
-    stored (no delivery confirmed). After HITL_RESUME_STALE_SECONDS a
-    retry claims it again and completes the turn.
+    stored, longer ago than HITL_RESUME_STALE_SECONDS: the message may or
+    may not have been sent.
     """
 
-    approval_id = pending_approval["approval_id"]
-    await _commit_decision_only(approval_id, registered_user["user_id"])
+    await _commit_decision_only(approval_id, user_id)
     await _set_action(
         approval_id,
         status=AgentActionStatusEnum.EXECUTING,
         updated_at=datetime.now(UTC) - timedelta(hours=1),
     )
 
+
+@pytest.mark.asyncio
+async def test_a_stuck_send_needs_confirmation_before_it_is_retried(
+    e2e_client: AsyncClient,
+    registered_user: dict,
+    pending_approval: dict,
+    mcp_calls: list[dict[str, Any]],
+) -> None:
+    approval_id = pending_approval["approval_id"]
+    await _stuck_send(approval_id, registered_user["user_id"])
+
     retried = await _retry(e2e_client, approval_id, registered_user)
 
-    assert retried.status_code == 200, retried.text
-    assert retried.json()["data"]["resume_status"] == HitlResumeStatusEnum.COMPLETED.value
+    assert retried.status_code == 409, retried.text
+    error = retried.json()["error"]
+    assert error["code"] == "APPROVAL_RESUME_NEEDS_CONFIRMATION"
+    assert error["details"] == {"possibly_sent": True}
+    assert _sends(mcp_calls) == []
+    assert (await _fetch_action(approval_id)).status == AgentActionStatusEnum.EXECUTING
+
+
+@pytest.mark.asyncio
+async def test_a_confirmed_retry_of_a_stuck_send_sends_once(
+    e2e_client: AsyncClient,
+    registered_user: dict,
+    pending_approval: dict,
+    slow_sender: None,
+    mcp_calls: list[dict[str, Any]],
+) -> None:
+    approval_id = pending_approval["approval_id"]
+    await _stuck_send(approval_id, registered_user["user_id"])
+
+    first, second = await asyncio.gather(
+        _retry(e2e_client, approval_id, registered_user, force=True),
+        _retry(e2e_client, approval_id, registered_user, force=True),
+    )
+
+    assert sorted(response.status_code for response in (first, second)) == [200, 409]
+    winner = first if first.status_code == 200 else second
+    assert winner.json()["data"]["resume_status"] == HitlResumeStatusEnum.COMPLETED.value
     assert len(_sends(mcp_calls)) == 1
     assert (await _fetch_action(approval_id)).status == AgentActionStatusEnum.COMPLETED
 
