@@ -40,10 +40,12 @@ class VectorRetriever:
         query: str,
         top_k: int,
     ) -> list[RetrievalResult]:
-        embedding = await self._embedding_provider.embed_one(query)
+        vector = await self._embedding_provider.embed_one(text=query)
 
         return await self._vector_store.query(
-            vector=embedding.vector, top_k=top_k, embedding_model=embedding.model_name
+            vector=vector,
+            top_k=top_k,
+            embedding_model=self._embedding_provider.metadata.model_name,
         )
 
 

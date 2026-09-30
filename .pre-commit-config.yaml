@@ -54,15 +54,19 @@ repos:
   # ----------------------------------------
   # mypy: static typing
   # ----------------------------------------
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.10.0
+  # Runs `make type-check`, the same command and config as CI
+  # (type-check.yaml), in the Poetry env so mypy sees real third-party types.
+  # mirrors-mypy ran an isolated env from the repo root, never read
+  # server/pyproject.toml, and so disagreed with CI.
+  - repo: local
     hooks:
       - id: mypy
+        name: mypy (make type-check)
+        entry: make -s type-check
+        language: system
+        pass_filenames: false
+        types: [python]
         stages: [pre-push]
-        exclude: ^server/\.aws-sam/
-        additional_dependencies:
-          - types-requests
-          - types-redis
 
   # ----------------------------------------
   # codespell: spelling mistakes

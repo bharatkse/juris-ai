@@ -252,18 +252,16 @@ install_dependencies() {
 # ============================================================================
 # pre-commit
 # ============================================================================
+# The config lives at the repo root (this script runs from server/), so reuse
+# the root Makefile target. Installs the pre-commit and pre-push hooks; the
+# pre-push one runs mypy. Re-running is harmless.
 setup_precommit() {
-  if [[ ! -f .pre-commit-config.yaml ]]; then
+  if [[ ! -f ../.pre-commit-config.yaml ]]; then
     return
   fi
 
-  if [[ -f .git/hooks/pre-commit ]]; then
-    log "pre-commit OK"
-    return
-  fi
-
-  log "Installing pre-commit"
-  poetry run pre-commit install
+  log "Installing pre-commit and pre-push hooks"
+  make -C .. install-hooks
 }
 
 # ============================================================================
@@ -303,7 +301,7 @@ main() {
   install_aws_cli
   install_poetry
   install_dependencies
-  # setup_precommit
+  setup_precommit
 
   log "Setup complete"
 }

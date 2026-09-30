@@ -681,11 +681,18 @@ Run pre-commit hooks:
 make pre-commit
 ```
 
-Install the Git pre-commit hooks:
+Install the Git hooks (`make bootstrap` also does this):
 
 ```bash
 make install-hooks
+# equivalent to:
+# pre-commit install --hook-type pre-commit --hook-type pre-push
 ```
+
+The pre-push hook runs `make type-check` (mypy over `server/src` and
+`server/scripts`, the same command CI runs), so a push with type errors is
+refused. For an emergency push, `git push --no-verify` skips it; CI still
+runs the same check.
 
 Run the complete CI workflow:
 
@@ -703,6 +710,34 @@ lint-imports
 type-check
   ↓
 tests
+```
+
+## Release pipeline
+
+Image publishing, rc tags and GitHub releases are **temporarily disabled**
+(JA-100). These jobs run only when the repo variable
+`ENABLE_RELEASE_PIPELINE` is `true`:
+
+- `ci-server.yml`: `publish-image` (build, Trivy gate, push, sign),
+  `rc-tag`, `promote`, `release`
+- `cut-release.yaml`: `cut-release`
+
+While the variable is unset they're skipped. Tests, lint, type check,
+coverage, CodeQL and Smoke + E2E still run as before, and none of the
+skipped jobs is a required check on `develop` or `main`.
+
+```bash
+gh variable set ENABLE_RELEASE_PIPELINE --body true    # re-enable
+gh variable delete ENABLE_RELEASE_PIPELINE             # disable again
+gh variable list                                       # check the current value
+```
+
+A one-off manual run while it's disabled: dispatch the workflow with
+`force` set to true. For example, to build and scan develop without
+pushing (`dry_run` defaults to true):
+
+```bash
+gh workflow run ci-server.yml --ref develop -f force=true
 ```
 
 ---

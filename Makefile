@@ -439,7 +439,7 @@ lint-imports: ## Check layer-boundary import contracts (import-linter)
 
 type-check: ## Run mypy type checker
 	@echo '$(CYAN)Running type checks...$(RESET)'
-	@$(IN_SERVER) $(POETRY) run mypy src/
+	@$(IN_SERVER) $(POETRY) run mypy src/ scripts/
 	@echo '$(GREEN)Type checking passed$(RESET)'
 
 ci: ## Run lint, import contracts, type-check, and tests
@@ -455,8 +455,9 @@ pre-commit: ## Run pre-commit hooks
 	@$(IN_SERVER) $(POETRY) run pre-commit run -c $(PROJECT_ROOT)/.pre-commit-config.yaml --all-files
 	@echo '$(GREEN)Pre-commit hooks passed$(RESET)'
 
-install-hooks: ## Install pre-commit git hooks
-	@$(IN_SERVER) $(POETRY) run pre-commit install -c $(PROJECT_ROOT)/.pre-commit-config.yaml
+install-hooks: ## Install pre-commit and pre-push git hooks (pre-push runs mypy)
+	@$(IN_SERVER) $(POETRY) run pre-commit install -c $(PROJECT_ROOT)/.pre-commit-config.yaml \
+	  --hook-type pre-commit --hook-type pre-push
 
 # ============================================================================
 # Alembic / Database Migrations

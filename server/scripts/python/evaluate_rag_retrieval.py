@@ -71,8 +71,8 @@ async def main() -> None:
     print(f"Pass rate:     {report.pass_rate:.2%}")
 
     print("\nMean scores:")
-    for metric, score in report.mean_scores.items():
-        print(f"  {metric}: {score:.4f}")
+    for metric_name, score in report.mean_scores.items():
+        print(f"  {metric_name}: {score:.4f}")
 
     print("\nPer-case failures:")
     for index, result in enumerate(report.results, start=1):
