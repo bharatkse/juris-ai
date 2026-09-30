@@ -164,21 +164,68 @@ async def test_concurrent_approvals_send_once(
     )
 
     assert len(_sends(mcp_calls)) == 1
-    outcomes = sorted(
-        (response.status_code, response.json().get("data", {}).get("resume_status"))
-        for response in (first, second)
-    )
-    # One request resumes; the other is refused (already decided) or
-    # reports the resume in progress.
-    assert (200, HitlResumeStatusEnum.COMPLETED.value) in outcomes
-    assert outcomes in (
-        [(200, HitlResumeStatusEnum.COMPLETED.value), (409, None)],
-        [
-            (200, HitlResumeStatusEnum.COMPLETED.value),
-            (200, HitlResumeStatusEnum.IN_PROGRESS.value),
-        ],
-    ), outcomes
+    # Only one decision is recorded; the other is refused as already decided.
+    assert sorted(response.status_code for response in (first, second)) == [200, 409]
+    winner = first if first.status_code == 200 else second
+    loser = second if winner is first else first
+    assert winner.json()["data"]["resume_status"] == HitlResumeStatusEnum.COMPLETED.value
+    assert loser.json()["error"]["code"] == "APPROVAL_ALREADY_DECIDED"
     assert (await _fetch_action(approval_id)).status == AgentActionStatusEnum.COMPLETED
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("first_decision", ["approve", "reject"])
+async def test_concurrent_approve_and_reject_one_wins(
+    e2e_client: AsyncClient,
+    registered_user: dict,
+    pending_approval: dict,
+    slow_sender: None,
+    mcp_calls: list[dict[str, Any]],
+    first_decision: str,
+) -> None:
+    """
+    Conflicting decisions at once: exactly one is recorded, the other gets
+    409 with the approval's current status and changes nothing. Only a
+    winning approve sends.
+    """
+
+    approval_id = pending_approval["approval_id"]
+    decisions = [first_decision, "reject" if first_decision == "approve" else "approve"]
+
+    responses = await asyncio.gather(
+        *(
+            e2e_client.post(
+                f"/api/v1/approvals/{approval_id}",
+                json={"decision": decision},
+                headers=registered_user["headers"],
+            )
+            for decision in decisions
+        )
+    )
+
+    assert sorted(response.status_code for response in responses) == [200, 409], [
+        response.text for response in responses
+    ]
+    winner_index = 0 if responses[0].status_code == 200 else 1
+    winner, loser = responses[winner_index], responses[1 - winner_index]
+    won = decisions[winner_index]
+    expected_status = (
+        ApprovalStatusEnum.APPROVED if won == "approve" else ApprovalStatusEnum.REJECTED
+    )
+
+    assert winner.json()["data"]["status"] == expected_status.value
+    error = loser.json()["error"]
+    assert error["code"] == "APPROVAL_ALREADY_DECIDED"
+    assert error["details"] == {"current_status": expected_status.value}
+
+    async with session_factory() as session:
+        stored = await ApprovalRepository(session=session).get(approval_id)
+    assert stored is not None
+    assert stored.status == expected_status
+    assert len(_sends(mcp_calls)) == (1 if won == "approve" else 0)
+    assert (await _fetch_action(approval_id)).status == (
+        AgentActionStatusEnum.COMPLETED if won == "approve" else AgentActionStatusEnum.REJECTED
+    )
 
 
 @pytest.mark.asyncio
