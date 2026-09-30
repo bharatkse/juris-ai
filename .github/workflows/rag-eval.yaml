@@ -6,6 +6,13 @@ name: RAG Golden Dataset Evaluation
 # runner, adding real time + an external-network flake risk for a
 # small, slow-changing 2-document/29-case dataset. Nightly + on-demand
 # catches regressions without taxing every PR.
+#
+# The gating step evaluates full hybrid retrieval (embeddings + keyword +
+# reranker) with the same models as dev/production, and fails if any
+# query runs in another mode (e.g. keyword-only because the embedding
+# model or its Redis cache is unreachable) instead of measuring the
+# fallback. The degraded modes are measured on purpose in two
+# non-gating steps. Every step's scores go to the job summary.
 on:
   schedule:
     - cron: "0 6 * * *" # 06:00 UTC daily
@@ -43,6 +50,17 @@ jobs:
           --health-interval=5s
           --health-timeout=5s
           --health-retries=10
+      # Query embeddings go through the Redis-backed cache
+      # (CACHE_BACKEND defaults to redis), as in dev and production.
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
 
     env:
       ENVIRONMENT: development
@@ -56,6 +74,12 @@ jobs:
       # integration-tests.yaml).
       APP_DB_USER: juris_ai_app
       APP_DB_PASSWORD: juris_ai_app_password
+      REDIS_HOST: localhost
+      REDIS_PORT: 6379
+      # Optional: authenticates the Hugging Face model downloads (higher
+      # rate limits). Empty when the secret isn't set; downloads still
+      # work anonymously.
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
       SECRET_KEY: ${{ secrets.SECRET_KEY }}
       JWT_SECRET_KEY: ${{ secrets.JWT_SECRET_KEY }}
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
@@ -89,6 +113,15 @@ jobs:
           ADMIN_ROLE=$DB_USER create_app_role_sql |
             psql -v ON_ERROR_STOP=1 -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME"
 
+      # BAAI/bge-small-en-v1.5 (embeddings) and BAAI/bge-reranker-base
+      # (reranker): the defaults in rag/embeddings.py and rag/reranker.py,
+      # so a model change there invalidates the cache.
+      - name: Cache Hugging Face models
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-models-${{ runner.os }}-${{ hashFiles('server/src/rag/embeddings.py', 'server/src/rag/reranker.py') }}
+
       - name: Run database migrations
         env:
           PYTHONPATH: src
@@ -99,22 +132,35 @@ jobs:
           PYTHONPATH: src
         run: poetry run python -m rag.ingestion.ingest_offline tests/datasets/rag/raw_datasets
 
-      - name: Run golden-dataset retrieval evaluation
+      - name: Evaluate full hybrid retrieval (gating)
         env:
           PYTHONPATH: src
         run: |
-          poetry run python scripts/python/evaluate_rag_retrieval.py | tee eval_output.log
+          echo "## RAG golden-dataset evaluation" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          poetry run python scripts/python/evaluate_rag_retrieval.py \
+            --mode full \
+            --min-pass-rate "${{ env.PASS_RATE_THRESHOLD }}" \
+            --summary "$GITHUB_STEP_SUMMARY"
 
-          PASS_RATE=$(grep -oP 'Pass rate:\s+\K[0-9.]+' eval_output.log)
+      # Informational: what users get with the embedding model or the
+      # reranker down (review R4). A low score here doesn't fail the job.
+      - name: Evaluate keyword-only retrieval (embeddings off, not gating)
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        env:
+          PYTHONPATH: src
+        run: |
+          poetry run python scripts/python/evaluate_rag_retrieval.py \
+            --mode keyword_only \
+            --summary "$GITHUB_STEP_SUMMARY"
 
-          if [ -z "$PASS_RATE" ]; then
-            echo "::error::Could not parse pass rate from evaluation output."
-            exit 1
-          fi
-
-          echo "Golden-dataset pass rate: ${PASS_RATE}% (gate: ${{ env.PASS_RATE_THRESHOLD }}%)"
-
-          if awk -v p="$PASS_RATE" -v t="${{ env.PASS_RATE_THRESHOLD }}" 'BEGIN {exit !(p < t)}'; then
-            echo "::error::Golden-dataset pass rate ${PASS_RATE}% is below the ${{ env.PASS_RATE_THRESHOLD }}% gate."
-            exit 1
-          fi
+      - name: Evaluate retrieval without reranking (reranker off, not gating)
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        env:
+          PYTHONPATH: src
+        run: |
+          poetry run python scripts/python/evaluate_rag_retrieval.py \
+            --mode no_rerank \
+            --summary "$GITHUB_STEP_SUMMARY"
