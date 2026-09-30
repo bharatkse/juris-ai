@@ -518,7 +518,8 @@ Ownership is checked first: a caller who isn't the requester receives
 
 #### Retry a Resume
 
-`POST /approvals/{approval_id}/resume` (no body) retries the resume of an
+`POST /approvals/{approval_id}/resume` (no body; optional query
+parameter `force`) retries the resume of an
 approval that was decided but whose conversation never continued: the
 resume failed (`resume_status` was `failed`), or the server stopped
 before it finished. It is never retried automatically.
@@ -530,11 +531,16 @@ before it finished. It is never retried automatically.
   only when the call hasn't run yet.
 - It works after `expires_at`; the expiry applies only to deciding.
 - Only one request resumes an approval at a time. While another request
-  is resuming it, the retry is refused with `409`. A resume that stopped
-  without finishing (for example, the server restarted) can be retried
-  once `HITL_RESUME_STALE_SECONDS` (default 600) have passed without
-  progress. If the approved call's outcome was already stored, it is
-  reused; the call is repeated only if no outcome was recorded.
+  is resuming it, the retry is refused with `409`, with or without
+  `force`. A resume that stopped without finishing (for example, the
+  server restarted) can be retried once `HITL_RESUME_STALE_SECONDS`
+  (default 600) have passed without progress. If the approved call's
+  outcome was already stored, it is reused and nothing is sent again.
+- If it stopped while sending and no outcome was recorded, the message
+  may or may not have gone out. The retry is then refused with `409`
+  `APPROVAL_RESUME_NEEDS_CONFIRMATION` and `details`
+  `{"possibly_sent": true}`. Check whether the message arrived; to send
+  it anyway, retry with `?force=true`. It is then sent once more.
 - The response has the same shape as the decision response, with the
   approval's current `status` and the retry's `resume_status`.
 
@@ -545,6 +551,7 @@ before it finished. It is never retried automatically.
 | `403`  | The caller is not the user who requested this approval (error code `FORBIDDEN`), or the caller's account is inactive |
 | `404`  | No approval with this ID (error code `APPROVAL_NOT_FOUND`) |
 | `409`  | The approval hasn't been decided yet, its resume already finished, or another request is resuming it (error code `APPROVAL_RESUME_NOT_ALLOWED`) |
+| `409`  | The send may already have gone out and needs `force=true` to retry (error code `APPROVAL_RESUME_NEEDS_CONFIRMATION`, `details.possibly_sent: true`) |
 
 Error responses from the application use the standard envelope:
 
