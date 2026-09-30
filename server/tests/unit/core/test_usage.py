@@ -191,3 +191,31 @@ def test_without_an_estimator_prompts_are_sized_at_four_characters_per_token() -
 
         with pytest.raises(RequestTokenQuotaExceededError):
             check_request_token_quota(["x" * 41])
+
+
+def test_a_tally_collects_every_scope_however_it_closes() -> None:
+    """R19: a scope that raised still adds its calls to the tally."""
+
+    from core.usage import usage_tally
+
+    with usage_tally() as tally:
+        with usage_scope():
+            record_llm_usage(
+                provider="groq", model="m", prompt_tokens=10, completion_tokens=2, total_tokens=12
+            )
+
+        with pytest.raises(RuntimeError), usage_scope():
+            record_llm_usage(
+                provider="local", model="q", prompt_tokens=5, completion_tokens=1, total_tokens=6
+            )
+            raise RuntimeError("failed after a call")
+
+    assert (tally.prompt_tokens, tally.completion_tokens, tally.calls) == (15, 3, 2)
+    assert tally.providers == {"groq", "local"}
+
+    # Outside the block, scopes report to no tally.
+    with usage_scope():
+        record_llm_usage(
+            provider="groq", model="m", prompt_tokens=1, completion_tokens=1, total_tokens=2
+        )
+    assert tally.calls == 2
