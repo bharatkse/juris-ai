@@ -16,7 +16,7 @@ steps, each naming one agent (`AgentTypeEnum`), an instruction and its
 |---|---|---|
 | `ExecutionPlanner` | `planner.py` | `create_plan(context)`: template first, else LLM; then validate |
 | `PlanTemplateRegistry` | `templates.py` | Deterministic plans for contract review, contract analysis, clause extraction, risk analysis, legal research |
-| `LLMPlanGenerator` | `llm_planner.py` | Fills `agent_capabilities`, then `generate_structured(response_model=ExecutionPlanResponseSchema)` at `LLMTask.STRUCTURED_DECISION` (temperature 0.0) on the local model, bounded by `PLANNER_TIMEOUT_S` or the request's deadline if sooner. On a timeout or client error it asks the failover client (`PLANNER_FAILOVER_PROVIDER`, Groq by default) once, within the rest of the request's deadline, if at least 5 s of it is left; otherwise, or if either call times out, `PlanningTimeoutError` (504). Both calls failing with a client error is `PlanningUnavailableError` (503, `Retry-After: PLANNER_UNAVAILABLE_RETRY_AFTER_S`). Failover off: a local timeout is 504 and a local error is raised as is |
+| `LLMPlanGenerator` | `llm_planner.py` | Fills `agent_capabilities`, then `generate_structured(response_model=ExecutionPlanResponseSchema)` at `LLMTask.STRUCTURED_DECISION` (temperature 0.0) on the local model, bounded by `PLANNER_TIMEOUT_S` or the request's deadline if sooner. On a timeout or client error it asks the failover client (`PLANNER_FAILOVER_PROVIDER`, Groq by default) once, within the rest of the request's deadline, if at least 5 s of it is left; otherwise, or if either call times out, `PlanningTimeoutError` (504). Both calls failing with a client error is `PlanningUnavailableError` (503, `Retry-After: PLANNER_UNAVAILABLE_RETRY_AFTER_S`). Failover off: a local timeout is 504 and a local error is 503 (`PlanningUnavailableError`) |
 | `AgentCapabilityCatalog` | `capabilities.py` | Each plannable agent (`AgentTypeEnum`, registered, with a policy): its metadata description and the tools its `agent_policies` row allows, via `ToolRegistry.describe()`, the same source as the agent's own tool catalog |
 | `PlanningPromptBuilder` | `prompts/planning.py` + `prompts/templates/planning.md` + `prompts/agent_capabilities.py` | Instructions, the generated "Available Agents" block (tool names and purposes, no parameter schemas), `<user_memory>` block, history |
 | `ExecutionPlanValidator` | `validator.py` | Structural checks; raises `PlanValidationError` |
@@ -36,7 +36,8 @@ flowchart TD
     GROQ -->|ok| PLAN2
     GROQ -->|timeout, or local timed out| TO["PlanningTimeoutError (504)"]
     GROQ -->|error, after a local error| UNAV["PlanningUnavailableError (503)<br/>Retry-After"]
-    FAILOVER -->|no| TO
+    FAILOVER -->|"no: timeout, or no time left"| TO
+    FAILOVER -->|"failover off, local error"| UNAV
     PLAN --> VAL["ExecutionPlanValidator.validate()"]
     PLAN2 --> VAL
     VAL -->|valid| OUT["returned to AIOrchestrator"]
