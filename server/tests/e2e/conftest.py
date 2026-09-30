@@ -34,6 +34,7 @@ from adapters.clients.llm.local import LocalLLMClient  # noqa: F401 -- registers
 from adapters.persistence.sqlalchemy.session import dispose_engine
 from agentic.guardrails.harmful_content import RESPONSE_TAG
 from core.dto.clients.llm import LLMRequestDTO, LLMResponseDTO
+from core.judge_availability import record_judge_provider_unavailable
 from main import app as fastapi_app
 from rag.hybrid_retriever import HybridRetriever
 from rag.models import Chunk, RetrievalResult
@@ -66,6 +67,9 @@ class LLMStub:
     # against evidence.
     groundedness: float = 1.0
     groundedness_calls: int = 0
+    # Make the stubbed groundedness judge fail the way it does when its
+    # provider is down (recorded as an outage, no score).
+    groundedness_provider_down: bool = False
     unexpected_calls: list[str] = field(default_factory=list)
 
 
@@ -90,8 +94,10 @@ def hermetic_llm(monkeypatch: pytest.MonkeyPatch) -> Iterator[LLMStub]:
       parsing still run on it.
     - The answer gate's groundedness judge (the FaithfulnessBackend the
       executor factory builds) is replaced by a stub returning
-      ``LLMStub.groundedness``. It only runs when there is evidence to
-      check an answer against (see the statute_evidence fixture).
+      ``LLMStub.groundedness``, or fails as a provider outage would with
+      ``LLMStub.groundedness_provider_down``. It only runs when there is
+      evidence to check an answer against (see the statute_evidence
+      fixture).
     - Any other LLMClient.generate() call (generate_structured() goes
       through it too) is recorded and fails the test at teardown, so a
       new unmocked LLM dependency shows up as exactly that instead of as
@@ -120,9 +126,12 @@ def hermetic_llm(monkeypatch: pytest.MonkeyPatch) -> Iterator[LLMStub]:
         return judge
 
     class StubFaithfulnessBackend:
-        async def evaluate(self, *, query: str, answer: str, contexts: list[str]) -> float:
+        async def evaluate(self, *, query: str, answer: str, contexts: list[str]) -> float | None:
             stub.groundedness_calls += 1
             assert contexts, "groundedness judged without evidence"
+            if stub.groundedness_provider_down:
+                record_judge_provider_unavailable()
+                return None
             return stub.groundedness
 
     async def unexpected_generate(self: LLMClient, *, request: LLMRequestDTO) -> LLMResponseDTO:
