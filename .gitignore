@@ -262,10 +262,12 @@ CLAUDE.md
 .claude/settings.local.json
 # screen-recorder output; may hold test-user credentials
 .claude/captures/
+git-commit.sh
 
 # Local-only review notes (not for the repo)
 /docs/architecture-review.md
 /docs/agentic-fix-plan.md
+/docs/phase-3-report.md
 
 .logs/
 
