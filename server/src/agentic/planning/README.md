@@ -16,7 +16,7 @@ steps, each naming one agent (`AgentTypeEnum`), an instruction and its
 |---|---|---|
 | `ExecutionPlanner` | `planner.py` | `create_plan(context)`: template first, else LLM; then validate |
 | `PlanTemplateRegistry` | `templates.py` | Deterministic plans for contract review, contract analysis, clause extraction, risk analysis, legal research |
-| `LLMPlanGenerator` | `llm_planner.py` | Fills `agent_capabilities`, then `generate_structured(response_model=ExecutionPlanResponseSchema)` at `LLMTask.STRUCTURED_DECISION` (temperature 0.0), bounded by `PLANNER_TIMEOUT_S` or the request's deadline if sooner (`PlanningTimeoutError`, 504) |
+| `LLMPlanGenerator` | `llm_planner.py` | Fills `agent_capabilities`, then `generate_structured(response_model=ExecutionPlanResponseSchema)` at `LLMTask.STRUCTURED_DECISION` (temperature 0.0) on the local model, bounded by `PLANNER_TIMEOUT_S` or the request's deadline if sooner. On a timeout or client error it asks the failover client (`PLANNER_FAILOVER_PROVIDER`, Groq by default) once, within the rest of the request's deadline, if at least 5 s of it is left; otherwise, or if that fails too, `PlanningTimeoutError` (504). Failover off: a local timeout is 504 and a local error is raised as is |
 | `AgentCapabilityCatalog` | `capabilities.py` | Each plannable agent (`AgentTypeEnum`, registered, with a policy): its metadata description and the tools its `agent_policies` row allows, via `ToolRegistry.describe()`, the same source as the agent's own tool catalog |
 | `PlanningPromptBuilder` | `prompts/planning.py` + `prompts/templates/planning.md` + `prompts/agent_capabilities.py` | Instructions, the generated "Available Agents" block (tool names and purposes, no parameter schemas), `<user_memory>` block, history |
 | `ExecutionPlanValidator` | `validator.py` | Structural checks; raises `PlanValidationError` |
@@ -29,8 +29,13 @@ flowchart TD
     REQ --> TPL{"PlanTemplateRegistry.resolve()<br/>exactly one keyword template matches?"}
     TPL -->|yes| PLAN["ExecutionPlanDTO<br/>source = template"]
     TPL -->|none, or more than one| CAP["AgentCapabilityCatalog.describe()<br/>agents + policy-allowed tools"]
-    CAP --> LLM["LLMPlanGenerator.generate()<br/>LLM structured output<br/>(ExecutionPlanResponseSchema)"]
-    LLM --> PLAN2["ExecutionPlanDTO<br/>source = llm"]
+    CAP --> LLM["LLMPlanGenerator.generate()<br/>local model, structured output<br/>(ExecutionPlanResponseSchema)<br/>bounded by PLANNER_TIMEOUT_S"]
+    LLM -->|ok| PLAN2["ExecutionPlanDTO<br/>source = llm"]
+    LLM -->|timeout or client error| FAILOVER{"failover provider set<br/>and >= 5 s of the request<br/>deadline left?"}
+    FAILOVER -->|yes| GROQ["same request on Groq (once),<br/>bounded by the rest of the deadline"]
+    GROQ -->|ok| PLAN2
+    GROQ -->|timeout or error| TO["PlanningTimeoutError (504)"]
+    FAILOVER -->|no| TO
     PLAN --> VAL["ExecutionPlanValidator.validate()"]
     PLAN2 --> VAL
     VAL -->|valid| OUT["returned to AIOrchestrator"]
@@ -48,6 +53,12 @@ reply asking the user to split the request, without running anything.
 Any other invalid plan raises; there is deliberately no fallback plan
 and no truncation, since either could change the request's meaning. Saved user memory is rendered into the planner prompt
 as a dedicated block, never as a history message.
+
+The local model is loaded at startup in the background
+(`wiring/factories/clients.py` `warm_up_local_llm()`, from `main.py`'s
+lifespan; the duration is logged) and kept loaded for `LLM_LOCAL_KEEP_ALIVE`
+after each call, so planning rarely meets a cold load. A failover is
+counted in `juris_ai_llm_failovers_total{primary="local", fallback="groq"}`.
 
 ---
 
