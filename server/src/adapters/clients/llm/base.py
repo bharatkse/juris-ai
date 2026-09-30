@@ -55,6 +55,15 @@ class LLMClient(ABC):
         """
         raise NotImplementedError
 
+    async def aclose(self) -> None:
+        """
+        Release the client's connections (its provider SDK's HTTP client).
+        Called once at application shutdown (review R17); a no-op here for
+        clients that hold none.
+        """
+
+        return None
+
     async def generate(
         self,
         *,
