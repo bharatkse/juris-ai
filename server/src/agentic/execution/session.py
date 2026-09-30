@@ -18,7 +18,7 @@ from adapters.observability.logger import get_logger
 from agentic.decisions.decision import AgentDecisionType
 from agentic.execution.graph.state import ExecutionGraphState
 from agentic.execution.schemas.result import ExecutionResultSchema
-from core.deadline import deadline_within
+from core.deadline import deadline_within, remaining_seconds
 from core.dto.action_workflow import ActionWorkflowResultDTO
 from core.dto.agent import AgentContextDTO
 from core.dto.agent_action import AgentActionRequestDTO
@@ -109,7 +109,11 @@ class ExecutionSession:
             initial_state = self._build_initial_state()
 
             # LLM calls inside the graph see this deadline (core.deadline).
-            with deadline_within(self._timeout_policy.timeout_seconds):
+            # The graph gets its own timeout or what is left of the
+            # request's deadline, started before planning (review R18),
+            # whichever is less.
+            timeout = self._graph_timeout()
+            with deadline_within(timeout):
                 graph_state = await asyncio.wait_for(
                     graph.ainvoke(
                         initial_state,
@@ -119,7 +123,7 @@ class ExecutionSession:
                             },
                         },
                     ),
-                    timeout=self._timeout_policy.timeout_seconds,
+                    timeout=timeout,
                 )
 
             return await self._finish(
@@ -438,6 +442,18 @@ class ExecutionSession:
             AgentDecisionType.TOOL_CALL,
             AgentDecisionType.DELEGATE,
         }
+
+    def _graph_timeout(self) -> float:
+        """
+        The graph's timeout, or what is left of the request's deadline if
+        that is sooner (the orchestrator starts it before planning, so
+        planning time counts against it; review R18).
+        """
+
+        remaining = remaining_seconds()
+        policy = self._timeout_policy.timeout_seconds
+
+        return policy if remaining is None else max(min(policy, remaining), 0.0)
 
     def _build_initial_state(self) -> ExecutionGraphState:
         """
