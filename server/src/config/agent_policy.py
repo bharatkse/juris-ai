@@ -35,3 +35,12 @@ class AgentPolicySettings(BaseAppSettings):
     # the limit isn't run; the user is asked to split the request.
     # Default: agentic/planning/validator.py::DEFAULT_MAX_PLAN_STEPS.
     PLAN_MAX_STEPS: int = Field(default=6, ge=1)
+
+    # How long a claimed HITL resume may go without progress before a
+    # retry may claim it again (application/services/hitl_resume.py).
+    # A worker that stopped mid-resume leaves its action EXECUTING; until
+    # this has passed the retry is refused, since the resume may still be
+    # running in another worker. Longer than a whole resume can take (the
+    # 300 s graph timeout plus the send). A stored send result is always
+    # reused, so only a send with no recorded outcome can be repeated.
+    HITL_RESUME_STALE_SECONDS: float = Field(default=600.0, gt=0)
