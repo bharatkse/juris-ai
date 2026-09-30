@@ -55,6 +55,14 @@ class LLMClient(ABC):
         """
         raise NotImplementedError
 
+    async def warm_up(self) -> None:
+        """
+        Load the model ahead of the first real call (application startup).
+        A no-op here for hosted providers, which have nothing to load.
+        """
+
+        return None
+
     async def aclose(self) -> None:
         """
         Release the client's connections (its provider SDK's HTTP client).
