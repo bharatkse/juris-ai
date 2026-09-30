@@ -31,6 +31,7 @@ def test_the_planner_fails_over_to_the_configured_provider(
     settings = MagicMock()
     settings.llm.PLANNER_FAILOVER_PROVIDER = setting
     settings.llm.PLANNER_TIMEOUT_S = 45.0
+    settings.llm.PLANNER_UNAVAILABLE_RETRY_AFTER_S = 12
     settings.agent_policy.PLAN_MAX_STEPS = 6
 
     with patch.object(planner_factory, "get_settings", return_value=settings):
@@ -39,6 +40,7 @@ def test_the_planner_fails_over_to_the_configured_provider(
     llm_planner = planner._llm_planner
     assert llm_planner._llm == f"client:{LLMProviderEnum.LOCAL.value}"
     assert llm_planner._fallback_llm == expected_fallback
+    assert llm_planner._unavailable_retry_after_seconds == 12
 
 
 async def test_the_local_model_warm_up_logs_its_duration() -> None:
