@@ -29,3 +29,11 @@ class RetrievalUnavailableError(RAGError):
 
 class RerankError(RAGError):
     """Reranking model failed."""
+
+
+class SimilarityUnavailableError(RAGError):
+    """
+    The answer gate's embedding similarity couldn't be computed: the
+    embedding model failed or took too long (review G2). The gate then
+    gives the "couldn't verify" answer instead of scoring the answer.
+    """

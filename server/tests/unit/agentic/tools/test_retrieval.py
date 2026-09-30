@@ -24,6 +24,30 @@ async def test_execute_returns_safe_fallback_when_retrieval_fails() -> None:
 
 
 @pytest.mark.asyncio
+async def test_execute_reports_unavailable_retrieval_as_non_evidence() -> None:
+    """
+    R4: with two retrieval components down no search can run. The model
+    is told retrieval is unavailable, and the answer gate never counts
+    that text as evidence (A1).
+    """
+
+    from agentic.tools.retrieval import NON_EVIDENCE_CONTENT, RETRIEVAL_UNAVAILABLE_CONTENT
+    from core.exceptions.rag import RetrievalUnavailableError
+
+    hybrid_retriever = AsyncMock()
+    hybrid_retriever.retrieve.side_effect = RetrievalUnavailableError(
+        message="No retrieval store could be searched.",
+    )
+    tool = RetrieverTool(hybrid_retriever=hybrid_retriever)
+
+    with bind_request_context():
+        result = await tool.execute(query="payment terms")
+
+    assert result == RETRIEVAL_UNAVAILABLE_CONTENT
+    assert result in NON_EVIDENCE_CONTENT
+
+
+@pytest.mark.asyncio
 async def test_execute_formats_successful_retrieval_results() -> None:
     """
     The success path was previously untested and silently broken

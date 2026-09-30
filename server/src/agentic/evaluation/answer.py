@@ -13,15 +13,24 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable, Sequence
+from contextvars import ContextVar
 from dataclasses import dataclass
 
 from adapters.observability.logger import get_logger
 from adapters.observability.metrics import metrics
+from core.exceptions.rag import SimilarityUnavailableError
 from core.judge_availability import judge_availability_probe
 from core.usage import fallback_answered
 from rag.evaluation.faithfulness_backend import FaithfulnessBackend
 
 logger = get_logger(__name__)
+
+# Similarity failures of the evaluate() call in progress (see _score()).
+# Tasks created by its asyncio.gather() copy the context, so they append
+# to the same list.
+_similarity_failures: ContextVar[list[bool] | None] = ContextVar(
+    "answer_similarity_failures", default=None
+)
 
 SimilarityFn = Callable[[str, str], Awaitable[float]]
 
@@ -260,6 +269,12 @@ class AnswerEvaluationResult:
     citation_precision: float
     citation_coverage: float
     groundedness_detail: GroundednessResult
+    # True when an embedding-based check couldn't be computed (the
+    # embedding model failed or timed out, review G2): relevance,
+    # completeness, correctness or citations then score 0.0 for want of a
+    # score, not because the answer was judged poor. The gate never
+    # accepts such an answer and doesn't retry it.
+    relevance_unavailable: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -317,6 +332,24 @@ class AnswerEvaluator:
         self._similarity = similarity
         self._faithfulness_backend = faithfulness_backend
 
+    async def _score(self, a: str, b: str) -> float:
+        """
+        self._similarity(a, b). Within evaluate(), an unavailable
+        similarity is recorded for the result (relevance_unavailable)
+        and scores 0.0, so one embedding outage doesn't abort the other
+        checks (the groundedness judge among them) mid-flight; outside
+        it, the error propagates.
+        """
+
+        try:
+            return await self._similarity(a, b)
+        except SimilarityUnavailableError:
+            failures = _similarity_failures.get()
+            if failures is None:
+                raise
+            failures.append(True)
+            return 0.0
+
     async def evaluate(
         self,
         *,
@@ -334,13 +367,55 @@ class AnswerEvaluator:
         # embedding math and would otherwise sit idle waiting for it.
         # Gathering all five means groundedness's latency is hidden
         # behind the others instead of adding to them.
-        (
-            groundedness_detail,
-            relevance,
-            completeness,
-            correctness,
-            (citation_precision, citation_coverage),
-        ) = await asyncio.gather(
+        failures: list[bool] = []
+        token = _similarity_failures.set(failures)
+        try:
+            (
+                groundedness_detail,
+                relevance,
+                completeness,
+                correctness,
+                (citation_precision, citation_coverage),
+            ) = await self._gather_checks(
+                question=question,
+                answer=answer,
+                evidence=evidence,
+                reference_answer=reference_answer,
+                citations=citations,
+            )
+        finally:
+            _similarity_failures.reset(token)
+
+        if failures:
+            logger.warning(
+                "Answer checks could not be scored: embedding similarity unavailable.",
+                extra={
+                    "operation": "evaluate_answer",
+                    "failed_similarity_checks": len(failures),
+                },
+            )
+
+        return AnswerEvaluationResult(
+            groundedness=groundedness_detail.score,
+            relevance=relevance,
+            completeness=completeness,
+            correctness=correctness,
+            citation_precision=citation_precision,
+            citation_coverage=citation_coverage,
+            groundedness_detail=groundedness_detail,
+            relevance_unavailable=bool(failures),
+        )
+
+    async def _gather_checks(
+        self,
+        *,
+        question: str,
+        answer: str,
+        evidence: Sequence[str],
+        reference_answer: str | None,
+        citations: Sequence[str],
+    ) -> tuple[GroundednessResult, float, float, float | None, tuple[float, float]]:
+        return await asyncio.gather(
             self._evaluate_groundedness(
                 question=question,
                 answer=answer,
@@ -363,16 +438,6 @@ class AnswerEvaluator:
                 citations=citations,
                 evidence=evidence,
             ),
-        )
-
-        return AnswerEvaluationResult(
-            groundedness=groundedness_detail.score,
-            relevance=relevance,
-            completeness=completeness,
-            correctness=correctness,
-            citation_precision=citation_precision,
-            citation_coverage=citation_coverage,
-            groundedness_detail=groundedness_detail,
         )
 
     async def _evaluate_groundedness(
@@ -423,7 +488,7 @@ class AnswerEvaluator:
     async def _evaluate_relevance(self, *, question: str, answer: str) -> float:
         if not question.strip() or not answer.strip():
             return 0.0
-        return await self._similarity(question, answer)
+        return await self._score(question, answer)
 
     async def _maybe_correctness(
         self,
@@ -440,7 +505,7 @@ class AnswerEvaluator:
 
         if reference_answer is None:
             return None
-        return await self._similarity(answer, reference_answer)
+        return await self._score(answer, reference_answer)
 
     async def _evaluate_completeness(
         self,
@@ -457,11 +522,11 @@ class AnswerEvaluator:
         # available deterministic signal.
         if evidence:
             scores = await asyncio.gather(
-                *(self._similarity(item, answer) for item in evidence),
+                *(self._score(item, answer) for item in evidence),
             )
             return sum(scores) / len(scores)
 
-        return await self._similarity(question, answer)
+        return await self._score(question, answer)
 
     async def _evaluate_citations(
         self,
@@ -507,13 +572,13 @@ class AnswerEvaluator:
             return (0.0, 0.0)
 
         citation_scores = [
-            max([await self._similarity(citation, chunk) for chunk in evidence])
+            max([await self._score(citation, chunk) for chunk in evidence])
             for citation in citations
         ]
         precision = sum(citation_scores) / len(citation_scores)
 
         evidence_scores = [
-            max([await self._similarity(chunk, citation) for citation in citations])
+            max([await self._score(chunk, citation) for citation in citations])
             for chunk in evidence
         ]
         coverage = sum(evidence_scores) / len(evidence_scores)

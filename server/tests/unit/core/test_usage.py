@@ -219,3 +219,57 @@ def test_a_tally_collects_every_scope_however_it_closes() -> None:
             provider="groq", model="m", prompt_tokens=1, completion_tokens=1, total_tokens=2
         )
     assert tally.calls == 2
+
+
+def test_scopes_under_one_request_quota_share_it() -> None:
+    """
+    G1: summarization runs in its own scope before the orchestrator's;
+    the request's quota covers both, so the second scope starts from the
+    tokens the first one spent.
+    """
+
+    from core.exceptions.rate_limit import RequestTokenQuotaExceededError
+    from core.usage import check_request_token_quota, request_token_quota
+
+    with request_token_quota(100):
+        with usage_scope(estimate_tokens=_one_token_per_char):
+            _record(50, 10)  # summarization: 60 tokens
+
+        with usage_scope(estimate_tokens=_one_token_per_char) as second:
+            check_request_token_quota(["x" * 40])  # 60 + 40 = 100: allowed
+
+            with pytest.raises(RequestTokenQuotaExceededError) as raised:
+                check_request_token_quota(["x" * 41])
+
+    assert (raised.value.quota, raised.value.used, raised.value.requested) == (100, 60, 41)
+    assert second.refused is not None
+
+
+def test_a_refusal_in_one_scope_refuses_later_scopes_of_the_same_request() -> None:
+    from core.exceptions.rate_limit import RequestTokenQuotaExceededError
+    from core.usage import check_request_token_quota, request_token_quota
+
+    with request_token_quota(10):
+        with (
+            usage_scope(estimate_tokens=_one_token_per_char),
+            pytest.raises(RequestTokenQuotaExceededError),
+        ):
+            check_request_token_quota(["x" * 11])
+
+        with usage_scope(estimate_tokens=_one_token_per_char) as later:
+            with pytest.raises(RequestTokenQuotaExceededError):
+                check_request_token_quota(["x"])
+
+    assert later.refused is not None
+
+
+def test_separate_requests_do_not_share_a_quota() -> None:
+    from core.usage import check_request_token_quota, request_token_quota
+
+    with request_token_quota(100), usage_scope(estimate_tokens=_one_token_per_char):
+        _record(90, 0)
+
+    with request_token_quota(100), usage_scope(estimate_tokens=_one_token_per_char) as meter:
+        check_request_token_quota(["x" * 100])
+
+    assert meter.refused is None

@@ -18,15 +18,18 @@ model-real-context-window safety net.
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING
 
 from adapters.observability.logger import get_logger
-from agentic.agents.prompts.token_budget import count_tokens
+from agentic.agents.prompts.token_budget import count_tokens, estimate_tokens
 from application.services.base import BaseService
 from config.settings import get_settings
+from core.deadline import remaining_seconds
 from core.dto.clients.llm import LLMMessageDTO, LLMRequestDTO
 from core.dto.inference import InferencePolicy, LLMTask
 from core.enums import MessageRoleEnum
+from core.usage import usage_scope
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -106,7 +109,9 @@ class ConversationSummarizationService(BaseService):
 
         Best-effort: a summarization failure is logged and swallowed --
         callers get a usable (unsummarized-for-now) conversation back
-        rather than a broken request.
+        rather than a broken request. That includes a call cut off by
+        its time limit and one refused by the request's token quota
+        (see _summarize()).
         """
 
         events = await self._conversation_event_service.list(
@@ -209,7 +214,23 @@ class ConversationSummarizationService(BaseService):
             inference=inference,
         )
 
-        response = await self._llm_client.generate(request=request)
+        # The call is part of the user's request (review G1): its tokens go
+        # to the request's usage (a scope ChatService's tally collects) and
+        # count toward the request's token quota, and it may take at most
+        # SUMMARIZATION_TIMEOUT_S of what is left of the request's deadline.
+        timeout = get_settings().llm.SUMMARIZATION_TIMEOUT_S
+        remaining = remaining_seconds()
+
+        if remaining is not None:
+            timeout = min(timeout, remaining)
+
+        if timeout <= 0:
+            raise TimeoutError("No time left in the request to summarize the conversation.")
+
+        with usage_scope(estimate_tokens=estimate_tokens):
+            async with asyncio.timeout(timeout):
+                response = await self._llm_client.generate(request=request)
+
         summary = response.content.strip()
 
         # Cheap, real signal for whenever a quality complaint surfaces

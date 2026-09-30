@@ -51,6 +51,11 @@ jobs:
       DB_USER: juris_ai_user
       DB_PASSWORD: juris_ai_password
       DB_NAME: juris_ai_db
+      # The restricted runtime role the app connects as (required
+      # settings; created below before migrations, as in
+      # integration-tests.yaml).
+      APP_DB_USER: juris_ai_app
+      APP_DB_PASSWORD: juris_ai_app_password
       SECRET_KEY: ${{ secrets.SECRET_KEY }}
       JWT_SECRET_KEY: ${{ secrets.JWT_SECRET_KEY }}
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
@@ -70,6 +75,19 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           poetry-groups: "--with=dev,eval"
           working-directory: server
+
+      # Same SQL as the local stack's first-boot hook (and `make
+      # db-setup-role`). Must run before migrations: it sets the default
+      # privileges that give the app role access to tables they create.
+      - name: Create restricted app role
+        working-directory: .
+        env:
+          PGPASSWORD: ${{ env.DB_PASSWORD }}
+        run: |
+          # shellcheck source=/dev/null
+          source docker/dependencies/init/postgres/_create_app_role.lib
+          ADMIN_ROLE=$DB_USER create_app_role_sql |
+            psql -v ON_ERROR_STOP=1 -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME"
 
       - name: Run database migrations
         env:

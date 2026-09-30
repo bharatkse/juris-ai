@@ -17,6 +17,10 @@ daily quota and enforced the same way: checked before tokens are spent,
 counted after. ChatService sets the quota (request_token_quota()); the
 scope opened inside it picks it up; every LLM call checks it before it
 is made (check_request_token_quota(), from LLMClient.generate()).
+Every scope opened under one request_token_quota() block draws on the
+same RequestTokenBudget, so a request whose LLM calls span more than one
+scope (conversation summarization before the orchestrator's turn) is
+capped as a whole, and a refusal in one scope refuses the later ones.
 
 usage_tally() collects the scopes' usage for a caller that must record
 it however the work ends (ChatService, review R19).
@@ -42,6 +46,17 @@ def _rough_token_estimate(text: str) -> int:
 
 
 @dataclass(slots=True)
+class RequestTokenBudget:
+    """One request's token quota, shared by every scope opened under it."""
+
+    quota: int
+    # Tokens of the request's scopes that have already closed.
+    used: int = 0
+    # The first refused call of the request, once one has been refused.
+    refused: RequestTokenQuotaExceededError | None = None
+
+
+@dataclass(slots=True)
 class UsageMeter:
     """Token counts summed over every LLM call made within one scope."""
 
@@ -51,8 +66,8 @@ class UsageMeter:
     calls: int = 0
     providers: set[str] = field(default_factory=set)
     models: set[str] = field(default_factory=set)
-    # Per-request token quota; None means no limit.
-    quota: int | None = None
+    # The request's token quota this scope draws on; None means no limit.
+    budget: RequestTokenBudget | None = None
     estimate_tokens: TokenEstimator = _rough_token_estimate
     # The first refused call, once the quota has refused one.
     refused: RequestTokenQuotaExceededError | None = None
@@ -76,6 +91,12 @@ class UsageMeter:
         self.calls += 1
         self.providers.add(provider)
         self.models.add(model)
+
+    @property
+    def quota(self) -> int | None:
+        """The request's token quota, or None when there is none."""
+
+        return self.budget.quota if self.budget is not None else None
 
     @property
     def provider(self) -> str | None:
@@ -112,20 +133,28 @@ class UsageMeter:
         refused, every later call in the scope is refused too.
         """
 
-        if self.quota is None:
+        budget = self.budget
+
+        if budget is None:
             return
+
+        if self.refused is None and budget.refused is not None:
+            # An earlier scope of the same request was refused.
+            self.refused = budget.refused
 
         if self.refused is not None:
             raise self.quota_error()
 
         requested = sum(self.estimate_tokens(text) for text in prompt_texts)
+        used = budget.used + self.total_tokens
 
-        if self.total_tokens + requested > self.quota:
+        if used + requested > budget.quota:
             self.refused = RequestTokenQuotaExceededError(
-                quota=self.quota,
-                used=self.total_tokens,
+                quota=budget.quota,
+                used=used,
                 requested=requested,
             )
+            budget.refused = self.refused
             raise self.quota_error()
 
     def quota_error(self) -> RequestTokenQuotaExceededError:
@@ -144,7 +173,9 @@ class UsageMeter:
 
 
 _meter: ContextVar[UsageMeter | None] = ContextVar("usage_meter", default=None)
-_request_quota: ContextVar[int | None] = ContextVar("request_token_quota", default=None)
+_request_budget: ContextVar[RequestTokenBudget | None] = ContextVar(
+    "request_token_budget", default=None
+)
 _tally: ContextVar[UsageMeter | None] = ContextVar("usage_tally", default=None)
 
 
@@ -176,18 +207,19 @@ def usage_tally() -> Iterator[UsageMeter]:
 @contextmanager
 def request_token_quota(quota: int | None) -> Iterator[None]:
     """
-    Cap the tokens of every usage scope opened within this block at
-    `quota` (None: no cap). Restores the previous value with set(), for
-    the same reason as usage_scope().
+    Cap the tokens of every usage scope opened within this block, taken
+    together, at `quota` (None: no cap): one block is one request.
+    Restores the previous value with set(), for the same reason as
+    usage_scope().
     """
 
-    previous = _request_quota.get()
-    _request_quota.set(quota)
+    previous = _request_budget.get()
+    _request_budget.set(None if quota is None else RequestTokenBudget(quota=quota))
 
     try:
         yield
     finally:
-        _request_quota.set(previous)
+        _request_budget.set(previous)
 
 
 @contextmanager
@@ -197,7 +229,8 @@ def usage_scope(
 ) -> Iterator[UsageMeter]:
     """
     Count the LLM calls made within this block on a new meter, capped
-    by the request_token_quota() in effect, if any. estimate_tokens
+    by the request_token_quota() in effect, if any (together with the
+    request's scopes that closed before this one). estimate_tokens
     sizes each prompt for that check.
 
     Restores the previous meter with set(), not reset(token): a scope
@@ -208,13 +241,17 @@ def usage_scope(
 
     previous = _meter.get()
     tally = _tally.get()
-    meter = UsageMeter(quota=_request_quota.get(), estimate_tokens=estimate_tokens)
+    budget = _request_budget.get()
+    meter = UsageMeter(budget=budget, estimate_tokens=estimate_tokens)
     _meter.set(meter)
 
     try:
         yield meter
     finally:
         _meter.set(previous)
+
+        if budget is not None:
+            budget.used += meter.total_tokens
 
         # The tally in effect when the scope opened, held by reference:
         # a scope closed from another context still reaches it.

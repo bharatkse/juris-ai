@@ -183,12 +183,17 @@ off). `UsageService.record()` is idempotent per request id: a
 `usage_request_records` row (unique `request_id`) is inserted first and the
 day bucket grows only if that row is new. `HitlResumeService` records a
 resumed turn the same way, keyed by the resumed turn's own request id.
-Not counted: the background memory-extraction call.
+Conversation summarization (`ChatService._build_chat_request()`, before
+the orchestrator runs) is counted too: its call opens its own usage scope,
+which the tally collects. Not counted: the background memory-extraction
+call.
 
 **Per-request token quota** (`TOKEN_QUOTA_PER_REQUEST`): the same
 meter caps one request. `ChatService` sets the quota from
 `UsageService.request_token_quota()` (`core.usage.request_token_quota()`)
-around `handle()`/`stream()`; the scope opened inside picks it up, with
+around summarization and `handle()`/`stream()`; every scope opened inside
+draws on that one request budget (a later scope starts from what the
+earlier ones spent, and a refusal in one refuses the rest), with
 the tokenizer estimate (`agents/prompts/token_budget.py`
 `estimate_tokens`). `LLMClient.generate()` checks each call before it is
 made: tokens used so far plus the estimated prompt must fit, or the call

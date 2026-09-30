@@ -14,9 +14,15 @@ meant to be a process-lifetime singleton.
 
 from __future__ import annotations
 
+import asyncio
 import math
 
+from core.exceptions.rag import SimilarityUnavailableError
 from rag.protocols.embedding_provider import EmbeddingProviderProtocol
+
+# Most seconds one similarity may take. Two short texts embed in well
+# under a second on CPU; past this the model is stuck, not slow.
+DEFAULT_SIMILARITY_TIMEOUT_SECONDS = 10.0
 
 
 class EmbeddingSimilarity:
@@ -29,16 +35,32 @@ class EmbeddingSimilarity:
     judged by a separate injected FaithfulnessBackend (see answer.py).
     """
 
-    def __init__(self, *, embedding_provider: EmbeddingProviderProtocol) -> None:
+    def __init__(
+        self,
+        *,
+        embedding_provider: EmbeddingProviderProtocol,
+        timeout_seconds: float = DEFAULT_SIMILARITY_TIMEOUT_SECONDS,
+    ) -> None:
         self._embedding_provider = embedding_provider
+        self._timeout_seconds = timeout_seconds
 
     async def __call__(self, a: str, b: str) -> float:
         if not a.strip() or not b.strip():
             return 0.0
 
-        vector_a, vector_b = await self._embedding_provider.embed(
-            texts=[a, b],
-        )
+        # Any embedding failure, or a call past its time limit, is
+        # SimilarityUnavailableError: the answer gate can't score the
+        # answer, which it reports as "couldn't verify" (review G2).
+        # CancelledError is not an Exception and still propagates.
+        try:
+            async with asyncio.timeout(self._timeout_seconds):
+                vector_a, vector_b = await self._embedding_provider.embed(
+                    texts=[a, b],
+                )
+        except Exception as exc:
+            raise SimilarityUnavailableError(
+                f"Embedding similarity unavailable: {type(exc).__name__}",
+            ) from exc
 
         return _cosine_similarity(vector_a, vector_b)
 

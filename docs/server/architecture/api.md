@@ -337,6 +337,12 @@ Requires a bearer token. Both endpoints take `multipart/form-data`.
   `error.details.retry_after_seconds`). On `/chat/stream` either is a
   final `error` event. Nothing is run. Planning time counts toward the
   request's overall time budget.
+- **Long conversations:** once a conversation has more than 20 messages
+  not yet summarized, older ones are folded into a summary by an LLM call
+  before the request is planned. Its tokens count toward both token
+  quotas, and it may take at most `SUMMARIZATION_TIMEOUT_S` (default
+  20 s) of the request's time budget. If it doesn't finish in time or
+  fails, the request goes on with the unsummarized history.
 - **Plan size:** a request whose plan needs more than 6 steps
   (`PLAN_MAX_STEPS`) isn't run. The answer (`200`) says how many steps it
   would need and asks the user to split it into smaller questions.

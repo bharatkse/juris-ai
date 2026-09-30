@@ -783,6 +783,24 @@ class AgentContinuationService:
             evidence=evidence,
         )
 
+        if evaluation.relevance_unavailable is True:
+            # The embedding model is down, so relevance (and the other
+            # embedding checks) couldn't be scored. Never accept an
+            # unscored answer, and don't retry: a re-asked answer couldn't
+            # be scored either (review G2, as for the judge below).
+            logger.warning(
+                "Answer not accepted: it could not be scored (embedding similarity unavailable).",
+                extra={
+                    "operation": "gate_final",
+                    "reason": "similarity_unavailable",
+                },
+            )
+            metrics.record_answer_retry_skipped(reason="similarity_unavailable")
+            return self._reject_unverified(
+                handle=handle,
+                evaluation=evaluation,
+            )
+
         if self._answer_quality_policy.is_sufficient(evaluation):
             return None, AnswerEvaluationSummary(
                 groundedness=evaluation.groundedness,
