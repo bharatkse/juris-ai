@@ -10,6 +10,10 @@ where delivered messages are counted (docs/messaging-live-test.md).
 - Slack: MCP_SLACK_SERVER_URL when set, else the sandbox server. Counted
   in SLACK_TEST_CHANNEL_ID's history with SLACK_TEST_BOT_TOKEN; skipped
   when either is missing.
+
+Each of these variables is read from the environment, else from
+server/.env (_env()), so either place works (docs/slack-test-workspace-
+setup.md).
 """
 
 from __future__ import annotations
@@ -17,10 +21,12 @@ from __future__ import annotations
 import os
 import socket
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
 import pytest
+from dotenv import dotenv_values
 
 from config.settings import get_settings
 from tests.e2e.live_messaging.verifiers import (
@@ -32,6 +38,15 @@ from tests.e2e.live_messaging.verifiers import (
 
 DEFAULT_SANDBOX_MCP_URL = "http://localhost:8765/mcp"
 DEFAULT_MAILPIT_API_URL = "http://localhost:8025"
+
+_ENV_FILE = Path(__file__).resolve().parents[3] / ".env"
+_FILE_VALUES = dotenv_values(_ENV_FILE) if _ENV_FILE.is_file() else {}
+
+
+def _env(name: str) -> str | None:
+    """A live-test variable: the environment first, then server/.env."""
+
+    return os.environ.get(name) or _FILE_VALUES.get(name)
 
 
 @dataclass(frozen=True)
@@ -48,11 +63,11 @@ class Channel:
         text = f"Live messaging test {marker}: please ignore."
         if self.tool_name == "email_send":
             return {
-                "to": os.getenv("LIVE_TEST_EMAIL_TO", "live-test@example.org"),
+                "to": _env("LIVE_TEST_EMAIL_TO") or "live-test@example.org",
                 "subject": f"[{marker}] live messaging test",
                 "body": text,
             }
-        return {"channel": os.environ["SLACK_TEST_CHANNEL_ID"], "text": text}
+        return {"channel": _env("SLACK_TEST_CHANNEL_ID"), "text": text}
 
 
 def _reachable(url: str) -> bool:
@@ -77,19 +92,19 @@ def _require(url: str, what: str) -> None:
 def _server_url(real_url: str | None) -> str:
     """The real MCP server when one is configured, else the sandbox."""
 
-    return real_url or os.getenv("SANDBOX_MCP_URL") or DEFAULT_SANDBOX_MCP_URL
+    return real_url or _env("SANDBOX_MCP_URL") or DEFAULT_SANDBOX_MCP_URL
 
 
 def _email_channel() -> Channel:
     real_url = get_settings().llm.MCP_GMAIL_SERVER_URL
-    imap = {key: os.getenv(f"LIVE_TEST_IMAP_{key}") for key in ("HOST", "USER", "PASSWORD")}
+    imap = {key: _env(f"LIVE_TEST_IMAP_{key}") for key in ("HOST", "USER", "PASSWORD")}
 
     if all(imap.values()):
         verifier: DeliveryVerifier = ImapVerifier(
             host=imap["HOST"] or "",
             user=imap["USER"] or "",
             password=imap["PASSWORD"] or "",
-            mailbox=os.getenv("LIVE_TEST_IMAP_MAILBOX", "INBOX"),
+            mailbox=_env("LIVE_TEST_IMAP_MAILBOX") or "INBOX",
         )
     elif real_url:
         pytest.skip(
@@ -97,7 +112,7 @@ def _email_channel() -> Channel:
             "PASSWORD aren't set, so delivery can't be checked."
         )
     else:
-        api_url = os.getenv("MAILPIT_API_URL", DEFAULT_MAILPIT_API_URL)
+        api_url = _env("MAILPIT_API_URL") or DEFAULT_MAILPIT_API_URL
         _require(api_url, "Mailpit")
         verifier = MailpitVerifier(api_url=api_url)
 
@@ -107,8 +122,8 @@ def _email_channel() -> Channel:
 
 
 def _slack_channel() -> Channel:
-    token = os.getenv("SLACK_TEST_BOT_TOKEN")
-    channel_id = os.getenv("SLACK_TEST_CHANNEL_ID")
+    token = _env("SLACK_TEST_BOT_TOKEN")
+    channel_id = _env("SLACK_TEST_CHANNEL_ID")
     if not token or not channel_id:
         pytest.skip("SLACK_TEST_BOT_TOKEN and SLACK_TEST_CHANNEL_ID aren't set.")
     assert token is not None and channel_id is not None  # narrowed for mypy
