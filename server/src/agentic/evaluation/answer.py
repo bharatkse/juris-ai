@@ -16,6 +16,8 @@ from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 
 from adapters.observability.logger import get_logger
+from adapters.observability.metrics import metrics
+from core.usage import fallback_answered
 from rag.evaluation.faithfulness_backend import FaithfulnessBackend
 
 logger = get_logger(__name__)
@@ -393,6 +395,16 @@ class AnswerEvaluator:
             # Judge evaluation unavailable is a real failure to establish
             # groundedness, unlike "no evidence" above -- it counts against
             # the answer rather than being skipped.
+            if fallback_answered():
+                # Groq is down and the answer came from the local failover
+                # model; the judge stays Groq-only (review R17), so the
+                # answer can't be verified and is replaced.
+                logger.warning(
+                    "An answer produced by the local failover model could not be "
+                    "verified: the groundedness judge (Groq-only) is unavailable.",
+                    extra={"operation": "evaluate_groundedness", "judge": "groundedness"},
+                )
+                metrics.record_failover_answer_discarded(judge="groundedness")
             return GroundednessResult(score=0.0, applicable=True)
 
         return GroundednessResult(score=score, applicable=True)
