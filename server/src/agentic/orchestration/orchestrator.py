@@ -379,6 +379,19 @@ class AIOrchestrator:
         # None: no request deadline, only the graph's own timeout.
         self._request_timeout_seconds = request_timeout_seconds
 
+    def request_deadline(self) -> AbstractContextManager[None]:
+        """
+        The request's deadline, or no deadline if none is configured.
+
+        handle() and stream() open it themselves; a caller that does
+        request work before them (ChatService's conversation
+        summarization, review G1) opens it first, so that work counts
+        against the same deadline (the earlier deadline wins, see
+        core.deadline).
+        """
+
+        return self._request_deadline()
+
     def _request_deadline(self) -> AbstractContextManager[None]:
         """The request's deadline, or no deadline if none is configured."""
 
