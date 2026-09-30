@@ -80,7 +80,7 @@ class ApplicationMetrics:
             description=(
                 "Answers the quality gate rejected without its usual retry "
                 "(corrective retrieval and re-ask), labeled by reason "
-                "(judge_provider_unavailable)."
+                "(judge_provider_unavailable, similarity_unavailable)."
             ),
             unit="1",
         )
@@ -224,12 +224,13 @@ class ApplicationMetrics:
     def record_answer_retry_skipped(
         self,
         *,
-        reason: Literal["judge_provider_unavailable"],
+        reason: Literal["judge_provider_unavailable", "similarity_unavailable"],
     ) -> None:
         """
         Record an answer the quality gate rejected without retrying: the
-        groundedness judge's provider was down, so a re-asked answer
-        couldn't be checked either (review R17).
+        groundedness judge's provider was down (review R17), or the
+        embedding model was, so the answer couldn't be scored (review
+        G2). A re-asked answer couldn't be checked either.
         """
 
         self.answer_retries_skipped.add(1, attributes={"reason": reason})
