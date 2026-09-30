@@ -329,7 +329,8 @@ Requires a bearer token. Both endpoints take `multipart/form-data`.
   the rest of the request's time budget. If either call runs out of time,
   or too little time is left for the second, the request fails with `504`
   `PLANNING_TIMEOUT`. If both calls fail with a provider error before
-  that, it fails with `503` `PLANNING_UNAVAILABLE` and a `Retry-After`
+  that (or, with failover off, the local call does), it fails with `503`
+  `PLANNING_UNAVAILABLE` and a `Retry-After`
   header (`PLANNER_UNAVAILABLE_RETRY_AFTER_S`, default 30 s; also in
   `error.details.retry_after_seconds`). On `/chat/stream` either is a
   final `error` event. Nothing is run. Planning time counts toward the
