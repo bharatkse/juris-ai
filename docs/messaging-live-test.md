@@ -64,20 +64,15 @@ docker compose -f docker/development/docker-compose-messaging-test.yml \
 
 ## Slack
 
-1. Create a free Slack workspace for testing, and a channel in it.
-2. Create a Slack app (<https://api.slack.com/apps>, "From scratch"). Under
-   **OAuth & Permissions**, add the bot scopes `chat:write` and
-   `channels:history`, then install the app to the workspace. Copy the
-   **Bot User OAuth Token** (`xoxb-…`).
-3. Invite the bot to the channel (`/invite @your-app` in the channel), and copy
-   the channel ID (channel details, at the bottom).
-4. Export both variables, then (re)start the sandbox so it gets the token, and run
-   the suite:
+The Slack cases need a free test workspace, a bot with the `chat:write`,
+`channels:history` and `channels:read` scopes, and a public channel the bot is in.
+Follow [slack-test-workspace-setup.md](slack-test-workspace-setup.md). It creates
+the app from a manifest and ends with `make slack-test-check`, which verifies the
+token and channel before you run the suite. Then:
 
 ```bash
-export SLACK_TEST_BOT_TOKEN=xoxb-...
-export SLACK_TEST_CHANNEL_ID=C0123456789
-docker compose -f docker/development/docker-compose-messaging-test.yml \
+docker compose --env-file server/.env \
+  -f docker/development/docker-compose-messaging-test.yml \
   --profile messaging-test up -d --build
 make test-live-messaging
 ```
@@ -116,6 +111,9 @@ make test-live-messaging
 Use a test inbox and a test workspace: the suite sends real messages.
 
 ## Settings
+
+The test variables below are read from the environment, or else from
+`server/.env` (gitignored). An exported variable wins.
 
 | Variable | Default | Purpose |
 |---|---|---|
