@@ -40,9 +40,13 @@ def deadline_within(seconds: float) -> Iterator[None]:
 
     candidate = time.monotonic() + seconds
     current = _deadline.get()
-    token = _deadline.set(candidate if current is None else min(current, candidate))
+    _deadline.set(candidate if current is None else min(current, candidate))
 
     try:
         yield
     finally:
-        _deadline.reset(token)
+        # set(), not reset(token): a block held open across an async
+        # generator's yields (AIOrchestrator.stream()) may be closed from
+        # a different context (a client disconnecting), where reset()
+        # raises. Same reason as core.usage.usage_scope().
+        _deadline.set(current)
