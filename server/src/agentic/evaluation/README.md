@@ -35,7 +35,13 @@ With `require_evidence=True`, an answer with no evidence at all (groundedness
 not applicable) is insufficient: `_gate_final` runs one corrective retrieval
 and, if that finds nothing, replaces the answer with a fixed "no sources"
 message. An answer still insufficient when the budget runs out is replaced
-with a fixed "couldn't verify" message. Both are marked
+with a fixed "couldn't verify" message. So is one the groundedness judge
+couldn't score because its provider was unavailable (a rate limit, timeout,
+connection error or 5xx; `GroundednessResult.judge_unavailable`, set through
+`core/judge_availability.py`): there is no retry, since the same judge
+couldn't check a re-asked answer either. That skip is logged and counted in
+`juris_ai_answer_retries_skipped_total{reason}`. An unusable verdict or a low
+score is still retried. Both are marked
 `AnswerEvaluationSummary.verified=False` (`answer_verified` in the response).
 
 Defaults: `min_groundedness=0.50`, `min_relevance=0.60`,
