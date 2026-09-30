@@ -13,6 +13,7 @@ from wiring.factories.evaluation import build_llm_judge
 
 if TYPE_CHECKING:
     from adapters.cache.base import AbstractCache
+    from adapters.clients.resolver import LLMResolver
     from config.settings import Settings
 
 
@@ -20,6 +21,7 @@ def create_output_guardrail_service(
     *,
     settings: Settings,
     cache: AbstractCache,
+    llm_resolver: LLMResolver | None = None,
 ) -> OutputGuardrailService:
     """
     Build the OutputGuardrailService.
@@ -37,6 +39,7 @@ def create_output_guardrail_service(
             spacy_model=settings.guardrails.GUARDRAIL_SPACY_MODEL,
         ),
         harmful_content_judge=HarmfulContentJudge(
-            judge=build_llm_judge(settings=settings, cache=cache),
+            # The application's shared resolver: no clients of its own.
+            judge=build_llm_judge(settings=settings, cache=cache, llm_resolver=llm_resolver),
         ),
     )

@@ -96,6 +96,7 @@ def create_executor(
         faithfulness_backend=build_faithfulness_backend(
             settings=settings,
             cache=clients.cache,
+            llm_resolver=clients.llm_resolver,
         ),
     )
     # Both agents (legal, contract) answer legal questions, which must be

@@ -4,6 +4,7 @@ Unit tests for ChatService.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
@@ -1065,7 +1066,13 @@ async def test_stream_chat_yields_every_chunk_and_persists_the_final_response(
         ChatStreamChunkDTO(content="world!", is_final=False),
         ChatStreamChunkDTO(content="", is_final=True, response=response),
     ]
-    mock_orchestrator.stream = MagicMock(side_effect=_fake_stream(chunks))
+
+    async def stream(**_kwargs):
+        _spend(response.usage.prompt_tokens, response.usage.completion_tokens)
+        for chunk in chunks:
+            yield chunk
+
+    mock_orchestrator.stream = stream
 
     chat_service.commit = AsyncMock()
     chat_service.rollback = AsyncMock()
@@ -1114,10 +1121,11 @@ async def test_stream_chat_yields_every_chunk_and_persists_the_final_response(
         action_required=False,
     )
 
-    mock_usage_service.record.assert_awaited_once_with(
-        user_id=conversation.user_id,
-        input_tokens=response.usage.prompt_tokens,
-        output_tokens=response.usage.completion_tokens,
+    assert _recorded(mock_usage_service) == (
+        str(conversation.user_id),
+        str(request_id),
+        response.usage.prompt_tokens,
+        response.usage.completion_tokens,
     )
 
     chat_service.commit.assert_awaited_once_with()
@@ -1267,6 +1275,34 @@ async def test_stream_chat_raises_when_the_stream_never_yields_a_final_chunk(
 # ---------------------------------------------------------------------------
 
 
+def _spend(prompt_tokens: int = 700, completion_tokens: int = 200) -> None:
+    """Make LLM calls worth these tokens, counted the real way (a usage scope)."""
+
+    from core.usage import record_llm_usage, usage_scope
+
+    with usage_scope():
+        record_llm_usage(
+            provider="groq",
+            model="test",
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=prompt_tokens + completion_tokens,
+        )
+
+
+def _recorded(mock_usage_service: MagicMock) -> tuple[str, str, int, int]:
+    """(user_id, request_id, input, output) of the one usage record."""
+
+    mock_usage_service.record.assert_awaited_once()
+    kwargs = mock_usage_service.record.await_args.kwargs
+    return (
+        kwargs["user_id"],
+        kwargs["request_id"],
+        kwargs["input_tokens"],
+        kwargs["output_tokens"],
+    )
+
+
 def _quota_refusal():
     from core.exceptions.rate_limit import RequestTokenQuotaExceededError
 
@@ -1310,22 +1346,29 @@ async def test_chat_runs_the_orchestrator_under_the_request_token_quota(
     async def handle(**_kwargs):
         with usage_scope() as meter:
             quotas.append(meter.quota)
+        _spend(300, 50)
         raise SQLAlchemyError("stop here")
 
     mock_orchestrator.handle = handle
     chat_service.rollback = AsyncMock()
+    request_id = _request_id()
 
     with pytest.raises(SQLAlchemyError):
         await chat_service.chat(
             user_id=conversation.user_id,
             conversation_id=conversation.id,
             message=TEST_MESSAGE,
-            request_id=_request_id(),
+            request_id=request_id,
         )
 
     assert quotas == [4321]
-    # Not a quota refusal: nothing extra recorded.
-    mock_usage_service.record.assert_not_awaited()
+    # R19: a request that fails after its LLM calls still records them.
+    assert _recorded(mock_usage_service) == (
+        str(conversation.user_id),
+        str(request_id),
+        300,
+        50,
+    )
 
     with usage_scope() as after:
         pass
@@ -1343,24 +1386,31 @@ async def test_chat_records_the_usage_of_a_request_the_quota_refused(
     from core.exceptions.rate_limit import RequestTokenQuotaExceededError
 
     conversation = _arrange_chat(mock_conversation_service, mock_conversation_event_service)
-    mock_orchestrator.handle = AsyncMock(side_effect=_quota_refusal())
+
+    async def handle(**_kwargs):
+        _spend(700, 200)
+        raise _quota_refusal()
+
+    mock_orchestrator.handle = handle
     chat_service.commit = AsyncMock()
     chat_service.rollback = AsyncMock()
+    request_id = _request_id()
 
     with pytest.raises(RequestTokenQuotaExceededError):
         await chat_service.chat(
             user_id=conversation.user_id,
             conversation_id=conversation.id,
             message=TEST_MESSAGE,
-            request_id=_request_id(),
+            request_id=request_id,
         )
 
     chat_service.rollback.assert_awaited_once()
     chat_service.commit.assert_not_awaited()
-    mock_usage_service.record.assert_awaited_once_with(
-        user_id=conversation.user_id,
-        input_tokens=700,
-        output_tokens=200,
+    assert _recorded(mock_usage_service) == (
+        str(conversation.user_id),
+        str(request_id),
+        700,
+        200,
     )
 
 
@@ -1382,24 +1432,138 @@ async def test_stream_chat_records_the_usage_of_a_request_the_quota_refused(
     async def stream(**_kwargs):
         with usage_scope() as meter:
             quotas.append(meter.quota)
+        _spend(700, 200)
         raise _quota_refusal()
         yield  # pragma: no cover -- makes this an async generator
 
     mock_orchestrator.stream = stream
     chat_service.rollback = AsyncMock()
+    request_id = _request_id()
 
     with pytest.raises(RequestTokenQuotaExceededError):
         async for _ in chat_service.stream_chat(
             user_id=conversation.user_id,
             conversation_id=conversation.id,
             message=TEST_MESSAGE,
-            request_id=_request_id(),
+            request_id=request_id,
         ):
             pass
 
     assert quotas == [1000]
-    mock_usage_service.record.assert_awaited_once_with(
+    assert _recorded(mock_usage_service) == (
+        str(conversation.user_id),
+        str(request_id),
+        700,
+        200,
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_stream_cancelled_mid_run_records_its_usage(
+    chat_service: ChatService,
+    mock_conversation_service: MagicMock,
+    mock_conversation_event_service: MagicMock,
+    mock_orchestrator: MagicMock,
+    mock_usage_service: MagicMock,
+) -> None:
+    """
+    R19: the client disconnects while the orchestrator is still working
+    (the request task is cancelled). The tokens spent so far are recorded
+    once, and the cancellation still propagates.
+    """
+
+    conversation = _arrange_chat(mock_conversation_service, mock_conversation_event_service)
+    working = asyncio.Event()
+
+    async def stream(**_kwargs):
+        from core.usage import record_llm_usage, usage_scope
+
+        with usage_scope():
+            record_llm_usage(
+                provider="groq",
+                model="test",
+                prompt_tokens=400,
+                completion_tokens=40,
+                total_tokens=440,
+            )
+            working.set()
+            await asyncio.Event().wait()  # the next LLM call never returns
+        yield  # pragma: no cover
+
+    mock_orchestrator.stream = stream
+    chat_service.rollback = AsyncMock()
+    request_id = _request_id()
+
+    async def consume() -> None:
+        async for _ in chat_service.stream_chat(
+            user_id=conversation.user_id,
+            conversation_id=conversation.id,
+            message=TEST_MESSAGE,
+            request_id=request_id,
+        ):
+            pass
+
+    task = asyncio.create_task(consume())
+    await working.wait()
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert _recorded(mock_usage_service) == (
+        str(conversation.user_id),
+        str(request_id),
+        400,
+        40,
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_stream_closed_between_chunks_records_its_usage(
+    chat_service: ChatService,
+    mock_conversation_service: MagicMock,
+    mock_conversation_event_service: MagicMock,
+    mock_orchestrator: MagicMock,
+    mock_usage_service: MagicMock,
+) -> None:
+    """
+    R19: the client goes away after the first chunk; the stream is closed
+    while suspended at a yield (aclose). Recorded once, with the tokens the
+    orchestrator's scope counted before it was closed.
+    """
+
+    conversation = _arrange_chat(mock_conversation_service, mock_conversation_event_service)
+
+    async def stream(**_kwargs):
+        from core.usage import record_llm_usage, usage_scope
+
+        with usage_scope():
+            record_llm_usage(
+                provider="groq",
+                model="test",
+                prompt_tokens=900,
+                completion_tokens=90,
+                total_tokens=990,
+            )
+            yield ChatStreamChunkDTO(content="Hello ", is_final=False)
+            yield ChatStreamChunkDTO(content="world", is_final=False)  # pragma: no cover
+
+    mock_orchestrator.stream = stream
+    chat_service.rollback = AsyncMock()
+    request_id = _request_id()
+
+    chunks = chat_service.stream_chat(
         user_id=conversation.user_id,
-        input_tokens=700,
-        output_tokens=200,
+        conversation_id=conversation.id,
+        message=TEST_MESSAGE,
+        request_id=request_id,
+    )
+    await anext(chunks)
+    await chunks.aclose()
+
+    assert _recorded(mock_usage_service) == (
+        str(conversation.user_id),
+        str(request_id),
+        900,
+        90,
     )

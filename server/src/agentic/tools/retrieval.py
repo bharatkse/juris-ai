@@ -20,17 +20,23 @@ from pydantic import Field
 
 from adapters.observability.logger import get_logger
 from agentic.tools.base import Tool, ToolParams
+from core.exceptions.rag import RetrievalUnavailableError
 from rag.hybrid_retriever import HybridRetriever
 
 log = get_logger(__name__)
 
 NO_RESULTS_CONTENT = "No relevant content found."
 RETRIEVAL_FAILED_CONTENT = "Retrieval failed — please try again."
+RETRIEVAL_UNAVAILABLE_CONTENT = (
+    "Retrieval is temporarily unavailable, so no sources could be searched."
+)
 
 # Content execute() returns when it found nothing. It reaches the model as
 # a normal tool result, but it is not evidence an answer can be grounded
 # in (see AgentContinuationService's evidence seeding, A1).
-NON_EVIDENCE_CONTENT = frozenset({NO_RESULTS_CONTENT, RETRIEVAL_FAILED_CONTENT})
+NON_EVIDENCE_CONTENT = frozenset(
+    {NO_RESULTS_CONTENT, RETRIEVAL_FAILED_CONTENT, RETRIEVAL_UNAVAILABLE_CONTENT}
+)
 
 
 class RetrieverParams(ToolParams):
@@ -64,6 +70,10 @@ class RetrieverTool(Tool):
                 query=query,
                 top_k=top_k,
             )
+
+        except RetrievalUnavailableError:
+            # Already logged by HybridRetriever; a known outage, not a bug.
+            return RETRIEVAL_UNAVAILABLE_CONTENT
 
         except Exception:
             log.exception("Retrieval failed.")

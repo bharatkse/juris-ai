@@ -17,6 +17,8 @@ handlers, keeping the exception hierarchy transport-agnostic.
 
 from __future__ import annotations
 
+from typing import Any
+
 from core.constants import (
     ERROR_AI,
     ERROR_DOMAIN,
@@ -37,6 +39,7 @@ class AppError(Exception):
     status_code: int = HTTP_500_INTERNAL_SERVER_ERROR
     error_code: str = ERROR_INTERNAL_SERVER_ERROR
     default_message: str = "An unexpected error occurred."
+    details: dict[str, Any] | None = None
 
     def __init__(
         self,
@@ -45,10 +48,14 @@ class AppError(Exception):
         detail: str | None = None,
         status_code: int | None = None,
         error_code: str | None = None,
+        details: dict[str, Any] | None = None,
     ) -> None:
         self.message = message or self.default_message
         self.detail = detail or self.message
         self.status_code = status_code or self.status_code
+        # Structured, client-safe fields returned as the error's "details"
+        # (ErrorDetailModel.details), e.g. the state a 409 conflicted with.
+        self.details = details
 
         if error_code is not None:
             self.error_code = error_code

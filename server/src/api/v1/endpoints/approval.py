@@ -4,7 +4,7 @@ Approval API routes.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 
 from adapters.observability.logger import get_logger
 from api.dependencies.approval import get_approval_lifecycle_service
@@ -125,6 +125,14 @@ async def process_approval(
 )
 async def retry_approval_resume(
     approval_id: str,
+    force: bool = Query(
+        default=False,
+        description=(
+            "Confirm retrying a send that stopped long ago with no recorded "
+            "outcome, which may already have gone out (409 "
+            "APPROVAL_RESUME_NEEDS_CONFIRMATION without it)."
+        ),
+    ),
     current_user=Depends(get_current_user),
     service: ApprovalLifecycleService = Depends(
         get_approval_lifecycle_service,
@@ -141,7 +149,8 @@ async def retry_approval_resume(
     Only the approval's requester may retry (403 otherwise, 404 for an
     unknown id). 409 when the approval isn't decided or its resume
     already finished. An approved call that already ran is not run
-    again: its stored result is reused.
+    again: its stored result is reused. A send that stopped long ago
+    with no recorded outcome needs force=true (409 otherwise).
     """
 
     logger.info(
@@ -150,6 +159,7 @@ async def retry_approval_resume(
             "operation": "retry_approval_resume",
             "approval_id": approval_id,
             "user_id": str(current_user.id),
+            "force": force,
         },
     )
 
@@ -160,6 +170,7 @@ async def retry_approval_resume(
 
     resume_status = await hitl_resume_service.retry(
         approval=approval,
+        force=force,
     )
 
     return ApiResponse(

@@ -12,7 +12,7 @@ _execute_gated_tool() for the pausing half this resumes.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
@@ -26,6 +26,7 @@ from application.authorization.approval_lifecycle.verifier import (
     approved_parameters,
 )
 from application.services.base import BaseService
+from config.settings import get_settings
 from core.dto.planning import deserialize_plan
 from core.enums import (
     AgentActionStatusEnum,
@@ -34,7 +35,11 @@ from core.enums import (
     MessageRoleEnum,
 )
 from core.exceptions.agent_action import AgentActionError
-from core.exceptions.approval import ApprovalResumeNotAllowedError
+from core.exceptions.approval import (
+    ApprovalResumeNeedsConfirmationError,
+    ApprovalResumeNotAllowedError,
+)
+from core.usage import usage_tally
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -58,17 +63,26 @@ _RESUMABLE_DECISIONS = frozenset(
     }
 )
 
-# A decided approval whose action is in one of these states never
-# finished resuming: FAILED (recorded failure), or PENDING_APPROVAL /
-# EXECUTING (the process stopped between the decision commit and the
-# resume commit).
-_RETRYABLE_ACTION_STATUSES = frozenset(
+# A decided approval whose action is in one of these states hasn't
+# started resuming, or failed doing so: PENDING_APPROVAL (the process
+# stopped between the decision commit and the resume), FAILED (recorded
+# failure). A resume claims the action by moving it to EXECUTING; an
+# EXECUTING action is claimable again only by a retry, once it is stale
+# (HITL_RESUME_STALE_SECONDS: the worker that claimed it stopped), and
+# only with the user's confirmation if the send may already have run.
+_CLAIMABLE_ACTION_STATUSES = frozenset(
     {
         AgentActionStatusEnum.PENDING_APPROVAL,
-        AgentActionStatusEnum.EXECUTING,
         AgentActionStatusEnum.FAILED,
     }
 )
+
+
+def _stale_before() -> datetime:
+    """An EXECUTING action last updated before this may be claimed again."""
+
+    seconds = get_settings().agent_policy.HITL_RESUME_STALE_SECONDS
+    return datetime.now(UTC) - timedelta(seconds=seconds)
 
 
 class HitlResumeService(BaseService):
@@ -126,6 +140,7 @@ class HitlResumeService(BaseService):
         agent_action_id: str,
         decision_type: ApprovalDecisionEnum | None,
         edited_payload: dict[str, Any] | None = None,
+        take_over_stale: bool = False,
     ) -> HitlResumeStatusEnum:
         """
         Resume the execution paused by agent_action_id's gated tool
@@ -152,6 +167,14 @@ class HitlResumeService(BaseService):
 
         decision_type None (a still-pending approval) is not resumed:
         returns NOT_RESUMED without touching the session.
+
+        Concurrency: the resume first claims the action (an atomic
+        conditional UPDATE to EXECUTING, committed at once), so of two
+        overlapping resumes of the same action -- the decision and a
+        retry, or two retries, in any workers -- only one runs the call
+        and the graph. The other returns IN_PROGRESS without touching
+        anything. A claim left EXECUTING by a worker that stopped is taken
+        over only with take_over_stale, which retry() decides.
         """
 
         if decision_type not in _RESUMABLE_DECISIONS:
@@ -161,6 +184,36 @@ class HitlResumeService(BaseService):
             ApprovalDecisionEnum.APPROVE,
             ApprovalDecisionEnum.EDIT,
         )
+
+        try:
+            claimed = await self._agent_action_repository.claim(
+                agent_action_id,
+                from_statuses=_CLAIMABLE_ACTION_STATUSES,
+                stale_before=_stale_before() if take_over_stale else None,
+            )
+            await self.commit()
+        except Exception:
+            await self.rollback()
+            logger.exception(
+                "Could not claim the action for resuming.",
+                extra={
+                    "operation": "resume_after_decision",
+                    "approval_id": approval_id,
+                    "agent_action_id": agent_action_id,
+                },
+            )
+            return HitlResumeStatusEnum.FAILED
+
+        if not claimed:
+            logger.info(
+                "Not resuming: the action is already being resumed or has finished.",
+                extra={
+                    "operation": "resume_after_decision",
+                    "approval_id": approval_id,
+                    "agent_action_id": agent_action_id,
+                },
+            )
+            return HitlResumeStatusEnum.IN_PROGRESS
 
         try:
             agent_action = await self._agent_action_repository.get(
@@ -215,15 +268,34 @@ class HitlResumeService(BaseService):
             agent_action.status = AgentActionStatusEnum.EXECUTING
             await self.flush()
 
-            response = await self._orchestrator.resume(
-                thread_id=agent_action.thread_id,
-                user_id=agent_action.user_id,
-                conversation_id=conversation_event.conversation_id,
-                plan=plan,
-                approved=approved,
-                tool_result=tool_result,
-                action_workflow_service=self._action_workflow_service,
-            )
+            # The resumed turn is its own request: its answer event and
+            # its usage are keyed by this id (see the event below).
+            resume_request_id = uuid4()
+            user_id = agent_action.user_id
+
+            with usage_tally() as tally:
+                try:
+                    response = await self._orchestrator.resume(
+                        thread_id=agent_action.thread_id,
+                        user_id=user_id,
+                        conversation_id=conversation_event.conversation_id,
+                        plan=plan,
+                        approved=approved,
+                        tool_result=tool_result,
+                        action_workflow_service=self._action_workflow_service,
+                    )
+                finally:
+                    # The resumed turn's LLM calls count toward the user's
+                    # daily token quota, like any chat turn's, whether or
+                    # not the resume then succeeds (review R19). Once per
+                    # request id; record() uses its own session and never
+                    # raises.
+                    await self._usage_service.record(
+                        user_id=user_id,
+                        request_id=str(resume_request_id),
+                        input_tokens=tally.prompt_tokens,
+                        output_tokens=tally.completion_tokens,
+                    )
 
             metadata: dict[str, Any] = {"resumed_agent_action_id": agent_action.id}
 
@@ -252,7 +324,7 @@ class HitlResumeService(BaseService):
                 # the approval decision rather than a new inbound HTTP
                 # request, so it earns its own request_id rather than
                 # borrowing one that's already spoken for.
-                request_id=uuid4(),
+                request_id=resume_request_id,
                 parent_event_id=conversation_event.id,
                 role=MessageRoleEnum.ASSISTANT,
                 content=response.content,
@@ -268,9 +340,7 @@ class HitlResumeService(BaseService):
             }
             agent_action.executed_at = datetime.now(UTC)
 
-            user_id = agent_action.user_id
             conversation_id = conversation_event.conversation_id
-            usage = response.usage
 
             await self.commit()
 
@@ -302,15 +372,6 @@ class HitlResumeService(BaseService):
             return HitlResumeStatusEnum.FAILED
 
         else:
-            # The resumed turn's LLM calls count toward the user's daily
-            # token quota, like any chat turn's. After the commit: record()
-            # commits its own write and never raises.
-            await self._usage_service.record(
-                user_id=user_id,
-                input_tokens=usage.prompt_tokens,
-                output_tokens=usage.completion_tokens,
-            )
-
             # After the commit, like ChatService: the extractor only ever
             # sees a finished turn. A resume adds no new USER message, so
             # this usually finds nothing new and does nothing; it matters
@@ -340,18 +401,27 @@ class HitlResumeService(BaseService):
         self,
         *,
         approval: ApprovalResponseDTO,
+        force: bool = False,
     ) -> HitlResumeStatusEnum:
         """
         Re-run the resume for a decided approval whose conversation is
         stuck: the resume failed (AgentAction FAILED), or the process
         stopped between committing the decision and finishing the resume
-        (AgentAction still PENDING_APPROVAL or EXECUTING).
+        (AgentAction still PENDING_APPROVAL, or EXECUTING with no
+        progress for HITL_RESUME_STALE_SECONDS).
+
+        A stale EXECUTING action of an approved call with no stored result
+        may have sent before its worker stopped. Its retry raises
+        ApprovalResumeNeedsConfirmationError (409, possibly_sent) unless
+        force is set; a forced one is logged at WARNING and then sends
+        once. A stored result, or a rejection, can't send again, so it
+        needs no confirmation.
 
         The caller has already checked the approval belongs to the user
         (ApprovalLifecycleService.get(user_id=...)). Raises
         ApprovalResumeNotAllowedError (409) for an approval that is not
-        decided or whose resume already finished. Replay-safe: see
-        resume_after_decision().
+        decided, whose resume already finished, or that another request
+        is resuming right now. Replay-safe: see resume_after_decision().
         """
 
         if approval.decision_type not in _RESUMABLE_DECISIONS:
@@ -363,9 +433,36 @@ class HitlResumeService(BaseService):
             approval.agent_action_id,
         )
 
-        if agent_action is None or agent_action.status not in _RETRYABLE_ACTION_STATUSES:
+        if agent_action is None or (
+            agent_action.status not in _CLAIMABLE_ACTION_STATUSES
+            and agent_action.status is not AgentActionStatusEnum.EXECUTING
+        ):
             raise ApprovalResumeNotAllowedError(
                 "This approval's action has already been resumed.",
+            )
+
+        take_over_stale = (
+            agent_action.status is AgentActionStatusEnum.EXECUTING
+            and agent_action.updated_at < _stale_before()
+        )
+
+        if take_over_stale and self._may_have_sent(agent_action, approval):
+            if not force:
+                raise ApprovalResumeNeedsConfirmationError(
+                    "The approved message may already have been sent. "
+                    "Retry with force=true to send it anyway.",
+                    details={"possibly_sent": True},
+                )
+
+            logger.warning(
+                "Retrying a stale approved send without a recorded outcome, as "
+                "confirmed by the user: the message may be sent twice.",
+                extra={
+                    "operation": "retry_resume",
+                    "approval_id": approval.approval_id,
+                    "agent_action_id": agent_action.id,
+                    "user_id": agent_action.user_id,
+                },
             )
 
         logger.info(
@@ -378,11 +475,36 @@ class HitlResumeService(BaseService):
             },
         )
 
-        return await self.resume_after_decision(
+        status = await self.resume_after_decision(
             approval_id=approval.approval_id,
             agent_action_id=approval.agent_action_id,
             decision_type=approval.decision_type,
             edited_payload=approval.edited_payload,
+            take_over_stale=take_over_stale,
+        )
+
+        if status is HitlResumeStatusEnum.IN_PROGRESS:
+            # Lost the claim: another request is resuming it, or it was
+            # claimed too recently to be taken over.
+            raise ApprovalResumeNotAllowedError(
+                "This approval's action is already being resumed. Try again later.",
+            )
+
+        return status
+
+    @staticmethod
+    def _may_have_sent(
+        agent_action: AgentAction,
+        approval: ApprovalResponseDTO,
+    ) -> bool:
+        """
+        Whether taking over this action could send a second time: an
+        approved (or edited) call whose outcome was never stored.
+        """
+
+        return (
+            approval.decision_type is not ApprovalDecisionEnum.REJECT
+            and (agent_action.result or {}).get(TOOL_RESULT_KEY) is None
         )
 
     async def _approved_tool_result(

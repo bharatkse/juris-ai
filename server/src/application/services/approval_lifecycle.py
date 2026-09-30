@@ -588,6 +588,7 @@ class ApprovalLifecycleService(BaseService, ApprovalLifecycleServiceProtocol):
             if entity.status != ApprovalStatusEnum.WAITING:
                 raise ApprovalNotActionableError(
                     "Approval is not actionable: " f"{entity.status.value}.",
+                    details={"current_status": entity.status.value},
                 )
 
             return entity
@@ -630,12 +631,37 @@ class ApprovalLifecycleService(BaseService, ApprovalLifecycleServiceProtocol):
         """
         Persist and commit an approval decision and its compliance
         record.
+
+        The decision is written only if the approval is still WAITING in
+        the database (a conditional write), so of two concurrent decisions
+        only one is recorded. The other raises ApprovalNotActionableError
+        (409) with the approval's current status, writing nothing: no
+        compliance record, and no resume by the caller.
         """
 
+        approval_id = entity.id
+
         try:
-            persisted = await self._repository.save(
-                entity=entity,
-            )
+            if not await self._repository.save_decision(entity=entity):
+                # Nothing was written, so nothing to roll back (a rollback
+                # would also expire the request's other objects, such as
+                # the current user). entity now holds the winning decision.
+                current_status = entity.status.value
+
+                logger.info(
+                    "Approval decision refused: another decision was recorded first.",
+                    extra={
+                        "approval_id": approval_id,
+                        "user_id": user_id,
+                        "current_status": current_status,
+                    },
+                )
+                raise ApprovalNotActionableError(
+                    f"Approval is not actionable: {current_status}.",
+                    details={"current_status": current_status},
+                )
+
+            persisted = entity
 
             logger.info(
                 "Approval decision persisted.",
@@ -675,7 +701,7 @@ class ApprovalLifecycleService(BaseService, ApprovalLifecycleServiceProtocol):
             logger.exception(
                 "Approval decision persistence failed.",
                 extra={
-                    "approval_id": entity.id,
+                    "approval_id": approval_id,
                     "user_id": user_id,
                 },
             )
@@ -685,7 +711,7 @@ class ApprovalLifecycleService(BaseService, ApprovalLifecycleServiceProtocol):
             logger.exception(
                 "Unexpected error while persisting approval decision.",
                 extra={
-                    "approval_id": entity.id,
+                    "approval_id": approval_id,
                     "user_id": user_id,
                 },
             )

@@ -4,6 +4,8 @@ Unit tests for HarmfulContentJudge.
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
 import pytest
 
 from agentic.guardrails.harmful_content import HarmfulContentJudge
@@ -175,3 +177,52 @@ async def test_judge_call_cancellation_still_propagates() -> None:
         await HarmfulContentJudge(judge=_failing_judge(asyncio.CancelledError())).evaluate(
             content="x"
         )
+
+
+@pytest.mark.asyncio
+async def test_a_failover_answer_refused_because_the_judge_is_down_is_reported(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    R17: Groq is down, the agent's answer came from the local failover
+    model, and the Groq-only judge can't check it: the answer is refused
+    (unchanged), and that is logged as a warning and counted.
+    """
+
+    import logging
+
+    from agentic.guardrails import harmful_content
+    from core.exceptions.client import ClientConnectionError
+    from core.usage import record_llm_fallback, usage_scope
+
+    discarded = MagicMock()
+    monkeypatch.setattr(harmful_content.metrics, "record_failover_answer_discarded", discarded)
+
+    with usage_scope(), caplog.at_level(logging.WARNING):
+        record_llm_fallback()
+        result = await HarmfulContentJudge(judge=_failing_judge(ClientConnectionError())).evaluate(
+            content="An answer from the local model."
+        )
+
+    assert result.category == "judge_unavailable"
+    discarded.assert_called_once_with(judge="harmful_content")
+    assert any("local failover" in record.message for record in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_a_judge_outage_without_failover_is_not_reported_as_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from agentic.guardrails import harmful_content
+    from core.exceptions.client import ClientConnectionError
+    from core.usage import usage_scope
+
+    discarded = MagicMock()
+    monkeypatch.setattr(harmful_content.metrics, "record_failover_answer_discarded", discarded)
+
+    with usage_scope():
+        await HarmfulContentJudge(judge=_failing_judge(ClientConnectionError())).evaluate(
+            content="An answer from Groq."
+        )
+
+    discarded.assert_not_called()

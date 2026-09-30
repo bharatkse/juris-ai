@@ -4,10 +4,13 @@ Runtime client composition.
 
 from __future__ import annotations
 
+import time
 from typing import TYPE_CHECKING
 
 from adapters.clients.mcp.registry import MCPServerRegistry
 from adapters.clients.resolver import LLMResolver
+from adapters.observability.logger import get_logger
+from core.enums import LLMProviderEnum
 from wiring.containers import ClientContainer
 from wiring.factories.cache import build_cache
 from wiring.factories.llm_resolver import build_llm_resolver
@@ -17,6 +20,8 @@ from wiring.factories.search import build_content_fetcher, build_searxng_client
 
 if TYPE_CHECKING:
     from config.settings import Settings
+
+log = get_logger(__name__)
 
 
 def create_clients(*, settings: Settings) -> ClientContainer:
@@ -38,4 +43,47 @@ def create_clients(*, settings: Settings) -> ClientContainer:
         hybrid_retriever=rag_pipeline.hybrid_retriever,
         embedding_provider=rag_pipeline.embedding_provider,
         cache=cache,
+    )
+
+
+async def close_clients(clients: ClientContainer) -> None:
+    """
+    Close the process-lifetime LLM clients at application shutdown
+    (main.py's lifespan; review R17). The judges share this resolver, so
+    this closes theirs too.
+    """
+
+    await clients.llm_resolver.aclose()
+
+
+async def warm_up_local_llm(clients: ClientContainer) -> None:
+    """
+    Load the local model the planner uses, so the first requests after
+    startup don't wait for a cold load (~80 s on a CPU host, longer than
+    PLANNER_TIMEOUT_S; review R18). Run in the background by main.py's
+    lifespan. Logs how long it took; a failure (Ollama down) is logged
+    and never raised (the planner fails over, if configured to).
+    """
+
+    started = time.monotonic()
+
+    try:
+        await clients.llm_resolver.get(LLMProviderEnum.LOCAL).warm_up()
+    except Exception as exc:
+        log.warning(
+            "Local LLM warm-up failed.",
+            extra={
+                "operation": "warm_up_local_llm",
+                "error_type": type(exc).__name__,
+                "duration_seconds": round(time.monotonic() - started, 1),
+            },
+        )
+        return
+
+    log.info(
+        "Local LLM warmed up.",
+        extra={
+            "operation": "warm_up_local_llm",
+            "duration_seconds": round(time.monotonic() - started, 1),
+        },
     )

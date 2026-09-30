@@ -19,7 +19,9 @@ import json
 import re
 
 from adapters.observability.logger import get_logger
+from adapters.observability.metrics import metrics
 from agentic.guardrails.schemas import HarmfulContentResult
+from core.usage import fallback_answered
 from core.utils.prompt_safety import escape_delimiter
 from rag.evaluation.evaluator import Judge
 
@@ -125,6 +127,17 @@ class HarmfulContentJudge:
                 "Harmful-content judge call failed; failing closed (treating as harmful).",
                 extra={"operation": "harmful_content_judge", "error_type": type(exc).__name__},
             )
+            if fallback_answered():
+                # Groq is down and the answer came from the local failover
+                # model: the judge stays Groq-only (review R17), so that
+                # answer is thrown away. Say so, since failover looks like
+                # it worked but the user still gets the refusal.
+                logger.warning(
+                    "An answer produced by the local failover model was discarded: "
+                    "the harmful-content judge (Groq-only) is unavailable.",
+                    extra={"operation": "harmful_content_judge", "judge": "harmful_content"},
+                )
+                metrics.record_failover_answer_discarded(judge="harmful_content")
             return HarmfulContentResult(
                 harmful=True,
                 category=JUDGE_UNAVAILABLE_CATEGORY,

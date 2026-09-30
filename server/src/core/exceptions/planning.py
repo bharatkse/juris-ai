@@ -27,7 +27,13 @@ ExecutionPlan
 
 from __future__ import annotations
 
-from core.constants import ERROR_PLAN_GENERATION, ERROR_PLAN_VALIDATION, ERROR_PLANNING
+from core.constants import (
+    ERROR_PLAN_GENERATION,
+    ERROR_PLAN_VALIDATION,
+    ERROR_PLANNING,
+    ERROR_PLANNING_TIMEOUT,
+    HTTP_504_GATEWAY_TIMEOUT,
+)
 from core.exceptions.base import AIError
 
 
@@ -52,6 +58,24 @@ class PlanGenerationError(PlanningError):
 
     error_code = ERROR_PLAN_GENERATION
     default_message = "Execution plan generation failed."
+
+
+class PlanningTimeoutError(PlanningError):
+    """
+    Raised when the planner's LLM call doesn't finish within
+    PLANNER_TIMEOUT_S, or within what is left of the request's deadline
+    (review R18). The call is cancelled; nothing has been executed.
+    """
+
+    status_code = HTTP_504_GATEWAY_TIMEOUT
+    error_code = ERROR_PLANNING_TIMEOUT
+
+    def __init__(self, *, timeout_seconds: float) -> None:
+        self.timeout_seconds = timeout_seconds
+
+        super().__init__(
+            f"Planning did not finish within {timeout_seconds:.0f} seconds. Please try again.",
+        )
 
 
 class PlanValidationError(PlanningError):

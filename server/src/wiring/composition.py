@@ -12,6 +12,7 @@ from adapters.observability.langsmith import configure_langsmith
 from adapters.persistence.sqlalchemy.session import session_factory
 from agentic.collaboration.bus import CollaborationBus
 from agentic.execution.aggregation.response import ResponseAggregator
+from agentic.execution.config import ExecutionTimeoutPolicy
 from agentic.execution.validation.response import ResponseValidator
 from agentic.orchestration.orchestrator import AIOrchestrator
 from application.authorization.approval_lifecycle.verifier import ApprovalRecordVerifier
@@ -96,6 +97,10 @@ def create_ai_orchestrator(
         guardrails=create_output_guardrail_service(
             settings=settings,
             cache=clients.cache,
+            llm_resolver=clients.llm_resolver,
         ),
         compliance_log=compliance_log,
+        # The whole request (planning included) gets the graph's time
+        # budget; the graph runs in what is left (review R18).
+        request_timeout_seconds=ExecutionTimeoutPolicy().timeout_seconds,
     )

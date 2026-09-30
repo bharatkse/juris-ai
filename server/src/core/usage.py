@@ -17,6 +17,9 @@ daily quota and enforced the same way: checked before tokens are spent,
 counted after. ChatService sets the quota (request_token_quota()); the
 scope opened inside it picks it up; every LLM call checks it before it
 is made (check_request_token_quota(), from LLMClient.generate()).
+
+usage_tally() collects the scopes' usage for a caller that must record
+it however the work ends (ChatService, review R19).
 """
 
 from __future__ import annotations
@@ -53,6 +56,10 @@ class UsageMeter:
     estimate_tokens: TokenEstimator = _rough_token_estimate
     # The first refused call, once the quota has refused one.
     refused: RequestTokenQuotaExceededError | None = None
+    # Calls the local failover model answered because the primary
+    # provider was unavailable (FailoverLLMClient). A Groq-only judge that
+    # can't run then discards that answer (review R17).
+    fallback_calls: int = 0
 
     def add(
         self,
@@ -81,6 +88,17 @@ class UsageMeter:
         """The model, when every call used the same one."""
 
         return next(iter(self.models)) if len(self.models) == 1 else None
+
+    def merge(self, other: UsageMeter) -> None:
+        """Add another meter's counts to this one."""
+
+        self.prompt_tokens += other.prompt_tokens
+        self.completion_tokens += other.completion_tokens
+        self.total_tokens += other.total_tokens
+        self.calls += other.calls
+        self.providers |= other.providers
+        self.models |= other.models
+        self.fallback_calls += other.fallback_calls
 
     def check(self, prompt_texts: Iterable[str]) -> None:
         """
@@ -127,6 +145,32 @@ class UsageMeter:
 
 _meter: ContextVar[UsageMeter | None] = ContextVar("usage_meter", default=None)
 _request_quota: ContextVar[int | None] = ContextVar("request_token_quota", default=None)
+_tally: ContextVar[UsageMeter | None] = ContextVar("usage_tally", default=None)
+
+
+@contextmanager
+def usage_tally() -> Iterator[UsageMeter]:
+    """
+    Collect the usage of every usage_scope() opened within this block,
+    however each one ends: returned, raised, or cancelled (a client
+    disconnecting from a stream). A scope adds its meter to the tally
+    when it closes, so the tally is complete once the work inside the
+    block has finished or been closed.
+
+    ChatService records one request's usage from its tally in a finally
+    (review R19): the orchestrator's own scope only reports usage on a
+    returned response or a quota refusal. It counts exactly the calls
+    the scopes count, nothing more.
+    """
+
+    previous = _tally.get()
+    tally = UsageMeter()
+    _tally.set(tally)
+
+    try:
+        yield tally
+    finally:
+        _tally.set(previous)
 
 
 @contextmanager
@@ -163,6 +207,7 @@ def usage_scope(
     """
 
     previous = _meter.get()
+    tally = _tally.get()
     meter = UsageMeter(quota=_request_quota.get(), estimate_tokens=estimate_tokens)
     _meter.set(meter)
 
@@ -170,6 +215,11 @@ def usage_scope(
         yield meter
     finally:
         _meter.set(previous)
+
+        # The tally in effect when the scope opened, held by reference:
+        # a scope closed from another context still reaches it.
+        if tally is not None:
+            tally.merge(meter)
 
 
 def check_request_token_quota(prompt_texts: Iterable[str]) -> None:
@@ -208,3 +258,26 @@ def record_llm_usage(
         completion_tokens=completion_tokens,
         total_tokens=total_tokens,
     )
+
+
+def record_llm_fallback() -> None:
+    """
+    Note that the fallback provider answered a call in the current scope
+    (FailoverLLMClient); a no-op outside a scope.
+    """
+
+    meter = _meter.get()
+
+    if meter is not None:
+        meter.fallback_calls += 1
+
+
+def fallback_answered() -> bool:
+    """
+    Whether any call in the current scope was answered by the fallback
+    provider: a judge that can't run then discards that answer (R17).
+    """
+
+    meter = _meter.get()
+
+    return meter is not None and meter.fallback_calls > 0

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -213,3 +213,37 @@ def test_require_evidence_does_not_affect_an_answer_checked_against_evidence() -
     )
 
     assert AnswerQualityPolicy(require_evidence=True).is_sufficient(result) is True
+
+
+async def test_a_failover_answer_the_groundedness_judge_cannot_check_is_reported(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    R17: the groundedness judge (Groq-only) is down while the answer came
+    from the local failover model. It still counts as not grounded
+    (unchanged); a warning and a metric say the failover answer was lost.
+    """
+
+    import logging
+
+    from agentic.evaluation import answer as answer_module
+    from core.usage import record_llm_fallback, usage_scope
+
+    discarded = MagicMock()
+    monkeypatch.setattr(answer_module.metrics, "record_failover_answer_discarded", discarded)
+
+    faithfulness_backend = AsyncMock()
+    faithfulness_backend.evaluate = AsyncMock(return_value=None)
+    evaluator = AnswerEvaluator(
+        similarity=_similarity_stub({}),
+        faithfulness_backend=faithfulness_backend,
+    )
+
+    with usage_scope(), caplog.at_level(logging.WARNING):
+        record_llm_fallback()
+        result = await evaluator.evaluate(question="q", answer="a", evidence=["chunk"])
+
+    assert result.groundedness_detail.applicable is True
+    assert result.groundedness_detail.score == 0.0
+    discarded.assert_called_once_with(judge="groundedness")
+    assert any("local failover" in record.message for record in caplog.records)

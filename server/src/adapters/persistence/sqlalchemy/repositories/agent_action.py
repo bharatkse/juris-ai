@@ -4,11 +4,15 @@ Agent action persistence repository.
 
 from __future__ import annotations
 
-from sqlalchemy import select
+from datetime import datetime
+
+from sqlalchemy import and_, false, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from adapters.persistence.sqlalchemy.models.agent_action import AgentAction
 from adapters.persistence.sqlalchemy.repositories.base import BaseRepository
+from core.enums import AgentActionStatusEnum
+from core.utils.datetime import utcnow
 
 
 class AgentActionRepository(BaseRepository[AgentAction]):
@@ -70,6 +74,51 @@ class AgentActionRepository(BaseRepository[AgentAction]):
         )
 
         return result.scalar_one_or_none()
+
+    async def claim(
+        self,
+        action_id: str,
+        *,
+        from_statuses: frozenset[AgentActionStatusEnum],
+        stale_before: datetime | None,
+    ) -> bool:
+        """
+        Atomically move an action to EXECUTING, if it is in one of
+        from_statuses or (only when stale_before is given) has been
+        EXECUTING without an update since stale_before. True when this
+        call made the change.
+
+        One conditional UPDATE, so concurrent callers (in any worker)
+        can't both win: Postgres re-checks the WHERE clause against the
+        row a concurrent winner committed. The caller commits.
+        """
+
+        statement = (
+            update(self._model)
+            .where(
+                self._model.id == action_id,
+                or_(
+                    self._model.status.in_(from_statuses),
+                    and_(
+                        self._model.status == AgentActionStatusEnum.EXECUTING,
+                        self._model.updated_at < stale_before,
+                    )
+                    if stale_before is not None
+                    else false(),
+                ),
+            )
+            .values(
+                status=AgentActionStatusEnum.EXECUTING,
+                updated_at=utcnow(),
+            )
+            .returning(self._model.id)
+        )
+
+        result = await self._session.execute(
+            statement,
+        )
+
+        return result.scalar_one_or_none() is not None
 
     async def get_by_execution(
         self,

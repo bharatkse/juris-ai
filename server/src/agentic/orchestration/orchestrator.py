@@ -7,8 +7,8 @@ Coordinates the AI request lifecycle.
 from __future__ import annotations
 
 import re
-from collections.abc import AsyncGenerator, AsyncIterator, Iterator, Sequence
-from contextlib import aclosing
+from collections.abc import AsyncGenerator, Iterator, Sequence
+from contextlib import AbstractContextManager, aclosing, nullcontext
 from typing import TYPE_CHECKING
 
 from adapters.observability.logger import get_logger
@@ -35,6 +35,7 @@ from agentic.orchestration.schemas.response import (
     Source,
     Usage,
 )
+from core.deadline import deadline_within
 from core.dto.agent import AgentContextDTO, AgentResponseDTO
 from core.dto.agent_action import AgentActionRequestDTO, AgentActionResponseDTO
 from core.dto.approval import ApprovalResponseDTO
@@ -362,6 +363,7 @@ class AIOrchestrator:
         guardrails: OutputGuardrailService,
         compliance_log: StandaloneComplianceLogWriter,
         guardrail_max_regenerate_attempts: int = 1,
+        request_timeout_seconds: float | None = None,
     ) -> None:
         self._planner = planner
         self._executor = executor
@@ -371,6 +373,19 @@ class AIOrchestrator:
         self._guardrails = guardrails
         self._compliance_log = compliance_log
         self._guardrail_max_regenerate_attempts = guardrail_max_regenerate_attempts
+        # The request's deadline (core.deadline), started before planning
+        # so planning time counts against it and a planner call sees it
+        # (review R18). The graph gets what is left (ExecutionSession).
+        # None: no request deadline, only the graph's own timeout.
+        self._request_timeout_seconds = request_timeout_seconds
+
+    def _request_deadline(self) -> AbstractContextManager[None]:
+        """The request's deadline, or no deadline if none is configured."""
+
+        if self._request_timeout_seconds is None:
+            return nullcontext()
+
+        return deadline_within(self._request_timeout_seconds)
 
     async def run_approved_tool(
         self,
@@ -432,7 +447,7 @@ class AIOrchestrator:
         guardrail judge.
         """
 
-        with usage_scope(estimate_tokens=estimate_tokens) as meter:
+        with usage_scope(estimate_tokens=estimate_tokens) as meter, self._request_deadline():
             try:
                 response = await self._handle(
                     request=request,
@@ -452,14 +467,14 @@ class AIOrchestrator:
         *,
         request: OrchestratorRequest,
         action_workflow_service: ActionWorkflowService,
-    ) -> AsyncIterator[OrchestratorStreamChunk]:
+    ) -> AsyncGenerator[OrchestratorStreamChunk, None]:
         """
         Streaming counterpart to handle() (see _stream()). The final
         chunk's response carries the turn's usage, counted as in
         handle().
         """
 
-        with usage_scope(estimate_tokens=estimate_tokens) as meter:
+        with usage_scope(estimate_tokens=estimate_tokens) as meter, self._request_deadline():
             try:
                 # aclosing: when this generator stops early (a refusal),
                 # _stream() is closed here, in this context, so its

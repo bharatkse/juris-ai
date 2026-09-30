@@ -4,7 +4,8 @@ Application entry point for the Juris-AI API.
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
+import asyncio
+from contextlib import asynccontextmanager, suppress
 
 import uvicorn
 from fastapi import FastAPI
@@ -26,7 +27,7 @@ from core.enums import CacheBackendEnum
 from core.utils.file_system import ensure_dir
 from wiring.composition import create_ai_orchestrator
 from wiring.factories.agent_policies import seed_default_agent_policies
-from wiring.factories.clients import create_clients
+from wiring.factories.clients import close_clients, create_clients, warm_up_local_llm
 from wiring.factories.roles import seed_default_roles
 from wiring.factories.user_memory import create_memory_extraction_scheduler
 
@@ -185,6 +186,10 @@ async def lifespan(
             # two loaded copies (see wiring/factories/rag.py).
             clients = create_clients(settings=settings)
 
+            # In the background: startup doesn't wait for a model load
+            # (~80 s cold on a CPU host), and a failure only logs.
+            local_llm_warm_up = asyncio.create_task(warm_up_local_llm(clients))
+
             app.state.embedding_provider = clients.embedding_provider
 
             app.state.ai_orchestrator = create_ai_orchestrator(
@@ -213,6 +218,11 @@ async def lifespan(
                 await memory_extraction_scheduler.shutdown(
                     timeout_seconds=MEMORY_EXTRACTION_SHUTDOWN_TIMEOUT_SECONDS,
                 )
+                local_llm_warm_up.cancel()
+                with suppress(asyncio.CancelledError):
+                    await local_llm_warm_up
+                # After the extraction runs that may still use them.
+                await close_clients(clients)
 
     finally:
         await shutdown()

@@ -4,20 +4,20 @@ Per-user rate limit and token quota enforcement.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from adapters.observability.logger import get_logger
+from adapters.persistence.sqlalchemy.repositories.usage_record import (
+    UsageRecordRepository,
+)
 from application.services.base import BaseService
 from config.settings import get_settings
 from core.exceptions.rate_limit import RateLimitExceededError, TokenQuotaExceededError
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
-
-    from adapters.persistence.sqlalchemy.repositories.usage_record import (
-        UsageRecordRepository,
-    )
 
 logger = get_logger(__name__)
 
@@ -43,9 +43,14 @@ class UsageService(BaseService):
         *,
         session: AsyncSession,
         repository: UsageRecordRepository,
+        record_session_factory: Callable[[], AsyncSession] | None = None,
     ) -> None:
         super().__init__(session)
         self._repository = repository
+        # record() writes on a session of its own when given a factory,
+        # so it can finish after the request's session is gone (a client
+        # that disconnected mid-stream). Without one it uses `session`.
+        self._record_session_factory = record_session_factory
 
     async def check_and_enforce(self, *, user_id: str) -> None:
         """
@@ -135,15 +140,19 @@ class UsageService(BaseService):
         self,
         *,
         user_id: str,
+        request_id: str,
         input_tokens: int,
         output_tokens: int,
     ) -> None:
         """
-        Record actual token usage against the user's daily bucket.
+        Record one request's actual token usage against the user's daily
+        bucket, exactly once per request_id (review R19): a second call
+        for the same request changes nothing (usage_request_records).
 
         Best-effort: a failure here must not fail an otherwise-successful
         chat response, so errors are logged and swallowed rather than
-        propagated.
+        propagated. Commits its own write, on its own session when the
+        service has a record_session_factory.
         """
 
         if input_tokens <= 0 and output_tokens <= 0:
@@ -158,23 +167,65 @@ class UsageService(BaseService):
         day_window = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
         try:
-            await self._repository.increment_tokens(
-                user_id=user_id,
-                window_start=day_window,
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-            )
-            await self.commit()
+            if self._record_session_factory is None:
+                await self._record_request_tokens(
+                    session=self.session,
+                    repository=self._repository,
+                    user_id=user_id,
+                    request_id=request_id,
+                    day_window=day_window,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                )
+            else:
+                async with self._record_session_factory() as session:
+                    await self._record_request_tokens(
+                        session=session,
+                        repository=UsageRecordRepository(session=session),
+                        user_id=user_id,
+                        request_id=request_id,
+                        day_window=day_window,
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                    )
 
         except Exception:
-            await self.rollback()
+            if self._record_session_factory is None:
+                await self.rollback()
 
             logger.exception(
                 "Failed to record token usage.",
                 extra={
                     "operation": "record_usage",
                     "user_id": user_id,
+                    "request_id": request_id,
                     "input_tokens": input_tokens,
                     "output_tokens": output_tokens,
                 },
+            )
+
+    @staticmethod
+    async def _record_request_tokens(
+        *,
+        session: AsyncSession,
+        repository: UsageRecordRepository,
+        user_id: str,
+        request_id: str,
+        day_window: datetime,
+        input_tokens: int,
+        output_tokens: int,
+    ) -> None:
+        recorded = await repository.record_request_tokens(
+            request_id=request_id,
+            user_id=user_id,
+            window_start=day_window,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+        )
+        await session.commit()
+
+        if not recorded:
+            logger.info(
+                "Token usage already recorded for this request; not counted again.",
+                extra={"operation": "record_usage", "request_id": request_id},
             )

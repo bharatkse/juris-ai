@@ -87,6 +87,7 @@ def repository() -> MagicMock:
     repository.create = AsyncMock()
     repository.get = AsyncMock()
     repository.save = AsyncMock()
+    repository.save_decision = AsyncMock(return_value=True)
 
     return repository
 
@@ -686,7 +687,7 @@ async def test_approve_updates_waiting_approval(
     assert entity.decision_reason == "Approved by reviewer."
     assert before <= entity.decided_at <= after
 
-    repository.save.assert_awaited_once_with(
+    repository.save_decision.assert_awaited_once_with(
         entity=entity,
     )
 
@@ -741,12 +742,13 @@ async def test_approve_rejects_non_waiting_approval(
     with pytest.raises(
         ApprovalNotActionableError,
         match="Approval is not actionable",
-    ):
+    ) as exc_info:
         await service.approve(
             approval_id="approval-123",
             user_id=OWNER_ID,
         )
 
+    assert exc_info.value.details == {"current_status": ApprovalStatusEnum.REJECTED.value}
     repository.save.assert_not_awaited()
 
 
@@ -821,7 +823,7 @@ async def test_reject_updates_waiting_approval(
     assert entity.decision_reason == "Action is not permitted."
     assert before <= entity.decided_at <= after
 
-    repository.save.assert_awaited_once_with(
+    repository.save_decision.assert_awaited_once_with(
         entity=entity,
     )
 
@@ -898,7 +900,7 @@ async def test_edit_updates_waiting_approval(
     assert entity.edited_payload == payload
     assert before <= entity.decided_at <= after
 
-    repository.save.assert_awaited_once_with(
+    repository.save_decision.assert_awaited_once_with(
         entity=entity,
     )
 
@@ -979,7 +981,7 @@ async def test_approve_wraps_unexpected_save_error(
         "database unavailable",
     )
 
-    repository.save.side_effect = error
+    repository.save_decision.side_effect = error
 
     with pytest.raises(
         ApprovalError,
@@ -1010,7 +1012,7 @@ async def test_reject_wraps_unexpected_save_error(
         "database unavailable",
     )
 
-    repository.save.side_effect = error
+    repository.save_decision.side_effect = error
 
     with pytest.raises(
         ApprovalError,
@@ -1041,7 +1043,7 @@ async def test_edit_wraps_unexpected_save_error(
         "database unavailable",
     )
 
-    repository.save.side_effect = error
+    repository.save_decision.side_effect = error
 
     with pytest.raises(
         ApprovalError,
@@ -1205,7 +1207,7 @@ async def test_decision_is_committed_after_save_and_compliance_record(
     repository.save.return_value = entity
 
     calls: list[str] = []
-    repository.save.side_effect = lambda *, entity: calls.append("save") or entity
+    repository.save_decision.side_effect = lambda *, entity: calls.append("save") or True
     compliance_log_service.record_hitl_approval_decision.side_effect = lambda **_: calls.append(
         "compliance"
     )
@@ -1274,4 +1276,38 @@ async def test_rejected_decision_attempts_are_not_committed(
     with pytest.raises(ApprovalNotActionableError):
         await service.approve(approval_id="approval-123", user_id=OWNER_ID)
 
+    session.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["approve", "reject", "edit"])
+async def test_a_decision_that_loses_the_race_is_refused_and_changes_nothing(
+    service: ApprovalLifecycleService,
+    repository: MagicMock,
+    compliance_log_service: MagicMock,
+    session: MagicMock,
+    method: str,
+) -> None:
+    """
+    Another decision was recorded between the read and the write: the
+    conditional write matches nothing, so this one is refused with the
+    approval's current status, and nothing is logged or committed.
+    """
+
+    entity = build_approval_entity(requested_by=OWNER_ID)
+    repository.get.return_value = entity
+
+    # The reload after a lost write shows the decision that won.
+    async def lost(*, entity: MagicMock) -> bool:
+        entity.status = ApprovalStatusEnum.REJECTED
+        return False
+
+    repository.save_decision.side_effect = lost
+
+    with pytest.raises(ApprovalNotActionableError) as exc_info:
+        await getattr(service, method)(approval_id="approval-123", user_id=OWNER_ID)
+
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.details == {"current_status": ApprovalStatusEnum.REJECTED.value}
+    compliance_log_service.record_hitl_approval_decision.assert_not_awaited()
     session.commit.assert_not_awaited()

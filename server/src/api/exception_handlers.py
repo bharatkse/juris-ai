@@ -44,6 +44,7 @@ def app_exception_handler(
         error=ErrorDetailModel(
             code=exc.error_code,
             message=exc.message,
+            details=exc.details,
         ),
     )
 
