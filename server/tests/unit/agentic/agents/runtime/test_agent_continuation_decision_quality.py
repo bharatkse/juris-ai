@@ -94,6 +94,7 @@ def _sufficient_answer_evaluator(
         groundedness=groundedness,
         relevance=relevance,
         completeness=0.9,
+        relevance_unavailable=False,
         groundedness_detail=SimpleNamespace(applicable=True, judge_unavailable=False),
     )
 
@@ -118,6 +119,7 @@ def _insufficient_answer_evaluator() -> tuple[AsyncMock, MagicMock]:
         groundedness=0.0,
         relevance=0.0,
         completeness=0.0,
+        relevance_unavailable=False,
         groundedness_detail=SimpleNamespace(applicable=True, judge_unavailable=False),
     )
 
@@ -1443,6 +1445,7 @@ def _no_evidence_evaluation(**_kwargs):
         correctness=None,
         citation_precision=0.0,
         citation_coverage=0.0,
+        relevance_unavailable=False,
         groundedness_detail=SimpleNamespace(applicable=False, judge_unavailable=False),
     )
 
@@ -1455,6 +1458,7 @@ def _grounded_evaluation(**_kwargs):
         correctness=None,
         citation_precision=0.0,
         citation_coverage=0.0,
+        relevance_unavailable=False,
         groundedness_detail=SimpleNamespace(applicable=True, judge_unavailable=False),
     )
 
@@ -1882,11 +1886,12 @@ async def test_final_arriving_on_an_ended_execution_is_never_accepted(
 # ---------------------------------------------------------------------------
 
 
-def _unverifiable_evaluation(*, judge_unavailable: bool):
+def _unverifiable_evaluation(*, judge_unavailable: bool, relevance_unavailable: bool = False):
     return SimpleNamespace(
         groundedness=0.0,
         relevance=0.0,
         completeness=0.0,
+        relevance_unavailable=relevance_unavailable,
         groundedness_detail=SimpleNamespace(applicable=True, judge_unavailable=judge_unavailable),
     )
 
@@ -1898,6 +1903,8 @@ async def _gate_with_judge(
     llm_client: object,
     tool_execution_service: ToolExecutionService,
     collaboration_bus,
+    relevance_unavailable: bool = False,
+    policy_says_sufficient: bool = False,
 ):
     llm_client.generate_structured.return_value = _final_decision(REJECTED_ANSWER)
     tool_execution_service.execute = AsyncMock(
@@ -1906,8 +1913,11 @@ async def _gate_with_judge(
     answer_evaluator, answer_quality_policy = _yielding_insufficient_answer_evaluator()
     answer_evaluator.evaluate.side_effect = None
     answer_evaluator.evaluate.return_value = _unverifiable_evaluation(
-        judge_unavailable=judge_unavailable
+        judge_unavailable=judge_unavailable,
+        relevance_unavailable=relevance_unavailable,
     )
+    if policy_says_sufficient:
+        answer_quality_policy.is_sufficient = MagicMock(return_value=True)
 
     handle = await _start_handle(
         execution,
@@ -1992,3 +2002,49 @@ async def test_an_unusable_judge_verdict_is_still_retried(
     assert llm_client.generate_structured.await_count > 1
     assert answer_evaluator.evaluate.await_count > 1
     skipped.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "policy_says_sufficient", [False, True], ids=["insufficient", "sufficient"]
+)
+async def test_an_answer_the_gate_could_not_score_is_replaced_without_a_retry(
+    policy_says_sufficient: bool,
+    execution: AgentExecution,
+    llm_client: object,
+    tool_execution_service: ToolExecutionService,
+    collaboration_bus,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """
+    G2: the embedding model is down, so relevance couldn't be scored. The
+    answer is never accepted unscored (even if the remaining scores would
+    pass) and isn't retried: the "couldn't verify" answer, like the
+    judge-down path.
+    """
+
+    import logging
+
+    from agentic.agents.runtime import continuation as continuation_module
+
+    skipped = MagicMock()
+    monkeypatch.setattr(continuation_module.metrics, "record_answer_retry_skipped", skipped)
+
+    with caplog.at_level(logging.WARNING):
+        handle, result, answer_evaluator = await _gate_with_judge(
+            judge_unavailable=False,
+            relevance_unavailable=True,
+            policy_says_sufficient=policy_says_sufficient,
+            execution=execution,
+            llm_client=llm_client,
+            tool_execution_service=tool_execution_service,
+            collaboration_bus=collaboration_bus,
+        )
+
+    _assert_rejected_answer_replaced(handle, result)
+    assert llm_client.generate_structured.await_count == 1
+    tool_execution_service.execute.assert_not_awaited()
+    assert answer_evaluator.evaluate.await_count == 1
+    skipped.assert_called_once_with(reason="similarity_unavailable")
+    assert any("could not be scored" in r.message for r in caplog.records)
