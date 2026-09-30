@@ -102,6 +102,9 @@ def hermetic_llm(monkeypatch: pytest.MonkeyPatch) -> Iterator[LLMStub]:
       stream() is patched on every class that defines it -- the Groq and
       local clients override the base method, so patching LLMClient
       alone would miss them.
+    - The startup warm-up of the local model (LocalLLMClient.warm_up(),
+      run in the background by the app's lifespan) does nothing, so no
+      test loads a real model.
     """
 
     stub = LLMStub()
@@ -139,9 +142,15 @@ def hermetic_llm(monkeypatch: pytest.MonkeyPatch) -> Iterator[LLMStub]:
         lambda **_kwargs: StubFaithfulnessBackend(),
     )
     monkeypatch.setattr(LLMClient, "generate", unexpected_generate)
+
+    async def no_warm_up(self: LLMClient) -> None:
+        return None
+
     for client_class in _llm_client_classes():
         if "stream" in vars(client_class):
             monkeypatch.setattr(client_class, "stream", unexpected_stream)
+        if "warm_up" in vars(client_class):
+            monkeypatch.setattr(client_class, "warm_up", no_warm_up)
 
     yield stub
 
