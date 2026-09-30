@@ -318,3 +318,18 @@ async def test_a_failed_over_call_counts_the_fallbacks_usage_once() -> None:
         await _failover(primary, fallback).generate(request=REQUEST)
 
     assert (meter.calls, meter.total_tokens, meter.provider) == (1, 50, "ollama")
+
+
+@pytest.mark.asyncio
+async def test_an_answer_from_the_fallback_is_marked_on_the_request() -> None:
+    """So a judge that then discards it can say so (review R17)."""
+
+    from core.usage import fallback_answered, usage_scope
+
+    primary = FakeClient(provider="groq", error=FAILOVER_ERRORS[0]())
+    fallback = FakeClient(provider="local", content="local answer")
+
+    with usage_scope():
+        assert not fallback_answered()
+        await _failover(primary, fallback).generate(request=REQUEST)
+        assert fallback_answered()
