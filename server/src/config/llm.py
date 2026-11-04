@@ -47,6 +47,15 @@ class LLMSettings(BaseAppSettings):
     LLM_LOCAL_KEEP_ALIVE: str = "30m"
     LLM_LOCAL_MODEL: str = LLMMODELEnum.QWEN3_8B
 
+    # Send a structured request's narrower response_schema to Groq (for
+    # agents, the decision schema whose tool name is an enum of the agent's
+    # allowed tools) instead of the response model's own schema. Off: Groq
+    # keeps the plain AgentDecision schema; Ollama always gets the narrower
+    # one. Its effect on Groq's decisions is unmeasured (review A20); the
+    # M1 A/B (scripts/python/eval_agent_decisions.py) runs with it off and
+    # on before anyone turns it on.
+    GROQ_SEND_RESPONSE_SCHEMA: bool = False
+
     # Provider-independent inference defaults
     LLM_TEMPERATURE: float = 0.2
     LLM_TOP_P: float | None = None
