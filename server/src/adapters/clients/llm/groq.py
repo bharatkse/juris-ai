@@ -50,11 +50,14 @@ class GroqClient(LLMClient):
         *,
         api_key: str | None,
         model: str,
+        send_response_schema: bool = False,
     ) -> None:
         self._client = AsyncGroq(
             api_key=api_key,
         )
         self._model = model
+        # settings.llm.GROQ_SEND_RESPONSE_SCHEMA (review A20).
+        self._sends_response_schema = send_response_schema
 
     async def aclose(self) -> None:
         await self._client.close()
