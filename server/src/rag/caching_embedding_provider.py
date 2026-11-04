@@ -12,6 +12,10 @@ similarity's answer/evidence embedding, and rag.indexer's ingestion-time
 embedding -- all three share the one process-lifetime instance built in
 wiring/factories/rag.py, so wrapping it there covers all three call
 sites with a single change.
+
+The cache it's given fails open in production (wiring/factories/cache.py
+wraps Redis in adapters/cache/fail_open.FailOpenCache): an unreachable
+Redis is a miss, so embeddings are computed rather than failing.
 """
 
 from __future__ import annotations
