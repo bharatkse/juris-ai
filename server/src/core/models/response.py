@@ -130,6 +130,10 @@ class ErrorDetailModel(BaseModel):
 
     details: dict[str, Any] | None = None
 
+    # The request's ID (also the X-Request-ID header), for the client to
+    # quote when reporting the error.
+    request_id: str | None = None
+
 
 class ApiResponseModel(BaseModel, Generic[DataT]):
     """
