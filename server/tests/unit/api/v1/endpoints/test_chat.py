@@ -5,6 +5,7 @@ Unit tests for chat API endpoints.
 from __future__ import annotations
 
 import asyncio
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -12,11 +13,15 @@ from fastapi import status
 from fastapi.responses import StreamingResponse
 
 from api.dependencies.authorization import bind_library_acl
+from api.exception_handlers import GENERIC_ERROR_MESSAGE
 from api.schemas.chat import ChatStreamResponse, ConversationEventResponse
 from api.utilities.api_response import ApiResponse
 from api.v1.endpoints.chat import chat, stream_chat
 from application.authorization.service import AuthorizationService
 from application.context.request import bind_request_context
+from core.constants import ERROR_INTERNAL_SERVER_ERROR
+from core.exceptions.base import AppError
+from core.exceptions.client import ClientProviderError
 from tests.builders.api.schemas import build_chat_request
 from tests.builders.application.chat import (
     build_chat_result,
@@ -355,3 +360,104 @@ async def test_stream_chat_propagates_cancelled_error(
             "user_id": str(current_user.id),
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# The stream's error event (Phase 4, P4-EL): any failure after the stream
+# starts ends it with one `error` event carrying the request ID. A server
+# error's own text and details never reach the client; a client error
+# (e.g. the request token quota) keeps its message.
+# ---------------------------------------------------------------------------
+
+STREAM_INTERNAL_TEXT = "asyncpg.exceptions.InvalidPasswordError: password authentication failed"
+
+
+async def _stream_events(error: BaseException) -> tuple[list[str], str]:
+    request = build_chat_request()
+
+    current_user = MagicMock()
+    current_user.id = unknown_user_id()
+
+    async def stream():
+        yield build_chat_stream_chunk()
+        raise error
+
+    service = MagicMock()
+    service.stream_chat.return_value = stream()
+
+    http_request = build_http_request()
+
+    with bind_request_context(
+        request_id=http_request.state.context.request_id,
+        conversation_id=str(request.conversation_id),
+    ):
+        await bind_library_acl(
+            current_user=current_user,
+            authorization_service=_build_authorization_service(),
+        )
+
+        response = await stream_chat(
+            http_request=http_request,
+            chat_request=request,
+            current_user=current_user,
+            service=service,
+        )
+
+        events = [item async for item in response.body_iterator]
+
+    return events, http_request.state.context.request_id
+
+
+def _error_event(events: list[str]) -> dict:
+    last = events[-1]
+    assert last.startswith("event: error\n"), last
+    data = next(line for line in last.splitlines() if line.startswith("data: "))
+    return json.loads(data.removeprefix("data: "))
+
+
+@pytest.mark.asyncio
+@patch("api.v1.endpoints.chat.logger")
+async def test_an_unexpected_failure_ends_the_stream_with_a_generic_error_event(
+    mock_logger: MagicMock,
+) -> None:
+    events, request_id = await _stream_events(RuntimeError(STREAM_INTERNAL_TEXT))
+
+    error = _error_event(events)
+    assert error["code"] == ERROR_INTERNAL_SERVER_ERROR
+    assert error["message"] == GENERIC_ERROR_MESSAGE
+    assert error["request_id"] == request_id
+    assert "password" not in events[-1]
+    mock_logger.exception.assert_called_once()
+
+
+@pytest.mark.asyncio
+@patch("api.v1.endpoints.chat.logger")
+async def test_a_server_side_application_error_hides_its_text_in_the_stream(
+    mock_logger: MagicMock,
+) -> None:
+    events, request_id = await _stream_events(ClientProviderError(STREAM_INTERNAL_TEXT))
+
+    error = _error_event(events)
+    assert error["code"] == "CLIENT_PROVIDER_ERROR"
+    assert error["message"] == GENERIC_ERROR_MESSAGE
+    assert error["request_id"] == request_id
+    assert "password" not in events[-1]
+
+
+@pytest.mark.asyncio
+@patch("api.v1.endpoints.chat.logger")
+async def test_a_client_side_application_error_keeps_its_message_in_the_stream(
+    mock_logger: MagicMock,
+) -> None:
+    quota = AppError(
+        message="This request needs more than the 100000 tokens one request may use.",
+        status_code=413,
+        error_code="REQUEST_TOKEN_QUOTA_EXCEEDED",
+    )
+
+    events, request_id = await _stream_events(quota)
+
+    error = _error_event(events)
+    assert error["code"] == "REQUEST_TOKEN_QUOTA_EXCEEDED"
+    assert error["message"] == quota.message
+    assert error["request_id"] == request_id
