@@ -48,6 +48,7 @@ from httpx import AsyncClient
 
 from agentic.agents.base import BaseAgent
 from agentic.planning.llm_planner import LLMPlanGenerator
+from api.exception_handlers import GENERIC_ERROR_MESSAGE
 from core.dto.planning import ExecutionPlanDTO, ExecutionStepDTO
 from core.enums import AgentTypeEnum, ExecutionModeEnum, IntentEnum
 
@@ -137,7 +138,12 @@ async def test_duplicate_agent_on_independent_steps_is_rejected_at_planning_time
     body = response.json()
     assert body["success"] is False
     assert body["error"]["code"] == "PLAN_VALIDATION_ERROR"
-    assert "no dependency relationship" in body["error"]["message"]
+    # A server error's own text (here, the validator's description of the
+    # plan graph) stays server-side; the client gets the generic message
+    # and the request ID (Phase 4, P4-EL).
+    assert body["error"]["message"] == GENERIC_ERROR_MESSAGE
+    assert "no dependency relationship" not in response.text
+    assert body["error"]["request_id"] == response.headers["x-request-id"]
 
     # The cheaper, more important assertion: no agent LLM call ever
     # happened. Pre-fix, this plan shape reached BaseAgent._reason()
