@@ -12,12 +12,18 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from adapters.cache.base import AbstractCache
+from adapters.cache.fail_open import FailOpenCache
 from adapters.cache.memory_cache import InMemoryLRUCache
 from adapters.cache.redis_cache import RedisCache
 from core.enums import CacheBackendEnum
 
 if TYPE_CHECKING:
     from config.settings import Settings
+
+# Redis is on the request path (query embeddings, judge scores) and answers
+# in milliseconds; a Redis that doesn't answer within this is treated as
+# down, and the cache fails open (review R23).
+REDIS_SOCKET_TIMEOUT_S = 1.0
 
 
 def build_cache(*, settings: Settings) -> AbstractCache:
@@ -30,6 +36,10 @@ def build_cache(*, settings: Settings) -> AbstractCache:
     deploy/docker/docker-compose.yml). MEMORY exists for local
     development without Docker and for tests -- it is per-process, not
     shared, and empties on restart.
+
+    The Redis cache fails open (FailOpenCache): an unreachable or slow
+    Redis is treated as an empty cache, so embeddings and judge scores
+    are computed instead of the calls failing (review R23).
     """
 
     if settings.security.CACHE_BACKEND is CacheBackendEnum.MEMORY:
@@ -42,6 +52,11 @@ def build_cache(*, settings: Settings) -> AbstractCache:
     client = Redis.from_url(
         settings.security.REDIS_URL,
         decode_responses=True,
+        socket_connect_timeout=REDIS_SOCKET_TIMEOUT_S,
+        socket_timeout=REDIS_SOCKET_TIMEOUT_S,
     )
 
-    return RedisCache(client=client)
+    return FailOpenCache(
+        wrapped=RedisCache(client=client),
+        backend="redis",
+    )
