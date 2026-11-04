@@ -12,6 +12,7 @@ JA-54 / PR #35; it sits **under** `execution/`, not in place of it.
 | `execution.py` | `AgentExecutionHandle` | `reason()`: one bounded reasoning attempt (budgets → `_reason()` → decision validation → decision handling); owns `reasoning_context` |
 | `continuation.py` | `AgentContinuationService` | `execute()`: loops TOOL_CALL / DELEGATE → re-reason, gates FINAL through `_gate_final`, pauses gated tools via `interrupt()` |
 | `delegation.py` | `DelegatedAgentRunner` | `CollaborationBus` handler for each agent (registered in `wiring/factories/executor.py`): runs a delegated turn like a plan step (`start()` with the target's own policy → `seed_evidence()` → `reason()` → `execute()`) and returns its `AgentContinuationResult`; only a verified FINAL answer reaches the delegating agent. Delegation is disabled by policy |
+| `decision_metrics.py` | `record_rejection()` | Decision-rejection measurement (review M1): counts each rejected decision by cause and logs it (names only) |
 | `retry.py` | `RetryClassifier` | Which reasoning exceptions are retryable: only `ClientInvalidResponseError` (empty or schema-invalid model output), from `build_retry_classifier()` in `wiring/factories/executor.py` |
 | `lifecycle/lifecycle.py` | `AgentLifecycle` | Budget checks + state transitions (`complete`, `fail`, `partial`, `user_input_required`) |
 | `lifecycle/budget.py` | `AgentExecutionBudget` | Limits: 10 iterations, 20 tool calls, 5 hops, 30 steps, 120 s, repeated action 2, no-progress 2, rejected decisions 2 (`max_rejected_decisions`: invalid or policy-denied decisions the model may correct), plus record-count and size caps |
@@ -108,6 +109,27 @@ client reads it: when the agents' client is a `FailoverLLMClient`
 (`LLM_LOCAL=ollama`), a fallback call is skipped when too little time is
 left and cancelled at the deadline.
 
+
+## Decision measurement (review M1)
+
+Counts only; no prompt, answer or parameter value is recorded.
+
+| Metric | Labels | Recorded in |
+|---|---|---|
+| `juris_ai_agent_decisions_total` | `agent`, `decision_type` | `reason()`, every decision the model returns |
+| `juris_ai_agent_rejected_decisions_total` | `agent`, `cause` | `invalid_decision` (validator), `policy_denied_unlisted` / `policy_denied_listed` (a tool outside / inside the agent's catalog that the policy denied), `parse_failure` (`ClientInvalidResponseError`), `tool_params_rejected` (continuation, from `ToolExecutionService`'s `rejected_parameters`); `planner_argument` is counted in addition when the rejected tool or parameter name appears in the plan step's `arguments` |
+| `juris_ai_agent_executions_total`, `juris_ai_agent_execution_tool_calls`, `juris_ai_agent_execution_llm_calls` | `agent` (+ `termination`) | `AgentExecutionNode`, once per plan step (`handle.record_execution_metrics()`) |
+| `juris_ai_orchestration_fallbacks_total` | `reason` | the orchestrator's generic fallback answer |
+
+Each rejection is also one `Agent decision rejected.` log line: agent,
+execution ID, attempt, cause, tool name (if it looks like a name),
+rejected parameter names and the planner flag.
+
+`scripts/python/eval_agent_decisions.py` runs the golden questions through
+the full agent path with Groq getting the plain decision schema (arm A) or
+the enum one (arm B, `GROQ_SEND_RESPONSE_SCHEMA=true`), within a token
+budget, and `--compare` turns the two summaries into the A20, A19 and
+A17 part 2 verdicts.
 ---
 
 Known architecture and security gaps are tracked privately by the maintainers.
