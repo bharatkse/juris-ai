@@ -3,6 +3,7 @@ Golden-dataset retrieval evaluation.
 
     PYTHONPATH=src poetry run python scripts/python/evaluate_rag_retrieval.py \
         [--mode full|keyword_only|no_rerank] [--min-pass-rate 65] [--summary FILE]
+        [--dataset PATH] [--min-mrr 0.6]
 
 --mode is the retrieval mode every query must run in (default full). A
 search that runs in any other mode, e.g. keyword-only because the
@@ -11,6 +12,13 @@ underlying error (exit 2): the evaluation never falls back silently.
 keyword_only and no_rerank disable the embedding model or the reranker
 on purpose to measure the degraded modes.
 
+--dataset defaults to the gating golden set (v2; v1 is kept for history).
+--min-mrr fails the run (exit 1) when the mean reciprocal rank is below it
+(RetrievalQualityGate): the pass rate only checks that the evidence is in
+the top 5, so a ranking regression needs its own floor. The report includes each
+search's latency (p50/p95) and, when the dataset labels its cases with a
+"style" (v2: statutory or paraphrase), the pass rate per style.
+
 Exit codes: 0 ok, 1 pass rate below --min-pass-rate, 2 wrong retrieval mode.
 """
 
@@ -18,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import sys
 import traceback
 from pathlib import Path
@@ -28,12 +37,14 @@ from rag.evaluation.metrics.faithfulness import FaithfulnessMetric
 from rag.evaluation.metrics.mrr import MeanReciprocalRank
 from rag.evaluation.metrics.precision import PrecisionAtK
 from rag.evaluation.metrics.recall import RecallAtK
+from rag.evaluation.models.quality_gate import RetrievalQualityGate
 from rag.evaluation.retrieval_evaluator import RetrievalEvaluator
 from rag.evaluation.retrieval_mode import (
     EVAL_MODES,
     ModeCheckedRetriever,
     RetrievalModeError,
     format_step_summary,
+    latency_percentile,
 )
 from rag.evaluation.retrieval_runner import RetrievalEvaluationRunner
 from rag.keyword_store import PostgresKeywordStore
@@ -43,11 +54,18 @@ from wiring.factories.cache import build_cache
 from wiring.factories.evaluation import build_faithfulness_backend
 from wiring.factories.rag import build_rag_pipeline
 
-DATASET_PATH = Path("tests/datasets/rag/evaluation/legal_retrieval_gold_v1.json")
+DATASET_PATH = Path("tests/datasets/rag/evaluation/legal_retrieval_gold_v2.json")
 TOP_K = 5
 
 EXIT_BELOW_GATE = 1
 EXIT_WRONG_MODE = 2
+
+
+def _fraction(value: str) -> float:
+    number = float(value)
+    if not 0.0 <= number <= 1.0:
+        raise argparse.ArgumentTypeError("must be between 0 and 1")
+    return number
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -65,6 +83,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Fail (exit 1) below this pass rate, in percent. Omit to report only.",
     )
     parser.add_argument(
+        "--min-mrr",
+        type=_fraction,
+        default=None,
+        help="Fail (exit 1) below this mean reciprocal rank (0-1). Omit to report only.",
+    )
+    parser.add_argument(
+        "--dataset",
+        type=Path,
+        default=DATASET_PATH,
+        help="Golden dataset JSON (default: the gating v2 set).",
+    )
+    parser.add_argument(
         "--summary",
         type=Path,
         default=None,
@@ -73,16 +103,33 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def _case_styles(path: Path) -> list[str | None]:
+    """Each case's "style" label, in dataset order (None when unlabelled)."""
+
+    cases = json.loads(path.read_text(encoding="utf-8"))["cases"]
+    return [case.get("style") for case in cases]
+
+
+def _pass_rate_by_style(styles: list[str | None], passed: list[bool]) -> dict[str, tuple[int, int]]:
+    by_style: dict[str, tuple[int, int]] = {}
+    for style, ok in zip(styles, passed, strict=True):
+        if style is None:
+            continue
+        hits, total = by_style.get(style, (0, 0))
+        by_style[style] = (hits + int(ok), total + 1)
+    return by_style
+
+
 async def main(args: argparse.Namespace) -> int:
     settings = Settings()
 
     dataset = GoldenDatasetLoader().load(
-        path=DATASET_PATH,
+        path=args.dataset,
     )
 
     # Own cache instance, per settings.security.CACHE_BACKEND (Redis by
-    # default). Query embeddings go through it, so an unreachable Redis
-    # fails the embedding call: in full mode that stops the run.
+    # default). Query embeddings go through it; it fails open, so an
+    # unreachable Redis only means they're computed (review R23).
     cache = build_cache(settings=settings)
 
     pipeline = build_rag_pipeline(
@@ -134,6 +181,12 @@ async def main(args: argparse.Namespace) -> int:
         return EXIT_WRONG_MODE
 
     used = ", ".join(f"{mode} ({count})" for mode, count in retriever.modes_used.items())
+    by_style = _pass_rate_by_style(
+        _case_styles(args.dataset),
+        [result.passed for result in report.results],
+    )
+    p50 = latency_percentile(retriever.latencies_ms, 50)
+    p95 = latency_percentile(retriever.latencies_ms, 95)
 
     print("\n=== Legal RAG Retrieval Baseline ===")
     print(f"Dataset:       {dataset.name}")
@@ -142,6 +195,12 @@ async def main(args: argparse.Namespace) -> int:
     print(f"Passed cases:  {report.passed_cases}")
     print(f"Failed cases:  {report.failed_cases}")
     print(f"Pass rate:     {report.pass_rate:.2%}")
+    if p50 is not None and p95 is not None:
+        print(f"Search latency: p50 {p50:.0f} ms, p95 {p95:.0f} ms")
+    if by_style:
+        print("Pass rate by style:")
+        for style, (hits, total) in by_style.items():
+            print(f"  {style}: {hits / total:.2%} ({hits}/{total})")
 
     print("\nMean scores:")
     for metric_name, score in report.mean_scores.items():
@@ -168,8 +227,13 @@ async def main(args: argparse.Namespace) -> int:
                     pass_rate=report.pass_rate,
                     mean_scores=report.mean_scores,
                     min_pass_rate=args.min_pass_rate,
+                    latencies_ms=retriever.latencies_ms,
+                    pass_rate_by_style=by_style,
+                    min_mrr=args.min_mrr,
                 )
             )
+
+    below_gate = False
 
     if args.min_pass_rate is not None and report.pass_rate * 100 < args.min_pass_rate:
         print(
@@ -177,9 +241,15 @@ async def main(args: argparse.Namespace) -> int:
             f"{args.min_pass_rate}% gate ({args.mode}).",
             file=sys.stderr,
         )
-        return EXIT_BELOW_GATE
+        below_gate = True
 
-    return 0
+    if args.min_mrr is not None:
+        gate = RetrievalQualityGate(thresholds={"mrr": args.min_mrr}).evaluate(report=report)
+        for failure in gate.failures:
+            print(f"\nERROR: {failure} ({args.mode}).", file=sys.stderr)
+        below_gate = below_gate or not gate.passed
+
+    return EXIT_BELOW_GATE if below_gate else 0
 
 
 if __name__ == "__main__":
