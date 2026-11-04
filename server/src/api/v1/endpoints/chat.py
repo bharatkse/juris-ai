@@ -15,6 +15,7 @@ from api.dependencies.auth import get_current_user
 from api.dependencies.authorization import bind_library_acl
 from api.dependencies.chat import get_chat_service
 from api.dependencies.rate_limit import enforce_usage_limits
+from api.exception_handlers import public_error
 from api.helpers.files import build_tool_files
 from api.schemas.chat import (
     AIResponse,
@@ -27,7 +28,6 @@ from api.utilities.api_response import ApiResponse
 from api.utilities.streaming import encode_sse_event
 from application.services.chat import ChatService
 from core.exceptions.base import AppError
-from core.models.response import ErrorDetailModel
 
 logger = get_logger(__name__)
 
@@ -122,9 +122,11 @@ async def stream_chat(
 
     Rate limits, the daily quota and the upload limits are checked
     before the stream starts, so they fail with a normal error
-    response. An application error raised once the stream has started
-    (e.g. the request token quota refusing a later LLM call) is sent as
-    a final `error` event with the same code and message.
+    response. Any error raised once the stream has started ends it with
+    one `error` event, built like an error response's `error` object
+    (api/exception_handlers.public_error()): the code and request ID,
+    plus the message and details of a client error such as the request
+    token quota; a server error's own text is never sent.
     """
 
     logger.info(
@@ -144,6 +146,7 @@ async def stream_chat(
     # expires current_user, and reading an expired attribute there would
     # lazy-load outside the async context (MissingGreenlet).
     user_id = current_user.id
+    request_id = str(http_request.state.context.request_id)
 
     async def event_generator() -> AsyncIterator[str]:
         try:
@@ -176,11 +179,7 @@ async def stream_chat(
                 },
             )
             yield encode_sse_event(
-                ErrorDetailModel(
-                    code=exc.error_code,
-                    message=exc.message,
-                    details=exc.details,
-                ),
+                public_error(exc, request_id=request_id),
                 event_name="error",
             )
 
@@ -197,7 +196,7 @@ async def stream_chat(
             )
             raise
 
-        except Exception:
+        except Exception as exc:
             logger.exception(
                 "Chat stream failed.",
                 extra={
@@ -208,7 +207,13 @@ async def stream_chat(
                     "user_id": str(user_id),
                 },
             )
-            raise
+            # The response has started, so the error handlers can't answer
+            # any more; end the stream with an error event instead of
+            # cutting it off.
+            yield encode_sse_event(
+                public_error(exc, request_id=request_id),
+                event_name="error",
+            )
 
     return StreamingResponse(
         event_generator(),
