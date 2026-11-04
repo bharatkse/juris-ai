@@ -24,6 +24,7 @@ from langgraph.func import task as langgraph_task
 
 from adapters.observability.logger import get_logger
 from adapters.observability.metrics import metrics
+from agentic.agents.runtime.decision_metrics import record_rejection
 from agentic.agents.runtime.execution import (
     AgentExecutionHandle,
     AgentExecutionResult,
@@ -252,6 +253,19 @@ class AgentContinuationService:
                 tool_results.append(tool_result)
 
                 if not tool_result.success:
+                    if tool_result.execution_metadata.get("error_type") == "InvalidParameters":
+                        record_rejection(
+                            agent_id=handle.agent_id,
+                            execution_id=handle.request.context.execution_id,
+                            attempt=handle.attempt_count,
+                            cause="tool_params_rejected",
+                            tool_name=tool_result.tool_name,
+                            rejected_parameters=tool_result.execution_metadata.get(
+                                "rejected_parameters", ()
+                            ),
+                            plan_arguments=handle.request.arguments,
+                        )
+
                     if tool_result.execution_metadata.get("budget_exceeded"):
                         return AgentContinuationResult(
                             result=handle.terminal_result(),
