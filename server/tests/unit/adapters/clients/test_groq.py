@@ -480,3 +480,59 @@ async def test_a_5xx_is_reported_as_the_service_being_unavailable(
         await groq_client.generate(request=llm_request)
 
     assert not isinstance(rejected.value, ClientServiceUnavailableError)
+
+
+# --- The decision schema sent to Groq (review A20, measured by M1) ---------
+
+_ENUM_SCHEMA = {
+    "type": "object",
+    "properties": {"tool_name": {"enum": ["retriever"]}},
+    "required": ["tool_name"],
+}
+
+
+def _structured_request():
+    from dataclasses import replace
+
+    return replace(build_llm_request(), response_schema=_ENUM_SCHEMA)
+
+
+@pytest.mark.asyncio
+async def test_by_default_groq_gets_the_response_models_own_schema(
+    groq_client, mock_chat_completion
+) -> None:
+    from agentic.decisions.schemas import AgentDecision
+
+    mock_chat_completion.return_value = build_groq_response(
+        content='{"decision_type": "final", "final_response": "An answer."}'
+    )
+
+    await groq_client.generate_structured(
+        request=_structured_request(), response_model=AgentDecision
+    )
+
+    sent = mock_chat_completion.await_args.kwargs["response_format"]["json_schema"]["schema"]
+    assert sent == AgentDecision.model_json_schema()
+
+
+@pytest.mark.asyncio
+async def test_with_the_switch_on_groq_gets_the_requests_narrower_schema(
+    mock_groq_client, mock_chat_completion
+) -> None:
+    from adapters.clients.llm.groq import GroqClient
+    from agentic.decisions.schemas import AgentDecision
+
+    client = GroqClient(api_key="k", model=settings.llm.GROQ_MODEL, send_response_schema=True)
+    client._client = mock_groq_client
+    mock_chat_completion.return_value = build_groq_response(
+        content='{"decision_type": "final", "final_response": "An answer."}'
+    )
+
+    await client.generate_structured(request=_structured_request(), response_model=AgentDecision)
+
+    sent = mock_chat_completion.await_args.kwargs["response_format"]["json_schema"]["schema"]
+    assert sent == _ENUM_SCHEMA
+
+
+def test_the_switch_is_off_by_default() -> None:
+    assert get_settings().llm.GROQ_SEND_RESPONSE_SCHEMA is False

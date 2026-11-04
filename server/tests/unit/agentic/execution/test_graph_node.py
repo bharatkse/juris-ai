@@ -611,3 +611,24 @@ async def test_evidence_is_seeded_before_the_first_reasoning_call() -> None:
 
     continuation_service.seed_evidence.assert_awaited_once_with(handle=handle)
     assert calls == ["seed", "reason"]
+
+
+@pytest.mark.asyncio
+async def test_execute_step_records_the_executions_metrics_once() -> None:
+    """Each agent execution is counted once, with how it ended (review M1)."""
+
+    step = build_step("step-a")
+    execution_result = _build_result(
+        status=ExecutionStatusEnum.FAILED,
+        error="Non-retryable failure",
+    )
+
+    node, _agent_execution, _continuation_service, handle = _build_node(
+        result=execution_result,
+    )
+
+    await node(_build_graph_state(plan=build_plan(steps=(step,))), step=step)
+
+    handle.record_execution_metrics.assert_called_once_with(
+        termination_reason=execution_result.termination_reason,
+    )

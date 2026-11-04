@@ -208,6 +208,19 @@ def test_reports_the_primary_provider_and_model() -> None:
     assert client.model == "groq-model"
 
 
+def test_the_decision_schema_switch_follows_the_primary() -> None:
+    """GROQ_SEND_RESPONSE_SCHEMA still applies behind failover (review A20, M1)."""
+
+    primary = FakeClient(provider="groq")
+    primary._sends_response_schema = True
+
+    assert _failover(primary, FakeClient(provider="local")).sends_response_schema is True
+    assert (
+        _failover(FakeClient(provider="groq"), FakeClient(provider="local")).sends_response_schema
+        is False
+    )
+
+
 @pytest.mark.asyncio
 async def test_a_stream_that_fails_before_its_first_chunk_fails_over() -> None:
     primary = FakeClient(provider="groq", error=ClientRateLimitError())

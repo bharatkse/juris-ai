@@ -43,7 +43,7 @@ def test_application_metrics_creates_instruments(
         unit="1",
     )
 
-    meter.create_histogram.assert_called_once_with(
+    meter.create_histogram.assert_any_call(
         name="juris_ai_llm_call_duration_seconds",
         description="LLMClient.generate() call duration, labeled by provider/model.",
         unit="s",
@@ -110,6 +110,77 @@ def test_record_cache_request_miss_with_count() -> None:
     metrics.cache_requests.add.assert_called_once_with(
         5,
         attributes={"result": "miss", "cache": "judge"},
+    )
+
+
+def test_record_cache_unavailable() -> None:
+    """A cache backend failure (or a lookup skipped after one) is counted (review R23)."""
+    metrics = ApplicationMetrics()
+
+    metrics.cache_unavailable = MagicMock()
+
+    metrics.record_cache_unavailable(
+        backend="redis", cache="embedding", operation="get", outcome="error"
+    )
+
+    metrics.cache_unavailable.add.assert_called_once_with(
+        1,
+        attributes={
+            "backend": "redis",
+            "cache": "embedding",
+            "operation": "get",
+            "outcome": "error",
+        },
+    )
+
+
+def test_cache_unavailable_counter_is_created(monkeypatch) -> None:
+    meter = MagicMock()
+    monkeypatch.setattr("adapters.observability.metrics.get_meter", lambda _: meter)
+
+    ApplicationMetrics()
+
+    names = [call.kwargs["name"] for call in meter.create_counter.call_args_list]
+    assert "juris_ai_cache_unavailable_total" in names
+
+
+def test_agent_decision_metrics_are_recorded() -> None:
+    """Decision, rejection, execution and fallback counts (review M1)."""
+    metrics = ApplicationMetrics()
+    for name in (
+        "agent_decisions",
+        "agent_rejected_decisions",
+        "agent_executions",
+        "agent_execution_tool_calls",
+        "agent_execution_llm_calls",
+        "orchestration_fallbacks",
+    ):
+        setattr(metrics, name, MagicMock())
+
+    metrics.record_agent_decision(agent="legal", decision_type="final")
+    metrics.record_rejected_decision(agent="legal", cause="parse_failure")
+    metrics.record_agent_execution(
+        agent="legal", termination="completed", tool_calls=2, llm_calls=3
+    )
+    metrics.record_orchestration_fallback(reason="no_agent_response")
+
+    metrics.agent_decisions.add.assert_called_once_with(
+        1, attributes={"agent": "legal", "decision_type": "final"}
+    )
+    metrics.agent_rejected_decisions.add.assert_called_once_with(
+        1, attributes={"agent": "legal", "cause": "parse_failure"}
+    )
+    metrics.agent_executions.add.assert_called_once_with(
+        1, attributes={"agent": "legal", "termination": "completed"}
+    )
+    metrics.agent_execution_tool_calls.record.assert_called_once_with(
+        2, attributes={"agent": "legal"}
+    )
+    metrics.agent_execution_llm_calls.record.assert_called_once_with(
+        3, attributes={"agent": "legal"}
+    )
+    metrics.orchestration_fallbacks.add.assert_called_once_with(
+        1, attributes={"reason": "no_agent_response"}
     )
 
 

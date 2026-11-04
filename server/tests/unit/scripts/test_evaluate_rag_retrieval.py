@@ -146,3 +146,68 @@ async def test_a_pass_rate_below_the_gate_exits_1(
 
     assert code == script.EXIT_BELOW_GATE
     assert "below the 65.0% gate (full)" in capsys.readouterr().err
+
+
+# --- P4-RV: --dataset, and pass rate by query style ------------------------
+
+DATASET_V2 = SERVER / "tests" / "datasets" / "rag" / "evaluation" / "legal_retrieval_gold_v2.json"
+
+
+def test_the_dataset_defaults_to_the_gating_one(script: ModuleType) -> None:
+    assert script.parse_args([]).dataset == script.DATASET_PATH
+
+
+def test_another_dataset_can_be_chosen(script: ModuleType) -> None:
+    assert script.parse_args(["--dataset", str(DATASET_V2)]).dataset == DATASET_V2
+
+
+async def test_the_run_reports_latency_and_pass_rate_by_style(
+    script: ModuleType, fakes, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    fakes(embedder_fails=False)
+    summary = tmp_path / "summary.md"
+
+    code = await script.main(
+        script.parse_args(["--dataset", str(DATASET_V2), "--summary", str(summary)])
+    )
+
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "Cases:         60" in out
+    assert "Search latency:" in out
+    assert "  statutory:" in out
+    assert "  paraphrase:" in out
+    assert "| Pass rate, paraphrase |" in summary.read_text()
+
+
+# --- P4-EM: per-mode gates on golden set v2, with an MRR floor (R5) ---------
+
+
+def test_the_gating_dataset_is_v2(script: ModuleType) -> None:
+    assert script.DATASET_PATH.name == "legal_retrieval_gold_v2.json"
+
+
+def test_an_mrr_floor_can_be_set(script: ModuleType) -> None:
+    assert script.parse_args(["--min-mrr", "0.6"]).min_mrr == 0.6
+    assert script.parse_args([]).min_mrr is None
+
+
+def test_an_mrr_floor_outside_0_and_1_is_rejected(script: ModuleType) -> None:
+    with pytest.raises(SystemExit):
+        script.parse_args(["--min-mrr", "60"])
+
+
+async def test_an_mrr_below_the_floor_exits_1_even_when_the_pass_rate_is_fine(
+    script: ModuleType, fakes, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    # The fake stores find nothing: pass rate 0, MRR 0.
+    fakes(embedder_fails=False)
+    summary = tmp_path / "summary.md"
+
+    code = await script.main(
+        script.parse_args(["--min-pass-rate", "0", "--min-mrr", "0.5", "--summary", str(summary)])
+    )
+
+    assert code == script.EXIT_BELOW_GATE
+    assert "mrr: 0.0000 < required 0.5000" in capsys.readouterr().err
+    assert "| MRR gate | 0.5: failed |" in summary.read_text()
