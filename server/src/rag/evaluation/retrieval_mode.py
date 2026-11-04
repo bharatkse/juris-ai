@@ -20,8 +20,10 @@ This module is evaluation-only: the production retriever is unchanged.
 
 from __future__ import annotations
 
+import math
+import time
 from collections import Counter
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Literal, cast, get_args
 
 from core.exceptions.rag import RAGError, RetrievalUnavailableError
@@ -148,13 +150,24 @@ class ModeCheckedRetriever:
 
     `modes_used` counts the searches by the mode they ran in (only ever
     the requested one: any other raises RetrievalModeError).
+    `latencies_ms` holds each search's wall-clock time, so a mode's
+    quality can be weighed against what it costs.
     """
 
-    def __init__(self, *, mode: EvalMode, retriever: HybridRetriever, recorder: _Recorder) -> None:
+    def __init__(
+        self,
+        *,
+        mode: EvalMode,
+        retriever: HybridRetriever,
+        recorder: _Recorder,
+        clock: Callable[[], float] = time.perf_counter,
+    ) -> None:
         self.mode = mode
         self.retriever = retriever
         self.modes_used: Counter[str] = Counter()
+        self.latencies_ms: list[float] = []
         self._recorder = recorder
+        self._clock = clock
 
     @classmethod
     def build(
@@ -166,6 +179,7 @@ class ModeCheckedRetriever:
         keyword_store: KeywordStoreProtocol,
         reranker: RerankerProtocol,
         rrf_k: int,
+        clock: Callable[[], float] = time.perf_counter,
     ) -> ModeCheckedRetriever:
         if mode not in EVAL_MODES:
             raise ValueError(f"Unknown evaluation mode {mode!r}; expected one of {EVAL_MODES}.")
@@ -178,17 +192,24 @@ class ModeCheckedRetriever:
             reranker=_Reranker(reranker, recorder),
             rrf_k=rrf_k,
         )
-        return cls(mode=cast("EvalMode", mode), retriever=retriever, recorder=recorder)
+        return cls(
+            mode=cast("EvalMode", mode),
+            retriever=retriever,
+            recorder=recorder,
+            clock=clock,
+        )
 
     async def retrieve(self, *, query: str, top_k: int) -> list[RetrievalResult]:
         self._recorder.failures = {}
         unavailable: RetrievalUnavailableError | None = None
         results: list[RetrievalResult] = []
 
+        started = self._clock()
         try:
             results = await self.retriever.retrieve(query=query, top_k=top_k)
         except RetrievalUnavailableError as exc:
             unavailable = exc
+        self.latencies_ms.append((self._clock() - started) * 1000)
 
         failures = self._recorder.failures
         used = _mode_used(failures, unavailable=unavailable is not None)
@@ -230,6 +251,16 @@ class ModeCheckedRetriever:
         return error
 
 
+def latency_percentile(latencies_ms: Sequence[float], percentile: float) -> float | None:
+    """The nearest-rank percentile of the latencies, or None when there are none."""
+
+    if not latencies_ms:
+        return None
+    ordered = sorted(latencies_ms)
+    rank = max(1, math.ceil(percentile / 100 * len(ordered)))
+    return ordered[rank - 1]
+
+
 def format_step_summary(
     *,
     mode: str,
@@ -239,8 +270,16 @@ def format_step_summary(
     pass_rate: float,
     mean_scores: Mapping[str, float],
     min_pass_rate: float | None,
+    latencies_ms: Sequence[float] = (),
+    pass_rate_by_style: Mapping[str, tuple[int, int]] | None = None,
+    min_mrr: float | None = None,
 ) -> str:
-    """A Markdown section for one evaluation run (e.g. $GITHUB_STEP_SUMMARY)."""
+    """
+    A Markdown section for one evaluation run (e.g. $GITHUB_STEP_SUMMARY).
+
+    pass_rate_by_style maps a case style (e.g. "statutory", "paraphrase")
+    to (passed, total).
+    """
 
     queries = sum(modes_used.values())
     used = ", ".join(f"{name} ({count}/{queries} queries)" for name, count in modes_used.items())
@@ -259,7 +298,21 @@ def format_step_summary(
         f"| Mode used | {used or 'none'} |",
         f"| Cases | {passed_cases}/{case_count} passed |",
         f"| Pass rate | {pass_rate:.2%} ({gate}) |",
+        *(
+            f"| Pass rate, {style} | {passed / total:.2%} ({passed}/{total}) |"
+            for style, (passed, total) in (pass_rate_by_style or {}).items()
+            if total
+        ),
         *(f"| {name} | {score:.4f} |" for name, score in mean_scores.items()),
+    ]
+    if min_mrr is not None:
+        verdict = "passed" if mean_scores.get("mrr", 0.0) >= min_mrr else "failed"
+        lines.append(f"| MRR gate | {min_mrr}: {verdict} |")
+    p50 = latency_percentile(latencies_ms, 50)
+    p95 = latency_percentile(latencies_ms, 95)
+    if p50 is not None and p95 is not None:
+        lines.append(f"| Search latency p50 / p95 | {p50:.0f} ms / {p95:.0f} ms |")
+    lines += [
         "",
     ]
     return "\n".join(lines) + "\n"
