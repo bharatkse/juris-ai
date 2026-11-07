@@ -1,3 +1,4 @@
+# Pinned to ubuntu-24.04: python 3.11.9 has no prebuilt build for ubuntu-26.04 yet. Revisit when actions/python-versions adds it.
 name: Backend Unit Test Workflow
 
 # This workflow is triggered via 'workflow_call' from another workflow.
@@ -46,7 +47,7 @@ defaults:
 jobs:
   unit-tests:
     name: Backend Unit Tests with Coverage
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
 
     permissions:

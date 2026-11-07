@@ -1,3 +1,4 @@
+# Pinned to ubuntu-24.04: python 3.11.9 has no prebuilt build for ubuntu-26.04 yet. Revisit when actions/python-versions adds it.
 name: RAG Golden Dataset Evaluation
 
 # Not run on every PR: needs a real Postgres+pgvector service (none of
@@ -43,7 +44,7 @@ env:
 jobs:
   rag-golden-eval:
     name: Golden Dataset Retrieval Evaluation
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
 
     services:

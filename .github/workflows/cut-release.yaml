@@ -1,3 +1,4 @@
+# Pinned to ubuntu-24.04: python 3.11.9 has no prebuilt build for ubuntu-26.04 yet. Revisit when actions/python-versions adds it.
 name: Cut Release
 
 # Manual "ship it": opens the release PR from develop's HEAD into main
@@ -43,7 +44,7 @@ jobs:
   cut-release:
     name: Open Release PR
     if: ${{ vars.ENABLE_RELEASE_PIPELINE == 'true' || inputs.force }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
 
     permissions:
