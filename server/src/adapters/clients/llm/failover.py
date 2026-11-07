@@ -95,6 +95,12 @@ class FailoverLLMClient(LLMClient):
     ) -> str:
         return self._primary.model
 
+    @property
+    def sends_response_schema(self) -> bool:
+        # The primary's setting (GROQ_SEND_RESPONSE_SCHEMA): this wrapper
+        # builds the structured request the primary receives.
+        return self._primary.sends_response_schema
+
     async def generate(
         self,
         *,

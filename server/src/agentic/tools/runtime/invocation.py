@@ -220,11 +220,17 @@ class ToolExecutionService:
                 [(error["type"], error["loc"]) for error in exc.errors(include_input=False)],
             )
 
-            return self._failed(
+            failed = self._failed(
                 tool_name=tool_name,
                 error=_describe_invalid_parameters(tool_name=tool_name, error=exc),
                 error_type="InvalidParameters",
             )
+            # The rejected parameter names (never values), for the
+            # decision-rejection measurement (review M1).
+            failed.execution_metadata["rejected_parameters"] = tuple(
+                str(item["loc"][0]) for item in exc.errors(include_input=False) if item["loc"]
+            )
+            return failed
 
         return params
 

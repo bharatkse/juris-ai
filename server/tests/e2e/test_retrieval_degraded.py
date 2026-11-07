@@ -14,6 +14,8 @@ reasoning; the groundedness judge by hermetic_llm).
   turn ends with the "couldn't verify" answer -- 200, not a 500 (G2).
 - Embeddings and keyword store down: nothing can be searched, so the
   "no sources" answer.
+- Redis (the embedding and judge cache) down: the cache is skipped, so
+  retrieval stays full and the answer is verified (review R23).
 """
 
 from __future__ import annotations
@@ -23,7 +25,10 @@ from unittest.mock import patch
 
 import pytest
 from httpx import AsyncClient
+from redis.exceptions import ConnectionError as RedisConnectionError
 
+from adapters.cache.fail_open import FailOpenCache
+from adapters.cache.redis_cache import RedisCache
 from agentic.agents.base import BaseAgent
 from agentic.agents.runtime.continuation import (
     NO_SOURCES_ANSWER_MESSAGE,
@@ -95,6 +100,7 @@ class _Components:
     def __init__(self) -> None:
         self.down: set[str] = set()
         self.calls: list[str] = []
+        self.caches: set[FailOpenCache] = set()
 
 
 async def _chat(
@@ -114,6 +120,8 @@ async def _chat(
 
     async def embed(self, *, texts):
         components.calls.append("embedding")
+        if isinstance(self._cache, FailOpenCache):
+            components.caches.add(self._cache)
         if "embedding" in components.down:
             raise EmbeddingError("embedding model not loaded")
         return await real_embed(self, texts=texts)
@@ -138,7 +146,14 @@ async def _chat(
             RetrievalResult(chunk=candidate.chunk, score=0.9) for candidate in candidates[:top_k]
         ]
 
+    async def redis_down(*_args, **_kwargs):
+        components.calls.append("redis")
+        raise RedisConnectionError("Error 111 connecting to localhost:6379. Connection refused.")
+
     async with AsyncExitStack() as patches:
+        if "redis" in components.down:
+            patches.enter_context(patch.object(RedisCache, "get", redis_down))
+            patches.enter_context(patch.object(RedisCache, "set", redis_down))
         patches.enter_context(patch.object(LLMPlanGenerator, "generate", fake_plan_generate))
         patches.enter_context(patch.object(BaseAgent, "_reason", fake_reason))
         patches.enter_context(patch.object(CachingEmbeddingProvider, "embed", embed))
@@ -249,3 +264,34 @@ async def test_with_embeddings_and_keyword_search_down_there_are_no_sources(
     assert body["response"]["content"] == NO_SOURCES_ANSWER_MESSAGE
     assert body["assistant_event"]["event_metadata"]["termination_reason"] == "no_evidence"
     assert hermetic_llm.groundedness_calls == 0
+
+
+async def test_with_redis_down_the_cache_is_skipped_and_the_answer_is_verified(
+    e2e_client: AsyncClient,
+    registered_user: dict,
+    conversation_id: str,
+    hermetic_llm,
+) -> None:
+    components = _Components()
+    components.down = {"redis"}
+
+    try:
+        response = await _chat(
+            e2e_client,
+            conversation_id=conversation_id,
+            headers=registered_user["headers"],
+            components=components,
+        )
+    finally:
+        # The app's cache is process-wide: end its skip window so later
+        # tests use Redis again.
+        for cache in components.caches:
+            cache._skip_until = None
+
+    assert response.status_code == 200, response.text
+    body = response.json()["data"]
+    assert "redis" in components.calls
+    # Query embeddings were computed without the cache: full retrieval ran.
+    assert {"vector", "keyword", "rerank"} <= set(components.calls)
+    assert body["response"]["content"] == FINAL_ANSWER
+    assert body["assistant_event"]["event_metadata"].get("termination_reason") not in UNVERIFIED

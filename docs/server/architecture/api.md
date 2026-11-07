@@ -365,16 +365,17 @@ event is named `message`, except the last, which is named `complete`
 (`is_final: true`).
 
 Errors found before the stream starts (authentication, rate limits, the
-daily quota, upload limits) are normal error responses. An application
-error raised after it has started, such as `REQUEST_TOKEN_QUOTA_EXCEEDED`,
-ends the stream with a single `error` event instead of `complete`; its
-`data` is the same `code`, `message` and (when present) `details` as an
-error response's `error` object. A stream can't send headers, so a
+daily quota, upload limits) are normal error responses. Any error raised
+after it has started, such as `REQUEST_TOKEN_QUOTA_EXCEEDED` or an
+unexpected server error, ends the stream with a single `error` event
+instead of `complete`; its `data` is built exactly like an error
+response's `error` object: `code`, `message`, `details` (when present) and
+`request_id`, with the same generic message for a server error. A stream can't send headers, so a
 `Retry-After` value is read from `details.retry_after_seconds`:
 
 ```text
 event: error
-data: {"code":"REQUEST_TOKEN_QUOTA_EXCEEDED","message":"This request needs more than the 100000 tokens one request may use (99100 used, about 2013 more needed). Try a shorter message or fewer attachments."}
+data: {"code":"REQUEST_TOKEN_QUOTA_EXCEEDED","message":"This request needs more than the 100000 tokens one request may use (99100 used, about 2013 more needed). Try a shorter message or fewer attachments.","details":null,"request_id":"6f0e2a4c-9b1d-4e7a-8c3f-2d5b7a9e1c04"}
 ```
 
 Each event's `data` has the following structure:
@@ -577,9 +578,11 @@ Error responses from the application use the standard envelope:
   "success": false,
   "error": {
     "code": "FORBIDDEN",
-    "message": "Not permitted to act on this approval request."
+    "message": "Not permitted to act on this approval request.",
+    "request_id": "6f0e2a4c-9b1d-4e7a-8c3f-2d5b7a9e1c04"
   },
   "metadata": {
+    "request_id": "6f0e2a4c-9b1d-4e7a-8c3f-2d5b7a9e1c04",
     "timestamp": "2026-09-23T14:21:09.871769Z"
   }
 }
@@ -587,6 +590,15 @@ Error responses from the application use the standard envelope:
 
 Some errors add a `details` object with structured fields, such as the
 approval's `current_status` on a `409`; it is omitted when there are none.
+
+Every error carries the request's ID as `error.request_id` (also
+`metadata.request_id` and the `X-Request-ID` header); quote it when
+reporting a problem. A server error (`5xx`) keeps its `code` but its
+`message` is always the generic "An unexpected error occurred. Please try
+again later." with no `details`; the cause is logged server-side under the
+same request ID. The exceptions are the planning errors written for
+clients: `503` `PLANNING_UNAVAILABLE` (with `details.retry_after_seconds`
+and `Retry-After`) and `504` `PLANNING_TIMEOUT` keep their messages.
 
 ---
 
@@ -699,7 +711,7 @@ facts already saved from earlier messages in it.
 | `413`  | An uploaded file is over the size limit (`UPLOAD_TOO_LARGE`), or the request would use more tokens than one request may (`REQUEST_TOKEN_QUOTA_EXCEEDED`) |
 | `422`  | Request validation failed, too many files uploaded (`TOO_MANY_UPLOADS`), or a file of an unsupported type (`UPLOAD_UNSUPPORTED_TYPE`) |
 | `429`  | Request rate limit or daily token quota exceeded |
-| `500`  | Internal server error          |
+| `500`  | Internal server error (generic message; quote `error.request_id`) |
 | `502`  | LLM provider error             |
 | `503`  | Planning unavailable: every planner provider failed (`PLANNING_UNAVAILABLE`); retry after the `Retry-After` header |
 | `504`  | LLM provider timeout, or planning didn't finish in time (`PLANNING_TIMEOUT`) |

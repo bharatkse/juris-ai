@@ -90,7 +90,12 @@ async def test_unknown_parameter_is_rejected_with_a_sanitized_error() -> None:
     assert result.error == (
         "Invalid parameters for tool 'retriever': 'not_a_param' is not a parameter of this tool."
     )
-    assert result.execution_metadata == {"error_type": "InvalidParameters"}
+    # The rejected parameter's name (never its value) is kept for the
+    # decision-rejection measurement (review M1).
+    assert result.execution_metadata == {
+        "error_type": "InvalidParameters",
+        "rejected_parameters": ("not_a_param",),
+    }
     retrieve.assert_not_awaited()
 
 

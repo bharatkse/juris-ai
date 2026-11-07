@@ -26,6 +26,7 @@ def build_llm_resolver(*, settings: Settings) -> LLMResolver:
             LLMProviderEnum.GROQ: GroqClient(
                 api_key=settings.llm.groq_api_key,
                 model=settings.llm.GROQ_MODEL,
+                send_response_schema=settings.llm.GROQ_SEND_RESPONSE_SCHEMA,
             ),
             LLMProviderEnum.LOCAL: LocalLLMClient(
                 base_url=settings.llm.LLM_LOCAL_BASE_URL,

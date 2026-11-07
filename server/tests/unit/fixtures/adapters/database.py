@@ -19,7 +19,7 @@ from sqlalchemy.pool import NullPool
 
 from adapters.persistence.sqlalchemy.base import Base
 from adapters.persistence.sqlalchemy.models.knowledge_chunk import KnowledgeChunk
-from core.constants import TEST_DB_URL
+from config.settings import get_settings
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
@@ -44,8 +44,10 @@ async def engine() -> AsyncGenerator[AsyncEngine, None]:
     since the app has exactly one event loop for its whole lifetime.
     """
 
+    # This run's own database (server/conftest.py sets TEST_DATABASE_URL to a
+    # file in a temp directory), not a file shared with other runs.
     engine = create_async_engine(
-        TEST_DB_URL,
+        get_settings().database.TEST_DATABASE_URL,
         future=True,
         poolclass=NullPool,
     )

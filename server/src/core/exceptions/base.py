@@ -41,6 +41,11 @@ class AppError(Exception):
     default_message: str = "An unexpected error occurred."
     details: dict[str, Any] | None = None
     headers: dict[str, str] | None = None
+    # A client sees a 4xx error's message and details. For a 5xx error it
+    # sees only the code and a generic message (api/exception_handlers.py
+    # public_error()), since the text may describe internals; a 5xx error
+    # whose message is written for the client sets this to True.
+    expose_message: bool = False
 
     def __init__(
         self,

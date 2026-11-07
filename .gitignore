@@ -269,6 +269,9 @@ git-commit.sh
 /docs/agentic-fix-plan.md
 /docs/phase-3-report.md
 /docs/phase-4-report.md
+/docs/messages-design.md
+/docs/rename-messages-plan.md
+/docs/roadmap.md
 
 .logs/
 

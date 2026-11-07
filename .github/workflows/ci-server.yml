@@ -1,3 +1,4 @@
+# Pinned to ubuntu-24.04: python 3.11.9 has no prebuilt build for ubuntu-26.04 yet. Revisit when actions/python-versions adds it.
 # CI workflow
 # Runs on pushes, pull requests, or when called by another workflow
 name: CI
@@ -69,7 +70,7 @@ jobs:
 
   ci-setup:
     name: CI Setup
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
 
     outputs:
@@ -177,7 +178,7 @@ jobs:
 
   publish-plan:
     name: Publish Plan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
 
     outputs:
@@ -267,7 +268,7 @@ jobs:
     name: Release Candidate Version
     needs: publish-plan
     if: needs.publish-plan.outputs.mode == 'build'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
 
     outputs:
@@ -354,7 +355,7 @@ jobs:
       needs.publish-plan.outputs.push == 'true' &&
       needs.rc-version.outputs.rc != '' &&
       needs.publish-image.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
 
     permissions:
@@ -435,7 +436,7 @@ jobs:
       needs.type-check.result == 'success' &&
       needs.backend-tests.result == 'success' &&
       needs.codecov-validation.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
 
     permissions:
@@ -643,7 +644,7 @@ jobs:
       needs.publish-plan.outputs.push == 'true' &&
       needs.promote.result == 'success' &&
       needs.promote.outputs.released == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
 
     permissions:

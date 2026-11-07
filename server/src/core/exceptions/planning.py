@@ -71,6 +71,7 @@ class PlanningTimeoutError(PlanningError):
 
     status_code = HTTP_504_GATEWAY_TIMEOUT
     error_code = ERROR_PLANNING_TIMEOUT
+    expose_message = True
 
     def __init__(self, *, timeout_seconds: float) -> None:
         self.timeout_seconds = timeout_seconds
@@ -91,6 +92,7 @@ class PlanningUnavailableError(PlanningError):
 
     status_code = HTTP_503_SERVICE_UNAVAILABLE
     error_code = ERROR_PLANNING_UNAVAILABLE
+    expose_message = True
 
     def __init__(self, *, retry_after_seconds: int) -> None:
         self.retry_after_seconds = retry_after_seconds

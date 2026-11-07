@@ -210,7 +210,8 @@ USER_MEMORY_EXTRACTION_MAX_OPERATIONS: int = 8
 # confidence is not a measured probability.
 USER_MEMORY_MIN_EXTRACTION_CONFIDENCE: float = 0.6
 
-# Test DB Configuration
+# Test DB Configuration. Default only: pytest sets TEST_DATABASE_URL to a
+# per-run database in a temp directory (server/conftest.py).
 TEST_DB_URL = "sqlite+aiosqlite:///./pytests.db"
 
 

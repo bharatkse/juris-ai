@@ -153,6 +153,24 @@ async def test_handle_returns_graceful_fallback_on_non_gated_tool_failure(
 
 
 @pytest.mark.asyncio
+async def test_a_generic_fallback_answer_is_counted(
+    orchestrator: AIOrchestrator,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A turn answered with the generic fallback is counted (review M1)."""
+
+    recorded = MagicMock()
+    monkeypatch.setattr("agentic.orchestration.orchestrator.metrics", recorded)
+
+    await orchestrator.handle(
+        request=build_orchestrator_request(),
+        action_workflow_service=MagicMock(),
+    )
+
+    recorded.record_orchestration_fallback.assert_called_once_with(reason="no_agent_response")
+
+
+@pytest.mark.asyncio
 async def test_handle_still_raises_for_a_real_orchestration_error(
     orchestrator: AIOrchestrator,
 ) -> None:

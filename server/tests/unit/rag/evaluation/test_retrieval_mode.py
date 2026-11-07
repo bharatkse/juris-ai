@@ -18,6 +18,7 @@ from rag.evaluation.retrieval_mode import (
     ModeCheckedRetriever,
     RetrievalModeError,
     format_step_summary,
+    latency_percentile,
 )
 from rag.hybrid_retriever import HybridRetriever
 from rag.models import Chunk, RetrievalResult
@@ -239,3 +240,61 @@ def test_a_non_gating_summary_says_so() -> None:
     )
 
     assert "| Pass rate | 68.97% (not gating) |" in summary
+
+
+# ---------------------------------------------------------------------------
+# What each mode costs (Phase 4, P4-RV): the latency of every search, and
+# the pass rate by query style, so embeddings and the reranker can be
+# weighed against the time they take.
+# ---------------------------------------------------------------------------
+
+
+class _Clock:
+    def __init__(self, step_s: float) -> None:
+        self.now = 0.0
+        self.step_s = step_s
+
+    def __call__(self) -> float:
+        self.now += self.step_s
+        return self.now
+
+
+async def test_the_latency_of_every_search_is_recorded() -> None:
+    retriever = ModeCheckedRetriever.build(
+        mode="full",
+        embedding_provider=_Embedder(),
+        vector_store=_VectorStore(),
+        keyword_store=_KeywordStore(),
+        reranker=_Reranker(),
+        rrf_k=60,
+        clock=_Clock(step_s=0.025),
+    )
+
+    await retriever.retrieve(query="q1", top_k=2)
+    await retriever.retrieve(query="q2", top_k=2)
+
+    assert retriever.latencies_ms == pytest.approx([25.0, 25.0])
+
+
+def test_the_summary_reports_latency_percentiles_and_pass_rate_by_style() -> None:
+    summary = format_step_summary(
+        mode="full",
+        modes_used={"full": 4},
+        case_count=4,
+        passed_cases=3,
+        pass_rate=0.75,
+        mean_scores={},
+        min_pass_rate=None,
+        latencies_ms=[10.0, 20.0, 30.0, 400.0],
+        pass_rate_by_style={"statutory": (2, 2), "paraphrase": (1, 2)},
+    )
+
+    assert "| Search latency p50 / p95 | 20 ms / 400 ms |" in summary
+    assert "| Pass rate, statutory | 100.00% (2/2) |" in summary
+    assert "| Pass rate, paraphrase | 50.00% (1/2) |" in summary
+
+
+def test_latency_percentiles_use_the_nearest_rank() -> None:
+    assert latency_percentile([10.0, 20.0, 30.0, 40.0], 50) == 20.0
+    assert latency_percentile([10.0, 20.0, 30.0, 40.0], 95) == 40.0
+    assert latency_percentile([], 50) is None

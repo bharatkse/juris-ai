@@ -35,6 +35,17 @@ class LLMClient(ABC):
     Implementations must be stateless and safe for concurrent use.
     """
 
+    _sends_response_schema: bool = False
+
+    @property
+    def sends_response_schema(self) -> bool:
+        """
+        Whether generate_structured() sends a request's narrower
+        response_schema instead of the response model's own schema.
+        """
+
+        return self._sends_response_schema
+
     @property
     @abstractmethod
     def provider(
@@ -161,10 +172,12 @@ class LLMClient(ABC):
         """
         Generate and validate a structured response.
 
-        The provider is asked for response_model's own schema. A client
-        that enforces the schema while decoding may use the narrower
-        request.response_schema instead (LocalLLMClient); either way the
-        output is validated into response_model.
+        The provider is asked for response_model's own schema, or for the
+        narrower request.response_schema when the client sends it
+        (sends_response_schema: GroqClient behind GROQ_SEND_RESPONSE_SCHEMA).
+        LocalLLMClient enforces request.response_schema while decoding by
+        its own path. Either way the output is validated into
+        response_model.
         """
 
         log.debug(
@@ -175,13 +188,19 @@ class LLMClient(ABC):
             response_model.__name__,
         )
 
+        schema = (
+            request.response_schema
+            if self.sends_response_schema and request.response_schema is not None
+            else response_model.model_json_schema()
+        )
+
         structured_request = replace(
             request,
             response_format={
                 "type": "json_schema",
                 "json_schema": {
                     "name": response_model.__name__,
-                    "schema": response_model.model_json_schema(),
+                    "schema": schema,
                 },
             },
         )

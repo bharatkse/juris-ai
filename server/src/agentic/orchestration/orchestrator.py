@@ -12,6 +12,7 @@ from contextlib import AbstractContextManager, aclosing, nullcontext
 from typing import TYPE_CHECKING
 
 from adapters.observability.logger import get_logger
+from adapters.observability.metrics import metrics
 from adapters.observability.tracing import span
 from agentic.agents.prompts.token_budget import estimate_tokens
 from agentic.execution.aggregation.schemas import AggregationMetadata
@@ -966,6 +967,9 @@ class AIOrchestrator:
                             },
                         )
 
+                        if not _awaiting_approval(execution_result):
+                            metrics.record_orchestration_fallback(reason="no_agent_response")
+
                         return OrchestratorResponse(
                             conversation_id=request.conversation_id,
                             content=(
@@ -1389,6 +1393,9 @@ class AIOrchestrator:
                                 "execution_status": execution_result.state.status.value,
                             },
                         )
+
+                        if not _awaiting_approval(execution_result):
+                            metrics.record_orchestration_fallback(reason="no_agent_response")
 
                         fallback_response = OrchestratorResponse(
                             conversation_id=request.conversation_id,

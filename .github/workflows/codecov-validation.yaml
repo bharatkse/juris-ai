@@ -1,3 +1,4 @@
+# Pinned to ubuntu-24.04: python 3.11.9 has no prebuilt build for ubuntu-26.04 yet. Revisit when actions/python-versions adds it.
 name: Codecov Config Validation
 
 on:
@@ -6,7 +7,7 @@ on:
 jobs:
   validate-codecov-config:
     name: Validate Codecov Configuration
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
 
     permissions:

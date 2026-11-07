@@ -38,7 +38,9 @@ from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 
 from adapters.observability.logger import get_logger
+from adapters.observability.metrics import metrics
 from agentic.agents.base import BaseAgent
+from agentic.agents.runtime.decision_metrics import RejectionCause, record_rejection
 from agentic.agents.runtime.feedback import runtime_feedback
 from agentic.agents.runtime.lifecycle.budget import AgentExecutionBudget
 from agentic.agents.runtime.lifecycle.guard import BudgetGuard
@@ -69,6 +71,7 @@ from core.enums import (
     ActionTypeEnum,
     ExecutionStatusEnum,
 )
+from core.exceptions.client import ClientInvalidResponseError
 
 logger = get_logger(__name__)
 
@@ -160,6 +163,8 @@ class AgentExecutionHandle:
         self._agent_policy_guard = agent_policy_guard
 
         self._attempt_count = 0
+        # Every reasoning LLM call, retries and re-asks included (M1).
+        self._reasoning_calls = 0
         self._last_decision: AgentDecision | None = None
         self._closed = False
         self._reasoning_context = reasoning_context
@@ -475,6 +480,7 @@ class AgentExecutionHandle:
         turn_elapsed = (datetime.now(UTC) - self.state.started_at).total_seconds()
         turn_remaining = self.state.budget.max_execution_time_seconds - turn_elapsed
 
+        self._reasoning_calls += 1
         try:
             with deadline_within(max(turn_remaining, 0.0)):
                 decision = await self._agent._reason(
@@ -482,10 +488,16 @@ class AgentExecutionHandle:
                     context=self._reasoning_context,
                 )
         except Exception as exc:
+            if isinstance(exc, ClientInvalidResponseError):
+                self._record_rejection(cause="parse_failure")
             # Only failures originating from the actual agent/LLM reasoning
             # call are eligible for RetryClassifier evaluation.
             raise _AgentReasoningFailure(exc) from exc
 
+        metrics.record_agent_decision(
+            agent=self._agent_id,
+            decision_type=decision.decision_type.value,
+        )
         self._last_decision = decision
 
         # --------------------------------------------------------------
@@ -498,6 +510,7 @@ class AgentExecutionHandle:
             )
 
         except AgentDecisionValidationError as exc:
+            self._record_rejection(cause="invalid_decision")
             # The validator's messages name only decision types and
             # payload fields, so they are safe to show the model.
             if self._may_correct(
@@ -550,11 +563,17 @@ class AgentExecutionHandle:
                 policy=self._policy,
                 tool_name=decision.tool_call.tool_name,
             ).allowed
-            and self._may_correct(
-                feedback=self._tool_not_available_feedback(decision.tool_call.tool_name),
-            )
         ):
-            return await self._execute_reasoning_attempt()
+            tool_name = decision.tool_call.tool_name
+            listed = any(spec.name == tool_name for spec in self._request.tool_catalog)
+            self._record_rejection(
+                cause="policy_denied_listed" if listed else "policy_denied_unlisted",
+                tool_name=tool_name,
+            )
+            if self._may_correct(
+                feedback=self._tool_not_available_feedback(tool_name),
+            ):
+                return await self._execute_reasoning_attempt()
 
         # --------------------------------------------------------------
         # 8. Decision handling
@@ -579,6 +598,35 @@ class AgentExecutionHandle:
             self._closed = True
 
         return result
+
+    def _record_rejection(self, *, cause: RejectionCause, tool_name: str | None = None) -> None:
+        record_rejection(
+            agent_id=self._agent_id,
+            execution_id=self._request.context.execution_id,
+            attempt=self._attempt_count,
+            cause=cause,
+            tool_name=tool_name,
+            plan_arguments=self._request.arguments,
+        )
+
+    @property
+    def attempt_count(self) -> int:
+        """Reasoning attempts so far (retries included)."""
+
+        return self._attempt_count
+
+    def record_execution_metrics(self, *, termination_reason: str | None) -> None:
+        """
+        Count this finished execution with the tool and reasoning LLM calls
+        it made (M1). Called once by the graph node that ran it.
+        """
+
+        metrics.record_agent_execution(
+            agent=self._agent_id,
+            termination=termination_reason or "completed",
+            tool_calls=self.state.tool_call_count,
+            llm_calls=self._reasoning_calls,
+        )
 
     def _may_correct(self, *, feedback: str) -> bool:
         """

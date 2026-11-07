@@ -237,7 +237,9 @@ async def test_a_stream_the_client_abandons_is_recorded(
             await response.aread()
 
     client = asyncio.create_task(consume())
-    await asyncio.wait_for(provider.agent_waiting.wait(), timeout=10)
+    # Retrieval runs first with the real reranker, loaded on first use: about
+    # 20 s on a CPU host, so 10 s timed out before the agent's call.
+    await asyncio.wait_for(provider.agent_waiting.wait(), timeout=60)
     client.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         await client

@@ -34,6 +34,63 @@ class ApplicationMetrics:
             unit="1",
         )
 
+        self.cache_unavailable: Counter = meter.create_counter(
+            name="juris_ai_cache_unavailable_total",
+            description=(
+                "Cache reads and writes that didn't reach the backend, labeled by "
+                "backend, cache (embedding|judge|other), operation (get|set) and "
+                "outcome (error: the call failed; skipped: not tried, within the "
+                "retry window after a failure). Each one is a miss or a dropped "
+                "write, never a failed request (review R23)."
+            ),
+            unit="1",
+        )
+
+        # Agent decision measurement (review M1): counts only, no content.
+        self.agent_decisions: Counter = meter.create_counter(
+            name="juris_ai_agent_decisions_total",
+            description="Agent reasoning decisions, labeled by agent and decision_type.",
+            unit="1",
+        )
+
+        self.agent_rejected_decisions: Counter = meter.create_counter(
+            name="juris_ai_agent_rejected_decisions_total",
+            description=(
+                "Agent decisions rejected, labeled by agent and cause (invalid_decision, "
+                "policy_denied_unlisted, policy_denied_listed, parse_failure, "
+                "tool_params_rejected; planner_argument is counted in addition when the "
+                "rejected tool or parameter came from the plan step's arguments)."
+            ),
+            unit="1",
+        )
+
+        self.agent_executions: Counter = meter.create_counter(
+            name="juris_ai_agent_executions_total",
+            description="Agent executions (one plan step), labeled by agent and termination.",
+            unit="1",
+        )
+
+        self.agent_execution_tool_calls: Histogram = meter.create_histogram(
+            name="juris_ai_agent_execution_tool_calls",
+            description="Tool calls per agent execution, labeled by agent.",
+            unit="1",
+        )
+
+        self.agent_execution_llm_calls: Histogram = meter.create_histogram(
+            name="juris_ai_agent_execution_llm_calls",
+            description="Reasoning LLM calls per agent execution, labeled by agent.",
+            unit="1",
+        )
+
+        self.orchestration_fallbacks: Counter = meter.create_counter(
+            name="juris_ai_orchestration_fallbacks_total",
+            description=(
+                "Turns answered with the generic fallback because no agent produced a "
+                "response, labeled by reason."
+            ),
+            unit="1",
+        )
+
         self.llm_call_duration: Histogram = meter.create_histogram(
             name="juris_ai_llm_call_duration_seconds",
             description="LLMClient.generate() call duration, labeled by provider/model.",
@@ -137,6 +194,58 @@ class ApplicationMetrics:
                 "cache": cache,
             },
         )
+
+    def record_cache_unavailable(
+        self,
+        *,
+        backend: str,
+        cache: str,
+        operation: Literal["get", "set"],
+        outcome: Literal["error", "skipped"],
+    ) -> None:
+        """
+        Record one cache read or write that didn't reach the backend
+        (adapters/cache/fail_open.py).
+        """
+
+        self.cache_unavailable.add(
+            1,
+            attributes={
+                "backend": backend,
+                "cache": cache,
+                "operation": operation,
+                "outcome": outcome,
+            },
+        )
+
+    def record_agent_decision(self, *, agent: str, decision_type: str) -> None:
+        """Record one agent reasoning decision (review M1)."""
+
+        self.agent_decisions.add(1, attributes={"agent": agent, "decision_type": decision_type})
+
+    def record_rejected_decision(self, *, agent: str, cause: str) -> None:
+        """Record one rejected agent decision by cause (review M1)."""
+
+        self.agent_rejected_decisions.add(1, attributes={"agent": agent, "cause": cause})
+
+    def record_agent_execution(
+        self,
+        *,
+        agent: str,
+        termination: str,
+        tool_calls: int,
+        llm_calls: int,
+    ) -> None:
+        """Record one finished agent execution and what it used (review M1)."""
+
+        self.agent_executions.add(1, attributes={"agent": agent, "termination": termination})
+        self.agent_execution_tool_calls.record(tool_calls, attributes={"agent": agent})
+        self.agent_execution_llm_calls.record(llm_calls, attributes={"agent": agent})
+
+    def record_orchestration_fallback(self, *, reason: str) -> None:
+        """Record a turn answered with the generic fallback (review M1)."""
+
+        self.orchestration_fallbacks.add(1, attributes={"reason": reason})
 
     def record_llm_call(
         self,

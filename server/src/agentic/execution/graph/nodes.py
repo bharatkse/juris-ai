@@ -108,6 +108,10 @@ class AgentExecutionNode:
             initial_result=initial_result,
         )
 
+        handle.record_execution_metrics(
+            termination_reason=continuation_result.result.termination_reason,
+        )
+
         return self._to_graph_update(
             handle=handle,
             result=continuation_result.result,

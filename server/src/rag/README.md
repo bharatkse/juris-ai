@@ -120,6 +120,12 @@ The mode is recorded as the `retrieval.mode` attribute on the
 `rag.hybrid_retrieve` span and as the
 `juris_ai_retrieval_searches_total{mode}` metric.
 
+The query-embedding cache (Redis by default) fails open
+(`adapters/cache/fail_open.py`): with Redis unreachable or slower than
+1 s, embeddings are computed instead, so retrieval stays `full`; each
+failure is a warning and counts in `juris_ai_cache_unavailable_total`, and
+Redis is skipped for 30 s after one (review R23).
+
 With the embedding model down, the answer gate can't score relevance either
 (it uses the same model), so a chat turn still ends with the "couldn't
 verify" answer, not an error (`agentic/evaluation/README.md`).
@@ -169,18 +175,48 @@ Run it: `PYTHONPATH=src python scripts/python/evaluate_rag_retrieval.py
   in. The eval wraps the retriever's components
   (`evaluation/retrieval_mode.py`, `ModeCheckedRetriever`) and stops at
   the first query that runs in another mode, printing the underlying
-  error (exit 2). So an unreachable embedding model, or the Redis cache
-  query embeddings go through, fails the run instead of silently
-  measuring keyword-only search. `keyword_only` and `no_rerank` disable
+  error (exit 2). So an unreachable embedding model fails the run
+  instead of silently measuring keyword-only search. (The Redis cache
+  in front of it fails open: with Redis down, embeddings are computed.) `keyword_only` and `no_rerank` disable
   the embedding model or the reranker on purpose.
 - `--min-pass-rate` fails the run (exit 1) below that pass rate.
 - `--summary` appends a Markdown table (mode used, pass rate, mean
-  scores) to a file, e.g. `$GITHUB_STEP_SUMMARY`.
+  scores, search latency p50/p95, pass rate by style) to a file, e.g.
+  `$GITHUB_STEP_SUMMARY`.
+- `--dataset` picks the golden set: `legal_retrieval_gold_v2.json` (the
+  default, which CI gates on) or `legal_retrieval_gold_v1.json` (29 cases,
+  kept for history). v2 has 60 cases: every
+  v1 query, 31 more, and a `style` per case, `statutory` or `paraphrase`
+  (a plain-language question that shares little wording with the
+  provision). v2 also quotes the indexed text for 7 v1 cases whose
+  expected evidence occurs in no chunk (curly quotes, PDF spacing
+  artifacts), which v1 can never pass: 22/29 (75.86%) is v1's ceiling.
 
-CI (`.github/workflows/rag-eval.yaml`, daily and on demand) gates `full`
-at 65% with Postgres and Redis services and the same models as dev
-(cached between runs); `keyword_only` and `no_rerank` run as
-non-gating steps. All three appear in the job summary.
+#### Retrieval value check (2026-10-01)
+
+Each mode on both golden sets, top 5, CPU host (search latency includes
+the reranker; v1 latencies were measured with other work running):
+
+| Mode | v1 | v2 | v2 statutory | v2 paraphrase | v2 MRR | Search p50 / p95 |
+|---|---|---|---|---|---|---|
+| `full` | 75.86% | 91.67% | 92.9% (39/42) | 88.9% (16/18) | 0.688 | 8.4 s / 15.3 s |
+| `keyword_only` | 75.86% | 93.33% | 97.6% (41/42) | 83.3% (15/18) | 0.686 | 7.0 s / 8.8 s |
+| `no_rerank` | 68.97% | 86.67% | 88.1% (37/42) | 83.3% (15/18) | 0.624 | 12 ms / 16 ms |
+
+The reranker adds about 5 points and 0.06 MRR, and is nearly all of the
+search time on a CPU. Embeddings help plain-language questions (one more
+of 18) and cost two statutory ones, so on this corpus they don't clearly
+pay for themselves; a larger paraphrase set would settle it.
+
+CI (`.github/workflows/rag-eval.yaml`, daily and on demand) runs all
+three modes on golden set v2 with Postgres and Redis services and the same
+models as dev (cached between runs), and gates each one: `full` and
+`keyword_only` at a pass rate of 85% and MRR 0.60, `no_rerank` at 80% and
+0.55 (about four cases below what each scored, see "Retrieval value
+check"). `--min-mrr` uses `RetrievalQualityGate`
+(`evaluation/models/quality_gate.py`): the pass rate only checks that the
+evidence is in the top 5, so a ranking regression needs its own floor.
+All three appear in the job summary.
 Other entry points: `scripts/python/compare_rag_retrieval.py` (compare two
 configurations), `scripts/python/evaluate_rag_retrieval_comparison.py`.
 

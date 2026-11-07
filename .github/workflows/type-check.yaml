@@ -1,3 +1,4 @@
+# Pinned to ubuntu-24.04: python 3.11.9 has no prebuilt build for ubuntu-26.04 yet. Revisit when actions/python-versions adds it.
 name: Type Check
 
 # Runs mypy over server/src and server/scripts with the project's full dependency set
@@ -18,7 +19,7 @@ on:
 jobs:
   type-check:
     name: Type Check (mypy)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
 
     permissions:
