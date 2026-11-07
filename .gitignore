@@ -275,6 +275,20 @@ git-commit.sh
 
 .logs/
 
+# Node / Next.js
+node_modules/
+.next/
+out/
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo
+.env*.local
+
+# Keep the frontend's source library (the Python template ignores lib/).
+!clients/web/src/lib/
+!clients/web/src/lib/**
+
 # docker volume and .setup
 docker/.volumes/
 docker/.setup-state
