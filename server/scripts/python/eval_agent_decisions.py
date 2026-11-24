@@ -6,6 +6,9 @@ A/B of the agent decision schema on Groq (review M1).
         [--dataset PATH] [--output FILE] [--dry-run]
     PYTHONPATH=src poetry run python scripts/python/eval_agent_decisions.py \
         --compare A.json B.json
+    ... --arm A --cases it-001:1,it-007:2 --output A-rerun.json
+    PYTHONPATH=src poetry run python scripts/python/eval_agent_decisions.py \
+        --merge A.json A-rerun.json --output A-merged.json
 
 Arm A sends Groq AgentDecision's own schema (today); arm B the narrower
 schema whose tool name is an enum of the agent's tools
@@ -20,9 +23,21 @@ after quota tuning, 2 repeats, a hard stop before the total Groq tokens
 could pass --max-tokens, and an abort on the first rate-limit error. The
 actual token use is recorded.
 
+Each turn records which planner produced its plan: `ollama` (the local
+primary), `groq-failover` (the local call failed and Groq planned; those
+tokens count toward the cap and are also reported as `failover_tokens`),
+or `failed` (no plan), and how long the planner's call took (failover
+included). The local model is loaded before the first turn. The planner
+timeout in force (PLANNER_TIMEOUT_S, settable for one run) is recorded.
+
 The output holds counts, rates and latencies only, never question or answer
 text. --compare prints what the review's thresholds give for A20 (adopt the
-enum on Groq), A19 (build arm C) and A17 part 2 (define plan-step arguments).
+enum on Groq), A19 (build arm C) and A17 part 2 (define plan-step arguments),
+twice: over the cases both arms completed (a case one arm skipped at its
+token cap is in neither), and over those of them Ollama planned in both
+arms. It reports the cases each arm skipped at its cap, flags failover
+rates more than 10 points apart and lists the failed-over cases; --cases
+reruns them and --merge folds a rerun into its base run.
 
 Exit codes: 0 ok (including a stop at the budget), 1 aborted on a rate
 limit or failed to start.
@@ -48,6 +63,14 @@ DATASET_PATH = Path("tests/datasets/rag/evaluation/legal_retrieval_gold_v2.json"
 
 # GROQ_SEND_RESPONSE_SCHEMA per arm.
 ARMS = {"A": "false", "B": "true"}
+
+# Planner sources a turn can record.
+PLANNER_OLLAMA = "ollama"
+PLANNER_GROQ_FAILOVER = "groq-failover"
+PLANNER_FAILED = "failed"
+
+# Failover rates further apart than this make the arms incomparable.
+UNEVEN_FAILOVER_GAP = 0.10
 
 UNVERIFIED_TERMINATIONS = frozenset({"quality_gate_exhausted", "no_evidence"})
 FAILED_TERMINATIONS = frozenset({"failed_validation", "failed_policy"})
@@ -118,6 +141,50 @@ class Turn:
     latency_s: float = 0.0
     rate_limited: bool = False
     fallback: bool = False
+    planner: str = PLANNER_OLLAMA
+    failover_tokens: int = 0
+    # The planner's LLM call, failover included; None in older files.
+    planner_latency_ms: float | None = None
+
+
+def turn_to_json(turn: Turn) -> dict[str, Any]:
+    return {
+        "question_id": turn.question_id,
+        "kind": turn.kind,
+        "repeat": turn.repeat,
+        "status_code": turn.status_code,
+        "termination": turn.termination,
+        "answer_verified": turn.answer_verified,
+        "golden_hit": turn.golden_hit,
+        "decisions": dict(turn.decisions),
+        "rejections": dict(turn.rejections),
+        "tool_calls": turn.tool_calls,
+        "llm_calls": turn.llm_calls,
+        "agent_executions": turn.agent_executions,
+        "tokens": turn.tokens,
+        "latency_s": round(turn.latency_s, 3),
+        "rate_limited": turn.rate_limited,
+        "fallback": turn.fallback,
+        "planner": turn.planner,
+        "failover_tokens": turn.failover_tokens,
+        "planner_latency_ms": (
+            None if turn.planner_latency_ms is None else round(turn.planner_latency_ms, 1)
+        ),
+    }
+
+
+def turn_from_json(data: dict[str, Any]) -> Turn:
+    return Turn(
+        **{
+            **data,
+            "decisions": Counter(data["decisions"]),
+            "rejections": Counter(data["rejections"]),
+        }
+    )
+
+
+def _case_key(question_id: str, repeat: int) -> str:
+    return f"{question_id}:{repeat}"
 
 
 class TokenBudget:
@@ -167,6 +234,17 @@ def build_plan(*, dataset: Path, repeats: int, include_extra: bool) -> list[tupl
         ]
 
     return [(question, repeat) for repeat in range(1, repeats + 1) for question in questions]
+
+
+def select_cases(
+    plan: Sequence[tuple[Question, int]], cases: Sequence[str]
+) -> list[tuple[Question, int]]:
+    """The plan narrowed to `question_id:repeat` cases, in plan order."""
+
+    wanted = set(cases)
+    return [
+        (question, repeat) for question, repeat in plan if _case_key(question.id, repeat) in wanted
+    ]
 
 
 RunTurn = Callable[[Question, int], Awaitable[Turn]]
@@ -221,10 +299,23 @@ def summarize(turns: Sequence[Turn], *, stopped: str) -> dict[str, Any]:
     verified = [turn for turn in turns if turn.answer_verified is not None]
     no_evidence = [turn for turn in turns if turn.kind == "no_evidence"]
 
+    planners = Counter(turn.planner for turn in turns)
+    planner_latencies = [
+        turn.planner_latency_ms for turn in turns if turn.planner_latency_ms is not None
+    ]
+
     return {
         "stopped": stopped,
         "turns": len(turns),
         "tokens_used": sum(turn.tokens for turn in turns),
+        "failover_tokens": sum(turn.failover_tokens for turn in turns),
+        "planner": dict(planners),
+        "planner_failover_rate": _rate(len(turns) - planners[PLANNER_OLLAMA], len(turns)),
+        "planner_latency_ms": {
+            "p50": _percentile(planner_latencies, 50),
+            "p95": _percentile(planner_latencies, 95),
+            "turns": len(planner_latencies),
+        },
         "decisions": decision_count,
         "decisions_by_type": dict(decisions),
         "agent_executions": sum(turn.agent_executions for turn in turns),
@@ -323,6 +414,106 @@ def verdicts(a: dict[str, Any], b: dict[str, Any]) -> dict[str, str]:
     }
 
 
+def _planned_turns(run: dict[str, Any]) -> int:
+    """The run's planned turns; rebuilt from its dataset for older files."""
+
+    if "planned_turns" in run:
+        return int(run["planned_turns"])
+    plan = build_plan(
+        dataset=Path(run["dataset"]),
+        repeats=int(run["repeats"]),
+        include_extra=bool(run.get("include_extra", False)),
+    )
+    return len(plan)
+
+
+def compare(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
+    """
+    The verdicts over the cases both arms completed, and over those of
+    them Ollama planned in both arms; each arm's failover rate (over the
+    cases completed in both), whether they're uneven, the cases each arm
+    should rerun (any turn its planner didn't plan), and the cases each
+    arm skipped at its token cap or for another stop (a rate limit).
+    """
+
+    a_turns = [turn_from_json(turn) for turn in a["turns"]]
+    b_turns = [turn_from_json(turn) for turn in b["turns"]]
+
+    def keys(turns: Sequence[Turn], *, ollama_only: bool = False) -> set[str]:
+        return {
+            _case_key(t.question_id, t.repeat)
+            for t in turns
+            if not ollama_only or t.planner == PLANNER_OLLAMA
+        }
+
+    completed = keys(a_turns) & keys(b_turns)
+    ollama = completed & keys(a_turns, ollama_only=True) & keys(b_turns, ollama_only=True)
+
+    def only(turns: Sequence[Turn], scope: set[str]) -> list[Turn]:
+        return [t for t in turns if _case_key(t.question_id, t.repeat) in scope]
+
+    def scoped(scope: set[str]) -> dict[str, Any]:
+        return {
+            "turns": len(scope),
+            "A": summarize(only(a_turns, scope), stopped="subset"),
+            "B": summarize(only(b_turns, scope), stopped="subset"),
+        }
+
+    both, ollama_both = scoped(completed), scoped(ollama)
+    rate_a = both["A"]["planner_failover_rate"] or 0.0
+    rate_b = both["B"]["planner_failover_rate"] or 0.0
+
+    def rerun(turns: Sequence[Turn]) -> list[str]:
+        return [_case_key(t.question_id, t.repeat) for t in turns if t.planner != PLANNER_OLLAMA]
+
+    def skipped(run: dict[str, Any], *, at_cap: bool) -> int:
+        count = _planned_turns(run) - len(run["turns"])
+        return count if (run["summary"]["stopped"] == "token_budget") == at_cap else 0
+
+    return {
+        "verdicts": {
+            "completed_in_both": verdicts(both["A"], both["B"]),
+            "ollama_planned_in_both": verdicts(ollama_both["A"], ollama_both["B"]),
+        },
+        "completed_in_both": both,
+        "ollama_planned_in_both": ollama_both,
+        "skipped_by_token_cap": {
+            "A": skipped(a, at_cap=True),
+            "B": skipped(b, at_cap=True),
+        },
+        "skipped_other": {"A": skipped(a, at_cap=False), "B": skipped(b, at_cap=False)},
+        "failover_rate": {"A": rate_a, "B": rate_b},
+        "failover_uneven": abs(rate_a - rate_b) > UNEVEN_FAILOVER_GAP,
+        "rerun_cases": {"A": rerun(a_turns), "B": rerun(b_turns)},
+    }
+
+
+def merge_runs(base: dict[str, Any], rerun: dict[str, Any]) -> dict[str, Any]:
+    """
+    base with each turn rerun replaced by its rerun, and the summary
+    recomputed. The replaced turns' tokens were spent all the same:
+    `superseded_tokens` records them.
+    """
+
+    replacements = {_case_key(turn["question_id"], turn["repeat"]): turn for turn in rerun["turns"]}
+    turns: list[dict[str, Any]] = []
+    superseded = 0
+    for turn in base["turns"]:
+        replacement = replacements.get(_case_key(turn["question_id"], turn["repeat"]))
+        if replacement is not None:
+            superseded += turn["tokens"]
+        turns.append(replacement or turn)
+
+    return {
+        **base,
+        "summary": summarize(
+            [turn_from_json(turn) for turn in turns], stopped=base["summary"]["stopped"]
+        ),
+        "turns": turns,
+        "superseded_tokens": base.get("superseded_tokens", 0) + superseded,
+    }
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="A/B of the agent decision schema on Groq.")
     parser.add_argument("--arm", choices=sorted(ARMS), help="A: plain schema, B: enum schema.")
@@ -333,10 +524,25 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--output", type=Path, default=None)
     parser.add_argument("--dry-run", action="store_true", default=False)
     parser.add_argument("--compare", nargs=2, type=Path, metavar=("A_JSON", "B_JSON"))
+    parser.add_argument(
+        "--cases",
+        type=lambda value: [case for case in value.split(",") if case],
+        default=None,
+        help="Run only these question_id:repeat cases (e.g. a failed-over rerun).",
+    )
+    parser.add_argument(
+        "--merge",
+        nargs=2,
+        type=Path,
+        metavar=("BASE_JSON", "RERUN_JSON"),
+        help="Replace BASE's turns with RERUN's and write the result to --output.",
+    )
     args = parser.parse_args(argv)
 
-    if args.compare is None and args.arm is None:
-        parser.error("--arm is required unless --compare is given")
+    if args.compare is None and args.merge is None and args.arm is None:
+        parser.error("--arm is required unless --compare or --merge is given")
+    if args.merge is not None and args.output is None:
+        parser.error("--merge needs --output")
     return args
 
 
@@ -357,8 +563,11 @@ async def _live_runner(
     from httpx import ASGITransport, AsyncClient
 
     from adapters.clients.llm.groq import GroqClient
+    from adapters.clients.llm.local import LocalLLMClient
     from adapters.observability.metrics import metrics
     from adapters.persistence.sqlalchemy.session import dispose_engine
+    from agentic.planning.llm_planner import LLMPlanGenerator
+    from config.settings import get_settings
     from core.exceptions.client import ClientRateLimitError
     from main import app
     from rag.evaluation.metrics.text_matching import evidence_in_text
@@ -377,6 +586,10 @@ async def _live_runner(
             rate_limited=False,
             fallback=False,
             retrieved=[],
+            planner=PLANNER_FAILED,
+            in_failover=False,
+            failover_tokens=0,
+            planner_latency_ms=None,
         )
 
     def on_decision(*, agent: str, decision_type: str) -> None:
@@ -393,8 +606,13 @@ async def _live_runner(
     real_record_llm_call = metrics.record_llm_call
 
     def on_llm_call(*, provider: str, model: str, duration: float, usage: Any) -> None:
+        if provider == "local" and current["planner"] == PLANNER_FAILED:
+            # The only local LLM call (LLM_LOCAL=none) is the planner's.
+            current["planner"] = PLANNER_OLLAMA
         if provider == "groq" and usage is not None:
             current["tokens"] += usage.total_tokens
+            if current["in_failover"]:
+                current["failover_tokens"] += usage.total_tokens
         real_record_llm_call(provider=provider, model=model, duration=duration, usage=usage)
 
     def on_fallback(*, reason: str) -> None:
@@ -417,6 +635,35 @@ async def _live_runner(
 
     GroqClient._generate = watched_generate  # type: ignore[method-assign]
 
+    real_within_timeout = LLMPlanGenerator._generate_within_timeout
+
+    async def timed_within_timeout(self: LLMPlanGenerator, *args: Any, **kwargs: Any) -> Any:
+        started = time.perf_counter()
+        try:
+            return await real_within_timeout(self, *args, **kwargs)
+        finally:
+            current["planner_latency_ms"] = (time.perf_counter() - started) * 1000
+
+    LLMPlanGenerator._generate_within_timeout = timed_within_timeout  # type: ignore[method-assign]
+
+    real_on_fallback = LLMPlanGenerator._generate_on_fallback
+
+    async def watched_on_fallback(self: LLMPlanGenerator, *args: Any, **kwargs: Any) -> Any:
+        # A plan from here is Groq's; its tokens are failover tokens.
+        current["in_failover"] = True
+        try:
+            plan = await real_on_fallback(self, *args, **kwargs)
+        except Exception:
+            current["planner"] = PLANNER_FAILED
+            raise
+        else:
+            current["planner"] = PLANNER_GROQ_FAILOVER
+            return plan
+        finally:
+            current["in_failover"] = False
+
+    LLMPlanGenerator._generate_on_fallback = watched_on_fallback  # type: ignore[method-assign]
+
     real_retrieve = HybridRetriever.retrieve
 
     async def watched_retrieve(self: HybridRetriever, **kwargs: Any) -> Any:
@@ -428,6 +675,21 @@ async def _live_runner(
 
     lifespan = app.router.lifespan_context(app)
     await lifespan.__aenter__()
+
+    # The lifespan's warm-up runs in the background; wait for the model
+    # here so the first turns aren't planned cold.
+    llm_settings = get_settings().llm
+    local = LocalLLMClient(
+        base_url=llm_settings.LLM_LOCAL_BASE_URL,
+        model=llm_settings.LLM_LOCAL_MODEL,
+        keep_alive=llm_settings.LLM_LOCAL_KEEP_ALIVE,
+    )
+    warm_started = time.perf_counter()
+    try:
+        await local.warm_up()
+    finally:
+        await local.aclose()
+    print(f"Local planner model loaded in {time.perf_counter() - warm_started:.1f} s.")
     client = AsyncClient(transport=ASGITransport(app=app), base_url="http://eval.local")
 
     email = f"m1-eval-{uuid.uuid4().hex[:12]}@example.com"
@@ -496,6 +758,9 @@ async def _live_runner(
             latency_s=latency,
             rate_limited=current["rate_limited"],
             fallback=current["fallback"],
+            planner=current["planner"],
+            failover_tokens=current["failover_tokens"],
+            planner_latency_ms=current["planner_latency_ms"],
         )
 
     async def close() -> None:
@@ -506,18 +771,39 @@ async def _live_runner(
     return run_turn, close
 
 
+def _planner_timeout_s() -> float:  # pragma: no cover - reads the live settings
+    from config.settings import get_settings
+
+    return get_settings().llm.PLANNER_TIMEOUT_S
+
+
 async def main(args: argparse.Namespace) -> int:
     if args.compare is not None:
         a, b = (json.loads(path.read_text(encoding="utf-8"))["summary"] for path in args.compare)
-        for item, verdict in verdicts(a, b).items():
-            print(f"{item}: {verdict}")
+        report = compare(*(json.loads(path.read_text(encoding="utf-8")) for path in args.compare))
+        for scope, items in report["verdicts"].items():
+            for item, verdict in items.items():
+                print(f"[{scope}] {item}: {verdict}")
+        print(
+            json.dumps({key: value for key, value in report.items() if key != "verdicts"}, indent=2)
+        )
+        return 0
+
+    if args.merge is not None:
+        base, rerun = (json.loads(path.read_text(encoding="utf-8")) for path in args.merge)
+        merged = merge_runs(base, rerun)
+        args.output.write_text(json.dumps(merged, indent=2), encoding="utf-8")
+        print(json.dumps(merged["summary"], indent=2))
         return 0
 
     plan = build_plan(dataset=args.dataset, repeats=args.repeats, include_extra=args.include_extra)
+    if args.cases is not None:
+        plan = select_cases(plan, args.cases)
     print(
         f"Arm {args.arm}: {len(plan)} turns planned "
         f"({len(plan) // args.repeats} questions x {args.repeats}); "
-        f"hard stop before {args.max_tokens:,} Groq tokens."
+        f"hard stop before {args.max_tokens:,} Groq tokens; "
+        f"planner timeout {_planner_timeout_s():g} s."
     )
     if args.dry_run:
         return 0
@@ -545,25 +831,12 @@ async def main(args: argparse.Namespace) -> int:
                     "groq_send_response_schema": ARMS[args.arm],
                     "dataset": str(args.dataset),
                     "repeats": args.repeats,
+                    "include_extra": args.include_extra,
+                    "planned_turns": len(plan),
+                    "planner_timeout_s": _planner_timeout_s(),
                     "max_tokens": args.max_tokens,
                     "summary": summary,
-                    "turns": [
-                        {
-                            "question_id": turn.question_id,
-                            "kind": turn.kind,
-                            "repeat": turn.repeat,
-                            "status_code": turn.status_code,
-                            "termination": turn.termination,
-                            "golden_hit": turn.golden_hit,
-                            "decisions": dict(turn.decisions),
-                            "rejections": dict(turn.rejections),
-                            "tool_calls": turn.tool_calls,
-                            "llm_calls": turn.llm_calls,
-                            "tokens": turn.tokens,
-                            "latency_s": round(turn.latency_s, 3),
-                        }
-                        for turn in turns
-                    ],
+                    "turns": [turn_to_json(turn) for turn in turns],
                 },
                 indent=2,
             ),

@@ -279,3 +279,6 @@ git-commit.sh
 docker/.volumes/
 docker/.setup-state
 docker/dependencies/.volumes/
+
+# Local status summaries of the gitignored reports
+/docs/status/

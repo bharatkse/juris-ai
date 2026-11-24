@@ -243,3 +243,172 @@ def test_a17_part_2_defines_step_arguments_past_the_planner_threshold(script: Mo
 
     assert script.verdicts(quiet, quiet)["A17-2"].startswith("close")
     assert script.verdicts(noisy, noisy)["A17-2"].startswith("define step arguments")
+
+
+# --- planner source and failover tokens -------------------------------------
+
+
+def test_the_summary_counts_planner_sources_and_failover_tokens(script: ModuleType) -> None:
+    turns = [
+        _turn(script, planner="ollama"),
+        _turn(script, question_id="it-002", planner="groq-failover", failover_tokens=300),
+        _turn(script, question_id="it-003", planner="groq-failover", failover_tokens=200),
+    ]
+
+    summary = script.summarize(turns, stopped="completed")
+
+    assert summary["planner"] == {"ollama": 1, "groq-failover": 2}
+    assert summary["planner_failover_rate"] == pytest.approx(2 / 3)
+    assert summary["failover_tokens"] == 500
+    # Failover tokens are Groq tokens: they stay in the run's total (the cap).
+    assert summary["tokens_used"] == 3_000
+
+
+def test_a_turn_round_trips_through_the_output_file(script: ModuleType) -> None:
+    turn = _turn(
+        script,
+        planner="groq-failover",
+        failover_tokens=250,
+        rejections=Counter({"planner_argument": 1}),
+    )
+
+    assert script.turn_from_json(json.loads(json.dumps(script.turn_to_json(turn)))) == turn
+
+
+def _run(script, turns, *, planned: int | None = None, stopped: str = "completed") -> dict:
+    return {
+        "planned_turns": len(turns) if planned is None else planned,
+        "summary": script.summarize(turns, stopped=stopped),
+        "turns": [script.turn_to_json(turn) for turn in turns],
+    }
+
+
+def test_compare_reports_all_turns_and_turns_ollama_planned_in_both_arms(
+    script: ModuleType,
+) -> None:
+    a = _run(
+        script,
+        [
+            _turn(script, question_id="it-001", planner="ollama"),
+            _turn(script, question_id="it-002", planner="groq-failover"),
+            _turn(script, question_id="it-003", planner="ollama"),
+        ],
+    )
+    b = _run(
+        script,
+        [
+            _turn(script, question_id="it-001", planner="ollama"),
+            _turn(script, question_id="it-002", planner="ollama"),
+            _turn(script, question_id="it-003", planner="groq-failover"),
+        ],
+    )
+
+    report = script.compare(a, b)
+
+    assert set(report["verdicts"]) == {"completed_in_both", "ollama_planned_in_both"}
+    assert report["completed_in_both"]["turns"] == 3
+    assert report["ollama_planned_in_both"]["turns"] == 1
+    assert report["failover_rate"] == {"A": pytest.approx(1 / 3), "B": pytest.approx(1 / 3)}
+    assert report["failover_uneven"] is False
+    assert report["rerun_cases"] == {"A": ["it-002:1"], "B": ["it-003:1"]}
+
+
+def test_compare_flags_uneven_failovers(script: ModuleType) -> None:
+    a = _run(script, [_turn(script, question_id=f"q{i}", planner="ollama") for i in range(10)])
+    b = _run(
+        script,
+        [
+            _turn(script, question_id=f"q{i}", planner="groq-failover" if i < 2 else "ollama")
+            for i in range(10)
+        ],
+    )
+
+    report = script.compare(a, b)
+
+    assert report["failover_uneven"] is True
+    assert report["rerun_cases"]["B"] == ["q0:1", "q1:1"]
+
+
+def test_the_plan_can_be_narrowed_to_named_cases(script: ModuleType) -> None:
+    plan = script.build_plan(dataset=DATASET, repeats=2, include_extra=False)
+    first = plan[0][0].id
+
+    narrowed = script.select_cases(plan, [f"{first}:2"])
+
+    assert [(question.id, repeat) for question, repeat in narrowed] == [(first, 2)]
+
+
+def test_a_rerun_replaces_the_matching_turns(script: ModuleType) -> None:
+    base = _run(
+        script,
+        [
+            _turn(script, question_id="it-001", planner="groq-failover", tokens=900),
+            _turn(script, question_id="it-002", planner="ollama"),
+        ],
+    )
+    rerun = _run(script, [_turn(script, question_id="it-001", planner="ollama", tokens=700)])
+
+    merged = script.merge_runs(base, rerun)
+
+    assert [turn["planner"] for turn in merged["turns"]] == ["ollama", "ollama"]
+    assert merged["summary"]["planner"] == {"ollama": 2}
+    # The replaced turn's tokens were still spent: the merge records them.
+    assert merged["superseded_tokens"] == 900
+
+
+def test_compare_keeps_only_cases_both_arms_completed(script: ModuleType) -> None:
+    # A got through three cases before its cap, B through two: it-003 is
+    # in neither scope, and its unverified answer doesn't count against A.
+    a = _run(
+        script,
+        [
+            _turn(script, question_id="it-001"),
+            _turn(script, question_id="it-002"),
+            _turn(script, question_id="it-003", answer_verified=False, golden_hit=False),
+        ],
+        planned=4,
+        stopped="token_budget",
+    )
+    b = _run(
+        script,
+        [_turn(script, question_id="it-001"), _turn(script, question_id="it-002")],
+        planned=4,
+        stopped="token_budget",
+    )
+
+    report = script.compare(a, b)
+
+    assert report["completed_in_both"]["turns"] == 2
+    assert report["completed_in_both"]["A"]["golden_pass_rate"] == 1.0
+    assert report["completed_in_both"]["A"]["unverified_rate"] == 0.0
+    assert report["skipped_by_token_cap"] == {"A": 1, "B": 2}
+
+
+def test_only_a_capped_run_counts_skips_against_the_cap(script: ModuleType) -> None:
+    rate_limited = _run(script, [_turn(script)], planned=3, stopped="rate_limited")
+    complete = _run(script, [_turn(script)])
+
+    report = script.compare(rate_limited, complete)
+
+    assert report["skipped_by_token_cap"] == {"A": 0, "B": 0}
+    assert report["skipped_other"] == {"A": 2, "B": 0}
+
+
+def test_the_summary_reports_planner_latency(script: ModuleType) -> None:
+    turns = [
+        _turn(script, planner_latency_ms=1_000.0),
+        _turn(script, question_id="it-002", planner_latency_ms=46_000.0, planner="groq-failover"),
+        # Older output files have no planner latency.
+        _turn(script, question_id="it-003", planner_latency_ms=None),
+    ]
+
+    summary = script.summarize(turns, stopped="completed")
+
+    assert summary["planner_latency_ms"] == {"p50": 1_000.0, "p95": 46_000.0, "turns": 2}
+
+
+def test_an_older_output_turn_without_planner_latency_still_loads(script: ModuleType) -> None:
+    data = script.turn_to_json(_turn(script))
+    del data["planner_latency_ms"]
+
+    assert script.turn_from_json(data).planner_latency_ms is None
