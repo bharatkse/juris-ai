@@ -17,6 +17,7 @@ const config: Config = {
           DEFAULT: hsl("surface"),
           elevated: hsl("surface-elevated"),
         },
+        hover: hsl("hover"),
         border: hsl("border"),
         muted: {
           DEFAULT: hsl("muted"),
@@ -90,9 +91,16 @@ const config: Config = {
         ],
       },
       borderRadius: {
-        sm: "6px",
-        md: "10px",
-        lg: "16px",
+        sm: "var(--radius-sm)",
+        md: "var(--radius-md)",
+        lg: "var(--radius-lg)",
+        xl: "var(--radius-xl)",
+      },
+      maxWidth: {
+        chat: "var(--chat-column)",
+      },
+      transitionDuration: {
+        fast: "150ms",
       },
       keyframes: {
         "fade-in": {

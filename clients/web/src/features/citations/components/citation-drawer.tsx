@@ -18,19 +18,23 @@ export function CitationDrawer({
   selectedIndex,
   onSelect,
   onClose,
+  embedded = false,
 }: {
   citations: Citation[];
   sources: Source[];
   selectedIndex: number;
   onSelect: (index: number) => void;
   onClose: () => void;
+  embedded?: boolean;
 }) {
   const panelRef = useRef<HTMLElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
-    closeRef.current?.focus();
+    if (!embedded) {
+      closeRef.current?.focus();
+    }
 
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
@@ -67,7 +71,7 @@ export function CitationDrawer({
       document.removeEventListener("keydown", handleKeyDown);
       previous?.focus();
     };
-  }, [onClose]);
+  }, [embedded, onClose]);
 
   useEffect(() => {
     panelRef.current
@@ -75,46 +79,8 @@ export function CitationDrawer({
       ?.scrollIntoView({ block: "nearest" });
   }, [selectedIndex]);
 
-  return (
-    <>
-      <button
-        type="button"
-        aria-label="Close sources"
-        className="fixed inset-0 z-[60] bg-foreground/50 lg:hidden"
-        onClick={onClose}
-      />
-      <aside
-        ref={panelRef}
-        role="dialog"
-        aria-labelledby="citation-drawer-title"
-        className="fixed inset-x-0 bottom-0 z-[70] flex h-[70vh] flex-col rounded-t-lg border-t border-border bg-surface text-foreground lg:static lg:z-auto lg:h-full lg:w-[360px] lg:shrink-0 lg:rounded-none lg:border-l lg:border-t-0"
-      >
-        <div
-          className="mx-auto mt-2 h-1 w-10 rounded-full bg-muted lg:hidden"
-          aria-hidden="true"
-        />
-        <header className="flex shrink-0 items-center justify-between border-b border-border px-5 py-4">
-          <div>
-            <h2 id="citation-drawer-title" className="font-semibold">
-              Sources
-            </h2>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {citations.length} citation{citations.length === 1 ? "" : "s"}
-            </p>
-          </div>
-          <Button
-            ref={closeRef}
-            type="button"
-            variant="ghost"
-            size="icon"
-            aria-label="Close sources"
-            onClick={onClose}
-          >
-            <X className="size-4" aria-hidden="true" />
-          </Button>
-        </header>
-
-        <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-4">
+  const body = (
+        <div className="min-h-0 flex-1 space-y-6 overflow-y-auto">
           {citations.length ? (
             <ol className="space-y-3" aria-label="Citations">
               {citations.map((citation, index) => {
@@ -235,6 +201,50 @@ export function CitationDrawer({
             </section>
           ) : null}
         </div>
+  );
+
+  if (embedded) {
+    return (
+      <div
+        ref={(node) => {
+          panelRef.current = node;
+        }}
+      >
+        {body}
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        aria-label="Close sources"
+        className="fixed inset-0 z-[60] bg-foreground/50 md:hidden"
+        onClick={onClose}
+      />
+      <aside
+        ref={panelRef}
+        role="dialog"
+        aria-labelledby="citation-drawer-title"
+        className="fixed inset-x-0 bottom-0 z-[70] flex h-[70vh] flex-col rounded-t-lg border-t border-border bg-surface text-foreground md:static md:z-auto md:h-full md:w-[360px] md:shrink-0 md:rounded-none md:border-l md:border-t-0"
+      >
+        <header className="flex shrink-0 items-center justify-between px-5 py-4">
+          <h2 id="citation-drawer-title" className="font-semibold">
+            Sources
+          </h2>
+          <Button
+            ref={closeRef}
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label="Close sources"
+            onClick={onClose}
+          >
+            <X className="size-4" aria-hidden="true" />
+          </Button>
+        </header>
+        {body}
       </aside>
     </>
   );

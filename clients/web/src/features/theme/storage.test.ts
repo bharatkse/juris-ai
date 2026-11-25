@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
 
 import { THEME_STORAGE_KEY } from "@/config/theme";
-import { readStoredTheme, writeStoredTheme } from "@/features/theme/storage";
+import {
+  migrateStoredTheme,
+  readStoredTheme,
+  writeStoredTheme,
+} from "@/features/theme/storage";
 
 describe("theme storage", () => {
   afterEach(() => {
@@ -42,5 +46,24 @@ describe("theme storage", () => {
   it("does not throw when storage is unavailable", () => {
     expect(readStoredTheme(null)).toBeNull();
     expect(writeStoredTheme("light", null)).toBe(false);
+  });
+
+  it("migrates system and unknown values to the fallback", () => {
+    const memory = new Map<string, string>([[THEME_STORAGE_KEY, "system"]]);
+    const storage = {
+      getItem: (key: string) => memory.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        memory.set(key, value);
+      },
+      removeItem: (key: string) => {
+        memory.delete(key);
+      },
+    };
+    expect(migrateStoredTheme(storage, "light")).toBe("light");
+    expect(memory.get(THEME_STORAGE_KEY)).toBe("light");
+
+    memory.set(THEME_STORAGE_KEY, "high-contrast");
+    expect(migrateStoredTheme(storage, "dark")).toBe("dark");
+    expect(memory.get(THEME_STORAGE_KEY)).toBe("dark");
   });
 });

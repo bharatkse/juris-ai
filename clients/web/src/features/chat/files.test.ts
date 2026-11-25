@@ -33,8 +33,8 @@ describe("addValidatedFiles", () => {
     expect(result.files).toEqual([existing]);
     expect(result.errors).toEqual([
       "brief.pdf: this file is already attached.",
-      "script.exe: unsupported type. Use PDF, DOCX, TXT, MD, or HTML.",
-      "record.pdf: file must be 20 MB or smaller.",
+      "script.exe: unsupported type. Use PDF, DOCX, TXT, or MD.",
+      "record.pdf: file must be 10 MB or smaller.",
     ]);
   });
 

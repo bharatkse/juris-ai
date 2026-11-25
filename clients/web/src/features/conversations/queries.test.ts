@@ -5,6 +5,7 @@ import {
   flattenConversationEvents,
   flattenConversations,
   formatRelativeTime,
+  groupConversationsByRecency,
   mergeConversationEvents,
 } from "@/features/conversations/queries";
 import {
@@ -18,6 +19,7 @@ const conversation: Conversation = {
   user_id: "user_1",
   title: "Article 21 research",
   is_active: true,
+  memory_disabled: false,
   created_at: "2026-09-15T10:00:00Z",
   updated_at: "2026-09-15T10:00:00Z",
 };
@@ -41,6 +43,24 @@ describe("conversation API helpers", () => {
     });
 
     expect(event.metadata).toEqual({ agents: ["legal"] });
+  });
+
+  it("copies top-level message citations onto metadata", () => {
+    const event = normalizeConversationEvent({
+      id: "evt_2",
+      conversation_id: "conv_1",
+      parent_event_id: "evt_1",
+      role: "assistant",
+      content: "Answer",
+      metadata: { agents: ["legal"] },
+      citations: [{ title: "Art. 21", source: "Constitution" }],
+      sources: [{ title: "Constitution" }],
+      created_at: "2026-09-15T10:00:00Z",
+    });
+    expect(event.metadata.citations).toEqual([
+      { title: "Art. 21", source: "Constitution" },
+    ]);
+    expect(event.metadata.sources).toEqual([{ title: "Constitution" }]);
   });
 });
 
@@ -102,5 +122,29 @@ describe("conversation query helpers", () => {
     const now = new Date("2026-09-15T10:00:00Z").getTime();
     expect(formatRelativeTime("2026-09-15T09:58:00Z", now)).toBe("2m");
     expect(formatRelativeTime("2026-09-14T10:00:00Z", now)).toBe("1d");
+  });
+
+  it("groups recents by today, yesterday, week, and older", () => {
+    const now = new Date("2026-09-15T12:00:00").getTime();
+    const item = (id: string, updated_at: string): Conversation => ({
+      ...conversation,
+      id,
+      updated_at,
+    });
+    const groups = groupConversationsByRecency(
+      [
+        item("today", "2026-09-15T11:00:00"),
+        item("yesterday", "2026-09-14T11:00:00"),
+        item("week", "2026-09-10T11:00:00"),
+        item("older", "2026-08-01T11:00:00"),
+      ],
+      now,
+    );
+    expect(groups.map((group) => group.group)).toEqual([
+      "today",
+      "yesterday",
+      "week",
+      "older",
+    ]);
   });
 });

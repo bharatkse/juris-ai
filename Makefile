@@ -821,7 +821,7 @@ dev: ## Post-install dev steps (DB role, model pull, migrations, deploy) after s
 
 .PHONY: web-install web-dev web-lint web-typecheck web-test web-test-theme \
 	web-e2e web-design-capture web-build web-docker-build web-up web-up-dev \
-	web-down web-logs web-restart web-shell web-clean web-ci
+	web-down web-logs web-restart web-shell web-clean web-ci web-api-types
 
 web-install: ## Install clients/web npm dependencies from the lockfile
 	@echo '$(CYAN)Installing web dependencies...$(RESET)'
@@ -836,6 +836,11 @@ web-lint: ## ESLint clients/web (max-warnings=0)
 
 web-typecheck: ## TypeScript check clients/web
 	@cd $(WEB_DIR) && npm run typecheck
+
+web-api-types: ## Regenerate OpenAPI TypeScript types for clients/web
+	@echo '$(CYAN)Generating web OpenAPI types...$(RESET)'
+	@cd $(WEB_DIR) && npm run api:types
+	@echo '$(GREEN)Wrote clients/web/src/types/openapi.d.ts$(RESET)'
 
 web-test: ## Vitest unit tests for clients/web
 	@cd $(WEB_DIR) && npm test
@@ -888,6 +893,8 @@ web-clean: ## Remove web build output, node_modules, and the local image
 
 web-ci: ## Lint, typecheck, test, and build clients/web (pre-PR)
 	@echo '$(CYAN)Running web CI...$(RESET)'
+	@$(MAKE) web-api-types
+	@git diff --exit-code -- clients/web/src/types/openapi.d.ts clients/web/openapi/openapi.json
 	@$(MAKE) web-lint
 	@$(MAKE) web-typecheck
 	@$(MAKE) web-test

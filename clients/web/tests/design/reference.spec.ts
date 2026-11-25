@@ -24,6 +24,7 @@ const conversation = {
   user_id: user.id,
   title: "Article 21 research",
   is_active: true,
+  memory_disabled: false,
   created_at: "2026-09-15T09:00:00Z",
   updated_at: "2026-09-15T10:00:00Z",
 };
@@ -175,12 +176,31 @@ async function installMocks(
       await fulfillEnvelope(route, conversation);
       return;
     }
-    if (backendPath === `/conversations/${conversation.id}/events`) {
+    if (backendPath === `/conversations/${conversation.id}/messages`) {
       const events =
         scenario.current === "hitl"
           ? [userEvent, approvalEvent]
           : [userEvent, assistantEvent];
       await fulfillEnvelope(route, eventPage(events));
+      return;
+    }
+    if (backendPath === "/health") {
+      await fulfillEnvelope(route, {
+        status: "ok",
+        service: "juris-ai",
+        version: "design",
+      });
+      return;
+    }
+    if (backendPath === "/memory/settings") {
+      await fulfillEnvelope(route, { enabled: true });
+      return;
+    }
+    if (backendPath === "/memory/items") {
+      await fulfillEnvelope(route, {
+        items: [],
+        pagination: { offset: 0, limit: 20, total: 0, has_more: false },
+      });
       return;
     }
     if (
@@ -247,102 +267,92 @@ async function authenticate(page: Page) {
 
 test("capture versioned design references", async ({ page }, testInfo) => {
   const scenario: { current: Scenario } = { current: "empty" };
+  const prefix = testInfo.project.name.replace("design-", "");
+  const wide = prefix !== "360";
   await installMocks(page, scenario);
 
-  if (testInfo.project.name === "design-desktop") {
-    await page.goto("/");
-    await expect(
-      page.getByRole("heading", {
-        name: "Legal research with sources you can open.",
-      }),
-    ).toBeVisible();
-    await capture(page, "desktop-landing.png");
-
-    await page.goto("/login");
-    await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
-    await capture(page, "desktop-login.png");
-
-    await page.goto("/register");
-    await expect(
-      page.getByRole("heading", { name: "Create an account" }),
-    ).toBeVisible();
-    await capture(page, "desktop-register.png");
-  } else {
-    await page.goto("/login");
-    await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
-    await capture(page, "mobile-login.png");
-
-    await page.goto("/register");
-    await expect(
-      page.getByRole("heading", { name: "Create an account" }),
-    ).toBeVisible();
-    await capture(page, "mobile-register.png");
+  async function applyTheme(theme: "light" | "dark") {
+    await page.addInitScript((value) => {
+      window.localStorage.setItem("juris-theme", value);
+    }, theme);
+    await page.evaluate((value) => {
+      window.localStorage.setItem("juris-theme", value);
+      document.documentElement.classList.remove("light", "dark");
+      document.documentElement.classList.add(value);
+      document.documentElement.style.colorScheme = value;
+    }, theme);
   }
+
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", {
+      name: "Legal research with sources you can open.",
+    }),
+  ).toBeVisible();
+  await capture(page, `${prefix}-landing.png`);
+
+  await page.goto("/login");
+  await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+  await capture(page, `${prefix}-login.png`);
 
   await authenticate(page);
 
-  scenario.current = "empty";
-  await page.goto("/app");
-  await expect(
-    page.getByRole("heading", { name: "What do you want to work on?" }),
-  ).toBeVisible();
-  await capture(
-    page,
-    testInfo.project.name === "design-desktop"
-      ? "desktop-empty-app.png"
-      : "mobile-empty-app.png",
-  );
+  for (const theme of ["light", "dark"] as const) {
+    await applyTheme(theme);
 
-  scenario.current = "thread";
-  await page.goto(`/app/c/${conversation.id}`);
-  await expect(page.getByLabel("Juris AI response")).toBeVisible();
-  await capture(
-    page,
-    testInfo.project.name === "design-desktop"
-      ? "desktop-thread.png"
-      : "mobile-thread.png",
-  );
+    scenario.current = "empty";
+    await page.goto("/app");
+    await expect(
+      page.getByRole("heading", { name: "What do you want to work on?" }),
+    ).toBeVisible();
+    if (theme === "light") {
+      const background = await page.locator("body").evaluate((el) =>
+        getComputedStyle(el).backgroundColor,
+      );
+      expect(background).toBe("rgb(255, 255, 255)");
+    }
+    await capture(page, `${prefix}-${theme}-chat-empty.png`);
 
-  await page
-    .getByRole("button", { name: "Open citation 1: Constitution of India" })
-    .click();
-  await expect(page.getByRole("dialog", { name: "Sources" })).toBeVisible();
-  await capture(
-    page,
-    testInfo.project.name === "design-desktop"
-      ? "desktop-citations-open.png"
-      : "mobile-citations-open.png",
-  );
+    scenario.current = "thread";
+    await page.goto(`/app/c/${conversation.id}`);
+    await expect(page.getByLabel("Juris AI response")).toBeVisible();
+    await capture(page, `${prefix}-${theme}-chat-messages.png`);
+
+    if (wide) {
+      await page.getByRole("button", { name: "Collapse sidebar" }).click();
+      await capture(page, `${prefix}-${theme}-sidebar-collapsed.png`);
+      await page
+        .getByRole("complementary", { name: "Workspace navigation" })
+        .getByRole("button", { name: "Expand sidebar" })
+        .click();
+    }
+
+    await page
+      .getByRole("button", { name: "Open citation 1: Constitution of India" })
+      .click();
+    await expect(page.getByRole("dialog", { name: "Sources" })).toBeVisible();
+    await capture(page, `${prefix}-${theme}-side-panel.png`);
+    await page
+      .getByRole("dialog", { name: "Sources" })
+      .getByRole("button", { name: "Close panel" })
+      .click();
+
+    await page.goto("/app/settings");
+    await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+    await capture(page, `${prefix}-${theme}-settings.png`);
+
+    await page.goto("/app/memory");
+    await expect(
+      page.getByRole("heading", { name: "Memory", exact: true }),
+    ).toBeVisible();
+    await capture(page, `${prefix}-${theme}-documents.png`);
+  }
 
   scenario.current = "hitl";
+  await applyTheme("light");
   await page.goto(`/app/c/${conversation.id}`);
   await expect(
     page.getByRole("heading", { name: "Approval required" }),
   ).toBeVisible();
-  await capture(
-    page,
-    testInfo.project.name === "design-desktop"
-      ? "desktop-hitl-waiting.png"
-      : "mobile-hitl-waiting.png",
-  );
-
-  if (testInfo.project.name === "design-desktop") {
-    scenario.current = "quota";
-    await page.goto(`/app/c/${conversation.id}`);
-    await page.getByLabel("Legal question").fill("Continue this research");
-    await page.getByRole("button", { name: "Send" }).click();
-    await expect(
-      page.getByText("Too many requests this minute. Wait and try again."),
-    ).toBeVisible();
-    await capture(page, "desktop-quota.png");
-  }
-
-  await page.goto("/app/settings");
-  await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
-  await capture(
-    page,
-    testInfo.project.name === "design-desktop"
-      ? "desktop-settings.png"
-      : "mobile-settings.png",
-  );
+  await capture(page, `${prefix}-hitl-waiting.png`);
 });

@@ -5,7 +5,7 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { THEME_STORAGE_KEY } from "@/config/theme";
+import { DEFAULT_THEME, THEME_STORAGE_KEY } from "@/config/theme";
 import { ThemeProvider, useTheme } from "@/features/theme/provider";
 import { ThemeToggle } from "@/features/theme/theme-toggle";
 
@@ -47,24 +47,18 @@ describe("ThemeProvider", () => {
     window.localStorage.clear();
   });
 
-  it("defaults to system and resolves to light when the OS is light", async () => {
-    render(
-      <ThemeProvider>
-        <Probe />
-      </ThemeProvider>,
-    );
-    expect(await screen.findByTestId("theme")).toHaveTextContent("system");
-    expect(screen.getByTestId("resolved")).toHaveTextContent("light");
-  });
-
-  it("resolves system to dark when prefers-color-scheme is dark", async () => {
+  it("defaults to light and does not follow the OS", async () => {
     mockMatchMedia(true);
     render(
       <ThemeProvider>
         <Probe />
       </ThemeProvider>,
     );
-    expect(await screen.findByTestId("resolved")).toHaveTextContent("dark");
+    expect(await screen.findByTestId("theme")).toHaveTextContent(DEFAULT_THEME);
+    expect(screen.getByTestId("resolved")).toHaveTextContent(DEFAULT_THEME);
+    expect(document.documentElement.classList.contains("dark")).toBe(
+      DEFAULT_THEME === "dark",
+    );
   });
 
   it("restores a stored preference", async () => {
@@ -77,14 +71,25 @@ describe("ThemeProvider", () => {
     expect(await screen.findByTestId("theme")).toHaveTextContent("dark");
   });
 
-  it("falls back to system when storage is invalid", async () => {
+  it("migrates a stored system value to the env default", async () => {
+    window.localStorage.setItem(THEME_STORAGE_KEY, "system");
+    render(
+      <ThemeProvider>
+        <Probe />
+      </ThemeProvider>,
+    );
+    expect(await screen.findByTestId("theme")).toHaveTextContent(DEFAULT_THEME);
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe(DEFAULT_THEME);
+  });
+
+  it("falls back to the env default when storage is invalid", async () => {
     window.localStorage.setItem(THEME_STORAGE_KEY, "neon");
     render(
       <ThemeProvider>
         <Probe />
       </ThemeProvider>,
     );
-    expect(await screen.findByTestId("theme")).toHaveTextContent("system");
+    expect(await screen.findByTestId("theme")).toHaveTextContent(DEFAULT_THEME);
   });
 
   it("lets ThemeToggle persist a choice", async () => {
@@ -95,10 +100,13 @@ describe("ThemeProvider", () => {
         <Probe />
       </ThemeProvider>,
     );
-    await screen.findByRole("radiogroup", { name: "Color theme" });
-    await user.click(screen.getByRole("radio", { name: "Dark" }));
-    expect(await screen.findByTestId("theme")).toHaveTextContent("dark");
-    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe("dark");
+    const next = DEFAULT_THEME === "dark" ? "light" : "dark";
+    const toggle = await screen.findByRole("button", {
+      name: new RegExp(`Switch to ${next} theme`, "i"),
+    });
+    await user.click(toggle);
+    expect(await screen.findByTestId("theme")).toHaveTextContent(next);
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe(next);
   });
 
   it("applies the dark class on html", async () => {

@@ -1,0 +1,30 @@
+---
+description: App shell, chat column, composer, and side panel conventions for clients/web.
+globs: clients/web/src/**/*.{ts,tsx,css}
+alwaysApply: false
+---
+
+# UI layout (clients/web)
+
+Match claude.ai **structure**, not brand. Use Juris-AI name, logo, and copy only.
+
+## Shell
+
+- `h-dvh` / `100dvh` (not `100vh`). Only the message list scrolls.
+- Left sidebar ~260px (`ConversationSidebar`): New chat, search, nav, Recents grouped Today / Yesterday / Previous 7 days / Older, account menu + theme toggle pinned at the bottom.
+- Desktop collapse is an icon rail; persist `juris-sidebar-collapsed`. Below 768px the sidebar is an overlay drawer with a backdrop.
+- Slim `h-12` content header: sidebar toggle when collapsed, conversation title, actions menu. No heavy borders.
+
+## Chat
+
+- Centered column `max-w-chat` (48rem / `max-w-3xl`) for the message list and composer.
+- Assistant: full-width prose, no bubble, markdown + code copy.
+- User: right-aligned, `max-w-[80%]`, `bg-chat-user` / `--hover`-like surface.
+- Composer: `rounded-xl` (~24px), auto-grow textarea (max ~8 rows), circular Send, Stop while generating, Enter sends, Shift+Enter newline, safe-area padding.
+- Starters come from `features/chat/starters`, not hardcoded in the empty state.
+
+## Panel and pages
+
+- Right `SidePanel`: resizable 280–560px on desktop, full-screen sheet on mobile. Citations/approvals/previews go here when opened.
+- Settings / Memory / tables: `max-w-5xl`, same cards and forms as the rest of the product.
+- Hide Documents / Plans / rename when `src/config/features.ts` flags are off.

@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import {
   decideApproval,
+  retryApprovalResume,
   type ApprovalDecisionInput,
 } from "@/features/approvals/api";
 import { conversationKeys } from "@/features/conversations/queries";
@@ -22,7 +23,25 @@ function approvalMetadata(approval: ApprovalDecisionResponse): ApprovalMetadata 
     status: approval.status,
     created_at: approval.created_at,
     expires_at: approval.expires_at,
+    resume_status: approval.resume_status,
   };
+}
+
+function writeApproval(
+  queryClient: ReturnType<typeof useQueryClient>,
+  conversationId: string,
+  metadata: ApprovalMetadata,
+) {
+  queryClient.setQueryData<ConversationApprovalCache>(
+    conversationKeys.approvals(conversationId),
+    (current = {}) => ({
+      ...current,
+      [metadata.approval_id]: metadata,
+    }),
+  );
+  void queryClient.invalidateQueries({
+    queryKey: conversationKeys.history(conversationId),
+  });
 }
 
 export function useApprovalDecision(conversationId: string) {
@@ -31,17 +50,7 @@ export function useApprovalDecision(conversationId: string) {
   return useMutation({
     mutationFn: (input: ApprovalDecisionInput) => decideApproval(input),
     onSuccess: (response) => {
-      const metadata = approvalMetadata(response);
-      queryClient.setQueryData<ConversationApprovalCache>(
-        conversationKeys.approvals(conversationId),
-        (current = {}) => ({
-          ...current,
-          [metadata.approval_id]: metadata,
-        }),
-      );
-      void queryClient.invalidateQueries({
-        queryKey: conversationKeys.history(conversationId),
-      });
+      writeApproval(queryClient, conversationId, approvalMetadata(response));
     },
     onError: (error, input) => {
       if (
@@ -60,6 +69,23 @@ export function useApprovalDecision(conversationId: string) {
           }),
         );
       }
+    },
+  });
+}
+
+export function useApprovalResume(conversationId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      approvalId,
+      force,
+    }: {
+      approvalId: string;
+      force?: boolean;
+    }) => retryApprovalResume(approvalId, force),
+    onSuccess: (response) => {
+      writeApproval(queryClient, conversationId, approvalMetadata(response));
     },
   });
 }

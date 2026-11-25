@@ -7,32 +7,36 @@ import {
   DEFAULT_THEME,
   generateThemeCss,
   parseThemeMode,
+  THEME_BROWSER_COLORS,
   TOKEN_NAMES,
+  lightTokens,
   palettes,
 } from "@/config/theme";
+import { hslChannelsToRgb } from "@/features/theme/contrast";
 
 describe("parseThemeMode", () => {
-  it("defaults to system", () => {
-    expect(parseThemeMode(undefined)).toBe("system");
-    expect(parseThemeMode(null)).toBe("system");
-    expect(parseThemeMode("")).toBe("system");
+  it("defaults to light", () => {
+    expect(parseThemeMode(undefined)).toBe("light");
+    expect(parseThemeMode(null)).toBe("light");
+    expect(parseThemeMode("")).toBe("light");
   });
 
-  it("accepts light, dark, and system", () => {
+  it("accepts only light and dark", () => {
     expect(parseThemeMode("light")).toBe("light");
     expect(parseThemeMode("dark")).toBe("dark");
-    expect(parseThemeMode("system")).toBe("system");
   });
 
   it("falls back on invalid stored values", () => {
-    expect(parseThemeMode("sepia")).toBe("system");
-    expect(parseThemeMode("DARK")).toBe("system");
+    expect(parseThemeMode("system")).toBe("light");
+    expect(parseThemeMode("sepia")).toBe("light");
+    expect(parseThemeMode("DARK")).toBe("light");
+    expect(parseThemeMode("system", "dark")).toBe("dark");
   });
 });
 
 describe("default theme env", () => {
-  it("is a valid mode (system unless NEXT_PUBLIC_DEFAULT_THEME is set)", () => {
-    expect(["light", "dark", "system"]).toContain(DEFAULT_THEME);
+  it("is light or dark", () => {
+    expect(["light", "dark"]).toContain(DEFAULT_THEME);
   });
 });
 
@@ -54,5 +58,11 @@ describe("token palettes", () => {
     const file = readFileSync(cssPath, "utf8");
     const generated = generateThemeCss();
     expect(file).toContain(generated);
+  });
+
+  it("uses pure white for the light background", () => {
+    expect(lightTokens.background).toBe("0 0% 100%");
+    expect(hslChannelsToRgb(lightTokens.background)).toEqual([255, 255, 255]);
+    expect(THEME_BROWSER_COLORS.light.toLowerCase()).toBe("#ffffff");
   });
 });

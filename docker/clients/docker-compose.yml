@@ -21,7 +21,7 @@ services:
       args:
         BACKEND_API_URL: ${BACKEND_API_URL:-http://api:8000/api/v1}
         NEXT_PUBLIC_CHAT_STREAMING: ${NEXT_PUBLIC_CHAT_STREAMING:-true}
-        NEXT_PUBLIC_DEFAULT_THEME: ${NEXT_PUBLIC_DEFAULT_THEME:-system}
+        NEXT_PUBLIC_DEFAULT_THEME: ${NEXT_PUBLIC_DEFAULT_THEME:-light}
     image: juris-ai-web:local
     container_name: juris_ai_web
     restart: unless-stopped
@@ -30,7 +30,7 @@ services:
     environment:
       BACKEND_API_URL: ${BACKEND_API_URL:-http://api:8000/api/v1}
       NEXT_PUBLIC_CHAT_STREAMING: ${NEXT_PUBLIC_CHAT_STREAMING:-true}
-      NEXT_PUBLIC_DEFAULT_THEME: ${NEXT_PUBLIC_DEFAULT_THEME:-system}
+      NEXT_PUBLIC_DEFAULT_THEME: ${NEXT_PUBLIC_DEFAULT_THEME:-light}
       NODE_ENV: production
     healthcheck:
       test:
@@ -58,7 +58,7 @@ services:
     environment:
       BACKEND_API_URL: ${BACKEND_API_URL:-http://api:8000/api/v1}
       NEXT_PUBLIC_CHAT_STREAMING: ${NEXT_PUBLIC_CHAT_STREAMING:-true}
-      NEXT_PUBLIC_DEFAULT_THEME: ${NEXT_PUBLIC_DEFAULT_THEME:-system}
+      NEXT_PUBLIC_DEFAULT_THEME: ${NEXT_PUBLIC_DEFAULT_THEME:-light}
       WATCHPACK_POLLING: "true"
     volumes:
       - ../../clients/web:/app

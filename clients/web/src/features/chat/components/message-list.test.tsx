@@ -2,7 +2,6 @@
 
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { MessageList } from "@/features/chat/components/message-list";
@@ -14,8 +13,7 @@ beforeAll(() => {
 afterEach(cleanup);
 
 describe("MessageList streaming state", () => {
-  it("marks progressive content as a draft and exposes Stop", async () => {
-    const onStop = vi.fn();
+  it("marks progressive content as a draft without a Stop control", () => {
     render(
       <MessageList
         events={[]}
@@ -25,11 +23,9 @@ describe("MessageList streaming state", () => {
           phase: "answering",
           draftContent: "Uncommitted draft content",
         }}
-        streamActive
         answerDetails={{}}
         approvalStates={{}}
         userFiles={{}}
-        onStop={onStop}
         onOpenCitations={vi.fn()}
         onApprovalDecision={vi.fn()}
       />,
@@ -41,8 +37,6 @@ describe("MessageList streaming state", () => {
       screen.getByRole("article", { name: "Juris AI draft response" }),
     ).toHaveAttribute("aria-busy", "true");
     expect(screen.getByText("Uncommitted draft content")).toBeInTheDocument();
-
-    await userEvent.setup().click(screen.getByRole("button", { name: "Stop" }));
-    expect(onStop).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("button", { name: "Stop" })).not.toBeInTheDocument();
   });
 });

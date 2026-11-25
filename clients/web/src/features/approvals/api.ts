@@ -1,20 +1,21 @@
 import { apiFetch, jsonRequest } from "@/lib/api/client";
-import { normalizeConversationEvent } from "@/features/conversations/api";
 import type {
   ApprovalDecision,
   ApprovalDecisionResponse,
+  ApprovalMetadata,
 } from "@/types/api";
 
 export interface ApprovalDecisionInput {
   approvalId: string;
   decision: ApprovalDecision;
   decisionReason?: string;
+  editedPayload?: Record<string, unknown>;
 }
 
 export async function decideApproval(
   input: ApprovalDecisionInput,
 ): Promise<ApprovalDecisionResponse> {
-  const response = await apiFetch<ApprovalDecisionResponse>(
+  return apiFetch<ApprovalDecisionResponse>(
     `/api/backend/approvals/${encodeURIComponent(input.approvalId)}`,
     jsonRequest(
       {
@@ -22,15 +23,28 @@ export async function decideApproval(
         ...(input.decisionReason
           ? { decision_reason: input.decisionReason }
           : {}),
+        ...(input.editedPayload
+          ? { edited_payload: input.editedPayload }
+          : {}),
       },
       { method: "POST" },
     ),
   );
+}
 
-  return {
-    ...response,
-    resumed_event: response.resumed_event
-      ? normalizeConversationEvent(response.resumed_event)
-      : null,
-  };
+export async function retryApprovalResume(
+  approvalId: string,
+  force = false,
+): Promise<ApprovalDecisionResponse> {
+  const params = force ? "?force=true" : "";
+  return apiFetch<ApprovalDecisionResponse>(
+    `/api/backend/approvals/${encodeURIComponent(approvalId)}/resume${params}`,
+    { method: "POST" },
+  );
+}
+
+export function approvalToolPayload(approval: ApprovalMetadata): unknown {
+  if (approval.payload != null) return approval.payload;
+  if (approval.action != null) return approval.action;
+  return null;
 }

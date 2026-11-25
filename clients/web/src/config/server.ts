@@ -1,20 +1,29 @@
 /**
  * Server-only env. Imported from Route Handlers / auth — not from client components.
  */
+import { z } from "zod";
 
 const DEFAULT_BACKEND_API_URL = "http://127.0.0.1:8001/api/v1";
 
+const serverEnvSchema = z.object({
+  BACKEND_API_URL: z
+    .string()
+    .trim()
+    .url()
+    .refine(
+      (value) => value.startsWith("http://") || value.startsWith("https://"),
+      "BACKEND_API_URL must use http or https",
+    )
+    .optional(),
+});
+
 export function getBackendApiUrl(): URL {
-  const configured =
-    process.env.BACKEND_API_URL?.trim() || DEFAULT_BACKEND_API_URL;
+  const parsed = serverEnvSchema.parse({
+    BACKEND_API_URL: process.env.BACKEND_API_URL || undefined,
+  });
+  const configured = parsed.BACKEND_API_URL || DEFAULT_BACKEND_API_URL;
   const normalized = configured.endsWith("/") ? configured : `${configured}/`;
-  const base = new URL(normalized);
-
-  if (base.protocol !== "http:" && base.protocol !== "https:") {
-    throw new Error("BACKEND_API_URL must use http or https");
-  }
-
-  return base;
+  return new URL(normalized);
 }
 
 export function backendApiUrl(path: string): string {

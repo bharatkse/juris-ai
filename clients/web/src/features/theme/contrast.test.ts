@@ -14,6 +14,10 @@ describe("theme contrast (WCAG AA)", () => {
     ).toEqual([]);
   });
 
+  it("uses pure white for the light canvas", () => {
+    expect(palettes.light.tokens.background).toBe("0 0% 100%");
+  });
+
   it("uses a soft dark surface, not pure black", () => {
     const [h, s, l] = palettes.dark.tokens.background
       .split(/\s+/u)

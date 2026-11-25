@@ -1,8 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { BookOpen, Gauge, LogOut } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import Link from "next/link";
+import { Activity, Brain, LogOut } from "lucide-react";
 import { toast } from "sonner";
 
 import { LegalDisclaimer } from "@/components/legal-disclaimer";
@@ -13,7 +14,7 @@ import {
   AlertDescription,
   AlertTitle,
 } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -21,7 +22,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { apiFetch } from "@/lib/api/client";
+import { getBackendHealth } from "@/features/health/api";
 import {
   currentUserQueryKey,
   useCurrentUser,
@@ -31,6 +34,10 @@ export function SettingsContent() {
   const user = useCurrentUser();
   const router = useRouter();
   const queryClient = useQueryClient();
+  const health = useQuery({
+    queryKey: ["health", "backend"],
+    queryFn: ({ signal }) => getBackendHealth(signal),
+  });
   const logout = useMutation({
     mutationFn: () =>
       apiFetch<{ authenticated: boolean }>("/api/auth/logout", {
@@ -45,7 +52,7 @@ export function SettingsContent() {
   });
 
   return (
-    <div className="mx-auto w-full max-w-4xl px-5 py-10 sm:px-8 sm:py-12">
+    <div className="mx-auto w-full max-w-5xl px-5 py-10 sm:px-8 sm:py-12">
       <div className="mb-8">
         <p className="text-xs font-semibold uppercase tracking-[0.12em] text-primary">
           Account
@@ -54,7 +61,8 @@ export function SettingsContent() {
           Settings
         </h1>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          Review your profile, service limits, and current session.
+          Profile, appearance, memory, and API health. Usage limits are
+          enforced on the server; there is no usage read API.
         </p>
       </div>
 
@@ -79,8 +87,7 @@ export function SettingsContent() {
           <CardHeader>
             <CardTitle>Appearance</CardTitle>
             <CardDescription>
-              Light, dark, or match the operating system. Stored only in this
-              browser.
+              Light or dark. Stored only in this browser.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -90,40 +97,69 @@ export function SettingsContent() {
 
         <ProfileForm user={user.data} loading={user.isPending} />
 
-        <div className="grid gap-5 md:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <Gauge className="mb-2 size-5 text-primary" aria-hidden="true" />
-              <CardTitle>Usage</CardTitle>
-              <CardDescription>
-                Current service limits. Remaining usage is not yet API-backed.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
+        <Card>
+          <CardHeader>
+            <Brain className="mb-2 size-5 text-primary" aria-hidden="true" />
+            <CardTitle>Memory</CardTitle>
+            <CardDescription>
+              Account-level memory consent and saved facts.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Link href="/app/memory" className={buttonVariants({ variant: "outline" })}>
+              Open memory
+            </Link>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <Activity className="mb-2 size-5 text-primary" aria-hidden="true" />
+            <CardTitle>Service</CardTitle>
+            <CardDescription>
+              Live status from GET /health. Remaining quota is not exposed by
+              the API.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {health.isPending ? (
+              <Skeleton className="h-16 w-full" />
+            ) : health.error ? (
+              <Alert tone="error">
+                <AlertTitle>Could not reach the API</AlertTitle>
+                <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void health.refetch()}
+                  >
+                    Retry
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            ) : (
               <dl className="space-y-3 text-sm">
                 <div className="flex justify-between gap-4 border-b border-border pb-3">
-                  <dt className="text-muted-foreground">Requests</dt>
-                  <dd className="font-medium">20 / minute</dd>
+                  <dt className="text-muted-foreground">Status</dt>
+                  <dd className="font-medium">{health.data.status}</dd>
                 </div>
-                <div className="flex justify-between gap-4">
-                  <dt className="text-muted-foreground">Tokens</dt>
-                  <dd className="font-medium">200,000 / day</dd>
-                </div>
+                {health.data.service ? (
+                  <div className="flex justify-between gap-4 border-b border-border pb-3">
+                    <dt className="text-muted-foreground">Service</dt>
+                    <dd className="font-medium">{health.data.service}</dd>
+                  </div>
+                ) : null}
+                {health.data.version ? (
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-muted-foreground">Version</dt>
+                    <dd className="font-medium">{health.data.version}</dd>
+                  </div>
+                ) : null}
               </dl>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <BookOpen className="mb-2 size-5 text-primary" aria-hidden="true" />
-              <CardTitle>Document library</CardTitle>
-              <CardDescription>
-                The document library is not available in v1. Attach documents
-                directly to a chat.
-              </CardDescription>
-            </CardHeader>
-          </Card>
-        </div>
+            )}
+          </CardContent>
+        </Card>
 
         <Card>
           <CardHeader>

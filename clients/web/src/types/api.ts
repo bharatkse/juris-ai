@@ -32,6 +32,7 @@ export interface Conversation {
   user_id: string;
   title: string;
   is_active: boolean;
+  memory_disabled: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -52,9 +53,12 @@ export interface ApprovalMetadata {
   agent_action_id?: string;
   requested_by?: string;
   created_at?: string;
+  payload?: Record<string, unknown> | null;
+  action?: Record<string, unknown> | null;
+  resume_status?: string | null;
 }
 
-export type ApprovalDecision = "approve" | "reject";
+export type ApprovalDecision = "approve" | "reject" | "edit";
 
 export interface ApprovalResponse {
   approval_id: string;
@@ -183,4 +187,28 @@ export interface UpdateProfileInput {
   phone_number: string | null;
   date_of_birth: string | null;
   gender: User["gender"];
+}
+
+export interface MemorySettings {
+  enabled: boolean;
+  consent_updated_at?: string | null;
+}
+
+export interface MemoryItem {
+  id: string;
+  kind: string;
+  content: string;
+  status: string;
+  confidence: number;
+  source_conversation_id?: string | null;
+  last_used_at: string;
+  expires_at?: string | null;
+  created_at: string;
+}
+
+export interface HealthStatus {
+  status: string;
+  service?: string;
+  version?: string;
+  environment?: string;
 }

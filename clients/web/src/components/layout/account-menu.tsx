@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, LogOut, Settings } from "lucide-react";
+import { Brain, ChevronDown, LogOut, Settings } from "lucide-react";
 import { toast } from "sonner";
 
+import { ThemeToggle } from "@/features/theme/theme-toggle";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiFetch } from "@/lib/api/client";
 import type { User } from "@/types/api";
@@ -16,10 +17,12 @@ export function AccountMenu({
   user,
   loading = false,
   inverse = false,
+  compact = false,
 }: {
   user?: User;
   loading?: boolean;
   inverse?: boolean;
+  compact?: boolean;
 }) {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -73,13 +76,13 @@ export function AccountMenu({
         >
           {getInitials(user?.first_name, user?.last_name, user?.email)}
         </span>
-        <span className="min-w-0 flex-1 text-left">
+        <span className={cn("min-w-0 flex-1 text-left", compact && "md:hidden")}>
           <span className="block truncate text-sm font-medium">{displayName}</span>
           {user?.email && displayName !== user.email ? (
             <span
               className={cn(
                 "block truncate text-xs",
-                inverse ? "text-sidebar-foreground/55" : "text-muted-foreground",
+                inverse ? "text-sidebar-muted" : "text-muted-foreground",
               )}
             >
               {user.email}
@@ -87,7 +90,10 @@ export function AccountMenu({
           ) : null}
         </span>
         <ChevronDown
-          className="size-4 transition-transform group-open:rotate-180"
+          className={cn(
+            "size-4 transition-transform group-open:rotate-180",
+            compact && "md:hidden",
+          )}
           aria-hidden="true"
         />
       </summary>
@@ -96,10 +102,24 @@ export function AccountMenu({
         className={cn(
           "absolute right-0 z-40 w-52 rounded-md border p-1.5",
           inverse
-            ? "bottom-[calc(100%+8px)] border-sidebar-foreground/15 bg-sidebar text-sidebar-foreground"
+            ? "bottom-[calc(100%+8px)] left-0 right-auto border-sidebar-border bg-surface text-sidebar-foreground md:left-0"
             : "top-[calc(100%+8px)] border-border bg-surface text-foreground",
         )}
       >
+        <Link
+          href="/app/memory"
+          className={cn(
+            "flex items-center gap-2 rounded-sm px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            inverse ? "hover:bg-sidebar-foreground/10" : "hover:bg-muted",
+          )}
+        >
+          <Brain className="size-4" aria-hidden="true" />
+          Memory
+        </Link>
+        <div className="flex items-center justify-between rounded-sm px-2 py-1">
+          <span className="text-sm">Theme</span>
+          <ThemeToggle />
+        </div>
         <Link
           href="/app/settings"
           className={cn(

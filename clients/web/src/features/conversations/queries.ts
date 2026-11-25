@@ -14,7 +14,7 @@ import {
   getConversation,
   listConversationEvents,
   listConversations,
-  renameConversation,
+  setConversationMemoryDisabled,
 } from "@/features/conversations/api";
 import type {
   Conversation,
@@ -82,6 +82,65 @@ export function mergeConversationEvents(
       new Date(left.created_at).getTime() -
       new Date(right.created_at).getTime(),
   );
+}
+
+export type RecencyGroup = "today" | "yesterday" | "week" | "older";
+
+export const RECENCY_LABELS: Record<RecencyGroup, string> = {
+  today: "Today",
+  yesterday: "Yesterday",
+  week: "Previous 7 days",
+  older: "Older",
+};
+
+export const RECENCY_ORDER: RecencyGroup[] = [
+  "today",
+  "yesterday",
+  "week",
+  "older",
+];
+
+function startOfLocalDay(now: number): number {
+  const date = new Date(now);
+  date.setHours(0, 0, 0, 0);
+  return date.getTime();
+}
+
+export function recencyGroup(
+  isoDate: string,
+  now = Date.now(),
+): RecencyGroup {
+  const timestamp = new Date(isoDate).getTime();
+  if (!Number.isFinite(timestamp)) {
+    return "older";
+  }
+  const today = startOfLocalDay(now);
+  const yesterday = today - 24 * 60 * 60 * 1000;
+  const week = today - 7 * 24 * 60 * 60 * 1000;
+  if (timestamp >= today) return "today";
+  if (timestamp >= yesterday) return "yesterday";
+  if (timestamp >= week) return "week";
+  return "older";
+}
+
+export function groupConversationsByRecency(
+  conversations: readonly Conversation[],
+  now = Date.now(),
+): Array<{ group: RecencyGroup; label: string; items: Conversation[] }> {
+  const buckets: Record<RecencyGroup, Conversation[]> = {
+    today: [],
+    yesterday: [],
+    week: [],
+    older: [],
+  };
+  for (const conversation of conversations) {
+    buckets[recencyGroup(conversation.updated_at, now)].push(conversation);
+  }
+  return RECENCY_ORDER.filter((group) => buckets[group].length).map((group) => ({
+    group,
+    label: RECENCY_LABELS[group],
+    items: buckets[group],
+  }));
 }
 
 export function formatRelativeTime(
@@ -202,12 +261,17 @@ export function useCreateConversation() {
   });
 }
 
-export function useRenameConversation() {
+export function useSetConversationMemory() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ id, title }: { id: string; title: string }) =>
-      renameConversation(id, title),
+    mutationFn: ({
+      id,
+      memoryDisabled,
+    }: {
+      id: string;
+      memoryDisabled: boolean;
+    }) => setConversationMemoryDisabled(id, memoryDisabled),
     onSuccess: (conversation) => {
       queryClient.setQueryData(
         conversationKeys.detail(conversation.id),

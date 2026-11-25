@@ -15,29 +15,38 @@ test.describe("theming", () => {
     expect(scheme).toContain("dark");
   });
 
-  test("applies a stored light preference", async ({ page }) => {
+  test("applies a stored light preference with a white canvas", async ({
+    page,
+  }) => {
     await page.addInitScript(() => {
       window.localStorage.setItem("juris-theme", "light");
     });
     await page.goto("/login");
     await expect(page.locator("html")).toHaveClass(/light/);
     await expect(page.locator("html")).not.toHaveClass(/dark/);
+    const background = await page.locator("body").evaluate((el) =>
+      getComputedStyle(el).backgroundColor,
+    );
+    expect(background).toBe("rgb(255, 255, 255)");
   });
 
-  test("follows OS dark when theme is system", async ({ page }) => {
-    await page.emulateMedia({ colorScheme: "dark" });
+  test("migrates a stored system value to light", async ({ page }) => {
     await page.addInitScript(() => {
       window.localStorage.setItem("juris-theme", "system");
     });
     await page.goto("/login");
-    await expect(page.locator("html")).toHaveClass(/dark/);
+    await expect(page.locator("html")).toHaveClass(/light/);
+    const stored = await page.evaluate(() =>
+      window.localStorage.getItem("juris-theme"),
+    );
+    expect(stored).toBe("light");
   });
 
   test("theme toggle is keyboard accessible after mount", async ({ page }) => {
     await page.goto("/");
-    const group = page.getByRole("radiogroup", { name: "Color theme" });
-    await expect(group).toBeVisible();
-    await group.getByRole("radio", { name: "Dark" }).press("Enter");
+    const toggle = page.getByRole("button", { name: /Switch to dark theme/i });
+    await expect(toggle).toBeVisible();
+    await toggle.press("Enter");
     await expect(page.locator("html")).toHaveClass(/dark/);
   });
 });

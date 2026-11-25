@@ -1,13 +1,7 @@
 export const MAX_CHAT_FILES = 5;
-export const MAX_CHAT_FILE_BYTES = 20 * 1024 * 1024;
+export const MAX_CHAT_FILE_BYTES = 10 * 1024 * 1024;
 export const MAX_CHAT_MESSAGE_LENGTH = 10_000;
-export const ALLOWED_CHAT_EXTENSIONS = [
-  "pdf",
-  "docx",
-  "txt",
-  "md",
-  "html",
-] as const;
+export const ALLOWED_CHAT_EXTENSIONS = ["pdf", "docx", "txt", "md"] as const;
 
 export const CHAT_FILE_ACCEPT = ALLOWED_CHAT_EXTENSIONS.map(
   (extension) => `.${extension}`,
@@ -43,13 +37,13 @@ export function addValidatedFiles(
       )
     ) {
       errors.push(
-        `${file.name}: unsupported type. Use PDF, DOCX, TXT, MD, or HTML.`,
+        `${file.name}: unsupported type. Use PDF, DOCX, TXT, or MD.`,
       );
       continue;
     }
 
     if (file.size > MAX_CHAT_FILE_BYTES) {
-      errors.push(`${file.name}: file must be 20 MB or smaller.`);
+      errors.push(`${file.name}: file must be 10 MB or smaller.`);
       continue;
     }
 

@@ -7,12 +7,11 @@ import {
   type DragEvent,
   type FormEvent,
 } from "react";
-import { FileText, Paperclip, Send, X } from "lucide-react";
+import { ArrowUp, FileText, Paperclip, Square, X } from "lucide-react";
 
 import { LegalDisclaimer } from "@/components/legal-disclaimer";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import {
   addValidatedFiles,
   CHAT_FILE_ACCEPT,
@@ -32,6 +31,8 @@ export function Composer({
   resetVersion = 0,
   statusMessage,
   onSend,
+  onStop,
+  centered = false,
 }: {
   initialPrompt?: string;
   expectsFile?: boolean;
@@ -40,6 +41,8 @@ export function Composer({
   resetVersion?: number;
   statusMessage?: string | null;
   onSend: (input: SendMessageInput) => Promise<boolean | void>;
+  onStop?: () => void;
+  centered?: boolean;
 }) {
   const [message, setMessage] = useState(initialPrompt);
   const [files, setFiles] = useState<File[]>([]);
@@ -47,6 +50,7 @@ export function Composer({
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     setMessage(initialPrompt);
@@ -60,15 +64,23 @@ export function Composer({
     }
   }, [resetVersion]);
 
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    const max = 8 * 24;
+    el.style.height = `${Math.min(el.scrollHeight, max)}px`;
+  }, [message]);
+
   function addFiles(incoming: readonly File[]) {
     const result = addValidatedFiles(files, incoming);
     setFiles(result.files);
     setErrors(result.errors);
   }
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (sendBlocked) return;
+  async function submit(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
+    if (sendBlocked || sending) return;
     const messageError = validateChatMessage(message);
     if (messageError) {
       setErrors([messageError]);
@@ -98,10 +110,15 @@ export function Composer({
   }
 
   return (
-    <div className="shrink-0 border-t border-border bg-background/95 px-3 pb-3 pt-3 backdrop-blur sm:px-6 sm:pb-4">
+    <div
+      className={cn(
+        "shrink-0 bg-background px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 sm:px-4",
+        centered && "pt-4",
+      )}
+    >
       <form
         ref={formRef}
-        className="mx-auto max-w-4xl"
+        className="mx-auto w-full max-w-chat"
         onSubmit={submit}
         noValidate
       >
@@ -109,10 +126,10 @@ export function Composer({
           <Alert tone="error" className="mb-2">
             <AlertDescription>
               {errors.map((error) => (
-                  <span className="block" key={error}>
-                    {error}
-                  </span>
-                ))}
+                <span className="block" key={error}>
+                  {error}
+                </span>
+              ))}
             </AlertDescription>
           </Alert>
         ) : statusMessage ? (
@@ -129,8 +146,8 @@ export function Composer({
 
         <div
           className={cn(
-            "rounded-lg border border-border bg-surface p-2 transition-colors focus-within:border-primary focus-within:ring-2 focus-within:ring-ring/15",
-            dragging && "border-primary bg-citation/30 ring-2 ring-ring/20",
+            "rounded-xl border border-border bg-surface p-3 shadow-sm transition-colors duration-fast focus-within:border-primary/50",
+            dragging && "border-primary bg-hover ring-2 ring-ring/20",
           )}
           onDragEnter={(event) => {
             event.preventDefault();
@@ -145,20 +162,18 @@ export function Composer({
           onDrop={handleDrop}
         >
           {files.length ? (
-            <div className="flex flex-wrap gap-2 px-1 pb-2">
+            <div className="flex flex-wrap gap-2 pb-2">
               {files.map((file, index) => (
                 <span
                   key={`${file.name}-${file.size}-${file.lastModified}`}
-                  className="inline-flex max-w-full items-center gap-2 rounded-md border border-border bg-background px-2.5 py-1.5 text-xs text-muted-foreground"
+                  className="inline-flex max-w-full items-center gap-2 rounded-md border border-border bg-hover px-2.5 py-1.5 text-xs text-muted-foreground"
                 >
                   <FileText className="size-3.5 shrink-0 text-primary" aria-hidden="true" />
                   <span className="max-w-48 truncate">{file.name}</span>
-                  <span className="shrink-0 text-muted-foreground">
-                    {formatFileSize(file.size)}
-                  </span>
+                  <span className="shrink-0">{formatFileSize(file.size)}</span>
                   <button
                     type="button"
-                    className="rounded-sm p-0.5 text-muted-foreground outline-none hover:bg-muted/60 hover:text-danger focus-visible:ring-2 focus-visible:ring-ring"
+                    className="rounded-sm p-0.5 text-muted-foreground outline-none hover:bg-muted hover:text-danger focus-visible:ring-2 focus-visible:ring-ring"
                     aria-label={`Remove ${file.name}`}
                     disabled={sending}
                     onClick={() =>
@@ -179,26 +194,27 @@ export function Composer({
               Drop files to attach
             </div>
           ) : (
-            <Textarea
+            <textarea
+              ref={textareaRef}
               value={message}
               onChange={(event) => setMessage(event.target.value)}
               onKeyDown={(event) => {
-                if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                if (event.key === "Enter" && !event.shiftKey) {
                   event.preventDefault();
-                  formRef.current?.requestSubmit();
+                  void submit();
                 }
               }}
               maxLength={MAX_CHAT_MESSAGE_LENGTH}
-              rows={2}
+              rows={1}
               disabled={sending}
-              className="min-h-[72px] resize-none border-0 bg-transparent px-2 py-2 focus-visible:ring-0"
+              className="max-h-[192px] min-h-[44px] w-full resize-none overflow-y-auto bg-transparent px-1 py-2 text-sm leading-6 text-foreground outline-none placeholder:text-muted-foreground"
               placeholder="Ask a legal question or attach a contract…"
               aria-label="Legal question"
             />
           )}
 
-          <div className="flex items-center justify-between gap-3 px-1 pb-1">
-            <div className="flex min-w-0 items-center gap-2">
+          <div className="flex items-center justify-between gap-3 pt-1">
+            <div className="flex min-w-0 items-center gap-1">
               <input
                 ref={inputRef}
                 id="composer-files"
@@ -216,36 +232,40 @@ export function Composer({
               <Button
                 type="button"
                 variant="ghost"
-                size="sm"
+                size="icon"
+                className="size-8"
                 disabled={sending || files.length >= MAX_CHAT_FILES}
                 aria-label="Attach files"
                 onClick={() => inputRef.current?.click()}
               >
                 <Paperclip className="size-4" aria-hidden="true" />
-                <span className="hidden sm:inline">Attach</span>
               </Button>
-              <span className="truncate text-[11px] text-muted-foreground">
-                {message.length.toLocaleString()} /{" "}
-                {MAX_CHAT_MESSAGE_LENGTH.toLocaleString()}
-              </span>
             </div>
-            <Button
-              type="submit"
-              size="sm"
-              loading={sending}
-              disabled={!message.trim() || sendBlocked}
-            >
-              <Send className="size-4" aria-hidden="true" />
-              {sending ? "Working…" : "Send"}
-            </Button>
+            {sending && onStop ? (
+              <Button
+                type="button"
+                size="icon"
+                className="size-8 rounded-full"
+                aria-label="Stop"
+                onClick={onStop}
+              >
+                <Square className="size-3 fill-current" aria-hidden="true" />
+              </Button>
+            ) : (
+              <Button
+                type="submit"
+                size="icon"
+                className="size-8 rounded-full"
+                loading={sending}
+                disabled={!message.trim() || sendBlocked}
+                aria-label="Send"
+              >
+                <ArrowUp className="size-4" aria-hidden="true" />
+              </Button>
+            )}
           </div>
         </div>
-        <div className="mt-2 flex flex-col items-center justify-between gap-1 sm:flex-row">
-          <p className="text-[11px] text-muted-foreground">
-            Cmd/Ctrl + Enter to send · PDF, DOCX, TXT, MD, HTML · 20 MB each
-          </p>
-          <LegalDisclaimer className="max-w-xl text-center sm:text-right" />
-        </div>
+        <LegalDisclaimer className="mx-auto mt-2 max-w-xl justify-center text-center" />
       </form>
     </div>
   );

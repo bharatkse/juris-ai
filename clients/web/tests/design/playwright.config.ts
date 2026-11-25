@@ -29,16 +29,20 @@ export default defineConfig({
   },
   projects: [
     {
-      name: "design-desktop",
-      use: { viewport: { width: 1440, height: 900 } },
-    },
-    {
-      name: "design-mobile",
+      name: "design-360",
       use: {
-        viewport: { width: 390, height: 844 },
+        viewport: { width: 360, height: 800 },
         isMobile: true,
         hasTouch: true,
       },
+    },
+    {
+      name: "design-768",
+      use: { viewport: { width: 768, height: 1024 } },
+    },
+    {
+      name: "design-1440",
+      use: { viewport: { width: 1440, height: 900 } },
     },
   ],
   webServer: {

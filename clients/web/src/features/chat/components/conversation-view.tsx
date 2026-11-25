@@ -8,10 +8,14 @@ import { ArrowLeft, MessageSquareOff, RefreshCw } from "lucide-react";
 import { Composer } from "@/features/chat/components/composer";
 import { MessageList } from "@/features/chat/components/message-list";
 import { ChatErrorBanner } from "@/features/chat/components/quota-banner";
+import { SidePanel } from "@/components/layout/side-panel";
 import { CitationDrawer } from "@/features/citations/components/citation-drawer";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useApprovalDecision } from "@/features/approvals/queries";
+import {
+  useApprovalDecision,
+  useApprovalResume,
+} from "@/features/approvals/queries";
 import { useSendMessage, type SendMessageInput } from "@/features/chat/queries";
 import {
   flattenConversationEvents,
@@ -109,6 +113,7 @@ export function ConversationView({
   const approvalStates = useConversationApprovalStates(conversationId);
   const send = useSendMessage(conversationId);
   const approvalDecision = useApprovalDecision(conversationId);
+  const approvalResume = useApprovalResume(conversationId);
   const [userFiles, setUserFiles] = useState<Record<string, File[]>>({});
   const [recentEvents, setRecentEvents] = useState<ConversationEvent[]>([]);
   const [citationPanel, setCitationPanel] =
@@ -256,21 +261,30 @@ export function ConversationView({
   async function decide(
     approvalId: string,
     decision: ApprovalDecision,
-    reason?: string,
+    options?: {
+      reason?: string;
+      editedPayload?: Record<string, unknown>;
+    },
   ) {
     try {
-      const response = await approvalDecision.mutateAsync({
+      await approvalDecision.mutateAsync({
         approvalId,
         decision,
-        decisionReason: reason,
+        decisionReason: options?.reason,
+        editedPayload: options?.editedPayload,
       });
-      if (response.resumed_event) {
-        setRecentEvents((current) =>
-          mergeConversationEvents(current, [response.resumed_event as ConversationEvent]),
-        );
-      }
+      void history.refetch();
     } catch {
       // The inline approval card renders the normalized mutation error.
+    }
+  }
+
+  async function resumeApproval(approvalId: string, force?: boolean) {
+    try {
+      await approvalResume.mutateAsync({ approvalId, force });
+      void history.refetch();
+    } catch {
+      // Card shows the mutation error via approvalError when ids match.
     }
   }
 
@@ -281,13 +295,14 @@ export function ConversationView({
           events={events}
           pending={pending}
           streamProgress={send.streamProgress}
-          streamActive={send.streamActive}
           answerDetails={answerDetails.data}
           approvalStates={approvalStates.data}
           approvalPendingId={
             approvalDecision.isPending
               ? approvalDecision.variables.approvalId
-              : undefined
+              : approvalResume.isPending
+                ? approvalResume.variables.approvalId
+                : undefined
           }
           approvalError={approvalError}
           selectedCitation={
@@ -302,13 +317,13 @@ export function ConversationView({
           hasMore={history.hasNextPage}
           loadingMore={history.isFetchingNextPage}
           onLoadMore={() => history.fetchNextPage()}
-          onStop={send.stop}
           onOpenCitations={openCitations}
           onApprovalDecision={decide}
+          onApprovalResume={resumeApproval}
         />
         {send.error instanceof ApiError && !send.isPending ? (
-          <div className="shrink-0 bg-background px-3 pt-2 sm:px-6">
-            <div className="mx-auto max-w-4xl">
+          <div className="shrink-0 bg-background px-3 pt-2 sm:px-4">
+            <div className="mx-auto max-w-chat">
               <ChatErrorBanner
                 error={send.error}
                 retrying={send.isPending}
@@ -328,21 +343,29 @@ export function ConversationView({
           resetVersion={composerResetVersion}
           statusMessage={cancelledNotice}
           onSend={sendMessage}
+          onStop={send.stop}
         />
       </div>
-      {citationPanel ? (
-        <CitationDrawer
-          citations={citationPanel.citations}
-          sources={citationPanel.sources}
-          selectedIndex={citationPanel.selectedIndex}
-          onSelect={(selectedIndex) =>
-            setCitationPanel((current) =>
-              current ? { ...current, selectedIndex } : current,
-            )
-          }
-          onClose={closeCitations}
-        />
-      ) : null}
+      <SidePanel
+        open={Boolean(citationPanel)}
+        title="Sources"
+        onClose={closeCitations}
+      >
+        {citationPanel ? (
+          <CitationDrawer
+            citations={citationPanel.citations}
+            sources={citationPanel.sources}
+            selectedIndex={citationPanel.selectedIndex}
+            onSelect={(selectedIndex) =>
+              setCitationPanel((current) =>
+                current ? { ...current, selectedIndex } : current,
+              )
+            }
+            onClose={closeCitations}
+            embedded
+          />
+        ) : null}
+      </SidePanel>
     </div>
   );
 }

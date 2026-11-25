@@ -13,7 +13,7 @@ const assurances = [
 
 export default function AuthLayout({ children }: { children: ReactNode }) {
   return (
-    <div className="grid min-h-screen bg-background lg:grid-cols-[minmax(360px,0.82fr)_1.18fr]">
+    <div className="grid min-h-dvh bg-background lg:grid-cols-[minmax(360px,0.82fr)_1.18fr]">
       <aside className="hidden flex-col justify-between bg-sidebar p-10 text-sidebar-foreground lg:flex xl:p-14">
         <Link href="/" aria-label="Juris AI home">
           <Logo inverse />
@@ -45,7 +45,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
 
       <main
         id="main-content"
-        className="flex min-h-screen items-center justify-center px-5 py-10 sm:px-8"
+        className="flex min-h-dvh items-center justify-center px-5 py-10 sm:px-8"
       >
         <div className="w-full max-w-[430px]">
           <Link
