@@ -1,0 +1,56 @@
+{
+  "fileName": "Juris AI — Web v1",
+  "version": "1.0.0",
+  "pages": [
+    "00 Cover",
+    "01 Foundation",
+    "02 Components",
+    "03 Screens / Desktop",
+    "04 Screens / Mobile",
+    "05 Prototype",
+    "06 Do not design"
+  ],
+  "desktop": {
+    "width": 1440,
+    "height": 900,
+    "frames": [
+      { "name": "D00 Cover", "route": null, "state": "design-file cover" },
+      { "name": "D01 Landing", "route": "/", "state": "default", "reference": "desktop-landing.png" },
+      { "name": "D02 Login", "route": "/login", "state": "default", "reference": "desktop-login.png" },
+      { "name": "D02a Login / loading", "route": "/login", "state": "loading" },
+      { "name": "D02b Login / error", "route": "/login", "state": "invalid credentials" },
+      { "name": "D02c Login / inactive", "route": "/login", "state": "inactive account" },
+      { "name": "D03 Register", "route": "/register", "state": "default", "reference": "desktop-register.png" },
+      { "name": "D03b Register / error", "route": "/register", "state": "existing account" },
+      { "name": "D04 App / empty", "route": "/app", "state": "empty", "reference": "desktop-empty-app.png" },
+      { "name": "D05 App / sidebar populated", "route": "/app", "state": "conversation list populated" },
+      { "name": "D06 App / thread", "route": "/app/c/{id}", "state": "answer", "reference": "desktop-thread.png" },
+      { "name": "D07 App / working", "route": "/app/c/{id}", "state": "working" },
+      { "name": "D08 App / with files", "route": "/app/c/{id}", "state": "file review" },
+      { "name": "D09 App / citations open", "route": "/app/c/{id}", "state": "citation drawer", "reference": "desktop-citations-open.png" },
+      { "name": "D10 App / HITL waiting", "route": "/app/c/{id}", "state": "approval waiting", "reference": "desktop-hitl-waiting.png" },
+      { "name": "D10b App / HITL approved", "route": "/app/c/{id}", "state": "approval approved" },
+      { "name": "D10c App / HITL rejected", "route": "/app/c/{id}", "state": "approval rejected" },
+      { "name": "D10d App / HITL expired", "route": "/app/c/{id}", "state": "approval expired" },
+      { "name": "D11 App / quota", "route": "/app/c/{id}", "state": "rate limit and token quota", "reference": "desktop-quota.png" },
+      { "name": "D12 App / list error", "route": "/app", "state": "conversation list error" },
+      { "name": "D13 App / thread 404", "route": "/app/c/{id}", "state": "not found" },
+      { "name": "D14 Settings", "route": "/app/settings", "state": "default", "reference": "desktop-settings.png" },
+      { "name": "D15 Modal / archive", "route": "/app", "state": "archive confirmation" },
+      { "name": "D16 Toast examples", "route": "/app/c/{id}", "state": "success and error toasts" }
+    ]
+  },
+  "mobile": {
+    "width": 390,
+    "height": 844,
+    "frames": [
+      { "name": "M02 Login", "route": "/login", "state": "default", "reference": "mobile-login.png" },
+      { "name": "M03 Register", "route": "/register", "state": "default", "reference": "mobile-register.png" },
+      { "name": "M04 Empty", "route": "/app", "state": "empty", "reference": "mobile-empty-app.png" },
+      { "name": "M06 Thread", "route": "/app/c/{id}", "state": "answer", "reference": "mobile-thread.png" },
+      { "name": "M09 Citations", "route": "/app/c/{id}", "state": "70 percent bottom sheet", "reference": "mobile-citations-open.png" },
+      { "name": "M10 HITL", "route": "/app/c/{id}", "state": "approval waiting", "reference": "mobile-hitl-waiting.png" },
+      { "name": "M14 Settings", "route": "/app/settings", "state": "single column", "reference": "mobile-settings.png" }
+    ]
+  }
+}

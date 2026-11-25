@@ -1,0 +1,15 @@
+---
+description: Pytest layout, markers, fixtures, and real-artifact tests vs mocks.
+globs: server/tests/**/*.py,tests/**/*.py
+alwaysApply: false
+---
+
+# Testing
+
+Layout under `server/tests/`: `unit/` (no I/O), `smoke/` (real Postgres/Redis, legal PDFs under `tests/datasets/rag/raw_datasets/`), `e2e/` (real app; `hermetic_llm` stubs the judge and fails other LLM calls). Repo-root: `tests/` via `make test-root`. Markers auto-applied from path (`server/tests/conftest.py`).
+
+Run **make**, not raw pytest: `make test-unit TARGET=agentic/tools`, `make test-e2e TARGET=test_hitl_approval_flow.py`, `make test-smoke`, `make test-path TARGET=...`. `TEST_ENV` points hosts at localhost.
+
+Fixtures/builders: `tests/unit/fixtures/`, `tests/builders/`. Factory-boy in unit factories. asyncio_mode auto, function loop scope. LangSmith env forced off.
+
+**Prefer real artifacts** for RAG/chunker/HITL: sample PDFs (`sample_data/acts/`, `raw_datasets/`), real interrupt/resume against the Postgres checkpointer. Mocks are for LLM/MCP/network. New `params_model` must match `execute()` (`registry/test_tool_registry.py`). Public routes go in `tests/unit/api/v1/test_routes.py::PUBLIC_ROUTES`.

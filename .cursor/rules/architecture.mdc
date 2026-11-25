@@ -1,0 +1,23 @@
+---
+description: Freeze layering, composition root, and single sources of truth before writing code.
+globs: server/src/wiring/**/*.py,server/src/agentic/orchestration/**/*.py,server/src/agentic/execution/**/*.py,server/src/agentic/registry/**/*.py
+alwaysApply: false
+---
+
+# Architecture
+
+Do not add a second pattern. Read the layer `CLAUDE.md` before crossing packages.
+
+**Composition**: build once in `wiring/composition.py` (`create_ai_orchestrator`), store on `app.state`, read from `api/dependencies/`. Factories in `wiring/factories/`. Never construct orchestrator/tools/agents per request.
+
+**Single sources of truth**
+
+- User RBAC: `application/authorization/rbac/` (`RBACService` + `RBACPolicy` + `DatabaseRolePermissionProvider`). No second resolver.
+- Agent tool grants: `agent_policies` table via `DatabaseAgentPolicyProvider`; seeds in `wiring/factories/agent_policies.py` (rewritten every startup).
+- Approval need: `ApprovalLifecyclePolicy` (`SEND` only). Last check: `ApprovalRecordVerifier`.
+- Gated tool names: `agentic/tools/constants.py` `GATED_TOOLS`.
+- Upload types: `core.constants.SUPPORTED_UPLOAD_CONTENT_TYPES`.
+
+**`execution/`** compiles `ExecutionPlanDTO` into a LangGraph graph (`graph/builder.py`). Concurrency is `depends_on` only; `mode` is telemetry. Do not put domain reasoning, tool policy, or HITL `interrupt()` here — those live in `agents/runtime/`.
+
+**Two `RequestContext` types**: `application.context.request.RequestContext` (ContextVar, ACLs) vs `agentic.orchestration.schemas.context.RequestContext` (Pydantic, planning). Do not merge or import one as the other.

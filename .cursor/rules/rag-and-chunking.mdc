@@ -1,0 +1,15 @@
+---
+description: Hybrid RAG (vector+keyword RRF+rerank), TextChunker IndiaCode footnotes, retrieval scoping.
+globs: server/src/rag/**/*.py
+alwaysApply: false
+---
+
+# RAG and chunking
+
+**Retrieve**: `HybridRetriever` — embed → pgvector + tsvector in parallel → RRF (`DEFAULT_RRF_K=60`) → cross-encoder rerank. Degrade, don't fail: `full` / `keyword_only` / `vector_only` / `no_rerank` (`hybrid_retriever.py`). Never call an LLM here.
+
+**Scope (actual code)**: the legal corpus is **shared** (`RetrieverTool` has no ACL / no `conversation_id` filter). Per-user uploads use `LibraryLookupTool` + `RequestContext.allowed_library_ids`. `conversation_id` is on the ContextVar for the request, not a retrieval predicate. **TODO: verify** any future tenant/conversation filter — do not invent `conversation_id` scoping.
+
+**Chunker** (`ingestion/chunker.py` `TextChunker`): instance holds config only; per-doc state is `_ChunkState` inside `chunk()`. IndiaCode/Gazette: `_FOOTNOTE_VOCABULARY` (`Subs.`, `Ins.`, `Omitted`, `w.e.f.`, …); `_OMITTED_SECTION_HEADER` (`^\d+[A-Za-z]?\.\s*\[`) so omitted *sections* are not stripped as footnotes; `footnote_carry` across blocks for wrapped notes. Pipeline: parse → sanitize → validate → chunk (`ingestion/pipeline.py`).
+
+Provenance: keep `metadata["title"]`; `url` is unset (local PDFs only). Debug order: chunk boundaries → embeddings → RRF → rerank.

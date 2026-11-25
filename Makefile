@@ -140,6 +140,10 @@ DOCKER_COMPOSE := docker compose --env-file server/.env
 SERVER_COMPOSE        := $(DOCKER_COMPOSE) -f docker/server/docker-compose.yml
 OBSERVABILITY_COMPOSE := $(DOCKER_COMPOSE) -f docker/observability/docker-compose.yml
 OLLAMA_COMPOSE        := $(DOCKER_COMPOSE) -f docker/development/docker-compose-llm.yml
+# Do not pass server/.env here (DB secrets). Web env is compose defaults / WEB_PORT.
+CLIENTS_COMPOSE       := docker compose -f docker/clients/docker-compose.yml
+WEB_DIR               := $(PROJECT_ROOT)/clients/web
+WEB_IMAGE             := juris-ai-web:local
 
 # Compose service name (not container name) of the API.
 API_SERVICE := api
@@ -807,6 +811,89 @@ dev: ## Post-install dev steps (DB role, model pull, migrations, deploy) after s
 	@$(MAKE) llm-pull
 	@$(MAKE) alembic-upgrade
 	@$(MAKE) dev-deploy
+
+# ============================================================================
+## Web client (clients/web)
+# ============================================================================
+# Next.js 15 App Router. Production image joins juris_ai_network and calls
+# FastAPI as http://api:8000/api/v1 — start the server stack first.
+# ============================================================================
+
+.PHONY: web-install web-dev web-lint web-typecheck web-test web-test-theme \
+	web-e2e web-design-capture web-build web-docker-build web-up web-up-dev \
+	web-down web-logs web-restart web-shell web-clean web-ci
+
+web-install: ## Install clients/web npm dependencies from the lockfile
+	@echo '$(CYAN)Installing web dependencies...$(RESET)'
+	@cd $(WEB_DIR) && npm ci
+	@echo '$(GREEN)Web dependencies installed$(RESET)'
+
+web-dev: ## Run the Next.js dev server on :3100
+	@cd $(WEB_DIR) && npm run dev
+
+web-lint: ## ESLint clients/web (max-warnings=0)
+	@cd $(WEB_DIR) && npm run lint
+
+web-typecheck: ## TypeScript check clients/web
+	@cd $(WEB_DIR) && npm run typecheck
+
+web-test: ## Vitest unit tests for clients/web
+	@cd $(WEB_DIR) && npm test
+
+web-test-theme: ## Theme palettes, contrast, storage, and provider tests
+	@cd $(WEB_DIR) && npm test -- src/config/theme.test.ts src/features/theme
+
+web-e2e: ## Playwright e2e (mocked BFF; config in tests/e2e/)
+	@cd $(WEB_DIR) && npm run e2e
+
+web-design-capture: ## Playwright design reference PNGs (tests/design/)
+	@cd $(WEB_DIR) && npm run design:capture
+
+web-build: ## Production Next.js build (standalone)
+	@cd $(WEB_DIR) && npm run build
+
+web-docker-build: ## Build the web image via docker/clients/docker-compose.yml
+	@echo '$(CYAN)Building web image...$(RESET)'
+	@$(CLIENTS_COMPOSE) build web
+	@echo '$(GREEN)Web image built$(RESET)'
+
+web-up: ## Build and run the production web container in the background
+	@echo '$(CYAN)Starting web (production)...$(RESET)'
+	@$(CLIENTS_COMPOSE) up -d --build web
+	@echo '$(GREEN)Web is up at http://127.0.0.1:$(or $(WEB_PORT),3100)$(RESET)'
+
+web-up-dev: ## Run web with the Compose dev profile (bind-mount, hot reload)
+	@echo '$(CYAN)Starting web (dev profile)...$(RESET)'
+	@$(CLIENTS_COMPOSE) --profile dev up -d --build web-dev
+	@echo '$(GREEN)Web dev is up at http://127.0.0.1:$(or $(WEB_PORT),3100)$(RESET)'
+
+web-down: ## Stop web Compose services
+	@$(CLIENTS_COMPOSE) --profile dev down --remove-orphans
+
+web-logs: ## Tail web container logs
+	@$(CLIENTS_COMPOSE) logs -f web
+
+web-restart: ## Restart the production web container
+	@$(CLIENTS_COMPOSE) restart web
+
+web-shell: ## Shell into the production web container
+	@$(CLIENTS_COMPOSE) exec web sh
+
+web-clean: ## Remove web build output, node_modules, and the local image
+	@echo '$(CYAN)Cleaning web artifacts...$(RESET)'
+	@rm -rf $(WEB_DIR)/node_modules $(WEB_DIR)/.next $(WEB_DIR)/coverage \
+	  $(WEB_DIR)/playwright-report $(WEB_DIR)/test-results
+	@docker image rm $(WEB_IMAGE) >/dev/null 2>&1 || true
+	@echo '$(GREEN)Web artifacts removed$(RESET)'
+
+web-ci: ## Lint, typecheck, test, and build clients/web (pre-PR)
+	@echo '$(CYAN)Running web CI...$(RESET)'
+	@$(MAKE) web-lint
+	@$(MAKE) web-typecheck
+	@$(MAKE) web-test
+	@$(MAKE) web-test-theme
+	@$(MAKE) web-build
+	@echo '$(GREEN)Web CI passed$(RESET)'
 
 # ===
 # Utilities

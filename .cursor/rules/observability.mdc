@@ -1,0 +1,15 @@
+---
+description: OpenTelemetry metrics/spans, LangSmith standalone SDK, LangChain banned on the runtime path.
+globs: server/src/adapters/observability/**/*.py,server/src/adapters/clients/llm/**/*.py,server/src/config/llm.py,server/src/rag/evaluation/ragas_llm_adapter.py
+alwaysApply: false
+---
+
+# Observability
+
+**LangChain is banned** on the serving path (agents, tools, planner, API). Use LangGraph, Groq/Ollama SDKs, and `langsmith` directly (`adapters/observability/langsmith.py` `configure_langsmith()`). Do not add `langchain` / `langchain_community` runtime deps.
+
+**Exception**: `rag/evaluation/ragas_llm_adapter.py` imports `langchain_core` because ragas 0.4 still does. Keep that adapter eval-only; do not leak those types into `agentic/` or `api/`.
+
+OTel: `adapters/observability/telemetry.py`, `metrics.py` (`juris_ai_*` counters/histograms), `tracing.span()`. **TODO: verify** GenAI semantic conventions (`gen_ai.*`) — current spans use app names (`juris-agentic.application`) and custom attributes, not the GenAI spec. Do not log prompts/completions into spans.
+
+LangSmith is configured via env at startup (`LANGSMITH_TRACING`, key, project). Tests disable it. OTel (Prometheus/Tempo/Grafana) and LangSmith are separate on purpose (`docs/server/observability.md`).

@@ -1,0 +1,10 @@
+{
+  "extends": ["next/core-web-vitals", "next/typescript", "prettier"],
+  "ignorePatterns": [
+    ".next/",
+    "coverage/",
+    "next-env.d.ts",
+    "playwright-report/",
+    "tests/design/reference/"
+  ]
+}
