@@ -11,8 +11,10 @@ Match claude.ai **structure**, not brand. Use Juris-AI name, logo, and copy only
 ## Shell
 
 - `h-dvh` / `100dvh` (not `100vh`). Only the message list scrolls.
-- Left sidebar ~260px (`ConversationSidebar`): New chat, search, nav, Recents grouped Today / Yesterday / Previous 7 days / Older, account menu + theme toggle pinned at the bottom.
-- Desktop collapse is an icon rail; persist `juris-sidebar-collapsed`. Below 768px the sidebar is an overlay drawer with a backdrop.
+- Left sidebar ~260px (`ConversationSidebar`) is **work navigation only**: New chat, Search, Documents, Plans, Pinned, Projects, Recents (Today / Yesterday / Previous 7 days / Older). Configuration pages (Settings, Profile, Appearance, Memory, Integrations, Permissions, Billing, Admin, Help) must not appear in the sidebar.
+- The user **profile menu** is pinned at the bottom of the sidebar (avatar + name). It is the single entry to Settings, Profile, Memory, Appearance, Integrations, Help, Admin (role-gated), and Sign out. Collapsed rail shows only the avatar button.
+- All sidebar, settings, and popover rows use `NavItem` / `MenuItem` from `components/layout/nav-item.tsx` and `menu-item.tsx`. Icons come only from `lucide-react` via `src/config/navigation.ts` (`ICON_STROKE` 1.75, 18px sidebar / 16px menus, 20px icon slot). Do not scatter one-off row markup.
+- Desktop collapse is an icon rail; persist `juris-sidebar-collapsed`. Below 768px the sidebar is an overlay drawer with a backdrop, focus trap, and Esc to close.
 - Slim `h-12` content header: sidebar toggle when collapsed, conversation title, actions menu. No heavy borders.
 
 ## Chat
@@ -26,5 +28,5 @@ Match claude.ai **structure**, not brand. Use Juris-AI name, logo, and copy only
 ## Panel and pages
 
 - Right `SidePanel`: resizable 280–560px on desktop, full-screen sheet on mobile. Citations/approvals/previews go here when opened.
-- Settings / Memory / tables: `max-w-5xl`, same cards and forms as the rest of the product.
-- Hide Documents / Plans / rename when `src/config/features.ts` flags are off.
+- Settings live under `/settings/*` with a two-column shell (`SettingsNav` ~240px, content `max-w-3xl`). The main app sidebar is hidden on settings pages.
+- Documents, Projects, Pinned, and Memory UIs ship against a repository interface even when FastAPI has no route yet (see `features.mdc`).

@@ -29,6 +29,14 @@ const conversation = {
   updated_at: "2026-09-15T10:00:00Z",
 };
 
+const longConversation = {
+  ...conversation,
+  id: "design-long-thread",
+  title:
+    "Whether a delayed departmental inquiry under Article 311 can proceed after superannuation",
+  updated_at: "2026-09-15T09:30:00Z",
+};
+
 const userEvent = {
   id: "design-user-event",
   conversation_id: conversation.id,
@@ -120,11 +128,11 @@ async function fulfillEnvelope(route: Route, data: unknown) {
 
 function conversationPage() {
   return {
-    items: [conversation],
+    items: [conversation, longConversation],
     pagination: {
       offset: 0,
       limit: 20,
-      total: 1,
+      total: 2,
       has_more: false,
     },
   };
@@ -174,6 +182,14 @@ async function installMocks(
     }
     if (backendPath === `/conversations/${conversation.id}`) {
       await fulfillEnvelope(route, conversation);
+      return;
+    }
+    if (backendPath === `/conversations/${longConversation.id}`) {
+      await fulfillEnvelope(route, longConversation);
+      return;
+    }
+    if (backendPath === `/conversations/${longConversation.id}/messages`) {
+      await fulfillEnvelope(route, eventPage([]));
       return;
     }
     if (backendPath === `/conversations/${conversation.id}/messages`) {
@@ -312,11 +328,32 @@ test("capture versioned design references", async ({ page }, testInfo) => {
       expect(background).toBe("rgb(255, 255, 255)");
     }
     await capture(page, `${prefix}-${theme}-chat-empty.png`);
+    await capture(page, `${prefix}-${theme}-sidebar-expanded.png`);
+
+    if (!wide) {
+      await page.getByRole("button", { name: "Open sidebar" }).click();
+      await expect(
+        page.getByRole("complementary", { name: "Workspace navigation" }),
+      ).toBeVisible();
+      await capture(page, `${prefix}-${theme}-sidebar-drawer.png`);
+      await page.getByRole("button", { name: "Close sidebar" }).click();
+    }
 
     scenario.current = "thread";
     await page.goto(`/app/c/${conversation.id}`);
     await expect(page.getByLabel("Juris AI response")).toBeVisible();
     await capture(page, `${prefix}-${theme}-chat-messages.png`);
+    if (!wide) {
+      await page.getByRole("button", { name: "Open sidebar" }).click();
+    }
+    await page
+      .getByRole("button", {
+        name: /Actions for Whether a delayed departmental inquiry/u,
+      })
+      .click();
+    await expect(page.getByRole("menu")).toBeVisible();
+    await capture(page, `${prefix}-${theme}-sidebar-row-menu.png`);
+    await page.keyboard.press("Escape");
 
     if (wide) {
       await page.getByRole("button", { name: "Collapse sidebar" }).click();
@@ -337,15 +374,24 @@ test("capture versioned design references", async ({ page }, testInfo) => {
       .getByRole("button", { name: "Close panel" })
       .click();
 
-    await page.goto("/app/settings");
-    await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+    await page.goto("/settings/profile");
+    await expect(page.getByRole("heading", { name: "Profile" })).toBeVisible();
     await capture(page, `${prefix}-${theme}-settings.png`);
 
-    await page.goto("/app/memory");
+    await page.goto("/settings/memory");
     await expect(
       page.getByRole("heading", { name: "Memory", exact: true }),
     ).toBeVisible();
-    await capture(page, `${prefix}-${theme}-documents.png`);
+    await capture(page, `${prefix}-${theme}-memory.png`);
+
+    await page.goto("/projects");
+    await expect(page.getByRole("heading", { name: "Projects" })).toBeVisible();
+    await capture(page, `${prefix}-${theme}-projects.png`);
+
+    await page.goto("/app");
+    await page.getByRole("button", { name: /Amit Vishvakarma/iu }).click();
+    await expect(page.getByRole("menu", { name: "Account" })).toBeVisible();
+    await capture(page, `${prefix}-${theme}-profile-menu.png`);
   }
 
   scenario.current = "hitl";

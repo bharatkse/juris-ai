@@ -1,77 +1,139 @@
 "use client";
 
-import {
-  type InfiniteData,
-  useInfiniteQuery,
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import {
-  deleteMemory,
-  getMemorySettings,
-  listMemories,
-  updateMemorySettings,
-} from "@/features/memory/api";
-import type { MemoryItem, MemorySettings, Paginated } from "@/types/api";
-
-export const MEMORY_PAGE_SIZE = 20;
+import { useCurrentUser } from "@/features/auth/use-current-user";
+import { getMemoryRepository } from "@/features/memory/repository";
+import type {
+  MemoryDraft,
+  MemoryListQuery,
+  MemoryRecord,
+} from "@/features/memory/types";
+import type { MemorySettings } from "@/types/api";
 
 export const memoryKeys = {
   all: ["memory"] as const,
   settings: () => [...memoryKeys.all, "settings"] as const,
-  list: () => [...memoryKeys.all, "items"] as const,
+  list: (query?: MemoryListQuery) =>
+    [...memoryKeys.all, "items", query ?? {}] as const,
+  detail: (id: string) => [...memoryKeys.all, "item", id] as const,
 };
 
-export function flattenMemories(
-  data?: InfiniteData<Paginated<MemoryItem>, unknown>,
-): MemoryItem[] {
-  return data?.pages.flatMap((page) => page.items) ?? [];
+function useRepo() {
+  const user = useCurrentUser();
+  return {
+    userId: user.data?.id,
+    ready: Boolean(user.data?.id),
+    repo: user.data?.id ? getMemoryRepository(user.data.id) : null,
+  };
 }
 
 export function useMemorySettings() {
+  const { ready, repo } = useRepo();
   return useQuery({
     queryKey: memoryKeys.settings(),
-    queryFn: ({ signal }) => getMemorySettings(signal),
+    queryFn: ({ signal }) => repo!.getSettings(signal),
+    enabled: ready && Boolean(repo),
   });
 }
 
-export function useMemories(enabled: boolean) {
-  return useInfiniteQuery({
-    queryKey: memoryKeys.list(),
-    queryFn: ({ pageParam, signal }) =>
-      listMemories(pageParam, MEMORY_PAGE_SIZE, signal),
-    initialPageParam: 0,
-    enabled,
-    getNextPageParam: (lastPage) =>
-      lastPage.pagination.has_more
-        ? lastPage.pagination.offset + lastPage.pagination.limit
-        : undefined,
+export function useMemories(query: MemoryListQuery, enabled = true) {
+  const { ready, repo } = useRepo();
+  return useQuery({
+    queryKey: memoryKeys.list(query),
+    queryFn: ({ signal }) => repo!.list(query, signal),
+    enabled: ready && enabled && Boolean(repo),
+  });
+}
+
+export function useMemory(id?: string) {
+  const { ready, repo } = useRepo();
+  return useQuery({
+    queryKey: memoryKeys.detail(id ?? ""),
+    queryFn: ({ signal }) => repo!.get(id as string, signal),
+    enabled: ready && Boolean(id) && Boolean(repo),
   });
 }
 
 export function useUpdateMemorySettings() {
   const queryClient = useQueryClient();
+  const { repo } = useRepo();
   return useMutation({
-    mutationFn: (enabled: boolean) => updateMemorySettings(enabled),
+    mutationFn: (enabled: boolean) => {
+      if (!repo) throw new Error("Sign in to update memory.");
+      return repo.setEnabled(enabled);
+    },
     onSuccess: (settings: MemorySettings) => {
       queryClient.setQueryData(memoryKeys.settings(), settings);
-      if (!settings.enabled) {
-        queryClient.removeQueries({ queryKey: memoryKeys.list() });
-      } else {
-        void queryClient.invalidateQueries({ queryKey: memoryKeys.list() });
-      }
+      void queryClient.invalidateQueries({ queryKey: memoryKeys.all });
+    },
+  });
+}
+
+export function useCreateMemory() {
+  const queryClient = useQueryClient();
+  const { repo } = useRepo();
+  return useMutation({
+    mutationFn: (draft: MemoryDraft) => {
+      if (!repo) throw new Error("Sign in to add memory.");
+      return repo.create(draft);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: memoryKeys.all });
+    },
+  });
+}
+
+export function useUpdateMemory() {
+  const queryClient = useQueryClient();
+  const { repo } = useRepo();
+  return useMutation({
+    mutationFn: ({
+      id,
+      draft,
+    }: {
+      id: string;
+      draft: Partial<MemoryDraft>;
+    }) => {
+      if (!repo) throw new Error("Sign in to edit memory.");
+      return repo.update(id, draft);
+    },
+    onSuccess: (record: MemoryRecord) => {
+      queryClient.setQueryData(memoryKeys.detail(record.id), record);
+      void queryClient.invalidateQueries({ queryKey: memoryKeys.all });
     },
   });
 }
 
 export function useDeleteMemory() {
   const queryClient = useQueryClient();
+  const { repo } = useRepo();
   return useMutation({
-    mutationFn: (id: string) => deleteMemory(id),
+    mutationFn: (id: string) => {
+      if (!repo) throw new Error("Sign in to delete memory.");
+      return repo.delete(id);
+    },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: memoryKeys.list() });
+      void queryClient.invalidateQueries({ queryKey: memoryKeys.all });
     },
   });
+}
+
+export function useClearMemories() {
+  const queryClient = useQueryClient();
+  const { repo } = useRepo();
+  return useMutation({
+    mutationFn: () => {
+      if (!repo) throw new Error("Sign in to clear memory.");
+      return repo.clearAll();
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: memoryKeys.all });
+    },
+  });
+}
+
+export function useMemoryPersistence() {
+  const { repo } = useRepo();
+  return repo?.persistence ?? "http";
 }

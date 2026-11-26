@@ -465,6 +465,6 @@ test("memory settings load from the API", async ({ page }) => {
     await route.fulfill({ status: 404, body: "Unhandled mock route" });
   });
 
-  await page.goto("/app/memory");
+  await page.goto("/settings/memory");
   await expect(page.getByText("Prefers Indian Constitution citations")).toBeVisible();
 });

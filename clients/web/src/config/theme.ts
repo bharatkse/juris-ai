@@ -41,6 +41,7 @@ export const TOKEN_NAMES = [
   "sidebar-foreground",
   "sidebar-muted",
   "sidebar-border",
+  "sidebar-active",
   "selection",
   "skeleton",
 ] as const;
@@ -94,6 +95,7 @@ export const lightTokens: TokenPalette = {
   "sidebar-foreground": "222 47% 11%",
   "sidebar-muted": "220 9% 32%",
   "sidebar-border": "220 13% 91%",
+  "sidebar-active": "210 20% 98%",
   selection: "43 55% 90%",
   skeleton: "220 14% 94%",
 };
@@ -133,6 +135,7 @@ export const darkTokens: TokenPalette = {
   "sidebar-foreground": "210 20% 96%",
   "sidebar-muted": "214 12% 70%",
   "sidebar-border": "220 10% 18%",
+  "sidebar-active": "220 12% 16%",
   selection: "43 30% 22%",
   skeleton: "220 10% 18%",
 };

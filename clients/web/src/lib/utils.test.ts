@@ -7,6 +7,8 @@ describe("getSafeNextPath", () => {
     expect(getSafeNextPath("/app/c/conv_123?source=login")).toBe(
       "/app/c/conv_123?source=login",
     );
+    expect(getSafeNextPath("/settings/memory")).toBe("/settings/memory");
+    expect(getSafeNextPath("/projects/abc")).toBe("/projects/abc");
   });
 
   it.each([

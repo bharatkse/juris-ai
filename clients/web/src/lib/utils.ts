@@ -25,7 +25,12 @@ export function getSafeNextPath(
     const parsed = new URL(candidate, "https://juris.local");
     if (
       parsed.origin !== "https://juris.local" ||
-      (parsed.pathname !== "/app" && !parsed.pathname.startsWith("/app/"))
+      parsed.pathname !== "/app" &&
+      !parsed.pathname.startsWith("/app/") &&
+      parsed.pathname !== "/settings" &&
+      !parsed.pathname.startsWith("/settings/") &&
+      parsed.pathname !== "/projects" &&
+      !parsed.pathname.startsWith("/projects/")
     ) {
       return fallback;
     }

@@ -67,6 +67,7 @@ const config: Config = {
           foreground: hsl("sidebar-foreground"),
           muted: hsl("sidebar-muted"),
           border: hsl("sidebar-border"),
+          active: hsl("sidebar-active"),
         },
         selection: hsl("selection"),
         skeleton: hsl("skeleton"),
@@ -95,6 +96,13 @@ const config: Config = {
         md: "var(--radius-md)",
         lg: "var(--radius-lg)",
         xl: "var(--radius-xl)",
+      },
+      width: {
+        sidebar: "16.25rem",
+        "sidebar-rail": "3.5rem",
+      },
+      size: {
+        "nav-icon": "1.125rem",
       },
       maxWidth: {
         chat: "var(--chat-column)",

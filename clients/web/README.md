@@ -34,7 +34,10 @@ Open [http://127.0.0.1:3100](http://127.0.0.1:3100). Port 3100 avoids Grafana on
 |---|---|---|---|
 | `BACKEND_API_URL` | server only | `http://127.0.0.1:8001/api/v1` | FastAPI base. Never prefix with `NEXT_PUBLIC_`. In Docker: `http://api:8000/api/v1`. |
 | `NEXT_PUBLIC_CHAT_STREAMING` | browser | `true` | Set `false` to use synchronous `POST /chat`. |
-| `NEXT_PUBLIC_FEATURE_CONVERSATION_RENAME` | browser | `false` | No PATCH conversation route on FastAPI. |
+| `NEXT_PUBLIC_FEATURE_CONVERSATION_RENAME` | browser | `false` | Unused for titles; titles use the titles backend below. |
+| `NEXT_PUBLIC_FEATURE_*_BACKEND` | browser (build-time) | see below | `http` or `local` adapter for that feature. |
+| `NEXT_PUBLIC_FEATURE_ADMIN` | browser | `false` | Show Admin in the profile menu. |
+| `NEXT_PUBLIC_FEATURE_PERMISSIONS` | browser | `false` | Show Permissions in settings and the profile menu. |
 | `PLAYWRIGHT_BASE_URL` | tests | `http://127.0.0.1:3100` | Optional. |
 | `PLAYWRIGHT_DESIGN_BASE_URL` | design capture | `http://127.0.0.1:3107` | Dedicated Next port for reference PNGs. |
 | `WEB_PORT` | Compose | `3100` | Host port mapping. |
@@ -65,7 +68,43 @@ The browser never talks to FastAPI hosts or ports. It calls same-origin `/api/au
 
 There is no `GET /auth/me`. `/api/auth/me` decodes JWT `sub` and loads `GET /users/{id}`. Messages are `GET /conversations/{id}/messages` (not `/events`).
 
-Feature flags (`src/config/features.ts`): conversation rename, usage dashboard, and document library stay off until the backend exposes those routes. Copy lives in `src/constants/copy.ts`.
+Copy lives in `src/constants/copy.ts`.
+
+## Navigation and icons
+
+Work, settings, and profile menus are typed in `src/config/navigation.ts`. Rows render through `NavItem` (sidebar / settings) and `MenuItem` (popovers). Icons are Lucide only (`strokeWidth` 1.75). Sidebar rows are `h-9` (`h-10` on mobile), `px-2.5`, `gap-2.5`, with a 20px icon slot so labels share an x-offset. Expanded sidebar is `w-sidebar` (260px); collapsed rail is `w-sidebar-rail` (56px).
+
+## Route map
+
+| Path | Shell |
+|---|---|
+| `/app`, `/app/c/{id}` | Chat sidebar |
+| `/app/documents`, `/app/approvals` | Chat sidebar |
+| `/projects`, `/projects/{id}` | Chat sidebar |
+| `/settings/{profile,general,memory,notifications,integrations,permissions,privacy,usage,api-keys,help,admin}` | Settings nav only |
+| `/settings/memory/{id}` | Memory detail |
+
+`/app/settings` and `/app/memory` redirect to `/settings/profile` and `/settings/memory`.
+
+## Feature backends
+
+`src/config/feature-backends.ts` picks `http` or `local` per feature. Components call a repository; they never embed sample data. Local adapters live in `src/features/<feature>/adapters/local.ts`, namespace keys as `juris:{userId}:{feature}`, version the JSON envelope, and clear on sign-out.
+
+### Backend gaps (local unless noted)
+
+| Feature | Default | HTTP today | Contract |
+|---|---|---|---|
+| Memory | `http` | settings + list + get + delete | [docs/api-requests/memory.md](../../docs/api-requests/memory.md) (POST/PATCH missing) |
+| Projects | `local` | none | [docs/api-requests/projects.md](../../docs/api-requests/projects.md) |
+| Pins | `local` | none | [docs/api-requests/pins.md](../../docs/api-requests/pins.md) |
+| Documents | `local` | none | [docs/api-requests/documents.md](../../docs/api-requests/documents.md) |
+| Preferences / notifications | `local` | none | [docs/api-requests/preferences.md](../../docs/api-requests/preferences.md) |
+| Conversation titles | `local` | no PATCH route | same |
+| Integrations / API keys | `local` | none | same |
+
+Local-backed screens show “Saved on this device”. Proposed OpenAPI-style shapes are in `docs/api-requests/`. Design-parity notes: [docs/clients/web/design-parity.md](../../docs/clients/web/design-parity.md).
+
+A hook blocks edits to `clients/web/.env.example`; copy the `NEXT_PUBLIC_FEATURE_*` table above into `.env.local` and pass the same names as Docker **build args**.
 
 Audit vs FastAPI: [`docs/clients/web/api-audit.md`](../../docs/clients/web/api-audit.md).
 
