@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { defineConfig, devices } from "@playwright/test";
 
 const packageRoot = fileURLToPath(new URL("../..", import.meta.url));
-const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3100";
+const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3110";
 
 export default defineConfig({
   testDir: ".",
@@ -24,9 +24,10 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "npm run dev",
+    command: "npx next dev --hostname 0.0.0.0 --port 3110",
     cwd: packageRoot,
     url: `${baseURL}/login`,
-    reuseExistingServer: false,
+    reuseExistingServer: !process.env.CI,
+    timeout: 120_000,
   },
 });

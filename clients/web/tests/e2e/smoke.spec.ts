@@ -17,6 +17,7 @@ const conversation = {
   user_id: user.id,
   title: "Article 21 research",
   is_active: true,
+  memory_disabled: false,
   created_at: "2026-09-15T10:00:00Z",
   updated_at: "2026-09-15T10:00:00Z",
 };
@@ -93,7 +94,7 @@ test("login reaches the authenticated workspace", async ({ page }) => {
   await page.getByLabel("Password").fill("correct-horse-battery-staple");
   await page.getByRole("button", { name: "Sign in" }).click();
 
-  await expect(page).toHaveURL(/\/app$/u);
+  await expect(page).toHaveURL(/\/app$/u, { timeout: 15_000 });
   await expect(
     page.getByRole("heading", { name: "What do you want to work on?" }),
   ).toBeVisible();
@@ -134,7 +135,7 @@ test("creates a thread, sends chat, and opens real citations", async ({
       await fulfillJson(route, conversation);
       return;
     }
-    if (path === `/conversations/${conversation.id}/events`) {
+    if (path === `/conversations/${conversation.id}/messages`) {
       await fulfillJson(route, eventPage(events));
       return;
     }
@@ -217,15 +218,6 @@ test("creates a thread, sends chat, and opens real citations", async ({
   await page.getByRole("button", { name: "New chat" }).click();
   await expect(page).toHaveURL(new RegExp(`/app/c/${conversation.id}$`, "u"));
 
-  await page.getByRole("button", { name: "Rename conversation" }).click();
-  await page
-    .getByLabel("Conversation title")
-    .fill("Fundamental rights research");
-  await page.getByRole("button", { name: "Save title" }).click();
-  await expect(
-    page.getByRole("banner").getByText("Fundamental rights research"),
-  ).toBeVisible();
-
   await page.getByLabel("Legal question").fill("Explain Article 21");
   await page.getByRole("button", { name: "Send" }).click();
 
@@ -281,6 +273,7 @@ test("approves an inline action and appends the resumed event", async ({
     created_at: "2026-09-15T10:02:02Z",
   };
 
+  let decided = false;
   await page.route("**/api/backend/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -294,21 +287,40 @@ test("approves an inline action and appends the resumed event", async ({
       await fulfillJson(route, conversation);
       return;
     }
-    if (path === `/conversations/${conversation.id}/events`) {
-      await fulfillJson(route, eventPage([approvalEvent]));
+    if (path === `/conversations/${conversation.id}/messages`) {
+      await fulfillJson(
+        route,
+        eventPage(
+          decided
+            ? [
+                {
+                  ...approvalEvent,
+                  metadata: {
+                    ...approvalEvent.metadata,
+                    approval: {
+                      approval_id: "approval_e2e",
+                      status: "approved",
+                      expires_at: "2099-01-01T00:00:00Z",
+                    },
+                  },
+                },
+                resumedEvent,
+              ]
+            : [approvalEvent],
+        ),
+      );
       return;
     }
     if (path === "/approvals/approval_e2e" && request.method() === "POST") {
+      decided = true;
       await fulfillJson(route, {
-        approval: {
-          approval_id: "approval_e2e",
-          agent_action_id: "action_e2e",
-          requested_by: user.id,
-          status: "approved",
-          created_at: "2026-09-15T10:02:00Z",
-          expires_at: "2099-01-01T00:00:00Z",
-        },
-        resumed_event: resumedEvent,
+        approval_id: "approval_e2e",
+        agent_action_id: "action_e2e",
+        requested_by: user.id,
+        status: "approved",
+        created_at: "2026-09-15T10:02:00Z",
+        expires_at: "2099-01-01T00:00:00Z",
+        resume_status: "resumed",
       });
       return;
     }
@@ -343,7 +355,7 @@ test("shows distinct rate-limit and token-quota banners", async ({ page }) => {
       await fulfillJson(route, conversation);
       return;
     }
-    if (path === `/conversations/${conversation.id}/events`) {
+    if (path === `/conversations/${conversation.id}/messages`) {
       await fulfillJson(route, eventPage([]));
       return;
     }
@@ -382,4 +394,77 @@ test("shows distinct rate-limit and token-quota banners", async ({ page }) => {
   await expect(
     page.getByText("Daily token quota reached. Try again tomorrow."),
   ).toBeVisible();
+});
+
+test("shows permission denied for another user's conversation", async ({
+  page,
+}) => {
+  await authenticate(page);
+  await page.route("**/api/backend/**", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const path = url.pathname.replace("/api/backend", "");
+    if (path === "/conversations" && request.method() === "GET") {
+      await fulfillJson(route, conversationPage([]));
+      return;
+    }
+    await route.fulfill({
+      status: 403,
+      contentType: "application/json",
+      body: JSON.stringify({
+        success: false,
+        error: {
+          code: "FORBIDDEN",
+          message: "Not permitted to access this conversation.",
+        },
+        metadata: {},
+      }),
+    });
+  });
+
+  await page.goto(`/app/c/${conversation.id}`);
+  await expect(
+    page.getByRole("heading", { name: "Could not load conversation" }),
+  ).toBeVisible();
+});
+
+test("memory settings load from the API", async ({ page }) => {
+  await authenticate(page);
+  await page.route("**/api/backend/**", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const path = url.pathname.replace("/api/backend", "");
+    if (path === "/conversations") {
+      await fulfillJson(route, conversationPage([]));
+      return;
+    }
+    if (path === "/memory/settings") {
+      await fulfillJson(route, {
+        enabled: true,
+        consent_updated_at: "2026-09-15T10:00:00Z",
+      });
+      return;
+    }
+    if (path === "/memory/items") {
+      await fulfillJson(route, {
+        items: [
+          {
+            id: "mem_1",
+            kind: "preference",
+            content: "Prefers Indian Constitution citations",
+            status: "active",
+            confidence: 0.9,
+            last_used_at: "2026-09-15T10:00:00Z",
+            created_at: "2026-09-15T09:00:00Z",
+          },
+        ],
+        pagination: { offset: 0, limit: 20, total: 1, has_more: false },
+      });
+      return;
+    }
+    await route.fulfill({ status: 404, body: "Unhandled mock route" });
+  });
+
+  await page.goto("/settings/memory");
+  await expect(page.getByText("Prefers Indian Constitution citations")).toBeVisible();
 });

@@ -2,12 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  Bot,
+  ArrowDown,
+  Check,
+  Copy,
   FileText,
   LoaderCircle,
-  Square,
   TerminalSquare,
-  UserRound,
 } from "lucide-react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
@@ -46,12 +46,8 @@ function lifecycleLabel(progress?: ChatStreamProgress | null): string {
 
 function WorkingIndicator({
   progress,
-  canStop,
-  onStop,
 }: {
   progress?: ChatStreamProgress | null;
-  canStop: boolean;
-  onStop: () => void;
 }) {
   const [elapsed, setElapsed] = useState(0);
 
@@ -89,18 +85,10 @@ function WorkingIndicator({
       >
         {minutes}:{seconds}
       </span>
-      {canStop ? (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="border-danger/30 text-danger hover:bg-danger/15"
-          onClick={onStop}
-        >
-          <Square className="size-3 fill-current" aria-hidden="true" />
-          Stop
-        </Button>
-      ) : null}
+      <span
+        className="inline-block h-4 w-px animate-pulse bg-foreground"
+        aria-hidden="true"
+      />
     </div>
   );
 }
@@ -108,21 +96,48 @@ function WorkingIndicator({
 function StreamingAssistantDraft({ content }: { content: string }) {
   if (!content) return null;
   return (
-    <div className="flex items-start gap-3">
-      <span className="mt-1 hidden size-8 shrink-0 place-items-center rounded-full border border-dashed border-primary bg-citation/40 text-primary sm:grid">
-        <Bot className="size-4" aria-hidden="true" />
-      </span>
-      <article
-        className="min-w-0 max-w-[min(100%,800px)] flex-1 rounded-lg border border-dashed border-primary/50 bg-surface px-4 py-4 sm:px-6"
-        aria-label="Juris AI draft response"
-        aria-busy="true"
-      >
-        <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-primary">
-          Drafting · not final
-        </p>
-        <AssistantMarkdown content={content} />
-      </article>
-    </div>
+    <article
+      className="w-full text-chat-assistant-foreground"
+      aria-label="Juris AI draft response"
+      aria-busy="true"
+    >
+      <p className="mb-2 text-[11px] font-medium text-muted-foreground">
+        Drafting · not final
+      </p>
+      <AssistantMarkdown content={content} />
+      <span
+        className="ml-0.5 inline-block h-4 w-px translate-y-0.5 animate-pulse bg-foreground"
+        aria-hidden="true"
+      />
+    </article>
+  );
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      className="size-7 opacity-0 transition-opacity duration-fast group-hover:opacity-100 group-focus-within:opacity-100"
+      aria-label={copied ? "Copied" : "Copy message"}
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(text);
+          setCopied(true);
+          window.setTimeout(() => setCopied(false), 1500);
+        } catch {
+          /* ignore */
+        }
+      }}
+    >
+      {copied ? (
+        <Check className="size-3.5" aria-hidden="true" />
+      ) : (
+        <Copy className="size-3.5" aria-hidden="true" />
+      )}
+    </Button>
   );
 }
 
@@ -154,23 +169,26 @@ function UserMessage({
   pending?: boolean;
 }) {
   return (
-    <div className="flex justify-end">
-      <article
-        className={cn(
-          "max-w-[min(88%,680px)] rounded-lg bg-chat-user px-4 py-3 text-chat-user-foreground",
-          pending && "opacity-80",
-        )}
-        aria-label={pending ? "Sending message" : "Your message"}
-      >
-        <AttachedFiles files={files} />
-        <p className="whitespace-pre-wrap text-sm leading-6">{content}</p>
-        {pending ? (
-          <span className="mt-2 flex items-center justify-end gap-1.5 text-[11px] text-chat-user-foreground/55">
-            <LoaderCircle className="size-3 animate-spin" aria-hidden="true" />
-            Sending
-          </span>
-        ) : null}
-      </article>
+    <div className="group flex justify-end">
+      <div className="flex max-w-[80%] flex-col items-end">
+        <article
+          className={cn(
+            "rounded-xl bg-chat-user px-4 py-3 text-chat-user-foreground",
+            pending && "opacity-80",
+          )}
+          aria-label={pending ? "Sending message" : "Your message"}
+        >
+          <AttachedFiles files={files} />
+          <p className="whitespace-pre-wrap break-words text-sm leading-6">{content}</p>
+          {pending ? (
+            <span className="mt-2 flex items-center justify-end gap-1.5 text-[11px] text-muted-foreground">
+              <LoaderCircle className="size-3 animate-spin" aria-hidden="true" />
+              Sending
+            </span>
+          ) : null}
+        </article>
+        {!pending ? <CopyButton text={content} /> : null}
+      </div>
     </div>
   );
 }
@@ -184,6 +202,7 @@ function AssistantMessage({
   approvalError,
   onOpenCitations,
   onApprovalDecision,
+  onApprovalResume,
 }: {
   event: ConversationEvent;
   details?: AssistantAnswerDetails;
@@ -200,8 +219,12 @@ function AssistantMessage({
   onApprovalDecision: (
     approvalId: string,
     decision: ApprovalDecision,
-    reason?: string,
+    options?: {
+      reason?: string;
+      editedPayload?: Record<string, unknown>;
+    },
   ) => Promise<void>;
+  onApprovalResume?: (approvalId: string, force?: boolean) => Promise<void>;
 }) {
   const citations = details?.citations ?? event.metadata.citations ?? [];
   const sources = details?.sources ?? event.metadata.sources ?? [];
@@ -210,12 +233,9 @@ function AssistantMessage({
   const eventApproval = approval ?? event.metadata.approval;
 
   return (
-    <div className="flex items-start gap-3">
-      <span className="mt-1 hidden size-8 shrink-0 place-items-center rounded-full border border-border bg-surface text-primary sm:grid">
-        <Bot className="size-4" aria-hidden="true" />
-      </span>
+    <div className="group w-full">
       <article
-        className="min-w-0 max-w-[min(100%,800px)] flex-1 rounded-lg border border-border bg-chat-assistant px-4 py-4 sm:px-6 sm:py-5 text-chat-assistant-foreground"
+        className="w-full text-chat-assistant-foreground"
         aria-label="Juris AI response"
       >
         <AssistantMarkdown content={event.content} />
@@ -259,12 +279,18 @@ function AssistantMessage({
             approval={eventApproval}
             pending={approvalPending}
             error={approvalError}
-            onDecision={(decision, reason) =>
+            onDecision={(decision, options) =>
               onApprovalDecision(
                 eventApproval.approval_id,
                 decision,
-                reason,
+                options,
               )
+            }
+            onResume={
+              onApprovalResume
+                ? (force) =>
+                    onApprovalResume(eventApproval.approval_id, force)
+                : undefined
             }
           />
         ) : null}
@@ -275,6 +301,7 @@ function AssistantMessage({
             {usage?.total_tokens ? ` · ${usage.total_tokens.toLocaleString()} tokens` : ""}
           </p>
         ) : null}
+        <CopyButton text={event.content} />
       </article>
     </div>
   );
@@ -282,7 +309,7 @@ function AssistantMessage({
 
 function OperationalMessage({ event }: { event: ConversationEvent }) {
   const tool = event.role === "tool";
-  const Icon = tool ? TerminalSquare : UserRound;
+  const Icon = TerminalSquare;
   return (
     <div className="mx-auto flex max-w-2xl items-start gap-2 rounded-md border border-border bg-background px-3 py-2 text-xs leading-5 text-muted-foreground">
       <Icon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
@@ -300,7 +327,6 @@ export function MessageList({
   events,
   pending,
   streamProgress,
-  streamActive = false,
   answerDetails,
   approvalStates,
   approvalPendingId,
@@ -310,14 +336,13 @@ export function MessageList({
   hasMore = false,
   loadingMore = false,
   onLoadMore,
-  onStop,
   onOpenCitations,
   onApprovalDecision,
+  onApprovalResume,
 }: {
   events: ConversationEvent[];
   pending?: PendingUserMessage;
   streamProgress?: ChatStreamProgress | null;
-  streamActive?: boolean;
   answerDetails: Record<string, AssistantAnswerDetails>;
   approvalStates: Record<string, ApprovalMetadata>;
   approvalPendingId?: string;
@@ -327,7 +352,6 @@ export function MessageList({
   hasMore?: boolean;
   loadingMore?: boolean;
   onLoadMore?: () => Promise<unknown> | void;
-  onStop: () => void;
   onOpenCitations: (
     eventId: string,
     citations: Citation[],
@@ -337,11 +361,17 @@ export function MessageList({
   onApprovalDecision: (
     approvalId: string,
     decision: ApprovalDecision,
-    reason?: string,
+    options?: {
+      reason?: string;
+      editedPayload?: Record<string, unknown>;
+    },
   ) => Promise<void>;
+  onApprovalResume?: (approvalId: string, force?: boolean) => Promise<void>;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
+  const stickToBottom = useRef(true);
+  const [showJump, setShowJump] = useState(false);
   const lastEventId = events.at(-1)?.id;
   const hasPendingMessage = Boolean(pending);
   const virtualized = shouldVirtualizeMessages(events.length);
@@ -358,6 +388,7 @@ export function MessageList({
   });
 
   useEffect(() => {
+    if (!stickToBottom.current) return;
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [
     lastEventId,
@@ -412,6 +443,7 @@ export function MessageList({
         }
         onOpenCitations={onOpenCitations}
         onApprovalDecision={onApprovalDecision}
+        onApprovalResume={onApprovalResume}
       />
     );
   }
@@ -422,9 +454,16 @@ export function MessageList({
       role="log"
       aria-label="Conversation messages"
       tabIndex={0}
-      className="min-h-0 flex-1 overflow-y-auto outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      className="relative min-h-0 flex-1 overflow-y-auto outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      onScroll={() => {
+        const el = scrollRef.current;
+        if (!el) return;
+        const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+        stickToBottom.current = distance < 80;
+        setShowJump(distance > 120);
+      }}
     >
-      <div className="mx-auto flex min-h-full w-full max-w-4xl flex-col px-4 py-6 sm:px-6 sm:py-8">
+      <div className="mx-auto flex min-h-full w-full max-w-chat flex-col px-4 py-6 sm:px-6">
         {hasMore ? (
           <Button
             type="button"
@@ -443,8 +482,7 @@ export function MessageList({
 
         {!events.length && !pending ? (
           <div className="m-auto max-w-md py-16 text-center">
-            <Bot className="mx-auto size-6 text-primary" aria-hidden="true" />
-            <h2 className="mt-4 text-lg font-semibold">
+            <h2 className="text-lg font-semibold">
               Ask the first question
             </h2>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
@@ -486,11 +524,7 @@ export function MessageList({
                   files={pending.files}
                   pending
                 />
-                <WorkingIndicator
-                  progress={streamProgress}
-                  canStop={streamActive}
-                  onStop={onStop}
-                />
+                <WorkingIndicator progress={streamProgress} />
                 <StreamingAssistantDraft
                   content={streamProgress?.draftContent ?? ""}
                 />
@@ -500,6 +534,22 @@ export function MessageList({
         )}
         <div ref={endRef} aria-hidden="true" />
       </div>
+      {showJump ? (
+        <Button
+          type="button"
+          size="icon"
+          variant="outline"
+          className="absolute bottom-4 left-1/2 size-9 -translate-x-1/2 rounded-full shadow-sm"
+          aria-label="Scroll to bottom"
+          onClick={() => {
+            stickToBottom.current = true;
+            endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+            setShowJump(false);
+          }}
+        >
+          <ArrowDown className="size-4" aria-hidden="true" />
+        </Button>
+      ) : null}
     </div>
   );
 }

@@ -2,40 +2,19 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  BookOpenText,
-  FileSearch,
-  ListTree,
-  Paperclip,
-  Scale,
-  Send,
-  ShieldAlert,
-} from "lucide-react";
 import { toast } from "sonner";
 
-import { LegalDisclaimer } from "@/components/legal-disclaimer";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
+import { Composer } from "@/features/chat/components/composer";
 import {
   STARTER_PROMPTS,
   starterConversationTitle,
-  type StarterPrompt,
 } from "@/features/chat/starters";
 import { useCreateConversation } from "@/features/conversations/queries";
-import { cn } from "@/lib/utils";
-
-const starterIcons = {
-  research: BookOpenText,
-  review: FileSearch,
-  analyze: Scale,
-  clauses: ListTree,
-  risks: ShieldAlert,
-} satisfies Record<StarterPrompt["id"], typeof Scale>;
 
 export function EmptyWorkspace() {
-  const [message, setMessage] = useState("");
   const router = useRouter();
   const createConversation = useCreateConversation();
+  const [busy, setBusy] = useState(false);
 
   async function startConversation({
     prompt,
@@ -46,6 +25,7 @@ export function EmptyWorkspace() {
     title?: string;
     expectsFile?: boolean;
   }) {
+    setBusy(true);
     try {
       const conversation = await createConversation.mutateAsync(title);
       const params = new URLSearchParams();
@@ -54,6 +34,7 @@ export function EmptyWorkspace() {
       const query = params.size ? `?${params.toString()}` : "";
       router.push(`/app/c/${encodeURIComponent(conversation.id)}${query}`);
     } catch (error) {
+      setBusy(false);
       toast.error(
         error instanceof Error ? error.message : "Could not create conversation.",
       );
@@ -61,119 +42,49 @@ export function EmptyWorkspace() {
   }
 
   return (
-    <div className="flex min-h-full flex-col">
-      <section className="mx-auto flex w-full max-w-6xl flex-1 flex-col justify-center px-5 py-12 sm:px-8 sm:py-16">
-        <div className="mx-auto w-full max-w-4xl text-center">
-          <span className="mx-auto grid size-12 place-items-center rounded-full border border-primary/30 bg-citation/60">
-            <Scale className="size-5 text-primary" aria-hidden="true" />
-          </span>
-          <h1 className="mt-6 text-2xl font-semibold tracking-[-0.025em] sm:text-3xl">
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-4">
+        <div className="w-full max-w-chat text-center">
+          <h1 className="font-serif text-3xl font-medium tracking-[-0.03em] text-foreground sm:text-4xl">
             What do you want to work on?
           </h1>
-          <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
+          <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-muted-foreground">
             Answers are legal information, not advice. Name a jurisdiction when
-            it matters; Indian-law materials are a useful starting point.
+            it matters.
           </p>
-        </div>
-
-        <div className="mt-10 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-          {STARTER_PROMPTS.map((starter) => {
-            const Icon = starterIcons[starter.id];
-            return (
-            <button
-              type="button"
-              key={starter.id}
-              className={cn(
-                "group min-h-36 rounded-lg border border-border bg-surface p-4 text-left outline-none transition-colors hover:border-primary/60 hover:bg-citation/20 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-              )}
-              disabled={createConversation.isPending}
-              onClick={() =>
-                startConversation({
-                  prompt: starter.prompt,
-                  title: starterConversationTitle(starter),
-                  expectsFile: starter.expectsFile,
-                })
-              }
-            >
-              <span className="grid size-9 place-items-center rounded-md border border-border text-primary transition-colors group-hover:border-primary/35">
-                <Icon className="size-4" aria-hidden="true" />
-              </span>
-              <span className="mt-5 block text-sm font-semibold text-foreground">
-                {starter.title}
-              </span>
-              <span className="mt-1 block text-xs leading-5 text-muted-foreground">
-                {starter.prompt}
-              </span>
-              {starter.expectsFile ? (
-                <span className="mt-2 flex items-center gap-1 text-[11px] text-primary">
-                  <Paperclip className="size-3" aria-hidden="true" />
-                  File required
-                </span>
-              ) : null}
-            </button>
-            );
-          })}
-        </div>
-      </section>
-
-      <div className="sticky bottom-0 border-t border-border bg-background/95 px-4 pb-4 pt-3 backdrop-blur sm:px-6 sm:pb-5">
-        <form
-          className="mx-auto max-w-4xl"
-          onSubmit={async (event) => {
-            event.preventDefault();
-            const prompt = message.trim();
-            if (!prompt) return;
-            await startConversation({
-              prompt,
-              title: prompt.slice(0, 80),
-            });
-          }}
-        >
-          <div className="rounded-lg border border-border bg-surface p-2 focus-within:border-primary focus-within:ring-2 focus-within:ring-ring/15">
-            <Textarea
-              value={message}
-              onChange={(event) => setMessage(event.target.value)}
-              maxLength={10_000}
-              rows={2}
-              className="min-h-[68px] resize-none border-0 bg-transparent px-2 py-2 focus-visible:ring-0"
-              placeholder="Ask a legal question or attach a contract…"
-              aria-label="Legal question"
-            />
-            <div className="flex items-center justify-between gap-3 px-1 pb-1">
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  disabled={createConversation.isPending}
-                  onClick={() =>
-                    startConversation({
-                      title: "Contract review",
-                      expectsFile: true,
-                    })
-                  }
-                >
-                  <Paperclip className="size-4" aria-hidden="true" />
-                  <span className="hidden sm:inline">Attach</span>
-                </Button>
-                <span className="text-[11px] text-muted-foreground">
-                  {message.length.toLocaleString()} / 10,000
-                </span>
-              </div>
-              <Button
-                type="submit"
-                size="sm"
-                loading={createConversation.isPending}
-                disabled={!message.trim()}
+          <div className="mt-8 flex flex-wrap justify-center gap-2">
+            {STARTER_PROMPTS.map((starter) => (
+              <button
+                type="button"
+                key={starter.id}
+                className="rounded-full border border-border bg-surface px-3 py-1.5 text-sm text-foreground outline-none transition-colors duration-fast hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring"
+                disabled={createConversation.isPending || busy}
+                onClick={() =>
+                  startConversation({
+                    prompt: starter.prompt,
+                    title: starterConversationTitle(starter),
+                    expectsFile: starter.expectsFile,
+                  })
+                }
               >
-                <Send className="size-4" aria-hidden="true" />
-                {createConversation.isPending ? "Creating…" : "Send"}
-              </Button>
-            </div>
+                {starter.title}
+              </button>
+            ))}
           </div>
-          <LegalDisclaimer className="mx-auto mt-2 max-w-2xl justify-center text-center" />
-        </form>
+        </div>
       </div>
+      <Composer
+        sending={createConversation.isPending || busy}
+        centered
+        onSend={async ({ message, files }) => {
+          await startConversation({
+            prompt: message,
+            title: message.slice(0, 80),
+            expectsFile: files.length > 0,
+          });
+          return false;
+        }}
+      />
     </div>
   );
 }

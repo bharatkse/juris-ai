@@ -3,6 +3,8 @@ import type { ReactNode } from "react";
 import { Inter, Source_Serif_4 } from "next/font/google";
 
 import { Providers } from "@/components/providers";
+import { THEME_BROWSER_COLORS } from "@/config/theme";
+import { ThemeScript } from "@/features/theme/theme-script";
 
 import "./globals.css";
 
@@ -30,8 +32,8 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   colorScheme: "light dark",
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#F7F4EE" },
-    { media: "(prefers-color-scheme: dark)", color: "#121820" },
+    { media: "(prefers-color-scheme: light)", color: THEME_BROWSER_COLORS.light },
+    { media: "(prefers-color-scheme: dark)", color: THEME_BROWSER_COLORS.dark },
   ],
 };
 
@@ -42,6 +44,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       className={`${inter.variable} ${sourceSerif.variable}`}
       suppressHydrationWarning
     >
+      <head>
+        <ThemeScript />
+      </head>
       <body className="font-sans">
         <a className="skip-link" href="#main-content">
           Skip to content

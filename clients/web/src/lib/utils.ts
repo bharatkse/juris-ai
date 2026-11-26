@@ -1,8 +1,9 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
-export const LEGAL_DISCLAIMER =
-  "Juris AI provides legal information, not legal advice, and does not create an attorney–client relationship.";
+import { COPY } from "@/constants/copy";
+
+export const LEGAL_DISCLAIMER = COPY.legalDisclaimer;
 
 export function cn(...inputs: ClassValue[]): string {
   return twMerge(clsx(inputs));
@@ -24,7 +25,12 @@ export function getSafeNextPath(
     const parsed = new URL(candidate, "https://juris.local");
     if (
       parsed.origin !== "https://juris.local" ||
-      (parsed.pathname !== "/app" && !parsed.pathname.startsWith("/app/"))
+      parsed.pathname !== "/app" &&
+      !parsed.pathname.startsWith("/app/") &&
+      parsed.pathname !== "/settings" &&
+      !parsed.pathname.startsWith("/settings/") &&
+      parsed.pathname !== "/projects" &&
+      !parsed.pathname.startsWith("/projects/")
     ) {
       return fallback;
     }

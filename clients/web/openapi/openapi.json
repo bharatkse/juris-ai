@@ -1,0 +1,926 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Juris AI",
+    "version": "1.0.0",
+    "description": "Snapshot of FastAPI /api/v1 for the web client. Regenerate from a running API when the backend OpenAPI dump is available; until then this file is the checked-in contract."
+  },
+  "servers": [{ "url": "/api/v1" }],
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "health",
+        "tags": ["Health"],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Healthy",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HealthEnvelope" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "operationId": "login",
+        "tags": ["Auth"],
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": { "$ref": "#/components/schemas/LoginForm" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tokens (unwrapped)",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TokenPayload" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "operationId": "logout",
+        "tags": ["Auth"],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/LogoutRequest" }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Logged out" } }
+      }
+    },
+    "/auth/access-token": {
+      "post": {
+        "operationId": "refreshAccessToken",
+        "tags": ["Auth"],
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/RefreshRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tokens",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TokenPayload" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/users": {
+      "post": {
+        "operationId": "registerUser",
+        "tags": ["Users"],
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/RegisterNewUserRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/UserEnvelope" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/users/{user_id}": {
+      "get": {
+        "operationId": "getUser",
+        "tags": ["Users"],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/UserEnvelope" }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateUser",
+        "tags": ["Users"],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateUserProfileRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "User",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/UserEnvelope" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/conversations": {
+      "get": {
+        "operationId": "listConversations",
+        "tags": ["Conversations"],
+        "parameters": [
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": { "type": "integer", "default": 0 }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "default": 20 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Page",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ConversationListEnvelope" }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createConversation",
+        "tags": ["Conversations"],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateConversationRequest" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ConversationEnvelope" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/conversations/{conversation_id}": {
+      "get": {
+        "operationId": "getConversation",
+        "tags": ["Conversations"],
+        "parameters": [
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Conversation",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ConversationEnvelope" }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "archiveConversation",
+        "tags": ["Conversations"],
+        "parameters": [
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": { "204": { "description": "Archived" } }
+      }
+    },
+    "/conversations/{conversation_id}/messages": {
+      "get": {
+        "operationId": "listConversationMessages",
+        "tags": ["Conversations"],
+        "parameters": [
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": { "type": "integer", "default": 0 }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "default": 20 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationMessageListEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/conversations/{conversation_id}/memory": {
+      "put": {
+        "operationId": "updateConversationMemory",
+        "tags": ["Conversations"],
+        "parameters": [
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateConversationMemoryRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Conversation",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ConversationEnvelope" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/chat": {
+      "post": {
+        "operationId": "chat",
+        "tags": ["Chat"],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": { "$ref": "#/components/schemas/ChatForm" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Chat",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ChatEnvelope" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/chat/stream": {
+      "post": {
+        "operationId": "chatStream",
+        "tags": ["Chat"],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": { "$ref": "#/components/schemas/ChatForm" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "SSE",
+            "content": { "text/event-stream": { "schema": { "type": "string" } } }
+          }
+        }
+      }
+    },
+    "/memory/settings": {
+      "get": {
+        "operationId": "getMemorySettings",
+        "tags": ["Memory"],
+        "responses": {
+          "200": {
+            "description": "Settings",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MemorySettingsEnvelope" }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "updateMemorySettings",
+        "tags": ["Memory"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateMemorySettingsRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Settings",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MemorySettingsEnvelope" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/memory/items": {
+      "get": {
+        "operationId": "listMemories",
+        "tags": ["Memory"],
+        "parameters": [
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": { "type": "integer", "default": 0 }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "default": 20 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Page",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MemoryListEnvelope" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/memory/items/{memory_id}": {
+      "get": {
+        "operationId": "getMemory",
+        "tags": ["Memory"],
+        "parameters": [
+          {
+            "name": "memory_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Item",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MemoryItemEnvelope" }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteMemory",
+        "tags": ["Memory"],
+        "parameters": [
+          {
+            "name": "memory_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": { "204": { "description": "Deleted" } }
+      }
+    },
+    "/approvals/{approval_id}": {
+      "post": {
+        "operationId": "processApproval",
+        "tags": ["Approvals"],
+        "parameters": [
+          {
+            "name": "approval_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ApprovalDecisionRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Decision",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApprovalEnvelope" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/approvals/{approval_id}/resume": {
+      "post": {
+        "operationId": "retryApprovalResume",
+        "tags": ["Approvals"],
+        "parameters": [
+          {
+            "name": "approval_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "force",
+            "in": "query",
+            "schema": { "type": "boolean", "default": false }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resume",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApprovalEnvelope" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": { "type": "http", "scheme": "bearer" }
+    },
+    "schemas": {
+      "Pagination": {
+        "type": "object",
+        "required": ["offset", "limit", "total", "has_more"],
+        "properties": {
+          "offset": { "type": "integer" },
+          "limit": { "type": "integer" },
+          "total": { "type": "integer" },
+          "has_more": { "type": "boolean" }
+        }
+      },
+      "LoginForm": {
+        "type": "object",
+        "required": ["username", "password"],
+        "properties": {
+          "username": { "type": "string" },
+          "password": { "type": "string" }
+        }
+      },
+      "LogoutRequest": {
+        "type": "object",
+        "properties": { "refresh_token": { "type": "string" } }
+      },
+      "RefreshRequest": {
+        "type": "object",
+        "required": ["refresh_token"],
+        "properties": { "refresh_token": { "type": "string" } }
+      },
+      "TokenPayload": {
+        "type": "object",
+        "required": ["access_token"],
+        "properties": {
+          "access_token": { "type": "string" },
+          "token_type": { "type": "string" },
+          "expires_in": { "type": "number" },
+          "refresh_token": { "type": "string", "nullable": true },
+          "refresh_expires_in": { "type": "number", "nullable": true }
+        }
+      },
+      "UserResponse": {
+        "type": "object",
+        "required": ["id", "email", "created_at", "updated_at"],
+        "properties": {
+          "id": { "type": "string" },
+          "email": { "type": "string" },
+          "first_name": { "type": "string", "nullable": true },
+          "last_name": { "type": "string", "nullable": true },
+          "gender": {
+            "type": "string",
+            "nullable": true,
+            "enum": ["male", "female", "other"]
+          },
+          "phone_number": { "type": "string", "nullable": true },
+          "date_of_birth": { "type": "string", "nullable": true },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "RegisterNewUserRequest": {
+        "type": "object",
+        "required": ["email", "password"],
+        "properties": {
+          "email": { "type": "string" },
+          "password": { "type": "string" },
+          "first_name": { "type": "string", "nullable": true },
+          "last_name": { "type": "string", "nullable": true }
+        }
+      },
+      "UpdateUserProfileRequest": {
+        "type": "object",
+        "properties": {
+          "first_name": { "type": "string", "nullable": true },
+          "last_name": { "type": "string", "nullable": true },
+          "phone_number": { "type": "string", "nullable": true },
+          "date_of_birth": { "type": "string", "nullable": true },
+          "gender": {
+            "type": "string",
+            "nullable": true,
+            "enum": ["male", "female", "other"]
+          }
+        }
+      },
+      "CreateConversationRequest": {
+        "type": "object",
+        "properties": { "title": { "type": "string", "nullable": true } }
+      },
+      "ConversationResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "user_id",
+          "title",
+          "is_active",
+          "memory_disabled",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": { "type": "string" },
+          "user_id": { "type": "string" },
+          "title": { "type": "string" },
+          "is_active": { "type": "boolean" },
+          "memory_disabled": { "type": "boolean" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "UpdateConversationMemoryRequest": {
+        "type": "object",
+        "required": ["memory_disabled"],
+        "properties": { "memory_disabled": { "type": "boolean" } }
+      },
+      "Citation": {
+        "type": "object",
+        "required": ["title", "source"],
+        "properties": {
+          "title": { "type": "string" },
+          "source": { "type": "string" },
+          "reference": { "type": "string", "nullable": true },
+          "page": { "type": "integer", "nullable": true },
+          "snippet": { "type": "string", "nullable": true }
+        }
+      },
+      "Source": {
+        "type": "object",
+        "required": ["title"],
+        "properties": {
+          "title": { "type": "string" },
+          "uri": { "type": "string", "nullable": true },
+          "type": { "type": "string", "nullable": true }
+        }
+      },
+      "ConversationMessageResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "conversation_id",
+          "role",
+          "content",
+          "created_at"
+        ],
+        "properties": {
+          "id": { "type": "string" },
+          "conversation_id": { "type": "string" },
+          "parent_event_id": { "type": "string", "nullable": true },
+          "role": {
+            "type": "string",
+            "enum": ["user", "assistant", "system", "tool"]
+          },
+          "content": { "type": "string" },
+          "metadata": { "type": "object", "additionalProperties": true },
+          "citations": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Citation" }
+          },
+          "sources": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Source" }
+          },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ChatForm": {
+        "type": "object",
+        "required": ["conversation_id", "message"],
+        "properties": {
+          "conversation_id": { "type": "string" },
+          "message": { "type": "string" },
+          "files": { "type": "array", "items": { "type": "string", "format": "binary" } }
+        }
+      },
+      "Usage": {
+        "type": "object",
+        "required": ["prompt_tokens", "completion_tokens", "total_tokens"],
+        "properties": {
+          "provider": { "type": "string", "nullable": true },
+          "model": { "type": "string", "nullable": true },
+          "prompt_tokens": { "type": "integer" },
+          "completion_tokens": { "type": "integer" },
+          "total_tokens": { "type": "integer" },
+          "latency_ms": { "type": "number", "nullable": true }
+        }
+      },
+      "AIResponse": {
+        "type": "object",
+        "required": ["content", "citations", "sources", "usage", "metadata"],
+        "properties": {
+          "content": { "type": "string" },
+          "citations": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Citation" }
+          },
+          "sources": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Source" }
+          },
+          "usage": { "$ref": "#/components/schemas/Usage" },
+          "metadata": { "type": "object", "additionalProperties": true }
+        }
+      },
+      "ChatResponse": {
+        "type": "object",
+        "required": ["conversation_id", "response", "user_event", "assistant_event"],
+        "properties": {
+          "conversation_id": { "type": "string" },
+          "response": { "$ref": "#/components/schemas/AIResponse" },
+          "user_event": { "$ref": "#/components/schemas/ConversationMessageResponse" },
+          "assistant_event": { "$ref": "#/components/schemas/ConversationMessageResponse" }
+        }
+      },
+      "MemorySettingsResponse": {
+        "type": "object",
+        "required": ["enabled"],
+        "properties": {
+          "enabled": { "type": "boolean" },
+          "consent_updated_at": { "type": "string", "format": "date-time", "nullable": true }
+        }
+      },
+      "UpdateMemorySettingsRequest": {
+        "type": "object",
+        "required": ["enabled"],
+        "properties": { "enabled": { "type": "boolean" } }
+      },
+      "MemoryItemResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "content",
+          "status",
+          "confidence",
+          "last_used_at",
+          "created_at"
+        ],
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "type": "string" },
+          "content": { "type": "string" },
+          "status": { "type": "string" },
+          "confidence": { "type": "number" },
+          "source_conversation_id": { "type": "string", "nullable": true },
+          "last_used_at": { "type": "string", "format": "date-time" },
+          "expires_at": { "type": "string", "format": "date-time", "nullable": true },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ApprovalDecision": {
+        "type": "string",
+        "enum": ["approve", "reject", "edit"]
+      },
+      "ApprovalStatus": {
+        "type": "string",
+        "enum": ["waiting", "approved", "rejected", "edited", "expired"]
+      },
+      "ApprovalDecisionRequest": {
+        "type": "object",
+        "required": ["decision"],
+        "properties": {
+          "decision": { "$ref": "#/components/schemas/ApprovalDecision" },
+          "edited_payload": { "type": "object", "additionalProperties": true, "nullable": true },
+          "decision_reason": { "type": "string", "nullable": true }
+        }
+      },
+      "ApprovalResponse": {
+        "type": "object",
+        "required": [
+          "approval_id",
+          "agent_action_id",
+          "requested_by",
+          "status",
+          "created_at",
+          "expires_at"
+        ],
+        "properties": {
+          "approval_id": { "type": "string" },
+          "agent_action_id": { "type": "string" },
+          "requested_by": { "type": "string" },
+          "status": { "$ref": "#/components/schemas/ApprovalStatus" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "expires_at": { "type": "string", "format": "date-time" },
+          "resume_status": { "type": "string", "nullable": true }
+        }
+      },
+      "HealthData": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string" },
+          "service": { "type": "string" },
+          "version": { "type": "string" },
+          "environment": { "type": "string" }
+        }
+      },
+      "UserEnvelope": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": { "$ref": "#/components/schemas/UserResponse" }
+        }
+      },
+      "ConversationEnvelope": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": { "$ref": "#/components/schemas/ConversationResponse" }
+        }
+      },
+      "ConversationListEnvelope": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": { "$ref": "#/components/schemas/ConversationResponse" }
+              },
+              "pagination": { "$ref": "#/components/schemas/Pagination" }
+            }
+          }
+        }
+      },
+      "ConversationMessageListEnvelope": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": { "$ref": "#/components/schemas/ConversationMessageResponse" }
+              },
+              "pagination": { "$ref": "#/components/schemas/Pagination" }
+            }
+          }
+        }
+      },
+      "ChatEnvelope": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": { "$ref": "#/components/schemas/ChatResponse" }
+        }
+      },
+      "MemorySettingsEnvelope": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": { "$ref": "#/components/schemas/MemorySettingsResponse" }
+        }
+      },
+      "MemoryListEnvelope": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": { "$ref": "#/components/schemas/MemoryItemResponse" }
+              },
+              "pagination": { "$ref": "#/components/schemas/Pagination" }
+            }
+          }
+        }
+      },
+      "MemoryItemEnvelope": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": { "$ref": "#/components/schemas/MemoryItemResponse" }
+        }
+      },
+      "ApprovalEnvelope": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": { "$ref": "#/components/schemas/ApprovalResponse" }
+        }
+      },
+      "HealthEnvelope": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "data": { "$ref": "#/components/schemas/HealthData" }
+        }
+      }
+    }
+  },
+  "security": [{ "bearerAuth": [] }]
+}

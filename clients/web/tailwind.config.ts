@@ -17,6 +17,7 @@ const config: Config = {
           DEFAULT: hsl("surface"),
           elevated: hsl("surface-elevated"),
         },
+        hover: hsl("hover"),
         border: hsl("border"),
         muted: {
           DEFAULT: hsl("muted"),
@@ -66,6 +67,7 @@ const config: Config = {
           foreground: hsl("sidebar-foreground"),
           muted: hsl("sidebar-muted"),
           border: hsl("sidebar-border"),
+          active: hsl("sidebar-active"),
         },
         selection: hsl("selection"),
         skeleton: hsl("skeleton"),
@@ -90,9 +92,23 @@ const config: Config = {
         ],
       },
       borderRadius: {
-        sm: "6px",
-        md: "10px",
-        lg: "16px",
+        sm: "var(--radius-sm)",
+        md: "var(--radius-md)",
+        lg: "var(--radius-lg)",
+        xl: "var(--radius-xl)",
+      },
+      width: {
+        sidebar: "16.25rem",
+        "sidebar-rail": "3.5rem",
+      },
+      size: {
+        "nav-icon": "1.125rem",
+      },
+      maxWidth: {
+        chat: "var(--chat-column)",
+      },
+      transitionDuration: {
+        fast: "150ms",
       },
       keyframes: {
         "fade-in": {

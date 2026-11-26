@@ -1,74 +1,61 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Monitor, Moon, Sun } from "lucide-react";
+import { Moon, Sun } from "lucide-react";
 
-import { THEME_META, THEME_MODES, type ThemeMode } from "@/config/theme";
+import { DEFAULT_THEME, type ThemeMode } from "@/config/theme";
 import { useTheme } from "@/features/theme/provider";
 import { cn } from "@/lib/utils";
 
-const ICONS = {
-  light: Sun,
-  dark: Moon,
-  system: Monitor,
-} as const;
-
 export function ThemeToggle({ className }: { className?: string }) {
-  const { theme, setTheme } = useTheme();
+  const { theme, setTheme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
+  const current: ThemeMode =
+    theme === "dark" || theme === "light"
+      ? theme
+      : resolvedTheme === "dark" || resolvedTheme === "light"
+        ? resolvedTheme
+        : DEFAULT_THEME;
+  const next: ThemeMode = current === "dark" ? "light" : "dark";
+  const label = next === "dark" ? "Switch to dark theme" : "Switch to light theme";
+
   if (!mounted) {
     return (
-      <div
+      <button
+        type="button"
         className={cn(
-          "h-9 w-[9.5rem] rounded-md border border-border bg-surface",
+          "inline-flex size-9 items-center justify-center rounded-md text-muted-foreground",
           className,
         )}
-        aria-hidden="true"
-      />
+        aria-label="Switch theme"
+        disabled
+      >
+        <Sun className="size-4" aria-hidden="true" />
+      </button>
     );
   }
 
-  const current = (THEME_MODES as readonly string[]).includes(theme ?? "")
-    ? (theme as ThemeMode)
-    : "system";
-
   return (
-    <div
-      role="radiogroup"
-      aria-label="Color theme"
+    <button
+      type="button"
       className={cn(
-        "inline-flex rounded-md border border-border bg-surface p-0.5",
+        "inline-flex size-9 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors duration-fast hover:bg-hover hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
         className,
       )}
+      aria-label={label}
+      aria-pressed={current === "dark"}
+      onClick={() => setTheme(next)}
     >
-      {THEME_MODES.map((mode) => {
-        const Icon = ICONS[mode];
-        const selected = current === mode;
-        return (
-          <button
-            key={mode}
-            type="button"
-            role="radio"
-            aria-checked={selected}
-            aria-label={THEME_META[mode].label}
-            className={cn(
-              "inline-flex h-8 items-center gap-1.5 rounded-sm px-2.5 text-xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
-              selected
-                ? "bg-muted text-foreground"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-            onClick={() => setTheme(mode)}
-          >
-            <Icon className="size-3.5" aria-hidden="true" />
-            <span className="hidden sm:inline">{THEME_META[mode].label}</span>
-          </button>
-        );
-      })}
-    </div>
+      {current === "dark" ? (
+        <Sun className="size-4" aria-hidden="true" />
+      ) : (
+        <Moon className="size-4" aria-hidden="true" />
+      )}
+    </button>
   );
 }

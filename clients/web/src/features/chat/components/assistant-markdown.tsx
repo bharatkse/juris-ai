@@ -1,10 +1,14 @@
+"use client";
+
+import { useState, type ReactNode } from "react";
+import { Check, Copy } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 
 export function AssistantMarkdown({ content }: { content: string }) {
   return (
-    <div className="font-serif text-[16px] leading-7 text-foreground">
+    <div className="overflow-x-auto break-words font-serif text-[16px] leading-7 text-foreground">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeSanitize]}
@@ -52,9 +56,7 @@ export function AssistantMarkdown({ content }: { content: string }) {
             </code>
           ),
           pre: ({ children }) => (
-            <pre className="my-4 overflow-x-auto rounded-md bg-code p-4 font-mono text-sm text-code-foreground [&_code]:bg-transparent [&_code]:p-0">
-              {children}
-            </pre>
+            <CodeBlock>{children}</CodeBlock>
           ),
           table: ({ children }) => (
             <div className="my-4 overflow-x-auto">
@@ -77,6 +79,42 @@ export function AssistantMarkdown({ content }: { content: string }) {
       >
         {content}
       </ReactMarkdown>
+    </div>
+  );
+}
+
+function CodeBlock({ children }: { children: ReactNode }) {
+  const [copied, setCopied] = useState(false);
+  const text =
+    typeof children === "object" && children && "props" in (children as object)
+      ? String((children as { props?: { children?: unknown } }).props?.children ?? "")
+      : String(children ?? "");
+
+  return (
+    <div className="group relative my-4">
+      <button
+        type="button"
+        className="absolute right-2 top-2 inline-flex size-8 items-center justify-center rounded-md bg-code-foreground/10 text-code-foreground outline-none hover:bg-code-foreground/20 focus-visible:ring-2 focus-visible:ring-ring"
+        aria-label={copied ? "Copied" : "Copy code"}
+        onClick={async () => {
+          try {
+            await navigator.clipboard.writeText(text);
+            setCopied(true);
+            window.setTimeout(() => setCopied(false), 1500);
+          } catch {
+            /* ignore */
+          }
+        }}
+      >
+        {copied ? (
+          <Check className="size-3.5" aria-hidden="true" />
+        ) : (
+          <Copy className="size-3.5" aria-hidden="true" />
+        )}
+      </button>
+      <pre className="overflow-x-auto rounded-md bg-code p-4 font-mono text-sm text-code-foreground [&_code]:bg-transparent [&_code]:p-0">
+        {children}
+      </pre>
     </div>
   );
 }

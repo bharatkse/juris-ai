@@ -35,4 +35,14 @@ describe("Composer cancellation behavior", () => {
     expect(question).toHaveValue("Preserve this draft");
     expect(screen.getByText("context.txt")).toBeInTheDocument();
   });
+
+  it("replaces Send with Stop while generating", async () => {
+    const onStop = vi.fn();
+    render(
+      <Composer sending onSend={vi.fn()} onStop={onStop} />,
+    );
+    expect(screen.queryByRole("button", { name: "Send" })).not.toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Stop" }));
+    expect(onStop).toHaveBeenCalledOnce();
+  });
 });

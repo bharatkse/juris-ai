@@ -8,14 +8,11 @@ import {
   NAMED_THEMES,
   THEME_STORAGE_KEY,
 } from "@/config/theme";
-import { readStoredTheme } from "@/features/theme/storage";
+import { migrateStoredTheme } from "@/features/theme/storage";
 
-function discardInvalidStoredTheme(): void {
+function migrateLegacyTheme(): void {
   try {
-    const raw = globalThis.localStorage?.getItem(THEME_STORAGE_KEY);
-    if (raw && readStoredTheme() === null) {
-      globalThis.localStorage.removeItem(THEME_STORAGE_KEY);
-    }
+    migrateStoredTheme(globalThis.localStorage, DEFAULT_THEME);
   } catch {
     /* private mode / blocked storage */
   }
@@ -23,14 +20,14 @@ function discardInvalidStoredTheme(): void {
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   if (typeof window !== "undefined") {
-    discardInvalidStoredTheme();
+    migrateLegacyTheme();
   }
 
   return (
     <NextThemesProvider
       attribute="class"
       defaultTheme={DEFAULT_THEME}
-      enableSystem
+      enableSystem={false}
       disableTransitionOnChange
       storageKey={THEME_STORAGE_KEY}
       themes={[...NAMED_THEMES]}

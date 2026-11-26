@@ -1,0 +1,17 @@
+---
+description: Feature repositories for clients/web (http vs local adapters).
+globs: clients/web/src/features/**/*.{ts,tsx}
+alwaysApply: false
+---
+
+# Feature backends (clients/web)
+
+Components never contain mock or sample data. Each product feature that can outrun FastAPI uses:
+
+- `src/features/<feature>/repository.ts` — the only API the UI calls
+- `src/features/<feature>/adapters/http.ts` — real `/api/backend/*` calls
+- `src/features/<feature>/adapters/local.ts` — per-user, versioned localStorage (or IndexedDB), try/catch, used **only** when `NEXT_PUBLIC_FEATURE_<NAME>_BACKEND=local`
+
+Selection lives in `src/config/feature-backends.ts`. Local-backed screens show a “Saved on this device” hint. Local keys are namespaced `juris:{userId}:{feature}` and must be cleared on sign-out (`clearLocalUserData`).
+
+When an HTTP contract is not on FastAPI yet, document it in `docs/api-requests/<feature>.md` instead of inventing responses in components.

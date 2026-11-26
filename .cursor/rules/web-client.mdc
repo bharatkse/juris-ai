@@ -1,0 +1,14 @@
+---
+description: Web client data and API wiring. Apply when editing clients/web.
+globs: clients/web/**/*
+alwaysApply: false
+---
+
+# Web client
+
+- No hardcoded sample conversations, documents, quotas, model names, provider names, ports, or backend URLs in components.
+- Browser calls go through `src/features/<feature>/api.ts` and TanStack Query hooks. JSON/SSE transport lives in `src/lib/api/`.
+- Base URL, secrets, and server hosts live in `src/config/server.ts` (BFF only). Browser flags live in `src/config/env.ts` and `src/config/features.ts`.
+- Types come from `clients/web/openapi/openapi.json` via `make web-api-types` (`src/types/openapi.d.ts`). Do not duplicate backend schemas by hand when the snapshot already has them.
+- Every new view needs loading (skeleton), empty, error (retry), and success states.
+- If the FastAPI contract is missing, either hide the UI or (when the layout prompt requires the screen) drive it through a repository with an `http`/`local` adapter. Never put mock data in components. Document missing HTTP shapes in `docs/api-requests/`.

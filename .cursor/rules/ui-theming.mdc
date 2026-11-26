@@ -6,8 +6,14 @@ alwaysApply: false
 
 # UI theming (clients/web)
 
-Never hardcode colors (`#hex`, `rgb()`, `bg-white`, `text-gray-900`, `border-slate-200`, SVG `fill="#…"`). Use semantic Tailwind tokens mapped from CSS variables in `src/styles/theme.css` / `src/config/theme.ts`: `background`, `foreground`, `surface`, `border`, `muted`, `primary`, `accent`, `ring`, `danger`, `success`, `info`, `chat-*`, `citation`, `sidebar`, `code`.
+Only **light** and **dark**. There is no `system` theme and no extra palettes.
 
-Brand (primary/accent) changes are token-only. Add a named theme by adding a palette in `src/config/theme.ts` (then regenerate/sync `theme.css`); it must appear in `ThemeToggle` via config, not one-off class names.
+Light `--background` is **#FFFFFF** (`0 0% 100%`) for the page, main content, and chat canvas. Use `--sidebar` / `--hover` (`#F9FAFB`-ish) only for the rail, hover, and user bubbles. Dark surfaces stay soft neutrals, never pure `#000`.
 
-Every new component must be checked in **light and dark** (and system). Run `make web-test-theme` when changing tokens.
+Never hardcode colors (`#hex`, `rgb()`, `bg-white`, `text-gray-900`, `border-slate-200`, SVG `fill="#…"`). Use semantic Tailwind tokens from `src/styles/theme.css` / `src/config/theme.ts`: `background`, `foreground`, `surface`, `hover`, `border`, `muted`, `primary`, `accent`, `ring`, `danger`, `success`, `info`, `chat-*`, `citation`, `sidebar`, `code`.
+
+Brand (primary/accent) changes are token-only. Do not add named themes without updating `THEME_MODES` and dropping the extra mode from this rule.
+
+Default is `NEXT_PUBLIC_DEFAULT_THEME=light|dark` (reject anything else). Persist `juris-theme`. `next-themes` runs with `enableSystem={false}`.
+
+Every new component must be checked in **light and dark**. Run `make web-test-theme` when changing tokens.

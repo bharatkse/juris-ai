@@ -34,10 +34,14 @@ Open [http://127.0.0.1:3100](http://127.0.0.1:3100). Port 3100 avoids Grafana on
 |---|---|---|---|
 | `BACKEND_API_URL` | server only | `http://127.0.0.1:8001/api/v1` | FastAPI base. Never prefix with `NEXT_PUBLIC_`. In Docker: `http://api:8000/api/v1`. |
 | `NEXT_PUBLIC_CHAT_STREAMING` | browser | `true` | Set `false` to use synchronous `POST /chat`. |
+| `NEXT_PUBLIC_FEATURE_CONVERSATION_RENAME` | browser | `false` | Unused for titles; titles use the titles backend below. |
+| `NEXT_PUBLIC_FEATURE_*_BACKEND` | browser (build-time) | see below | `http` or `local` adapter for that feature. |
+| `NEXT_PUBLIC_FEATURE_ADMIN` | browser | `false` | Show Admin in the profile menu. |
+| `NEXT_PUBLIC_FEATURE_PERMISSIONS` | browser | `false` | Show Permissions in settings and the profile menu. |
 | `PLAYWRIGHT_BASE_URL` | tests | `http://127.0.0.1:3100` | Optional. |
 | `PLAYWRIGHT_DESIGN_BASE_URL` | design capture | `http://127.0.0.1:3107` | Dedicated Next port for reference PNGs. |
 | `WEB_PORT` | Compose | `3100` | Host port mapping. |
-| `NEXT_PUBLIC_DEFAULT_THEME` | browser (build-time) | `system` | `light`, `dark`, or `system`. Inlined by Next; pass as a Docker **build arg**. |
+| `NEXT_PUBLIC_DEFAULT_THEME` | browser (build-time) | `light` | `light` or `dark` only. Inlined by Next; pass as a Docker **build arg**. |
 
 Copy `.env.example` to `.env.local` for local Next.js. Access/refresh tokens stay in `httpOnly` cookies; browser JS never sees them.
 
@@ -54,8 +58,55 @@ npm run e2e             # Playwright (`tests/e2e/playwright.config.ts`)
 npm run design:capture  # visual refs (`tests/design/playwright.config.ts`)
 ```
 
-From the repo root: `make web-ci` (lint + typecheck + test + build).
+From the repo root: `make web-ci` (OpenAPI types check + lint + typecheck + test + build).
+`make web-api-types` regenerates `src/types/openapi.d.ts` from `openapi/openapi.json`.
 `make web-e2e` and `make web-design-capture` run Playwright from the moved configs.
+
+## API integration
+
+The browser never talks to FastAPI hosts or ports. It calls same-origin `/api/auth/*` and `/api/backend/*`. `src/lib/api/client.ts` unwraps `ApiResponse`, times out, retries **GET/HEAD** on network/502/503/504, and normalizes `ApiError`. Feature modules live in `src/features/<name>/api.ts` with TanStack Query hooks.
+
+There is no `GET /auth/me`. `/api/auth/me` decodes JWT `sub` and loads `GET /users/{id}`. Messages are `GET /conversations/{id}/messages` (not `/events`).
+
+Copy lives in `src/constants/copy.ts`.
+
+## Navigation and icons
+
+Work, settings, and profile menus are typed in `src/config/navigation.ts`. Rows render through `NavItem` (sidebar / settings) and `MenuItem` (popovers). Icons are Lucide only (`strokeWidth` 1.75). Sidebar rows are `h-9` (`h-10` on mobile), `px-2.5`, `gap-2.5`, with a 20px icon slot so labels share an x-offset. Expanded sidebar is `w-sidebar` (260px); collapsed rail is `w-sidebar-rail` (56px).
+
+## Route map
+
+| Path | Shell |
+|---|---|
+| `/app`, `/app/c/{id}` | Chat sidebar |
+| `/app/documents`, `/app/approvals` | Chat sidebar |
+| `/projects`, `/projects/{id}` | Chat sidebar |
+| `/settings/{profile,general,memory,notifications,integrations,permissions,privacy,usage,api-keys,help,admin}` | Settings nav only |
+| `/settings/memory/{id}` | Memory detail |
+
+`/app/settings` and `/app/memory` redirect to `/settings/profile` and `/settings/memory`.
+
+## Feature backends
+
+`src/config/feature-backends.ts` picks `http` or `local` per feature. Components call a repository; they never embed sample data. Local adapters live in `src/features/<feature>/adapters/local.ts`, namespace keys as `juris:{userId}:{feature}`, version the JSON envelope, and clear on sign-out.
+
+### Backend gaps (local unless noted)
+
+| Feature | Default | HTTP today | Contract |
+|---|---|---|---|
+| Memory | `http` | settings + list + get + delete | [docs/api-requests/memory.md](../../docs/api-requests/memory.md) (POST/PATCH missing) |
+| Projects | `local` | none | [docs/api-requests/projects.md](../../docs/api-requests/projects.md) |
+| Pins | `local` | none | [docs/api-requests/pins.md](../../docs/api-requests/pins.md) |
+| Documents | `local` | none | [docs/api-requests/documents.md](../../docs/api-requests/documents.md) |
+| Preferences / notifications | `local` | none | [docs/api-requests/preferences.md](../../docs/api-requests/preferences.md) |
+| Conversation titles | `local` | no PATCH route | same |
+| Integrations / API keys | `local` | none | same |
+
+Local-backed screens show “Saved on this device”. Proposed OpenAPI-style shapes are in `docs/api-requests/`. Design-parity notes: [docs/clients/web/design-parity.md](../../docs/clients/web/design-parity.md).
+
+A hook blocks edits to `clients/web/.env.example`; copy the `NEXT_PUBLIC_FEATURE_*` table above into `.env.local` and pass the same names as Docker **build args**.
+
+Audit vs FastAPI: [`docs/clients/web/api-audit.md`](../../docs/clients/web/api-audit.md).
 
 ## Docker
 
@@ -130,19 +181,20 @@ TypeScript writes to `.next/cache/tsconfig.tsbuildinfo`.
 
 ## Theming
 
-Modes: **light**, **dark**, **system** (default). `next-themes` sets `class` on `<html>` (`attribute="class"`, `enableSystem`, `disableTransitionOnChange`, storage key `juris-theme`) so the first paint matches the stored or OS preference.
+Modes: **light** and **dark** only (default **light**). `next-themes` sets `class` on `<html>` (`attribute="class"`, `enableSystem={false}`, `disableTransitionOnChange`, storage key `juris-theme`). A blocking script in `src/features/theme/theme-script.tsx` applies the stored value before paint. Stored `system` or unknown values migrate to the env default.
 
-Semantic tokens live in `src/config/theme.ts` and `src/styles/theme.css`. Tailwind maps them in `tailwind.config.ts` (`darkMode: "class"`). Components use names like `bg-background`, `text-foreground`, `bg-primary` — not hex or `bg-white`.
+The light page canvas is **pure white** (`--background: 0 0% 100%` / `#FFFFFF`). Semantic tokens live in `src/config/theme.ts` and `src/styles/theme.css`. Tailwind maps them in `tailwind.config.ts` (`darkMode: "class"`). Components use `bg-background`, `bg-hover`, `bg-sidebar` — not hex or `bg-white`. Token table: [`docs/clients/web/design/runtime-tokens.md`](../../docs/clients/web/design/runtime-tokens.md).
 
 ### Change the default
 
-Set `NEXT_PUBLIC_DEFAULT_THEME=light|dark|system` at **build** time (`.env.local` or Compose `build.args`). Runtime `environment:` on the container does not rewrite an already-built bundle.
-
-### Add a named theme
-
-1. Add a palette (HSL channels `H S% L%`) to `palettes` in `src/config/theme.ts`.
-2. Copy `generateThemeCss()` output into `src/styles/theme.css` (the unit test checks they match).
-3. Add a label in `THEME_META` and, if it is user-selectable, include it in `THEME_MODES` / `ThemeToggle`.
-4. Run `make web-test-theme` (contrast + storage + provider).
+Set `NEXT_PUBLIC_DEFAULT_THEME=light|dark` at **build** time (`.env.local` or Compose `build.args`). Other values fail env validation. Runtime `environment:` on the container does not rewrite an already-built bundle.
 
 Primary and accent are tokens only; do not edit components to rebrand.
+
+## Layout
+
+- **Shell** (`src/components/layout/app-shell.tsx`): `h-dvh`, slim header, left sidebar ~260px.
+- **Sidebar** (`conversation-sidebar.tsx`): New chat, search, Chats / Memory / Settings, Recents by day, account + theme at the bottom. Collapses to an icon rail on desktop; overlay drawer below 768px.
+- **Chat** (`features/chat/components/`): `max-w-chat` column; assistant prose without a bubble; user bubble `max-w-[80%]`; composer rounded ~24px with circular Send / Stop.
+- **Panel** (`side-panel.tsx`): resizable right rail on desktop, full-screen sheet on mobile (citations / sources).
+- **Pages** (Settings, Memory): `max-w-5xl` content.

@@ -1,9 +1,11 @@
 import { apiFetch, jsonRequest } from "@/lib/api/client";
 import type {
+  Citation,
   Conversation,
   ConversationEvent,
   ConversationEventMetadata,
   Paginated,
+  Source,
 } from "@/types/api";
 
 const CONVERSATIONS_ENDPOINT = "/api/backend/conversations";
@@ -16,15 +18,42 @@ export function buildConversationListUrl(offset = 0, limit = 20): string {
   return `${CONVERSATIONS_ENDPOINT}?${params.toString()}`;
 }
 
+export interface ConversationMessage {
+  id: string;
+  conversation_id: string;
+  parent_event_id: string | null;
+  role: ConversationEvent["role"];
+  content: string;
+  metadata?: ConversationEventMetadata;
+  event_metadata?: ConversationEventMetadata;
+  citations?: Citation[];
+  sources?: Source[];
+  created_at: string;
+}
+
 export function normalizeConversationEvent(
-  event: Omit<ConversationEvent, "metadata"> & {
-    metadata?: ConversationEventMetadata;
-    event_metadata?: ConversationEventMetadata;
-  },
+  event: ConversationMessage | ConversationEvent,
 ): ConversationEvent {
+  const metadata: ConversationEventMetadata = {
+    ...(event.event_metadata ?? {}),
+    ...("metadata" in event && event.metadata ? event.metadata : {}),
+  };
+  const message = event as ConversationMessage;
+  if (message.citations?.length) {
+    metadata.citations = message.citations;
+  }
+  if (message.sources?.length) {
+    metadata.sources = message.sources;
+  }
+
   return {
-    ...event,
-    metadata: event.metadata ?? event.event_metadata ?? {},
+    id: event.id,
+    conversation_id: event.conversation_id,
+    parent_event_id: event.parent_event_id,
+    role: event.role,
+    content: event.content,
+    metadata,
+    created_at: event.created_at,
   };
 }
 
@@ -56,13 +85,13 @@ export async function getConversation(
   );
 }
 
-export async function renameConversation(
+export async function setConversationMemoryDisabled(
   id: string,
-  title: string,
+  memoryDisabled: boolean,
 ): Promise<Conversation> {
   return apiFetch<Conversation>(
-    `${CONVERSATIONS_ENDPOINT}/${encodeURIComponent(id)}`,
-    jsonRequest({ title }, { method: "PATCH" }),
+    `${CONVERSATIONS_ENDPOINT}/${encodeURIComponent(id)}/memory`,
+    jsonRequest({ memory_disabled: memoryDisabled }, { method: "PUT" }),
   );
 }
 
@@ -83,15 +112,8 @@ export async function listConversationEvents(
     offset: String(offset),
     limit: String(limit),
   });
-  const page = await apiFetch<
-    Paginated<
-      Omit<ConversationEvent, "metadata"> & {
-        metadata?: ConversationEventMetadata;
-        event_metadata?: ConversationEventMetadata;
-      }
-    >
-  >(
-    `${CONVERSATIONS_ENDPOINT}/${encodeURIComponent(id)}/events?${params.toString()}`,
+  const page = await apiFetch<Paginated<ConversationMessage>>(
+    `${CONVERSATIONS_ENDPOINT}/${encodeURIComponent(id)}/messages?${params.toString()}`,
     { signal },
   );
 
